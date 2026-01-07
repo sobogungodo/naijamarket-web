@@ -90,7 +90,7 @@ export async function GET(request: NextRequest) {
 // Fetch single market by ID
 // ============================================================================
 
-export async function getMarketById(marketId: string) {
+async function getMarketById(marketId: string) {
   try {
     const market = await prisma.markets.findUnique({
       where: { market_id: marketId },
