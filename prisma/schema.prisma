@@ -1,0 +1,462 @@
+// ============================================================================
+// NAIJAMARKET INTEL - PRISMA SCHEMA
+// Azure SQL Database Connection
+// ============================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlserver"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================================
+// WEB PLATFORM TABLES
+// ============================================================================
+
+model WebUsers {
+  web_user_id            String    @id @default(uuid()) @db.VarChar(50)
+  email                  String    @unique @db.NVarChar(255)
+  password_hash          String?   @db.VarChar(255)
+  phone_number           String?   @db.VarChar(20)
+  consumer_id            String?   @db.VarChar(50)
+  trader_id              String?   @db.VarChar(50)
+  validator_id           String?   @db.VarChar(50)
+  first_name             String?   @db.NVarChar(100)
+  last_name              String?   @db.NVarChar(100)
+  full_name              String?   @db.NVarChar(200)
+  avatar_url             String?   @db.NVarChar(500)
+  company_name           String?   @db.NVarChar(200)
+  company_size           String?   @db.VarChar(30)
+  industry               String?   @db.VarChar(100)
+  job_title              String?   @db.NVarChar(100)
+  subscription_tier      String    @default("FREE") @db.VarChar(30)
+  subscription_end       DateTime?
+  is_verified            Boolean   @default(false)
+  verified_at            DateTime?
+  verification_token     String?   @db.VarChar(100)
+  password_reset_token   String?   @db.VarChar(100)
+  password_reset_expires DateTime?
+  two_factor_enabled     Boolean   @default(false)
+  two_factor_secret      String?   @db.VarChar(100)
+  last_login_at          DateTime?
+  last_login_ip          String?   @db.VarChar(50)
+  login_count            Int       @default(0)
+  failed_login_count     Int       @default(0)
+  locked_until           DateTime?
+  preferences_json       String?   @db.NVarChar(Max)
+  notification_settings  String?   @db.NVarChar(Max)
+  timezone               String    @default("Africa/Lagos") @db.VarChar(50)
+  language               String    @default("en") @db.VarChar(10)
+  status                 String    @default("ACTIVE") @db.VarChar(30)
+  created_at             DateTime  @default(now())
+  updated_at             DateTime  @updatedAt
+
+  sessions       WebSessions[]
+  watchlists     Watchlists[]
+  api_keys       ApiKeys[]
+  api_usage_logs ApiUsageLog[]
+  commands       CommandHistory[]
+  saved_queries  SavedQueries[]
+  activities     UserActivity[]
+
+  @@index([phone_number])
+  @@index([consumer_id])
+}
+
+model WebSessions {
+  session_id         String    @id @db.VarChar(100)
+  web_user_id        String    @db.VarChar(50)
+  token_hash         String?   @db.VarChar(255)
+  refresh_token_hash String?   @db.VarChar(255)
+  device_fingerprint String?   @db.VarChar(100)
+  user_agent         String?   @db.NVarChar(500)
+  ip_address         String?   @db.VarChar(50)
+  country            String?   @db.VarChar(50)
+  city               String?   @db.NVarChar(100)
+  is_mobile          Boolean   @default(false)
+  created_at         DateTime  @default(now())
+  expires_at         DateTime?
+  last_activity_at   DateTime  @default(now())
+  revoked            Boolean   @default(false)
+  revoked_at         DateTime?
+  revoked_reason     String?   @db.VarChar(100)
+
+  user WebUsers @relation(fields: [web_user_id], references: [web_user_id], onDelete: Cascade)
+
+  @@index([web_user_id])
+  @@index([token_hash])
+  @@index([expires_at])
+}
+
+model Watchlists {
+  watchlist_id String   @id @default(uuid()) @db.VarChar(50)
+  web_user_id  String   @db.VarChar(50)
+  name         String   @db.NVarChar(100)
+  description  String?  @db.NVarChar(500)
+  is_default   Boolean  @default(false)
+  is_public    Boolean  @default(false)
+  items_count  Int      @default(0)
+  color        String?  @db.VarChar(20)
+  icon         String?  @db.VarChar(50)
+  sort_order   Int      @default(0)
+  created_at   DateTime @default(now())
+  updated_at   DateTime @updatedAt
+
+  user  WebUsers         @relation(fields: [web_user_id], references: [web_user_id], onDelete: Cascade)
+  items WatchlistItems[]
+
+  @@index([web_user_id])
+}
+
+model WatchlistItems {
+  watchlist_item_id String    @id @default(uuid()) @db.VarChar(50)
+  watchlist_id      String    @db.VarChar(50)
+  item_id           String?   @db.VarChar(20)
+  item_name         String?   @db.NVarChar(200)
+  market_id         String?   @db.VarChar(20)
+  market_name       String?   @db.NVarChar(100)
+  target_price      Decimal?  @db.Decimal(18, 2)
+  alert_above       Decimal?  @db.Decimal(18, 2)
+  alert_below       Decimal?  @db.Decimal(18, 2)
+  notes             String?   @db.NVarChar(500)
+  sort_order        Int       @default(0)
+  added_at          DateTime  @default(now())
+  last_price        Decimal?  @db.Decimal(18, 2)
+  last_price_at     DateTime?
+  price_change_pct  Decimal?  @db.Decimal(5, 2)
+
+  watchlist Watchlists @relation(fields: [watchlist_id], references: [watchlist_id], onDelete: Cascade)
+
+  @@index([watchlist_id])
+  @@index([item_id])
+}
+
+model ApiKeys {
+  api_key_id            String    @id @default(uuid()) @db.VarChar(50)
+  web_user_id           String    @db.VarChar(50)
+  key_hash              String    @db.VarChar(255)
+  key_prefix            String    @db.VarChar(20)
+  name                  String    @db.NVarChar(100)
+  description           String?   @db.NVarChar(500)
+  permissions           String?   @db.NVarChar(Max)
+  rate_limit_per_minute Int       @default(60)
+  rate_limit_per_day    Int       @default(10000)
+  allowed_ips           String?   @db.NVarChar(Max)
+  allowed_origins       String?   @db.NVarChar(Max)
+  is_test_key           Boolean   @default(false)
+  status                String    @default("ACTIVE") @db.VarChar(30)
+  last_used_at          DateTime?
+  requests_today        Int       @default(0)
+  requests_total        Int       @default(0)
+  created_at            DateTime  @default(now())
+  expires_at            DateTime?
+  revoked_at            DateTime?
+  revoked_reason        String?   @db.VarChar(200)
+
+  user       WebUsers      @relation(fields: [web_user_id], references: [web_user_id], onDelete: Cascade)
+  usage_logs ApiUsageLog[]
+
+  @@index([web_user_id])
+  @@index([key_prefix])
+  @@index([status])
+}
+
+model ApiUsageLog {
+  log_id              BigInt   @id @default(autoincrement())
+  api_key_id          String?  @db.VarChar(50)
+  web_user_id         String?  @db.VarChar(50)
+  endpoint            String?  @db.NVarChar(255)
+  method              String?  @db.VarChar(10)
+  status_code         Int?
+  response_time_ms    Int?
+  request_size_bytes  Int?
+  response_size_bytes Int?
+  ip_address          String?  @db.VarChar(50)
+  user_agent          String?  @db.NVarChar(500)
+  query_params        String?  @db.NVarChar(Max)
+  error_message       String?  @db.NVarChar(500)
+  created_at          DateTime @default(now())
+
+  api_key ApiKeys?  @relation(fields: [api_key_id], references: [api_key_id], onDelete: SetNull)
+  user    WebUsers? @relation(fields: [web_user_id], references: [web_user_id], onDelete: SetNull)
+
+  @@index([api_key_id])
+  @@index([web_user_id])
+  @@index([created_at])
+  @@index([endpoint])
+}
+
+model CommandHistory {
+  command_id        BigInt   @id @default(autoincrement())
+  web_user_id       String   @db.VarChar(50)
+  command_text      String   @db.NVarChar(500)
+  command_type      String?  @db.VarChar(50)
+  parsed_params     String?  @db.NVarChar(Max)
+  execution_time_ms Int?
+  result_count      Int?
+  was_successful    Boolean  @default(true)
+  error_message     String?  @db.NVarChar(500)
+  created_at        DateTime @default(now())
+
+  user WebUsers @relation(fields: [web_user_id], references: [web_user_id], onDelete: Cascade)
+
+  @@index([web_user_id])
+  @@index([created_at])
+}
+
+model SavedQueries {
+  query_id     String    @id @default(uuid()) @db.VarChar(50)
+  web_user_id  String    @db.VarChar(50)
+  name         String    @db.NVarChar(100)
+  description  String?   @db.NVarChar(500)
+  query_type   String?   @db.VarChar(50)
+  filters_json String?   @db.NVarChar(Max)
+  columns_json String?   @db.NVarChar(Max)
+  sort_json    String?   @db.NVarChar(Max)
+  is_default   Boolean   @default(false)
+  run_count    Int       @default(0)
+  last_run_at  DateTime?
+  created_at   DateTime  @default(now())
+  updated_at   DateTime  @updatedAt
+
+  user WebUsers @relation(fields: [web_user_id], references: [web_user_id], onDelete: Cascade)
+
+  @@index([web_user_id])
+}
+
+model UserActivity {
+  activity_id      BigInt   @id @default(autoincrement())
+  web_user_id      String?  @db.VarChar(50)
+  consumer_id      String?  @db.VarChar(50)
+  activity_type    String   @db.VarChar(50)
+  activity_subtype String?  @db.VarChar(50)
+  entity_type      String?  @db.VarChar(50)
+  entity_id        String?  @db.VarChar(50)
+  details_json     String?  @db.NVarChar(Max)
+  ip_address       String?  @db.VarChar(50)
+  user_agent       String?  @db.NVarChar(500)
+  session_id       String?  @db.VarChar(100)
+  created_at       DateTime @default(now())
+
+  user WebUsers? @relation(fields: [web_user_id], references: [web_user_id], onDelete: SetNull)
+
+  @@index([web_user_id])
+  @@index([consumer_id])
+  @@index([activity_type])
+  @@index([created_at])
+}
+
+// ============================================================================
+// REFERENCE TABLES (Read-only from existing database)
+// ============================================================================
+
+model Markets {
+  market_id         String   @id @db.VarChar(20)
+  region_id         String?  @db.VarChar(10)
+  market_name       String   @db.NVarChar(100)
+  state             String   @db.NVarChar(50)
+  latitude          Decimal? @db.Decimal(10, 7)
+  longitude         Decimal? @db.Decimal(10, 7)
+  radius_meters     Decimal? @default(500) @db.Decimal(10, 2)
+  opening_hours     String?  @db.NVarChar(100)
+  status            String   @default("ACTIVE") @db.VarChar(20)
+  created_at        DateTime @default(now())
+  coordinate_source String?  @db.VarChar(30)
+
+  @@index([state])
+}
+
+model Categories {
+  category_id   String   @id @db.VarChar(20)
+  category_name String   @db.NVarChar(100)
+  description   String?  @db.NVarChar(500)
+  status        String   @default("ACTIVE") @db.VarChar(20)
+  display_order Int      @default(0)
+  created_at    DateTime @default(now())
+}
+
+model Items_Catalog {
+  item_id              String   @id @db.VarChar(20)
+  item_name            String   @db.NVarChar(200)
+  category_id          String?  @db.VarChar(20)
+  unit                 String?  @db.NVarChar(50)
+  measurement          String?  @db.NVarChar(50)
+  whole_sale_price     Decimal? @db.Decimal(18, 2)
+  ave_measurement_price Decimal? @db.Decimal(18, 2)
+  average_unit_price   Decimal? @db.Decimal(18, 2)
+  status               String   @default("ACTIVE") @db.VarChar(20)
+  max_whole_sale_price Decimal? @db.Decimal(18, 2)
+  min_price            Decimal? @db.Decimal(18, 2)
+  max_price            Decimal? @db.Decimal(18, 2)
+  created_at           DateTime @default(now())
+
+  @@index([category_id])
+}
+
+model Approved_Prices {
+  price_id             String    @id @db.VarChar(50)
+  submission_id        String?   @db.VarChar(50)
+  state                String?   @db.NVarChar(50)
+  market_name          String?   @db.NVarChar(100)
+  market_id            String?   @db.VarChar(20)
+  category_name        String?   @db.NVarChar(100)
+  category_id          String?   @db.VarChar(20)
+  item_name            String?   @db.NVarChar(200)
+  item_id              String?   @db.VarChar(20)
+  brand_name           String?   @db.NVarChar(100)
+  brand_id             String?   @db.VarChar(20)
+  price                Decimal?  @db.Decimal(18, 2)
+  unit                 String?   @db.NVarChar(50)
+  currency             String    @default("NGN") @db.VarChar(10)
+  submission_date      DateTime?
+  validated_at         DateTime?
+  validation_status    String?   @db.VarChar(30)
+  validators_count     Int?
+  approval_count       Int?
+  reject_count         Int?
+  consensus_method     String?   @db.VarChar(50)
+  trader_phone         String?   @db.VarChar(20)
+  trader_id            String?   @db.VarChar(50)
+  trader_name          String?   @db.NVarChar(200)
+  trader_reputation    Int?
+  gps_latitude         Decimal?  @db.Decimal(10, 7)
+  gps_longitude        Decimal?  @db.Decimal(10, 7)
+  gps_verified         Boolean   @default(false)
+  previous_price       Decimal?  @db.Decimal(18, 2)
+  price_change_amount  Decimal?  @db.Decimal(18, 2)
+  price_change_percent Decimal?  @db.Decimal(5, 2)
+  price_trend          String?   @db.NVarChar(10)
+  data_source          String    @default("TRADER_SUBMISSION") @db.VarChar(50)
+  confidence_score     Decimal?  @db.Decimal(5, 2)
+  is_outlier           Boolean   @default(false)
+  created_at           DateTime  @default(now())
+
+  @@index([market_id])
+  @@index([item_id])
+  @@index([validated_at])
+}
+
+model NFPI_Weekly {
+  week_id                   String    @id @db.VarChar(50)
+  week_start                DateTime? @db.Date
+  week_end                  DateTime? @db.Date
+  is_baseline               Boolean   @default(false)
+  national_index            Decimal?  @db.Decimal(8, 2)
+  national_change_pct       Decimal?  @db.Decimal(5, 2)
+  national_change_direction String?   @db.VarChar(20)
+  nw_index                  Decimal?  @db.Decimal(8, 2)
+  ne_index                  Decimal?  @db.Decimal(8, 2)
+  nc_index                  Decimal?  @db.Decimal(8, 2)
+  sw_index                  Decimal?  @db.Decimal(8, 2)
+  se_index                  Decimal?  @db.Decimal(8, 2)
+  ss_index                  Decimal?  @db.Decimal(8, 2)
+  grains_index              Decimal?  @db.Decimal(8, 2)
+  proteins_index            Decimal?  @db.Decimal(8, 2)
+  vegetables_index          Decimal?  @db.Decimal(8, 2)
+  oils_index                Decimal?  @db.Decimal(8, 2)
+  basket_value_naira        Decimal?  @db.Decimal(18, 2)
+  baseline_value            Decimal?  @db.Decimal(18, 2)
+  data_quality_score        Decimal?  @db.Decimal(5, 2)
+  items_with_data           Int?
+  total_submissions         Int?
+  top_gainers               String?   @db.NVarChar(Max)
+  top_losers                String?   @db.NVarChar(Max)
+  insight                   String?   @db.NVarChar(Max)
+  calculated_at             DateTime?
+  published_at              DateTime?
+
+  @@index([week_start, week_end])
+}
+
+model Price_History_NBS {
+  history_id         String    @id @db.VarChar(50)
+  item_id            String?   @db.VarChar(20)
+  item_name_nbs      String?   @db.NVarChar(200)
+  item_name_standard String?   @db.NVarChar(200)
+  category_id        String?   @db.VarChar(20)
+  category_name      String?   @db.NVarChar(100)
+  state_code_nbs     String?   @db.VarChar(10)
+  state_name_nbs     String?   @db.NVarChar(50)
+  db_state           String?   @db.NVarChar(50)
+  market_id          String?   @db.VarChar(20)
+  market_name        String?   @db.NVarChar(100)
+  price_naira        Decimal?  @db.Decimal(18, 2)
+  price_original     Decimal?  @db.Decimal(18, 2)
+  variation_pct      Decimal?  @db.Decimal(5, 4)
+  unit               String?   @db.NVarChar(50)
+  year               Int?
+  month              Int?
+  observation_date   DateTime? @db.Date
+  data_source        String    @default("NBS_HISTORICAL") @db.VarChar(30)
+  import_batch       String?   @db.VarChar(50)
+  created_at         DateTime  @default(now())
+
+  @@index([item_id])
+  @@index([market_id])
+  @@index([observation_date])
+  @@index([year, month])
+}
+
+model Subscription_Tiers {
+  tier_id                  String   @id @db.VarChar(20)
+  tier_name                String   @db.NVarChar(50)
+  tier_rank                Int
+  price_ngn                Decimal? @db.Decimal(18, 2)
+  billing_cycle            String?  @db.VarChar(20)
+  query_limit              Int?
+  query_period             String?  @db.VarChar(20)
+  max_markets              Int?
+  extra_market_fee_weekly  Decimal? @db.Decimal(18, 2)
+  extra_market_fee_monthly Decimal? @db.Decimal(18, 2)
+  priority_support         Boolean  @default(false)
+  api_access               Boolean  @default(false)
+  email_pdf                Boolean  @default(false)
+  excel_download           Boolean  @default(false)
+  analytics_access         Boolean  @default(false)
+  dedicated_manager        Boolean  @default(false)
+  features                 String?  @db.NVarChar(500)
+  description              String?  @db.NVarChar(500)
+  status                   String   @default("ACTIVE") @db.VarChar(20)
+}
+
+model Consumers {
+  consumer_id                String    @id @db.VarChar(50)
+  phone_number               String    @db.VarChar(20)
+  preferred_language         String    @default("en") @db.VarChar(10)
+  first_name                 String?   @db.NVarChar(100)
+  last_name                  String?   @db.NVarChar(100)
+  full_name                  String?   @db.NVarChar(200)
+  gender                     String?   @db.VarChar(20)
+  age_range                  String?   @db.VarChar(20)
+  registration_date          DateTime  @default(now())
+  registration_source        String?   @db.VarChar(30)
+  subscription_tier          String    @default("FREE") @db.VarChar(30)
+  subscription_start         DateTime?
+  subscription_end           DateTime?
+  daily_query_limit          Int       @default(3)
+  daily_queries_used         Int       @default(0)
+  total_queries              Int       @default(0)
+  last_query_date            DateTime?
+  favorite_markets           String?   @db.NVarChar(Max)
+  favorite_items             String?   @db.NVarChar(Max)
+  max_markets                Int       @default(3)
+  queries_remaining          Int       @default(3)
+  account_status             String    @default("ACTIVE") @db.VarChar(20)
+  last_active_at             DateTime?
+  created_at                 DateTime  @default(now())
+  updated_at                 DateTime  @updatedAt
+  date_of_birth              DateTime? @db.Date
+  city                       String?   @db.NVarChar(100)
+  state                      String?   @db.NVarChar(50)
+  max_alerts                 Int       @default(5)
+  tc_accepted                Boolean   @default(false)
+  tc_accepted_at             DateTime?
+  tc_version                 String?   @db.VarChar(10)
+
+  @@index([phone_number])
+  @@index([subscription_tier])
+  @@index([account_status])
+}

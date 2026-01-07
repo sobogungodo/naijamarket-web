@@ -1,0 +1,434 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ============================================
+   NAIJAMARKET INTEL - GLOBAL STYLES
+   Bloomberg Terminal-Inspired Theme
+   ============================================ */
+
+@layer base {
+  :root {
+    /* Light mode (minimal use - primarily dark) */
+    --background: 0 0% 100%;
+    --foreground: 0 0% 3.9%;
+    --card: 0 0% 100%;
+    --card-foreground: 0 0% 3.9%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 0 0% 3.9%;
+    --primary: 156 100% 32%;
+    --primary-foreground: 0 0% 98%;
+    --secondary: 0 0% 96.1%;
+    --secondary-foreground: 0 0% 9%;
+    --muted: 0 0% 96.1%;
+    --muted-foreground: 0 0% 45.1%;
+    --accent: 0 0% 96.1%;
+    --accent-foreground: 0 0% 9%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 0 0% 89.8%;
+    --input: 0 0% 89.8%;
+    --ring: 156 100% 32%;
+    --radius: 0.5rem;
+  }
+
+  .dark {
+    /* Dark mode - Bloomberg Terminal inspired */
+    --background: 0 0% 4%;
+    --foreground: 0 0% 98%;
+    --card: 0 0% 8%;
+    --card-foreground: 0 0% 98%;
+    --popover: 0 0% 8%;
+    --popover-foreground: 0 0% 98%;
+    --primary: 156 100% 41%;
+    --primary-foreground: 0 0% 2%;
+    --secondary: 0 0% 14.9%;
+    --secondary-foreground: 0 0% 98%;
+    --muted: 0 0% 14.9%;
+    --muted-foreground: 0 0% 63.9%;
+    --accent: 0 0% 14.9%;
+    --accent-foreground: 0 0% 98%;
+    --destructive: 0 62.8% 50.6%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 0 0% 14.9%;
+    --input: 0 0% 14.9%;
+    --ring: 156 100% 41%;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  html {
+    @apply scroll-smooth;
+    font-feature-settings: "rlig" 1, "calt" 1;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-feature-settings: "rlig" 1, "calt" 1;
+  }
+}
+
+@layer components {
+  /* ============================================
+     TERMINAL-STYLE COMPONENTS
+     ============================================ */
+
+  /* Command Bar - Bloomberg-style */
+  .command-bar {
+    @apply fixed top-0 left-0 right-0 z-50;
+    @apply bg-terminal-bg/95 backdrop-blur-xl;
+    @apply border-b border-terminal-border;
+    @apply px-4 py-2;
+  }
+
+  .command-input {
+    @apply w-full bg-transparent;
+    @apply font-mono text-sm text-naija-gold;
+    @apply placeholder:text-terminal-muted;
+    @apply outline-none border-none;
+    caret-color: #FFB800;
+  }
+
+  /* Price Ticker */
+  .price-ticker {
+    @apply flex items-center gap-6 overflow-hidden;
+    @apply bg-terminal-surface border-y border-terminal-border;
+    @apply py-2 px-4;
+  }
+
+  .ticker-item {
+    @apply flex items-center gap-2 whitespace-nowrap;
+    @apply font-mono text-xs;
+  }
+
+  .ticker-symbol {
+    @apply text-naija-gold font-semibold;
+  }
+
+  .ticker-price {
+    @apply text-white;
+  }
+
+  .ticker-change {
+    @apply font-medium;
+  }
+
+  .ticker-change.up {
+    @apply text-price-up;
+  }
+
+  .ticker-change.down {
+    @apply text-price-down;
+  }
+
+  /* Price Card - Information Dense */
+  .price-card {
+    @apply bg-terminal-surface border border-terminal-border;
+    @apply rounded-lg p-4;
+    @apply hover:border-naija-green/50 transition-colors;
+  }
+
+  .price-card-header {
+    @apply flex items-center justify-between mb-3;
+  }
+
+  .price-card-title {
+    @apply font-semibold text-white text-sm truncate;
+  }
+
+  .price-card-badge {
+    @apply text-2xs font-mono px-2 py-0.5 rounded;
+    @apply bg-terminal-muted text-gray-400;
+  }
+
+  .price-card-value {
+    @apply font-mono text-2xl font-bold text-white;
+  }
+
+  .price-card-change {
+    @apply flex items-center gap-1 text-sm font-medium;
+  }
+
+  .price-card-change.up {
+    @apply text-price-up;
+  }
+
+  .price-card-change.down {
+    @apply text-price-down;
+  }
+
+  .price-card-meta {
+    @apply mt-3 pt-3 border-t border-terminal-border;
+    @apply flex items-center justify-between;
+    @apply text-2xs text-gray-500 font-mono;
+  }
+
+  /* Data Table - Terminal Style */
+  .data-table {
+    @apply w-full border-collapse;
+  }
+
+  .data-table th {
+    @apply text-left text-2xs font-mono uppercase tracking-wider;
+    @apply text-gray-500 bg-terminal-surface;
+    @apply px-4 py-2 border-b border-terminal-border;
+    @apply sticky top-0 z-10;
+  }
+
+  .data-table td {
+    @apply px-4 py-3 border-b border-terminal-border/50;
+    @apply text-sm text-gray-300;
+  }
+
+  .data-table tr:hover td {
+    @apply bg-terminal-elevated;
+  }
+
+  .data-table .numeric {
+    @apply text-right font-mono tabular-nums;
+  }
+
+  .data-table .positive {
+    @apply text-price-up;
+  }
+
+  .data-table .negative {
+    @apply text-price-down;
+  }
+
+  /* Chart Container */
+  .chart-container {
+    @apply bg-terminal-surface border border-terminal-border;
+    @apply rounded-lg p-4;
+  }
+
+  .chart-header {
+    @apply flex items-center justify-between mb-4;
+  }
+
+  .chart-title {
+    @apply font-semibold text-white;
+  }
+
+  .chart-controls {
+    @apply flex items-center gap-2;
+  }
+
+  .chart-period-btn {
+    @apply px-2 py-1 text-xs font-mono;
+    @apply text-gray-400 hover:text-white;
+    @apply border border-transparent rounded;
+    @apply transition-colors;
+  }
+
+  .chart-period-btn.active {
+    @apply text-naija-gold border-naija-gold/50 bg-naija-gold/10;
+  }
+
+  /* Market Heatmap */
+  .heatmap-grid {
+    @apply grid gap-1;
+    grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+  }
+
+  .heatmap-cell {
+    @apply aspect-square flex flex-col items-center justify-center;
+    @apply rounded text-center p-2;
+    @apply font-mono text-xs;
+    @apply transition-transform hover:scale-105;
+  }
+
+  .heatmap-cell.positive {
+    @apply bg-price-up/20 text-price-up;
+  }
+
+  .heatmap-cell.negative {
+    @apply bg-price-down/20 text-price-down;
+  }
+
+  .heatmap-cell.neutral {
+    @apply bg-terminal-muted text-gray-400;
+  }
+
+  /* Status Badge */
+  .status-badge {
+    @apply inline-flex items-center gap-1 px-2 py-0.5;
+    @apply text-2xs font-medium rounded-full;
+  }
+
+  .status-badge.active {
+    @apply bg-price-up/20 text-price-up;
+  }
+
+  .status-badge.warning {
+    @apply bg-naija-gold/20 text-naija-gold;
+  }
+
+  .status-badge.error {
+    @apply bg-price-down/20 text-price-down;
+  }
+
+  .status-badge.muted {
+    @apply bg-terminal-muted text-gray-400;
+  }
+
+  /* Loading States */
+  .skeleton {
+    @apply animate-shimmer bg-gradient-to-r;
+    @apply from-terminal-muted via-terminal-border to-terminal-muted;
+    background-size: 200% 100%;
+  }
+
+  .skeleton-text {
+    @apply h-4 rounded skeleton;
+  }
+
+  .skeleton-card {
+    @apply h-32 rounded-lg skeleton;
+  }
+
+  /* Sidebar Navigation */
+  .sidebar {
+    @apply fixed left-0 top-0 bottom-0 z-40;
+    @apply w-64 bg-terminal-bg border-r border-terminal-border;
+    @apply flex flex-col;
+  }
+
+  .sidebar-logo {
+    @apply h-16 flex items-center px-4;
+    @apply border-b border-terminal-border;
+  }
+
+  .sidebar-nav {
+    @apply flex-1 overflow-y-auto py-4;
+  }
+
+  .sidebar-link {
+    @apply flex items-center gap-3 px-4 py-2.5 mx-2 rounded;
+    @apply text-sm text-gray-400 hover:text-white;
+    @apply hover:bg-terminal-elevated transition-colors;
+  }
+
+  .sidebar-link.active {
+    @apply text-naija-gold bg-naija-gold/10;
+  }
+
+  .sidebar-footer {
+    @apply p-4 border-t border-terminal-border;
+  }
+
+  /* ============================================
+     UTILITY CLASSES
+     ============================================ */
+
+  .text-gradient {
+    @apply bg-clip-text text-transparent;
+    @apply bg-gradient-to-r from-naija-green to-naija-gold;
+  }
+
+  .border-gradient {
+    @apply border border-transparent;
+    background: linear-gradient(var(--background), var(--background)) padding-box,
+                linear-gradient(135deg, #00A36C, #FFB800) border-box;
+  }
+
+  .glow-green {
+    box-shadow: 0 0 20px rgba(0, 163, 108, 0.3);
+  }
+
+  .glow-gold {
+    box-shadow: 0 0 20px rgba(255, 184, 0, 0.3);
+  }
+
+  /* Scrollbar styling */
+  .custom-scrollbar {
+    scrollbar-width: thin;
+    scrollbar-color: #2a2a2a transparent;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-thumb {
+    @apply bg-terminal-muted rounded-full;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+    @apply bg-terminal-border;
+  }
+
+  /* Focus styles */
+  .focus-ring {
+    @apply focus:outline-none focus:ring-2 focus:ring-naija-green focus:ring-offset-2 focus:ring-offset-terminal-bg;
+  }
+
+  /* Responsive table wrapper */
+  .table-wrapper {
+    @apply overflow-x-auto custom-scrollbar;
+  }
+
+  /* Grid backgrounds */
+  .grid-bg {
+    @apply bg-grid-pattern bg-[size:20px_20px];
+  }
+}
+
+@layer utilities {
+  /* Text balance for better typography */
+  .text-balance {
+    text-wrap: balance;
+  }
+
+  /* Hide scrollbar */
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* Tabular numbers for prices */
+  .tabular-nums {
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Animate on scroll */
+  .animate-on-scroll {
+    @apply opacity-0 translate-y-4 transition-all duration-500;
+  }
+
+  .animate-on-scroll.visible {
+    @apply opacity-100 translate-y-0;
+  }
+}
+
+/* ============================================
+   FONT IMPORTS
+   ============================================ */
+
+/* JetBrains Mono for terminal text */
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('https://fonts.gstatic.com/s/jetbrainsmono/v18/tDbY2o-flEEny0FZhsfKu5WU4zr3E_BX0PnT8RD8yKxjPQ.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('https://fonts.gstatic.com/s/jetbrainsmono/v18/tDbY2o-flEEny0FZhsfKu5WU4zr3E_BX0PnT8RD8-axjPQ.woff2') format('woff2');
+}
