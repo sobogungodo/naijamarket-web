@@ -8,9 +8,6 @@ export async function GET(request: NextRequest) {
 
     const data = await prisma.approved_Prices.findMany({
       take: Math.min(limit, 100),
-      orderBy: {
-        price_id: "desc",
-      },
     });
 
     return NextResponse.json({
