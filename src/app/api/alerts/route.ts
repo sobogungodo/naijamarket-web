@@ -196,7 +196,7 @@ export async function DELETE(request: NextRequest) {
     }
 
     // Soft delete - set status to DELETED
-    const result = await prisma.$executeRaw`
+     await prisma.$executeRaw`
       UPDATE Price_Alerts 
       SET status = 'DELETED', updated_at = ${new Date().toISOString()}
       WHERE alert_id = ${alertId}
