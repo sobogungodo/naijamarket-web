@@ -180,8 +180,8 @@ model ApiUsageLog {
   error_message       String?  @db.NVarChar(500)
   created_at          DateTime @default(now())
 
-  api_key ApiKeys?  @relation(fields: [api_key_id], references: [api_key_id], onDelete: SetNull)
-  user    WebUsers? @relation(fields: [web_user_id], references: [web_user_id], onDelete: SetNull)
+  api_key ApiKeys?  @relation(fields: [api_key_id], references: [api_key_id], onDelete: SetNull, onUpdate: NoAction)
+  user    WebUsers? @relation(fields: [web_user_id], references: [web_user_id], onDelete: SetNull, onUpdate: NoAction)
 
   @@index([api_key_id])
   @@index([web_user_id])
@@ -241,7 +241,7 @@ model UserActivity {
   session_id       String?  @db.VarChar(100)
   created_at       DateTime @default(now())
 
-  user WebUsers? @relation(fields: [web_user_id], references: [web_user_id], onDelete: SetNull)
+  user WebUsers? @relation(fields: [web_user_id], references: [web_user_id], onDelete: SetNull, onUpdate: NoAction)
 
   @@index([web_user_id])
   @@index([consumer_id])
@@ -279,19 +279,19 @@ model Categories {
 }
 
 model Items_Catalog {
-  item_id              String   @id @db.VarChar(20)
-  item_name            String   @db.NVarChar(200)
-  category_id          String?  @db.VarChar(20)
-  unit                 String?  @db.NVarChar(50)
-  measurement          String?  @db.NVarChar(50)
-  whole_sale_price     Decimal? @db.Decimal(18, 2)
+  item_id               String   @id @db.VarChar(20)
+  item_name             String   @db.NVarChar(200)
+  category_id           String?  @db.VarChar(20)
+  unit                  String?  @db.NVarChar(50)
+  measurement           String?  @db.NVarChar(50)
+  whole_sale_price      Decimal? @db.Decimal(18, 2)
   ave_measurement_price Decimal? @db.Decimal(18, 2)
-  average_unit_price   Decimal? @db.Decimal(18, 2)
-  status               String   @default("ACTIVE") @db.VarChar(20)
-  max_whole_sale_price Decimal? @db.Decimal(18, 2)
-  min_price            Decimal? @db.Decimal(18, 2)
-  max_price            Decimal? @db.Decimal(18, 2)
-  created_at           DateTime @default(now())
+  average_unit_price    Decimal? @db.Decimal(18, 2)
+  status                String   @default("ACTIVE") @db.VarChar(20)
+  max_whole_sale_price  Decimal? @db.Decimal(18, 2)
+  min_price             Decimal? @db.Decimal(18, 2)
+  max_price             Decimal? @db.Decimal(18, 2)
+  created_at            DateTime @default(now())
 
   @@index([category_id])
 }
@@ -423,38 +423,38 @@ model Subscription_Tiers {
 }
 
 model Consumers {
-  consumer_id                String    @id @db.VarChar(50)
-  phone_number               String    @db.VarChar(20)
-  preferred_language         String    @default("en") @db.VarChar(10)
-  first_name                 String?   @db.NVarChar(100)
-  last_name                  String?   @db.NVarChar(100)
-  full_name                  String?   @db.NVarChar(200)
-  gender                     String?   @db.VarChar(20)
-  age_range                  String?   @db.VarChar(20)
-  registration_date          DateTime  @default(now())
-  registration_source        String?   @db.VarChar(30)
-  subscription_tier          String    @default("FREE") @db.VarChar(30)
-  subscription_start         DateTime?
-  subscription_end           DateTime?
-  daily_query_limit          Int       @default(3)
-  daily_queries_used         Int       @default(0)
-  total_queries              Int       @default(0)
-  last_query_date            DateTime?
-  favorite_markets           String?   @db.NVarChar(Max)
-  favorite_items             String?   @db.NVarChar(Max)
-  max_markets                Int       @default(3)
-  queries_remaining          Int       @default(3)
-  account_status             String    @default("ACTIVE") @db.VarChar(20)
-  last_active_at             DateTime?
-  created_at                 DateTime  @default(now())
-  updated_at                 DateTime  @updatedAt
-  date_of_birth              DateTime? @db.Date
-  city                       String?   @db.NVarChar(100)
-  state                      String?   @db.NVarChar(50)
-  max_alerts                 Int       @default(5)
-  tc_accepted                Boolean   @default(false)
-  tc_accepted_at             DateTime?
-  tc_version                 String?   @db.VarChar(10)
+  consumer_id        String    @id @db.VarChar(50)
+  phone_number       String    @db.VarChar(20)
+  preferred_language String    @default("en") @db.VarChar(10)
+  first_name         String?   @db.NVarChar(100)
+  last_name          String?   @db.NVarChar(100)
+  full_name          String?   @db.NVarChar(200)
+  gender             String?   @db.VarChar(20)
+  age_range          String?   @db.VarChar(20)
+  registration_date  DateTime  @default(now())
+  registration_source String?  @db.VarChar(30)
+  subscription_tier  String    @default("FREE") @db.VarChar(30)
+  subscription_start DateTime?
+  subscription_end   DateTime?
+  daily_query_limit  Int       @default(3)
+  daily_queries_used Int       @default(0)
+  total_queries      Int       @default(0)
+  last_query_date    DateTime?
+  favorite_markets   String?   @db.NVarChar(Max)
+  favorite_items     String?   @db.NVarChar(Max)
+  max_markets        Int       @default(3)
+  queries_remaining  Int       @default(3)
+  account_status     String    @default("ACTIVE") @db.VarChar(20)
+  last_active_at     DateTime?
+  created_at         DateTime  @default(now())
+  updated_at         DateTime  @updatedAt
+  date_of_birth      DateTime? @db.Date
+  city               String?   @db.NVarChar(100)
+  state              String?   @db.NVarChar(50)
+  max_alerts         Int       @default(5)
+  tc_accepted        Boolean   @default(false)
+  tc_accepted_at     DateTime?
+  tc_version         String?   @db.VarChar(10)
 
   @@index([phone_number])
   @@index([subscription_tier])
