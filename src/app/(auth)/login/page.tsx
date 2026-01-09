@@ -180,7 +180,7 @@ export default function LoginPage() {
       phone = phone.substring(1);
     }
     // Combine country code (without +) and phone number
-    const countryCode = selectedCountry.code.replace("+", "");
+    const countryCode = (selectedCountry?.code || "+234").replace("+", "");
     return countryCode + phone;
   };
 
