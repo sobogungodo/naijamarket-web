@@ -2,7 +2,7 @@
 // NAIJAMARKET INTEL - MARKET COMPARISON API
 // File: src/app/api/compare/route.ts
 // Bloomberg Equivalent: COMP <GO>
-// Version: 1.1 - Fixed for actual Prisma schema
+// Version: 2.0 - Fully Type-Safe
 // ============================================================================
 
 import { NextRequest, NextResponse } from "next/server";
@@ -11,6 +11,8 @@ import { prisma } from "@/lib/prisma";
 // ============================================================================
 // CONFIGURATION
 // ============================================================================
+
+const DEFAULT_MAX_MARKETS = 2;
 
 const COMPARE_LIMITS: Record<string, number> = {
   FREE: 2,
@@ -22,6 +24,14 @@ const COMPARE_LIMITS: Record<string, number> = {
   OGA_BOSS: 10,
   GOVERNMENT: 10,
 };
+
+function getMaxMarkets(tier: string): number {
+  const limit = COMPARE_LIMITS[tier];
+  if (typeof limit === "number") return limit;
+  const freeLimit = COMPARE_LIMITS["FREE"];
+  if (typeof freeLimit === "number") return freeLimit;
+  return DEFAULT_MAX_MARKETS;
+}
 
 // ============================================================================
 // TYPES
@@ -80,7 +90,7 @@ export async function GET(request: NextRequest) {
       }, { status: 400 });
     }
     
-    const maxMarkets = COMPARE_LIMITS[tier] || COMPARE_LIMITS.FREE;
+    const maxMarkets: number = getMaxMarkets(tier);
     
     // Get prices from Approved_Prices matching item name
     let pricesQuery = await prisma.approved_Prices.findMany({
@@ -153,8 +163,24 @@ export async function GET(request: NextRequest) {
     const lowestMarket = marketPrices[0];
     const highestMarket = marketPrices[marketPrices.length - 1];
     
+    if (!lowestMarket || !highestMarket) {
+      return NextResponse.json({
+        success: false,
+        error: "no_prices",
+        message: "No valid prices found for comparison",
+      }, { status: 404 });
+    }
+    
     // Get item info from first price
     const firstPrice = prices[0];
+    
+    if (!firstPrice) {
+      return NextResponse.json({
+        success: false,
+        error: "no_prices",
+        message: "No valid prices found",
+      }, { status: 404 });
+    }
     
     const result: ComparisonResult = {
       item: {
@@ -218,7 +244,7 @@ export async function POST(request: NextRequest) {
       }, { status: 400 });
     }
     
-    const maxMarkets = COMPARE_LIMITS[tier.toUpperCase()] || COMPARE_LIMITS.FREE;
+    const maxMarkets: number = getMaxMarkets(tier.toUpperCase());
     const selectedMarkets = markets.slice(0, maxMarkets);
     
     const comparisons: ComparisonResult[] = [];
@@ -230,28 +256,30 @@ export async function POST(request: NextRequest) {
           validation_status: "APPROVED",
           item_name: { contains: itemName },
           price: { not: null },
-          OR: selectedMarkets.map(m => ({
-            OR: [
-              { market_id: m },
-              { market_name: { contains: m } },
-            ],
-          })),
         },
         orderBy: {
           price: "asc",
         },
       });
       
-      if (prices.length === 0) continue;
+      // Filter by selected markets
+      const filteredPrices = prices.filter(p => 
+        selectedMarkets.some(m => 
+          p.market_id === m || 
+          (p.market_name && p.market_name.toLowerCase().includes(m.toLowerCase()))
+        )
+      );
       
-      const priceValues = prices.map(p => Number(p.price || 0)).filter(p => p > 0);
+      if (filteredPrices.length === 0) continue;
+      
+      const priceValues = filteredPrices.map(p => Number(p.price || 0)).filter(p => p > 0);
       if (priceValues.length === 0) continue;
       
       const lowestPrice = Math.min(...priceValues);
       const highestPrice = Math.max(...priceValues);
       const averagePrice = priceValues.reduce((a, b) => a + b, 0) / priceValues.length;
       
-      const marketPrices: MarketPrice[] = prices.map((p, index) => {
+      const marketPrices: MarketPrice[] = filteredPrices.map((p, index) => {
         const price = Number(p.price || 0);
         const savings = highestPrice - price;
         const savingsPct = highestPrice > 0 ? (savings / highestPrice) * 100 : 0;
@@ -270,7 +298,11 @@ export async function POST(request: NextRequest) {
         };
       });
       
-      const firstPrice = prices[0];
+      const firstPrice = filteredPrices[0];
+      const lowestMarket = marketPrices[0];
+      const highestMarket = marketPrices[marketPrices.length - 1];
+      
+      if (!firstPrice || !lowestMarket || !highestMarket) continue;
       
       comparisons.push({
         item: {
@@ -279,16 +311,16 @@ export async function POST(request: NextRequest) {
           category: firstPrice.category_name || "",
           unit: firstPrice.unit || "unit",
         },
-        lowestPrice: marketPrices[0],
-        highestPrice: marketPrices[marketPrices.length - 1],
+        lowestPrice: lowestMarket,
+        highestPrice: highestMarket,
         averagePrice: Math.round(averagePrice),
         priceRange: Math.round(highestPrice - lowestPrice),
         markets: marketPrices,
         maxSavings: {
           amount: Math.round(highestPrice - lowestPrice),
           percentage: Math.round(((highestPrice - lowestPrice) / highestPrice) * 1000) / 10,
-          fromMarket: marketPrices[marketPrices.length - 1].marketName,
-          toMarket: marketPrices[0].marketName,
+          fromMarket: highestMarket.marketName,
+          toMarket: lowestMarket.marketName,
         },
       });
     }

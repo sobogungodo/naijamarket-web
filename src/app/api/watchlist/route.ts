@@ -2,30 +2,21 @@
 // NAIJAMARKET INTEL - WATCHLIST / FAVORITES API
 // File: src/app/api/watchlist/route.ts
 // Bloomberg Equivalent: MOST <GO>
-// Version: 1.1 - Fixed for actual Prisma schema
+// Version: 2.0 - Fully Type-Safe
 // ============================================================================
 
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
 // ============================================================================
-// CONFIGURATION
-// ============================================================================
-
-const WATCHLIST_LIMITS: Record<string, { markets: number; items: number; alerts: number }> = {
-  FREE: { markets: 0, items: 0, alerts: 0 },
-  SILVER: { markets: 1, items: 3, alerts: 1 },
-  GOLD: { markets: 3, items: 10, alerts: 5 },
-  BUSINESS: { markets: 5, items: 20, alerts: 10 },
-  CORPORATE: { markets: 7, items: 30, alerts: 15 },
-  ENTERPRISE: { markets: -1, items: -1, alerts: -1 },
-  OGA_BOSS: { markets: -1, items: -1, alerts: -1 },
-  GOVERNMENT: { markets: -1, items: -1, alerts: -1 },
-};
-
-// ============================================================================
 // TYPES
 // ============================================================================
+
+interface WatchlistLimits {
+  markets: number;
+  items: number;
+  alerts: number;
+}
 
 interface WatchlistItem {
   id: string;
@@ -53,6 +44,31 @@ interface WatchlistSummary {
   };
   canAddMarket: boolean;
   canAddItem: boolean;
+}
+
+// ============================================================================
+// CONFIGURATION
+// ============================================================================
+
+const DEFAULT_LIMITS: WatchlistLimits = { markets: 0, items: 0, alerts: 0 };
+
+const WATCHLIST_LIMITS: Record<string, WatchlistLimits> = {
+  FREE: { markets: 0, items: 0, alerts: 0 },
+  SILVER: { markets: 1, items: 3, alerts: 1 },
+  GOLD: { markets: 3, items: 10, alerts: 5 },
+  BUSINESS: { markets: 5, items: 20, alerts: 10 },
+  CORPORATE: { markets: 7, items: 30, alerts: 15 },
+  ENTERPRISE: { markets: -1, items: -1, alerts: -1 },
+  OGA_BOSS: { markets: -1, items: -1, alerts: -1 },
+  GOVERNMENT: { markets: -1, items: -1, alerts: -1 },
+};
+
+function getWatchlistLimits(tier: string): WatchlistLimits {
+  const limits = WATCHLIST_LIMITS[tier];
+  if (limits) return limits;
+  const freeLimits = WATCHLIST_LIMITS["FREE"];
+  if (freeLimits) return freeLimits;
+  return DEFAULT_LIMITS;
 }
 
 // ============================================================================
@@ -110,11 +126,14 @@ export async function GET(request: NextRequest) {
     
     // Get limits
     const actualTier = consumer.subscription_tier?.toUpperCase() || tier;
-    const limits = WATCHLIST_LIMITS[actualTier] || WATCHLIST_LIMITS.FREE;
+    const limits = getWatchlistLimits(actualTier);
     
     // Parse favorites (assuming these columns exist in Consumers table)
-    const favoriteMarkets = parseWatchlist(consumer.favorite_markets as string);
-    const favoriteItems = parseWatchlist(consumer.favorite_items as string);
+    const favoriteMarketsRaw = (consumer as Record<string, unknown>).favorite_markets;
+    const favoriteItemsRaw = (consumer as Record<string, unknown>).favorite_items;
+    
+    const favoriteMarkets = parseWatchlist(typeof favoriteMarketsRaw === 'string' ? favoriteMarketsRaw : null);
+    const favoriteItems = parseWatchlist(typeof favoriteItemsRaw === 'string' ? favoriteItemsRaw : null);
     
     const response: WatchlistSummary = {
       markets: [],
@@ -266,13 +285,17 @@ export async function POST(request: NextRequest) {
     
     // Get limits
     const tier = consumer.subscription_tier?.toUpperCase() || "FREE";
-    const limits = WATCHLIST_LIMITS[tier] || WATCHLIST_LIMITS.FREE;
+    const limits = getWatchlistLimits(tier);
     
     // Check if allowed
     const limitKey = type === "market" ? "markets" : "items";
+    
+    const favoriteMarketsRaw = (consumer as Record<string, unknown>).favorite_markets;
+    const favoriteItemsRaw = (consumer as Record<string, unknown>).favorite_items;
+    
     const currentList = type === "market"
-      ? parseWatchlist(consumer.favorite_markets as string)
-      : parseWatchlist(consumer.favorite_items as string);
+      ? parseWatchlist(typeof favoriteMarketsRaw === 'string' ? favoriteMarketsRaw : null)
+      : parseWatchlist(typeof favoriteItemsRaw === 'string' ? favoriteItemsRaw : null);
     
     const limit = limits[limitKey];
     
@@ -432,9 +455,12 @@ export async function DELETE(request: NextRequest) {
     }
     
     // Get current list
+    const favoriteMarketsRaw = (consumer as Record<string, unknown>).favorite_markets;
+    const favoriteItemsRaw = (consumer as Record<string, unknown>).favorite_items;
+    
     const currentList = type === "market"
-      ? parseWatchlist(consumer.favorite_markets as string)
-      : parseWatchlist(consumer.favorite_items as string);
+      ? parseWatchlist(typeof favoriteMarketsRaw === 'string' ? favoriteMarketsRaw : null)
+      : parseWatchlist(typeof favoriteItemsRaw === 'string' ? favoriteItemsRaw : null);
     
     // Find and remove
     const index = currentList.indexOf(targetName);
