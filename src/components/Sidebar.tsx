@@ -17,8 +17,6 @@ import {
   LogOut,
   TrendingUp,
   GitCompare,
-  ChevronDown,
-  ChevronRight,
   Menu,
   X,
 } from "lucide-react";
