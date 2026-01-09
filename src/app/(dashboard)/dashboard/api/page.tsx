@@ -139,11 +139,12 @@ export default function APIKeysPage() {
     if (!newKeyName.trim()) return;
 
     const key = generateKey();
+    const today = new Date().toISOString().slice(0, 10);
     const newApiKey: APIKey = {
       id: Date.now().toString(),
       name: newKeyName,
       key,
-      created: new Date().toISOString().split('T')[0],
+      created: today,
       lastUsed: null,
       requests: 0,
       status: "active",

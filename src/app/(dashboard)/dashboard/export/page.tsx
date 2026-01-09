@@ -137,7 +137,8 @@ export default function ExportDataPage() {
       await new Promise(resolve => setTimeout(resolve, 2000));
 
       const option = EXPORT_OPTIONS.find(o => o.id === selectedExport);
-      const filename = `${selectedExport}_${new Date().toISOString().split('T')[0]}.${selectedFormat.toLowerCase()}`;
+      const dateStr = new Date().toISOString().slice(0, 10);
+      const filename = `${selectedExport}_${dateStr}.${selectedFormat.toLowerCase()}`;
       
       // Add to history
       setExportHistory(prev => [{
