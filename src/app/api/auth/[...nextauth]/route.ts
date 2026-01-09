@@ -106,7 +106,7 @@ const authOptions: NextAuthOptions = {
   },
 
   callbacks: {
-    async jwt({ token, user, trigger }) {
+    async jwt({ token, user }) {
       // On initial sign in, store user data in token
       if (user) {
         token.id = user.id;
