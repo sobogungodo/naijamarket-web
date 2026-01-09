@@ -6,9 +6,7 @@ import {
   BarChart3,
   TrendingUp,
   TrendingDown,
-  Minus,
   RefreshCw,
-  Calendar,
   MapPin,
   Package,
   Activity,
@@ -19,8 +17,6 @@ import {
   ArrowDownRight,
 } from "lucide-react";
 import {
-  LineChart,
-  Line,
   AreaChart,
   Area,
   BarChart,
@@ -32,7 +28,6 @@ import {
   YAxis,
   CartesianGrid,
   Tooltip,
-  Legend,
   ResponsiveContainer,
 } from "recharts";
 
