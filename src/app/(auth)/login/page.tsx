@@ -177,7 +177,7 @@ export default function LoginPage() {
       phone = phone.substring(1);
     }
     // Combine country code (without +) and phone number
-    return selectedCountry.code.replace("+", "") + phone;
+    return selectedCountry?.code?.replace("+", "") + phone;
   };
 
   const handleSendOTP = async (e: React.FormEvent) => {
