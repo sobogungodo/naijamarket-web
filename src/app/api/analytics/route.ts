@@ -169,7 +169,7 @@ function calculateDailyTrends(priceData: any[], days: number) {
 }
 
 // Helper: Calculate regional price indices
-function calculateRegionalIndices(priceData: any[], marketStats: any[]) {
+function calculateRegionalIndices(_priceData: any[], marketStats: any[]) {
   const regions = ["NW", "NE", "NC", "SW", "SE", "SS"];
   const regionNames: Record<string, string> = {
     NW: "North West",
@@ -182,9 +182,6 @@ function calculateRegionalIndices(priceData: any[], marketStats: any[]) {
 
   return regions.map((region) => {
     const regionMarkets = marketStats.filter((m) => m.region === region);
-    const avgPrice = regionMarkets.length > 0
-      ? regionMarkets.reduce((sum, m) => sum + (parseFloat(m.avg_price) || 0), 0) / regionMarkets.length
-      : 50000;
 
     // Generate realistic index based on region
     const baseIndex: Record<string, number> = {
