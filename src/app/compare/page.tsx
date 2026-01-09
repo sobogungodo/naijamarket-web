@@ -393,7 +393,7 @@ function ComparisonResults({ result, onReset }: { result: ComparisonResult; onRe
 // ============================================================================
 
 export default function ComparePage() {
-  const { data: session, status } = useSession();
+  const { data: session } = useSession();
   
   // Step tracking
   const [step, setStep] = useState<"category" | "item" | "markets" | "results">("category");
