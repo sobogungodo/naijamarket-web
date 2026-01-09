@@ -454,7 +454,7 @@ export function YourActivityWidget({ phone, tier = "FREE" }: WidgetProps) {
               >
                 <div className="flex items-center gap-2">
                   <span className="text-emerald-400 font-mono text-sm">
-                    {item.targetName.split(" ")[0].toUpperCase().slice(0, 4)}
+                    {(item.targetName.split(" ")[0] || item.targetName).toUpperCase().slice(0, 4)}
                     .
                     {item.state?.slice(0, 3).toUpperCase() || "NGN"}
                   </span>
