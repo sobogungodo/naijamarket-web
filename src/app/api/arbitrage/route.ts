@@ -129,7 +129,7 @@ function getTransportCost(fromMarket: string, toMarket: string): {
   
   const routeKey1 = `${from.state}-${to.state}`;
   const routeKey2 = `${to.state}-${from.state}`;
-  const riskPremium = ROUTE_RISKS[routeKey1] || ROUTE_RISKS[routeKey2] || ROUTE_RISKS.DEFAULT;
+  const riskPremium: number = ROUTE_RISKS[routeKey1] ?? ROUTE_RISKS[routeKey2] ?? ROUTE_RISKS.DEFAULT ?? 0;
   
   return {
     distance: Math.round(distance),
