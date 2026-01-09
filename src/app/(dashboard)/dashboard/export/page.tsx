@@ -14,6 +14,7 @@ import {
   Lock,
   Clock,
   TrendingUp,
+  AlertCircle,
 } from "lucide-react";
 
 // ============================================================================
@@ -38,49 +39,44 @@ const TIER_HIERARCHY = ["FREE", "SILVER", "GOLD", "BUSINESS", "CORPORATE", "ENTE
 
 const EXPORT_OPTIONS: ExportOption[] = [
   {
-    id: "prices",
-    name: "Price Data",
-    description: "Current and historical commodity prices across all markets",
-    icon: TrendingUp,
-    formats: ["CSV", "XLSX", "JSON"],
-    requiredTier: ["GOLD", "BUSINESS", "CORPORATE", "ENTERPRISE", "OGA_BOSS", "GOVERNMENT"],
-    estimatedRows: "~50,000 records",
-  },
-  {
     id: "markets",
     name: "Market Directory",
     description: "Complete list of markets with locations, coordinates, and operating hours",
     icon: MapPin,
-    formats: ["CSV", "XLSX", "JSON"],
+    formats: ["CSV", "JSON"],
     requiredTier: ["SILVER", "GOLD", "BUSINESS", "CORPORATE", "ENTERPRISE", "OGA_BOSS", "GOVERNMENT"],
-    estimatedRows: "226 markets",
   },
   {
     id: "items",
     name: "Items Catalog",
     description: "Full commodity catalog with categories, units, and baseline prices",
     icon: Package,
-    formats: ["CSV", "XLSX", "JSON"],
+    formats: ["CSV", "JSON"],
     requiredTier: ["SILVER", "GOLD", "BUSINESS", "CORPORATE", "ENTERPRISE", "OGA_BOSS", "GOVERNMENT"],
-    estimatedRows: "524 items",
+  },
+  {
+    id: "prices",
+    name: "Price Data",
+    description: "Current and historical commodity prices across all markets",
+    icon: TrendingUp,
+    formats: ["CSV", "JSON"],
+    requiredTier: ["GOLD", "BUSINESS", "CORPORATE", "ENTERPRISE", "OGA_BOSS", "GOVERNMENT"],
   },
   {
     id: "trends",
     name: "Price Trends",
     description: "Historical price trends and volatility analysis by item and region",
     icon: TrendingUp,
-    formats: ["CSV", "XLSX"],
+    formats: ["CSV", "JSON"],
     requiredTier: ["BUSINESS", "CORPORATE", "ENTERPRISE", "OGA_BOSS", "GOVERNMENT"],
-    estimatedRows: "~100,000 records",
   },
   {
     id: "regional",
     name: "Regional Report",
     description: "Aggregated price indices and statistics by Nigerian region",
     icon: MapPin,
-    formats: ["CSV", "XLSX", "PDF"],
+    formats: ["CSV", "JSON"],
     requiredTier: ["BUSINESS", "CORPORATE", "ENTERPRISE", "OGA_BOSS", "GOVERNMENT"],
-    estimatedRows: "6 regions × 30 days",
   },
 ];
 
@@ -89,7 +85,6 @@ const DATE_RANGES = [
   { id: "30d", label: "Last 30 days" },
   { id: "90d", label: "Last 90 days" },
   { id: "1y", label: "Last year" },
-  { id: "all", label: "All time" },
 ];
 
 // ============================================================================
@@ -115,53 +110,98 @@ export default function ExportDataPage() {
   const [dateRange, setDateRange] = useState<string>("30d");
   const [isExporting, setIsExporting] = useState(false);
   const [exportSuccess, setExportSuccess] = useState<string | null>(null);
-  const [exportHistory, setExportHistory] = useState<{id: string; name: string; date: string; size: string}[]>([
-    { id: "1", name: "prices_2026-01-08.csv", date: "2026-01-08 14:32", size: "2.4 MB" },
-    { id: "2", name: "markets_2026-01-07.xlsx", date: "2026-01-07 09:15", size: "156 KB" },
-    { id: "3", name: "items_catalog_2026-01-05.json", date: "2026-01-05 16:45", size: "89 KB" },
-  ]);
+  const [exportError, setExportError] = useState<string | null>(null);
+  const [preview, setPreview] = useState<{ rowCount: number; estimatedSize: string } | null>(null);
+  const [exportHistory, setExportHistory] = useState<{id: string; name: string; date: string; size: string}[]>([]);
 
-  // Get user tier
-  const user = session?.user as { tier?: string } | undefined;
+  const user = session?.user as { tier?: string; phone?: string } | undefined;
   const userTier = user?.tier || "FREE";
+  const canExportAnything = EXPORT_OPTIONS.some(opt => hasTierAccess(userTier, opt.requiredTier));
 
-  // Handle export
+  // Fetch preview when selection changes
+  const fetchPreview = async (type: string) => {
+    try {
+      const response = await fetch("/api/export", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type, range: dateRange, tier: userTier }),
+      });
+      const data = await response.json();
+      if (data.success) {
+        setPreview(data.preview);
+      }
+    } catch (err) {
+      console.error("Preview fetch error:", err);
+    }
+  };
+
+  // Handle export selection
+  const handleSelectExport = (id: string) => {
+    setSelectedExport(id);
+    setExportSuccess(null);
+    setExportError(null);
+    fetchPreview(id);
+  };
+
+  // Handle actual export/download
   const handleExport = async () => {
     if (!selectedExport) return;
 
     setIsExporting(true);
     setExportSuccess(null);
+    setExportError(null);
 
     try {
-      // Simulate export process
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      const params = new URLSearchParams({
+        type: selectedExport,
+        format: selectedFormat,
+        range: dateRange,
+        tier: userTier,
+      });
 
-      const option = EXPORT_OPTIONS.find(o => o.id === selectedExport);
-      const dateStr = new Date().toISOString().slice(0, 10);
-      const filename = `${selectedExport}_${dateStr}.${selectedFormat.toLowerCase()}`;
-      
+      const response = await fetch(`/api/export?${params}`);
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || "Export failed");
+      }
+
+      // Get the filename from Content-Disposition header
+      const disposition = response.headers.get("Content-Disposition");
+      const filenameMatch = disposition?.match(/filename="(.+)"/);
+      const filename = filenameMatch ? filenameMatch[1] : `export_${selectedExport}.${selectedFormat.toLowerCase()}`;
+
+      // Get rows exported
+      const rowsExported = response.headers.get("X-Rows-Exported") || "0";
+
+      // Download the file
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+
       // Add to history
       setExportHistory(prev => [{
         id: Date.now().toString(),
         name: filename,
         date: new Date().toLocaleString(),
-        size: Math.floor(Math.random() * 5000 + 100) + " KB",
+        size: `${rowsExported} rows`,
       }, ...prev.slice(0, 9)]);
 
-      setExportSuccess(`Successfully exported ${option?.name} as ${selectedFormat}`);
-      
-      // In real implementation, trigger download here
-      // window.location.href = `/api/export?type=${selectedExport}&format=${selectedFormat}&range=${dateRange}`;
-      
-    } catch (error) {
-      console.error("Export failed:", error);
+      setExportSuccess(`Successfully exported ${rowsExported} rows as ${selectedFormat}`);
+
+    } catch (error: any) {
+      console.error("Export error:", error);
+      setExportError(error.message || "Export failed");
     } finally {
       setIsExporting(false);
     }
   };
-
-  // Check if user can export at all
-  const canExportAnything = EXPORT_OPTIONS.some(opt => hasTierAccess(userTier, opt.requiredTier));
 
   return (
     <div className="min-h-screen bg-[#0a0a0a] p-6">
@@ -184,7 +224,7 @@ export default function ExportDataPage() {
             <div>
               <h3 className="text-amber-400 font-semibold text-lg">Upgrade Required</h3>
               <p className="text-gray-300 mt-1">
-                Data export is available for SILVER tier and above. Upgrade your subscription to access bulk data downloads.
+                Data export is available for SILVER tier and above.
               </p>
               <button className="mt-4 px-6 py-2 bg-amber-500 text-black font-medium rounded-lg hover:bg-amber-400 transition-colors">
                 Upgrade to SILVER
@@ -207,7 +247,7 @@ export default function ExportDataPage() {
             return (
               <div
                 key={option.id}
-                onClick={() => hasAccess && setSelectedExport(option.id)}
+                onClick={() => hasAccess && handleSelectExport(option.id)}
                 className={`
                   relative bg-[#1a1a1a] border rounded-xl p-4 transition-all
                   ${isSelected ? "border-emerald-500 bg-emerald-500/5" : "border-gray-800"}
@@ -231,16 +271,16 @@ export default function ExportDataPage() {
                         <FileSpreadsheet className="w-3.5 h-3.5 text-gray-500" />
                         <span className="text-xs text-gray-500">{option.formats.join(", ")}</span>
                       </div>
-                      <div className="flex items-center gap-1">
-                        <Package className="w-3.5 h-3.5 text-gray-500" />
-                        <span className="text-xs text-gray-500">{option.estimatedRows}</span>
-                      </div>
+                      {isSelected && preview && (
+                        <div className="flex items-center gap-1">
+                          <Package className="w-3.5 h-3.5 text-emerald-400" />
+                          <span className="text-xs text-emerald-400">~{preview.rowCount.toLocaleString()} rows</span>
+                        </div>
+                      )}
                     </div>
                   </div>
 
-                  {isSelected && (
-                    <CheckCircle2 className="w-5 h-5 text-emerald-400" />
-                  )}
+                  {isSelected && <CheckCircle2 className="w-5 h-5 text-emerald-400" />}
                 </div>
 
                 {!hasAccess && (
@@ -255,26 +295,22 @@ export default function ExportDataPage() {
           })}
         </div>
 
-        {/* Export Configuration */}
+        {/* Configuration Panel */}
         <div className="space-y-6">
-          {/* Format Selection */}
+          {/* Format */}
           <div className="bg-[#1a1a1a] border border-gray-800 rounded-xl p-4">
             <h3 className="text-white font-medium mb-4 flex items-center gap-2">
               <FileText className="w-4 h-4 text-gray-400" />
               Export Format
             </h3>
-            <div className="grid grid-cols-3 gap-2">
-              {["CSV", "XLSX", "JSON"].map((format) => (
+            <div className="grid grid-cols-2 gap-2">
+              {["CSV", "JSON"].map((format) => (
                 <button
                   key={format}
                   onClick={() => setSelectedFormat(format)}
                   disabled={!canExportAnything}
-                  className={`
-                    py-2 px-3 rounded-lg text-sm font-medium transition-colors
-                    ${selectedFormat === format
-                      ? "bg-emerald-500 text-white"
-                      : "bg-gray-800 text-gray-400 hover:bg-gray-700"
-                    }
+                  className={`py-2 px-3 rounded-lg text-sm font-medium transition-colors
+                    ${selectedFormat === format ? "bg-emerald-500 text-white" : "bg-gray-800 text-gray-400 hover:bg-gray-700"}
                     disabled:opacity-50 disabled:cursor-not-allowed
                   `}
                 >
@@ -294,12 +330,14 @@ export default function ExportDataPage() {
               {DATE_RANGES.map((range) => (
                 <button
                   key={range.id}
-                  onClick={() => setDateRange(range.id)}
+                  onClick={() => {
+                    setDateRange(range.id);
+                    if (selectedExport) fetchPreview(selectedExport);
+                  }}
                   disabled={!canExportAnything}
-                  className={`
-                    w-full py-2 px-3 rounded-lg text-sm text-left transition-colors
-                    ${dateRange === range.id
-                      ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"
+                  className={`w-full py-2 px-3 rounded-lg text-sm text-left transition-colors
+                    ${dateRange === range.id 
+                      ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30" 
                       : "bg-gray-800 text-gray-400 hover:bg-gray-700 border border-transparent"
                     }
                     disabled:opacity-50 disabled:cursor-not-allowed
@@ -315,8 +353,7 @@ export default function ExportDataPage() {
           <button
             onClick={handleExport}
             disabled={!selectedExport || isExporting || !canExportAnything}
-            className={`
-              w-full py-3 rounded-xl font-medium transition-all flex items-center justify-center gap-2
+            className={`w-full py-3 rounded-xl font-medium transition-all flex items-center justify-center gap-2
               ${selectedExport && canExportAnything
                 ? "bg-emerald-500 text-white hover:bg-emerald-600"
                 : "bg-gray-800 text-gray-500 cursor-not-allowed"
@@ -336,54 +373,56 @@ export default function ExportDataPage() {
             )}
           </button>
 
-          {/* Success Message */}
+          {/* Success/Error Messages */}
           {exportSuccess && (
             <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-lg p-3 flex items-center gap-2">
               <CheckCircle2 className="w-4 h-4 text-emerald-400" />
               <span className="text-emerald-400 text-sm">{exportSuccess}</span>
             </div>
           )}
+          {exportError && (
+            <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-3 flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 text-red-400" />
+              <span className="text-red-400 text-sm">{exportError}</span>
+            </div>
+          )}
         </div>
       </div>
 
       {/* Export History */}
-      <div className="mt-8">
-        <h2 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
-          <Clock className="w-5 h-5 text-gray-400" />
-          Recent Exports
-        </h2>
-        <div className="bg-[#1a1a1a] border border-gray-800 rounded-xl overflow-hidden">
-          <table className="w-full">
-            <thead>
-              <tr className="border-b border-gray-800">
-                <th className="text-left text-gray-400 text-xs font-medium px-4 py-3">Filename</th>
-                <th className="text-left text-gray-400 text-xs font-medium px-4 py-3">Date</th>
-                <th className="text-left text-gray-400 text-xs font-medium px-4 py-3">Size</th>
-                <th className="text-right text-gray-400 text-xs font-medium px-4 py-3">Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              {exportHistory.map((item) => (
-                <tr key={item.id} className="border-b border-gray-800 last:border-0 hover:bg-gray-800/50">
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-2">
-                      <FileSpreadsheet className="w-4 h-4 text-emerald-400" />
-                      <span className="text-white text-sm">{item.name}</span>
-                    </div>
-                  </td>
-                  <td className="px-4 py-3 text-gray-400 text-sm">{item.date}</td>
-                  <td className="px-4 py-3 text-gray-400 text-sm">{item.size}</td>
-                  <td className="px-4 py-3 text-right">
-                    <button className="text-emerald-400 hover:text-emerald-300 text-sm">
-                      Download
-                    </button>
-                  </td>
+      {exportHistory.length > 0 && (
+        <div className="mt-8">
+          <h2 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+            <Clock className="w-5 h-5 text-gray-400" />
+            Recent Exports
+          </h2>
+          <div className="bg-[#1a1a1a] border border-gray-800 rounded-xl overflow-hidden">
+            <table className="w-full">
+              <thead>
+                <tr className="border-b border-gray-800">
+                  <th className="text-left text-gray-400 text-xs font-medium px-4 py-3">Filename</th>
+                  <th className="text-left text-gray-400 text-xs font-medium px-4 py-3">Date</th>
+                  <th className="text-left text-gray-400 text-xs font-medium px-4 py-3">Size</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {exportHistory.map((item) => (
+                  <tr key={item.id} className="border-b border-gray-800 last:border-0 hover:bg-gray-800/50">
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2">
+                        <FileSpreadsheet className="w-4 h-4 text-emerald-400" />
+                        <span className="text-white text-sm">{item.name}</span>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 text-gray-400 text-sm">{item.date}</td>
+                    <td className="px-4 py-3 text-gray-400 text-sm">{item.size}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }
