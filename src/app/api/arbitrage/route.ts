@@ -2,7 +2,7 @@
 // NAIJAMARKET INTEL - ARBITRAGE OPPORTUNITIES API
 // File: src/app/api/arbitrage/route.ts
 // Bloomberg Equivalent: ARBI <GO>
-// Version: 1.0
+// Version: 1.1 - Fixed for actual Prisma schema
 // ============================================================================
 
 import { NextRequest, NextResponse } from "next/server";
@@ -63,12 +63,10 @@ const TRANSPORT_COSTS = {
 
 // Risk premiums for certain routes
 const ROUTE_RISKS: Record<string, number> = {
-  // Northern routes have higher security costs
   "Lagos-Kano": 1500,
   "Lagos-Kaduna": 1500,
   "Abuja-Kano": 1000,
   "Abuja-Kaduna": 500,
-  // Default
   DEFAULT: 0,
 };
 
@@ -88,11 +86,8 @@ const TIER_ACCESS: Record<string, { hasAccess: boolean; minProfitPct: number; ma
 // HELPER FUNCTIONS
 // ============================================================================
 
-/**
- * Calculate distance between two points using Haversine formula
- */
 function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
-  const R = 6371; // Earth's radius in kilometers
+  const R = 6371;
   const dLat = (lat2 - lat1) * (Math.PI / 180);
   const dLon = (lon2 - lon1) * (Math.PI / 180);
   
@@ -105,9 +100,6 @@ function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: numbe
   return R * c;
 }
 
-/**
- * Get transport cost between two markets
- */
 function getTransportCost(fromMarket: string, toMarket: string): {
   distance: number;
   baseCost: number;
@@ -119,12 +111,11 @@ function getTransportCost(fromMarket: string, toMarket: string): {
   const to = MARKET_COORDINATES[toMarket];
   
   if (!from || !to) {
-    return { distance: 0, baseCost: 0, riskPremium: 0, totalCost: 0, label: "Unknown" };
+    return { distance: 0, baseCost: 2500, riskPremium: 0, totalCost: 2500, label: "Estimated" };
   }
   
   const distance = calculateDistance(from.lat, from.lon, to.lat, to.lon);
   
-  // Determine transport tier
   let baseCost = TRANSPORT_COSTS.CROSS_COUNTRY.costPer50kg;
   let label = TRANSPORT_COSTS.CROSS_COUNTRY.label;
   
@@ -136,7 +127,6 @@ function getTransportCost(fromMarket: string, toMarket: string): {
     }
   }
   
-  // Check for route-specific risk premiums
   const routeKey1 = `${from.state}-${to.state}`;
   const routeKey2 = `${to.state}-${from.state}`;
   const riskPremium = ROUTE_RISKS[routeKey1] || ROUTE_RISKS[routeKey2] || ROUTE_RISKS.DEFAULT;
@@ -150,12 +140,11 @@ function getTransportCost(fromMarket: string, toMarket: string): {
   };
 }
 
-/**
- * Calculate confidence score based on data freshness
- */
-function calculateConfidence(updatedAt: Date): { score: number; label: string; color: string } {
+function calculateConfidence(validatedAt: Date | null): { score: number; label: string; color: string } {
+  if (!validatedAt) return { score: 50, label: "Unknown", color: "gray" };
+  
   const now = new Date();
-  const hoursOld = (now.getTime() - updatedAt.getTime()) / (1000 * 60 * 60);
+  const hoursOld = (now.getTime() - validatedAt.getTime()) / (1000 * 60 * 60);
   const daysOld = hoursOld / 24;
   
   if (daysOld < 1) {
@@ -174,7 +163,7 @@ function calculateConfidence(updatedAt: Date): { score: number; label: string; c
 }
 
 // ============================================================================
-// ARBITRAGE OPPORTUNITY FINDER
+// TYPES
 // ============================================================================
 
 interface ArbitrageOpportunity {
@@ -210,48 +199,35 @@ interface ArbitrageOpportunity {
   transportLabel: string;
 }
 
+// ============================================================================
+// ARBITRAGE FINDER
+// ============================================================================
+
 async function findArbitrageOpportunities(
   minProfitPct: number = 0,
   maxResults: number = 50,
   filterItem?: string,
   filterCategory?: string
 ): Promise<ArbitrageOpportunity[]> {
-  // Get all prices with market and item info
-  const prices = await prisma.prices.findMany({
+  // Get all approved prices from Approved_Prices table
+  const prices = await prisma.approved_Prices.findMany({
     where: {
-      validated: true,
+      validation_status: "APPROVED",
+      price: { not: null },
       ...(filterItem && {
-        Items: {
-          item_name: {
-            contains: filterItem,
-          },
-        },
+        item_name: { contains: filterItem },
       }),
       ...(filterCategory && {
-        Items: {
-          Categories: {
-            category_name: {
-              contains: filterCategory,
-            },
-          },
-        },
+        category_name: { contains: filterCategory },
       }),
-    },
-    include: {
-      Items: {
-        include: {
-          Categories: true,
-        },
-      },
-      Markets: true,
     },
   });
 
-  // Group prices by item
+  // Group prices by item_id
   const pricesByItem: Record<string, typeof prices> = {};
   
   for (const price of prices) {
-    const itemId = price.item_id;
+    const itemId = price.item_id || price.item_name || "unknown";
     if (!pricesByItem[itemId]) {
       pricesByItem[itemId] = [];
     }
@@ -275,15 +251,13 @@ async function findArbitrageOpportunities(
         const buyPrice = sorted[i];
         const sellPrice = sorted[j];
         
-        if (!buyPrice.Markets || !sellPrice.Markets) continue;
-        
         const buyPriceNum = Number(buyPrice.price || 0);
         const sellPriceNum = Number(sellPrice.price || 0);
         
         if (buyPriceNum <= 0 || sellPriceNum <= buyPriceNum) continue;
 
-        const buyMarketName = buyPrice.Markets.market_name || "";
-        const sellMarketName = sellPrice.Markets.market_name || "";
+        const buyMarketName = buyPrice.market_name || "Unknown";
+        const sellMarketName = sellPrice.market_name || "Unknown";
         
         // Calculate transport cost
         const transport = getTransportCost(buyMarketName, sellMarketName);
@@ -296,33 +270,33 @@ async function findArbitrageOpportunities(
         // Filter by minimum profit percentage
         if (profitPct < minProfitPct) continue;
         
-        // Calculate confidence (average of both prices)
-        const buyConfidence = calculateConfidence(new Date(buyPrice.updated_at || new Date()));
-        const sellConfidence = calculateConfidence(new Date(sellPrice.updated_at || new Date()));
+        // Calculate confidence
+        const buyConfidence = calculateConfidence(buyPrice.validated_at);
+        const sellConfidence = calculateConfidence(sellPrice.validated_at);
         const avgConfidence = Math.round((buyConfidence.score + sellConfidence.score) / 2);
         
         const confidenceLabel = avgConfidence >= 75 ? "High" : avgConfidence >= 50 ? "Medium" : "Low";
         const confidenceColor = avgConfidence >= 75 ? "green" : avgConfidence >= 50 ? "yellow" : "red";
 
         opportunities.push({
-          id: `${itemId}-${buyPrice.market_id}-${sellPrice.market_id}`,
-          itemId: itemId,
-          itemName: buyPrice.Items?.item_name || "Unknown",
-          categoryName: buyPrice.Items?.Categories?.category_name || "Unknown",
-          unit: buyPrice.unit || buyPrice.Items?.unit || "unit",
+          id: `${itemId}-${buyPrice.market_id || i}-${sellPrice.market_id || j}`,
+          itemId: buyPrice.item_id || "",
+          itemName: buyPrice.item_name || "Unknown",
+          categoryName: buyPrice.category_name || "Unknown",
+          unit: buyPrice.unit || "unit",
           buyMarket: {
             id: buyPrice.market_id || "",
             name: buyMarketName,
-            state: buyPrice.Markets.state || "",
+            state: buyPrice.state || "",
             price: buyPriceNum,
-            updatedAt: buyPrice.updated_at?.toISOString() || "",
+            updatedAt: buyPrice.validated_at?.toISOString() || "",
           },
           sellMarket: {
             id: sellPrice.market_id || "",
             name: sellMarketName,
-            state: sellPrice.Markets.state || "",
+            state: sellPrice.state || "",
             price: sellPriceNum,
-            updatedAt: sellPrice.updated_at?.toISOString() || "",
+            updatedAt: sellPrice.validated_at?.toISOString() || "",
           },
           grossProfit,
           transportCost: transport.totalCost,
@@ -354,7 +328,6 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     
-    // Get parameters
     const tier = (searchParams.get("tier") || "FREE").toUpperCase();
     const item = searchParams.get("item") || undefined;
     const category = searchParams.get("category") || undefined;
@@ -420,13 +393,11 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// POST endpoint for detailed opportunity analysis
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const { buyMarketId, sellMarketId, itemId, tier = "FREE" } = body;
     
-    // Check tier access
     const tierConfig = TIER_ACCESS[tier.toUpperCase()] || TIER_ACCESS.FREE;
     
     if (!tierConfig.hasAccess) {
@@ -437,28 +408,20 @@ export async function POST(request: NextRequest) {
       }, { status: 403 });
     }
     
-    // Get specific prices
-    const buyPrice = await prisma.prices.findFirst({
+    // Get specific prices from Approved_Prices
+    const buyPrice = await prisma.approved_Prices.findFirst({
       where: {
         item_id: itemId,
         market_id: buyMarketId,
-        validated: true,
-      },
-      include: {
-        Items: { include: { Categories: true } },
-        Markets: true,
+        validation_status: "APPROVED",
       },
     });
     
-    const sellPrice = await prisma.prices.findFirst({
+    const sellPrice = await prisma.approved_Prices.findFirst({
       where: {
         item_id: itemId,
         market_id: sellMarketId,
-        validated: true,
-      },
-      include: {
-        Items: { include: { Categories: true } },
-        Markets: true,
+        validation_status: "APPROVED",
       },
     });
     
@@ -472,10 +435,9 @@ export async function POST(request: NextRequest) {
     
     const buyPriceNum = Number(buyPrice.price || 0);
     const sellPriceNum = Number(sellPrice.price || 0);
-    const buyMarketName = buyPrice.Markets?.market_name || "";
-    const sellMarketName = sellPrice.Markets?.market_name || "";
+    const buyMarketName = buyPrice.market_name || "";
+    const sellMarketName = sellPrice.market_name || "";
     
-    // Calculate transport
     const transport = getTransportCost(buyMarketName, sellMarketName);
     
     // Calculate profits at various quantities
@@ -497,33 +459,32 @@ export async function POST(request: NextRequest) {
       };
     });
     
-    // Calculate confidence
-    const buyConfidence = calculateConfidence(new Date(buyPrice.updated_at || new Date()));
-    const sellConfidence = calculateConfidence(new Date(sellPrice.updated_at || new Date()));
+    const buyConfidence = calculateConfidence(buyPrice.validated_at);
+    const sellConfidence = calculateConfidence(sellPrice.validated_at);
     
     return NextResponse.json({
       success: true,
       data: {
         item: {
           id: itemId,
-          name: buyPrice.Items?.item_name,
-          category: buyPrice.Items?.Categories?.category_name,
-          unit: buyPrice.unit || buyPrice.Items?.unit,
+          name: buyPrice.item_name,
+          category: buyPrice.category_name,
+          unit: buyPrice.unit,
         },
         buyMarket: {
           id: buyMarketId,
           name: buyMarketName,
-          state: buyPrice.Markets?.state,
+          state: buyPrice.state,
           price: buyPriceNum,
-          updatedAt: buyPrice.updated_at,
+          updatedAt: buyPrice.validated_at,
           confidence: buyConfidence,
         },
         sellMarket: {
           id: sellMarketId,
           name: sellMarketName,
-          state: sellPrice.Markets?.state,
+          state: sellPrice.state,
           price: sellPriceNum,
-          updatedAt: sellPrice.updated_at,
+          updatedAt: sellPrice.validated_at,
           confidence: sellConfidence,
         },
         transport: {
@@ -538,11 +499,6 @@ export async function POST(request: NextRequest) {
           unitNetProfit: sellPriceNum - buyPriceNum - transport.totalCost,
           unitProfitPct: Math.round(((sellPriceNum - buyPriceNum - transport.totalCost) / buyPriceNum) * 1000) / 10,
           breakdown: profitBreakdown,
-        },
-        recommendation: {
-          viable: sellPriceNum - buyPriceNum - transport.totalCost > 0,
-          minQuantityForProfit: Math.ceil(transport.totalCost / (sellPriceNum - buyPriceNum)),
-          breakEvenQuantity: transport.totalCost > 0 ? Math.ceil(transport.totalCost / (sellPriceNum - buyPriceNum - transport.totalCost / 10)) : 1,
         },
       },
     });

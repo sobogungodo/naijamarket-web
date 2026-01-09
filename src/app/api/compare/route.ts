@@ -2,7 +2,7 @@
 // NAIJAMARKET INTEL - MARKET COMPARISON API
 // File: src/app/api/compare/route.ts
 // Bloomberg Equivalent: COMP <GO>
-// Version: 1.0
+// Version: 1.1 - Fixed for actual Prisma schema
 // ============================================================================
 
 import { NextRequest, NextResponse } from "next/server";
@@ -12,7 +12,6 @@ import { prisma } from "@/lib/prisma";
 // CONFIGURATION
 // ============================================================================
 
-// Tier limits for comparison
 const COMPARE_LIMITS: Record<string, number> = {
   FREE: 2,
   SILVER: 3,
@@ -62,40 +61,9 @@ interface ComparisonResult {
 }
 
 // ============================================================================
-// HELPER FUNCTIONS
-// ============================================================================
-
-function getTrendEmoji(trend: string | null): string {
-  if (!trend) return "→";
-  switch (trend.toUpperCase()) {
-    case "UP": return "↑";
-    case "DOWN": return "↓";
-    default: return "→";
-  }
-}
-
-function getTrendColor(trend: string | null): string {
-  if (!trend) return "gray";
-  switch (trend.toUpperCase()) {
-    case "UP": return "red";
-    case "DOWN": return "green";
-    default: return "gray";
-  }
-}
-
-// ============================================================================
 // API ROUTE HANDLERS
 // ============================================================================
 
-/**
- * GET /api/compare
- * Compare an item across multiple markets
- * 
- * Query params:
- * - item: Item ID or name to compare
- * - markets: Comma-separated market IDs or names
- * - tier: User subscription tier (for limit enforcement)
- */
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
@@ -112,69 +80,49 @@ export async function GET(request: NextRequest) {
       }, { status: 400 });
     }
     
-    // Get comparison limit for tier
     const maxMarkets = COMPARE_LIMITS[tier] || COMPARE_LIMITS.FREE;
     
-    // Find the item
-    const item = await prisma.items.findFirst({
+    // Get prices from Approved_Prices matching item name
+    let pricesQuery = await prisma.approved_Prices.findMany({
       where: {
-        OR: [
-          { item_id: itemParam },
-          { item_name: { contains: itemParam } },
-        ],
-      },
-      include: {
-        Categories: true,
-      },
-    });
-    
-    if (!item) {
-      return NextResponse.json({
-        success: false,
-        error: "item_not_found",
-        message: `Item "${itemParam}" not found`,
-      }, { status: 404 });
-    }
-    
-    // Build market filter
-    let marketFilter: string[] = [];
-    if (marketsParam) {
-      marketFilter = marketsParam.split(",").map(m => m.trim()).slice(0, maxMarkets);
-    }
-    
-    // Get prices for this item across markets
-    const pricesQuery = await prisma.prices.findMany({
-      where: {
-        item_id: item.item_id,
-        validated: true,
-        ...(marketFilter.length > 0 && {
-          OR: marketFilter.map(m => ({
-            OR: [
-              { market_id: m },
-              { Markets: { market_name: { contains: m } } },
-            ],
-          })),
-        }),
-      },
-      include: {
-        Markets: true,
+        validation_status: "APPROVED",
+        item_name: { contains: itemParam },
+        price: { not: null },
       },
       orderBy: {
         price: "asc",
       },
     });
     
+    // Filter by markets if specified
+    if (marketsParam) {
+      const marketFilter = marketsParam.split(",").map(m => m.trim().toLowerCase());
+      pricesQuery = pricesQuery.filter(p => 
+        marketFilter.some(mf => 
+          p.market_name?.toLowerCase().includes(mf) || 
+          p.market_id?.toLowerCase() === mf
+        )
+      );
+    }
+    
     if (pricesQuery.length === 0) {
       return NextResponse.json({
         success: false,
         error: "no_prices",
-        message: `No prices found for "${item.item_name}"`,
+        message: `No prices found for "${itemParam}"`,
         suggestion: "Try different markets or check if the item has been recently submitted",
       }, { status: 404 });
     }
     
-    // Limit to max markets
-    const prices = pricesQuery.slice(0, maxMarkets);
+    // Limit to max markets (one price per market)
+    const seenMarkets = new Set<string>();
+    const prices = pricesQuery.filter(p => {
+      const marketId = p.market_id || p.market_name || "";
+      if (seenMarkets.has(marketId)) return false;
+      if (seenMarkets.size >= maxMarkets) return false;
+      seenMarkets.add(marketId);
+      return true;
+    });
     
     // Calculate statistics
     const priceValues = prices.map(p => Number(p.price || 0)).filter(p => p > 0);
@@ -190,28 +138,30 @@ export async function GET(request: NextRequest) {
       
       return {
         marketId: p.market_id || "",
-        marketName: p.Markets?.market_name || "Unknown",
-        state: p.Markets?.state || "",
+        marketName: p.market_name || "Unknown",
+        state: p.state || "",
         price,
-        trend: p.trend,
-        trendPercentage: Number(p.trend_percentage || 0),
-        updatedAt: p.updated_at?.toISOString() || "",
+        trend: p.price_trend || null,
+        trendPercentage: Number(p.price_change_percent || 0),
+        updatedAt: p.validated_at?.toISOString() || "",
         rank: index + 1,
         savings: Math.round(savings),
         savingsPercentage: Math.round(savingsPct * 10) / 10,
       };
     });
     
-    // Find lowest and highest
     const lowestMarket = marketPrices[0];
     const highestMarket = marketPrices[marketPrices.length - 1];
     
+    // Get item info from first price
+    const firstPrice = prices[0];
+    
     const result: ComparisonResult = {
       item: {
-        id: item.item_id,
-        name: item.item_name || "",
-        category: item.Categories?.category_name || "",
-        unit: item.unit || "unit",
+        id: firstPrice.item_id || "",
+        name: firstPrice.item_name || "",
+        category: firstPrice.category_name || "",
+        unit: firstPrice.unit || "unit",
       },
       lowestPrice: lowestMarket,
       highestPrice: highestMarket,
@@ -247,17 +197,6 @@ export async function GET(request: NextRequest) {
   }
 }
 
-/**
- * POST /api/compare
- * Compare multiple items across multiple markets (advanced comparison)
- * 
- * Body:
- * {
- *   items: ["item1", "item2"],
- *   markets: ["market1", "market2", "market3"],
- *   tier: "GOLD"
- * }
- */
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
@@ -282,47 +221,21 @@ export async function POST(request: NextRequest) {
     const maxMarkets = COMPARE_LIMITS[tier.toUpperCase()] || COMPARE_LIMITS.FREE;
     const selectedMarkets = markets.slice(0, maxMarkets);
     
-    // Get all items
-    const itemRecords = await prisma.items.findMany({
-      where: {
-        OR: items.map(item => ({
-          OR: [
-            { item_id: item },
-            { item_name: { contains: item } },
-          ],
-        })),
-      },
-      include: {
-        Categories: true,
-      },
-    });
-    
-    // Get all market records
-    const marketRecords = await prisma.markets.findMany({
-      where: {
-        OR: selectedMarkets.map(m => ({
-          OR: [
-            { market_id: m },
-            { market_name: { contains: m } },
-          ],
-        })),
-      },
-    });
-    
-    // Build comparison matrix
     const comparisons: ComparisonResult[] = [];
     
-    for (const item of itemRecords) {
-      const prices = await prisma.prices.findMany({
+    for (const itemName of items) {
+      // Get prices for this item
+      const prices = await prisma.approved_Prices.findMany({
         where: {
-          item_id: item.item_id,
-          validated: true,
-          market_id: {
-            in: marketRecords.map(m => m.market_id),
-          },
-        },
-        include: {
-          Markets: true,
+          validation_status: "APPROVED",
+          item_name: { contains: itemName },
+          price: { not: null },
+          OR: selectedMarkets.map(m => ({
+            OR: [
+              { market_id: m },
+              { market_name: { contains: m } },
+            ],
+          })),
         },
         orderBy: {
           price: "asc",
@@ -345,24 +258,26 @@ export async function POST(request: NextRequest) {
         
         return {
           marketId: p.market_id || "",
-          marketName: p.Markets?.market_name || "Unknown",
-          state: p.Markets?.state || "",
+          marketName: p.market_name || "Unknown",
+          state: p.state || "",
           price,
-          trend: p.trend,
-          trendPercentage: Number(p.trend_percentage || 0),
-          updatedAt: p.updated_at?.toISOString() || "",
+          trend: p.price_trend || null,
+          trendPercentage: Number(p.price_change_percent || 0),
+          updatedAt: p.validated_at?.toISOString() || "",
           rank: index + 1,
           savings: Math.round(savings),
           savingsPercentage: Math.round(savingsPct * 10) / 10,
         };
       });
       
+      const firstPrice = prices[0];
+      
       comparisons.push({
         item: {
-          id: item.item_id,
-          name: item.item_name || "",
-          category: item.Categories?.category_name || "",
-          unit: item.unit || "unit",
+          id: firstPrice.item_id || "",
+          name: firstPrice.item_name || "",
+          category: firstPrice.category_name || "",
+          unit: firstPrice.unit || "unit",
         },
         lowestPrice: marketPrices[0],
         highestPrice: marketPrices[marketPrices.length - 1],
@@ -378,7 +293,7 @@ export async function POST(request: NextRequest) {
       });
     }
     
-    // Calculate shopping list total if buying from cheapest markets
+    // Calculate shopping list total
     const shoppingListOptimal = comparisons.map(c => ({
       item: c.item.name,
       cheapestMarket: c.lowestPrice.marketName,
@@ -387,9 +302,12 @@ export async function POST(request: NextRequest) {
     
     const totalOptimal = shoppingListOptimal.reduce((sum, item) => sum + item.price, 0);
     
-    // Calculate if buying everything from first market
     const firstMarketTotal = comparisons.reduce((sum, c) => {
-      const firstMarketPrice = c.markets.find(m => m.marketId === selectedMarkets[0]);
+      const firstMarketPrice = c.markets.find(m => 
+        selectedMarkets.some(sm => 
+          m.marketId === sm || m.marketName.toLowerCase().includes(sm.toLowerCase())
+        )
+      );
       return sum + (firstMarketPrice?.price || c.averagePrice);
     }, 0);
     
@@ -399,12 +317,14 @@ export async function POST(request: NextRequest) {
         comparisons,
         summary: {
           itemsCompared: comparisons.length,
-          marketsCompared: marketRecords.length,
+          marketsCompared: selectedMarkets.length,
           optimalShoppingList: shoppingListOptimal,
           totalIfOptimal: Math.round(totalOptimal),
           totalIfSingleMarket: Math.round(firstMarketTotal),
           potentialSavings: Math.round(firstMarketTotal - totalOptimal),
-          savingsPercentage: Math.round(((firstMarketTotal - totalOptimal) / firstMarketTotal) * 1000) / 10,
+          savingsPercentage: firstMarketTotal > 0 
+            ? Math.round(((firstMarketTotal - totalOptimal) / firstMarketTotal) * 1000) / 10
+            : 0,
         },
       },
       meta: {

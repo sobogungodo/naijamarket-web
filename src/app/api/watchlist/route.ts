@@ -2,7 +2,7 @@
 // NAIJAMARKET INTEL - WATCHLIST / FAVORITES API
 // File: src/app/api/watchlist/route.ts
 // Bloomberg Equivalent: MOST <GO>
-// Version: 1.0
+// Version: 1.1 - Fixed for actual Prisma schema
 // ============================================================================
 
 import { NextRequest, NextResponse } from "next/server";
@@ -12,14 +12,13 @@ import { prisma } from "@/lib/prisma";
 // CONFIGURATION
 // ============================================================================
 
-// Tier limits for watchlist/favorites
 const WATCHLIST_LIMITS: Record<string, { markets: number; items: number; alerts: number }> = {
   FREE: { markets: 0, items: 0, alerts: 0 },
   SILVER: { markets: 1, items: 3, alerts: 1 },
   GOLD: { markets: 3, items: 10, alerts: 5 },
   BUSINESS: { markets: 5, items: 20, alerts: 10 },
   CORPORATE: { markets: 7, items: 30, alerts: 15 },
-  ENTERPRISE: { markets: -1, items: -1, alerts: -1 }, // Unlimited
+  ENTERPRISE: { markets: -1, items: -1, alerts: -1 },
   OGA_BOSS: { markets: -1, items: -1, alerts: -1 },
   GOVERNMENT: { markets: -1, items: -1, alerts: -1 },
 };
@@ -60,7 +59,7 @@ interface WatchlistSummary {
 // HELPER FUNCTIONS
 // ============================================================================
 
-function parseWatchlist(json: string | null): string[] {
+function parseWatchlist(json: string | null | undefined): string[] {
   if (!json || json.trim() === "") return [];
   try {
     const parsed = JSON.parse(json);
@@ -74,16 +73,6 @@ function parseWatchlist(json: string | null): string[] {
 // API ROUTE HANDLERS
 // ============================================================================
 
-/**
- * GET /api/watchlist
- * Get user's watchlist (favorite markets and items)
- * 
- * Query params:
- * - phone: User phone number
- * - consumerId: Consumer ID (alternative to phone)
- * - type: "markets" | "items" | "all" (default: "all")
- * - tier: Subscription tier for limit info
- */
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
@@ -123,7 +112,7 @@ export async function GET(request: NextRequest) {
     const actualTier = consumer.subscription_tier?.toUpperCase() || tier;
     const limits = WATCHLIST_LIMITS[actualTier] || WATCHLIST_LIMITS.FREE;
     
-    // Parse favorites
+    // Parse favorites (assuming these columns exist in Consumers table)
     const favoriteMarkets = parseWatchlist(consumer.favorite_markets as string);
     const favoriteItems = parseWatchlist(consumer.favorite_items as string);
     
@@ -142,34 +131,20 @@ export async function GET(request: NextRequest) {
     
     // Get market details if requested
     if (type === "all" || type === "markets") {
-      if (favoriteMarkets.length > 0) {
-        const markets = await prisma.markets.findMany({
-          where: {
-            OR: favoriteMarkets.map(name => ({
-              market_name: name,
-            })),
-          },
+      for (const marketName of favoriteMarkets) {
+        const market = await prisma.markets.findFirst({
+          where: { market_name: marketName },
         });
         
-        // Get latest prices for each market (for summary stats)
-        for (const market of markets) {
-          const latestPrices = await prisma.prices.findMany({
+        if (market) {
+          // Get latest price for this market
+          const latestPrice = await prisma.approved_Prices.findFirst({
             where: {
               market_id: market.market_id,
-              validated: true,
+              validation_status: "APPROVED",
             },
-            orderBy: {
-              updated_at: "desc",
-            },
-            take: 5,
-            include: {
-              Items: true,
-            },
+            orderBy: { validated_at: "desc" },
           });
-          
-          const avgPrice = latestPrices.length > 0
-            ? latestPrices.reduce((sum, p) => sum + Number(p.price || 0), 0) / latestPrices.length
-            : 0;
           
           response.markets.push({
             id: market.market_id,
@@ -177,9 +152,8 @@ export async function GET(request: NextRequest) {
             targetId: market.market_id,
             targetName: market.market_name || "",
             state: market.state || "",
-            currentPrice: Math.round(avgPrice),
-            lastUpdated: latestPrices[0]?.updated_at?.toISOString() || "",
-            addedAt: "", // Would need to track when added
+            lastUpdated: latestPrice?.validated_at?.toISOString() || "",
+            addedAt: "",
           });
         }
       }
@@ -187,40 +161,36 @@ export async function GET(request: NextRequest) {
     
     // Get item details if requested
     if (type === "all" || type === "items") {
-      if (favoriteItems.length > 0) {
-        const items = await prisma.items.findMany({
-          where: {
-            OR: favoriteItems.map(name => ({
-              item_name: name,
-            })),
-          },
-          include: {
-            Categories: true,
-          },
+      for (const itemName of favoriteItems) {
+        const item = await prisma.items_Catalog.findFirst({
+          where: { item_name: itemName },
         });
         
-        // Get latest prices for each item
-        for (const item of items) {
-          const latestPrice = await prisma.prices.findFirst({
+        if (item) {
+          // Get latest price for this item
+          const latestPrice = await prisma.approved_Prices.findFirst({
             where: {
               item_id: item.item_id,
-              validated: true,
+              validation_status: "APPROVED",
             },
-            orderBy: {
-              updated_at: "desc",
-            },
+            orderBy: { validated_at: "desc" },
           });
+          
+          // Get category name
+          const category = item.category_id 
+            ? await prisma.categories.findFirst({ where: { category_id: item.category_id } })
+            : null;
           
           response.items.push({
             id: item.item_id,
             type: "item",
             targetId: item.item_id,
             targetName: item.item_name || "",
-            category: item.Categories?.category_name || "",
-            currentPrice: Number(latestPrice?.price || 0),
-            trend: latestPrice?.trend || undefined,
-            priceChangePercent: Number(latestPrice?.trend_percentage || 0),
-            lastUpdated: latestPrice?.updated_at?.toISOString() || "",
+            category: category?.category_name || "",
+            currentPrice: latestPrice ? Number(latestPrice.price) : undefined,
+            trend: latestPrice?.price_trend || undefined,
+            priceChangePercent: latestPrice ? Number(latestPrice.price_change_percent) : undefined,
+            lastUpdated: latestPrice?.validated_at?.toISOString() || "",
             addedAt: "",
           });
         }
@@ -247,17 +217,6 @@ export async function GET(request: NextRequest) {
   }
 }
 
-/**
- * POST /api/watchlist
- * Add item to watchlist
- * 
- * Body:
- * {
- *   phone: "08012345678",
- *   type: "market" | "item",
- *   targetName: "Mile 12 Market"
- * }
- */
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
@@ -359,7 +318,7 @@ export async function POST(request: NextRequest) {
       
       finalTargetName = market.market_name;
     } else {
-      const item = await prisma.items.findFirst({
+      const item = await prisma.items_Catalog.findFirst({
         where: {
           OR: [
             ...(targetId ? [{ item_id: targetId }] : []),
@@ -425,17 +384,6 @@ export async function POST(request: NextRequest) {
   }
 }
 
-/**
- * DELETE /api/watchlist
- * Remove item from watchlist
- * 
- * Body:
- * {
- *   phone: "08012345678",
- *   type: "market" | "item",
- *   targetName: "Mile 12 Market"
- * }
- */
 export async function DELETE(request: NextRequest) {
   try {
     const body = await request.json();
@@ -530,146 +478,6 @@ export async function DELETE(request: NextRequest) {
       success: false,
       error: "server_error",
       message: "Failed to remove from watchlist",
-    }, { status: 500 });
-  }
-}
-
-/**
- * PATCH /api/watchlist
- * Get watchlist summary with latest prices (for dashboard widget)
- */
-export async function PATCH(request: NextRequest) {
-  try {
-    const body = await request.json();
-    const { phone, consumerId } = body;
-    
-    if (!phone && !consumerId) {
-      return NextResponse.json({
-        success: false,
-        error: "missing_parameter",
-        message: "Phone number or consumerId is required",
-      }, { status: 400 });
-    }
-    
-    // Get consumer record
-    const consumer = await prisma.consumers.findFirst({
-      where: {
-        OR: [
-          ...(phone ? [{ phone_number: phone }] : []),
-          ...(consumerId ? [{ consumer_id: consumerId }] : []),
-        ],
-      },
-    });
-    
-    if (!consumer) {
-      return NextResponse.json({
-        success: false,
-        error: "consumer_not_found",
-        message: "Consumer not found",
-      }, { status: 404 });
-    }
-    
-    // Parse favorites
-    const favoriteMarkets = parseWatchlist(consumer.favorite_markets as string);
-    const favoriteItems = parseWatchlist(consumer.favorite_items as string);
-    
-    // Get summary data for markets
-    const marketSummaries = [];
-    for (const marketName of favoriteMarkets.slice(0, 5)) {
-      const market = await prisma.markets.findFirst({
-        where: { market_name: marketName },
-      });
-      
-      if (market) {
-        const priceCount = await prisma.prices.count({
-          where: {
-            market_id: market.market_id,
-            validated: true,
-          },
-        });
-        
-        const latestUpdate = await prisma.prices.findFirst({
-          where: {
-            market_id: market.market_id,
-            validated: true,
-          },
-          orderBy: { updated_at: "desc" },
-        });
-        
-        marketSummaries.push({
-          name: marketName,
-          state: market.state,
-          itemsTracked: priceCount,
-          lastUpdate: latestUpdate?.updated_at?.toISOString(),
-        });
-      }
-    }
-    
-    // Get summary data for items
-    const itemSummaries = [];
-    for (const itemName of favoriteItems.slice(0, 10)) {
-      const item = await prisma.items.findFirst({
-        where: { item_name: itemName },
-        include: { Categories: true },
-      });
-      
-      if (item) {
-        const prices = await prisma.prices.findMany({
-          where: {
-            item_id: item.item_id,
-            validated: true,
-          },
-          orderBy: { price: "asc" },
-          take: 3,
-          include: { Markets: true },
-        });
-        
-        const lowestPrice = prices[0];
-        const highestPrice = prices[prices.length - 1];
-        
-        itemSummaries.push({
-          name: itemName,
-          category: item.Categories?.category_name,
-          unit: item.unit,
-          lowestPrice: lowestPrice ? {
-            price: Number(lowestPrice.price),
-            market: lowestPrice.Markets?.market_name,
-            trend: lowestPrice.trend,
-          } : null,
-          highestPrice: highestPrice ? {
-            price: Number(highestPrice.price),
-            market: highestPrice.Markets?.market_name,
-          } : null,
-          priceRange: lowestPrice && highestPrice
-            ? Number(highestPrice.price) - Number(lowestPrice.price)
-            : 0,
-        });
-      }
-    }
-    
-    return NextResponse.json({
-      success: true,
-      data: {
-        markets: marketSummaries,
-        items: itemSummaries,
-        totals: {
-          markets: favoriteMarkets.length,
-          items: favoriteItems.length,
-        },
-      },
-      meta: {
-        consumerId: consumer.consumer_id,
-        tier: consumer.subscription_tier,
-        generatedAt: new Date().toISOString(),
-      },
-    });
-    
-  } catch (error) {
-    console.error("[Watchlist PATCH Error]", error);
-    return NextResponse.json({
-      success: false,
-      error: "server_error",
-      message: "Failed to get watchlist summary",
     }, { status: 500 });
   }
 }
