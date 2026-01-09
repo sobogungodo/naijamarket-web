@@ -14,7 +14,14 @@ import { Input, FormField } from "@/components/ui/input";
 // COUNTRY CODES - EU, West Africa, US, Canada
 // ============================================================================
 
-const COUNTRY_CODES = [
+interface CountryCode {
+  code: string;
+  country: string;
+  flag: string;
+  maxLength: number;
+}
+
+const COUNTRY_CODES: CountryCode[] = [
   // West Africa
   { code: "+234", country: "Nigeria", flag: "🇳🇬", maxLength: 10 },
   { code: "+233", country: "Ghana", flag: "🇬🇭", maxLength: 9 },
@@ -63,8 +70,8 @@ const COUNTRY_CODES = [
   { code: "+20", country: "Egypt", flag: "🇪🇬", maxLength: 10 },
 ];
 
-// Default country (Nigeria)
-const DEFAULT_COUNTRY = COUNTRY_CODES[0];
+// Default country
+const DEFAULT_COUNTRY: CountryCode = { code: "+234", country: "Nigeria", flag: "🇳🇬", maxLength: 10 };
 
 // ============================================================================
 // LOGIN PAGE - WITH EMAIL/PASSWORD AND PHONE OTP OPTIONS
@@ -90,7 +97,7 @@ export default function LoginPage() {
     phone: "",
     otp: "",
   });
-  const [selectedCountry, setSelectedCountry] = useState(DEFAULT_COUNTRY);
+  const [selectedCountry, setSelectedCountry] = useState<CountryCode>(DEFAULT_COUNTRY);
   const [showCountryDropdown, setShowCountryDropdown] = useState(false);
   const [otpStep, setOtpStep] = useState<"phone" | "otp">("phone");
   const [maskedPhone, setMaskedPhone] = useState("");
@@ -173,14 +180,14 @@ export default function LoginPage() {
     }
   };
 
-  const getFullPhoneNumber = () => {
+  const getFullPhoneNumber = (): string => {
     // Remove leading 0 if present (common in many countries)
     let phone = phoneData.phone;
     if (phone.startsWith("0")) {
       phone = phone.substring(1);
     }
     // Combine country code (without +) and phone number
-    const countryCode = (selectedCountry?.code || "+234").replace("+", "");
+    const countryCode = selectedCountry.code.replace("+", "");
     return countryCode + phone;
   };
 
@@ -215,11 +222,12 @@ export default function LoginPage() {
       toast.success("OTP Sent!", {
         description: "Check your WhatsApp for the verification code",
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : "Please try again";
       toast.error("Failed to send OTP", {
-        description: error.message || "Please try again",
+        description: errorMessage,
       });
-      setErrors({ phone: error.message });
+      setErrors({ phone: errorMessage });
     } finally {
       setIsLoading(false);
     }
@@ -255,9 +263,10 @@ export default function LoginPage() {
 
       router.push("/dashboard");
       router.refresh();
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : "Invalid OTP. Please try again.";
       toast.error("Verification failed", {
-        description: error.message || "Invalid OTP. Please try again.",
+        description: errorMessage,
       });
       setErrors({ otp: "Invalid or expired code" });
     } finally {
@@ -288,16 +297,17 @@ export default function LoginPage() {
       toast.success("OTP Resent!", {
         description: "Check your WhatsApp for the new code",
       });
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : "Failed to resend";
       toast.error("Failed to resend", {
-        description: error.message,
+        description: errorMessage,
       });
     } finally {
       setIsLoading(false);
     }
   };
 
-  const selectCountry = (country: typeof COUNTRY_CODES[0]) => {
+  const selectCountry = (country: CountryCode) => {
     setSelectedCountry(country);
     setShowCountryDropdown(false);
     setPhoneData((prev) => ({ ...prev, phone: "" }));
@@ -462,8 +472,8 @@ export default function LoginPage() {
                           onClick={() => setShowCountryDropdown(!showCountryDropdown)}
                           className="flex items-center gap-2 px-3 py-3 bg-terminal-surface border border-terminal-border rounded-lg text-white hover:border-gray-500 transition-colors min-w-[100px]"
                         >
-                          <span className="text-lg">{selectedCountry?.flag}</span>
-                          <span className="text-sm">{selectedCountry?.code}</span>
+                          <span className="text-lg">{selectedCountry.flag}</span>
+                          <span className="text-sm">{selectedCountry.code}</span>
                           <ChevronDown className="w-4 h-4 text-gray-400" />
                         </button>
                         
@@ -476,7 +486,7 @@ export default function LoginPage() {
                                 type="button"
                                 onClick={() => selectCountry(country)}
                                 className={`w-full flex items-center gap-3 px-3 py-2 hover:bg-terminal-border transition-colors text-left ${
-                                  selectedCountry?.code === country.code && selectedCountry?.country === country.country
+                                  selectedCountry.code === country.code && selectedCountry.country === country.country
                                     ? "bg-naija-green/20 text-naija-green"
                                     : "text-white"
                                 }`}
@@ -497,7 +507,7 @@ export default function LoginPage() {
                         placeholder="8012345678"
                         value={phoneData.phone}
                         onChange={handlePhoneChange}
-                        maxLength={(selectedCountry?.maxLength || 11)}
+                        maxLength={selectedCountry.maxLength}
                         className={`flex-1 px-4 py-3 bg-terminal-surface border rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-naija-green focus:border-transparent transition-all ${
                           errors.phone ? "border-price-down" : "border-terminal-border"
                         }`}
@@ -533,7 +543,7 @@ export default function LoginPage() {
                       Enter the 6-digit code sent to WhatsApp
                     </p>
                     <p className="text-white text-sm mt-1">
-                      {selectedCountry?.flag} {selectedCountry?.code} {maskedPhone}
+                      {selectedCountry.flag} {selectedCountry.code} {maskedPhone}
                     </p>
                   </div>
 
