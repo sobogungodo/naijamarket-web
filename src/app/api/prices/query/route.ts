@@ -31,16 +31,16 @@ export async function GET(request: NextRequest) {
 
     // Text search filters (case-insensitive contains)
     if (marketName) {
-      where.market_name = { contains: marketName, mode: "insensitive" };
+      where.market_name = { contains: marketName };
     }
     if (categoryName) {
-      where.category_name = { contains: categoryName, mode: "insensitive" };
+      where.category_name = { contains: categoryName };
     }
     if (itemName) {
-      where.item_name = { contains: itemName, mode: "insensitive" };
+      where.item_name = { contains: itemName };
     }
     if (state) {
-      where.state = { contains: state, mode: "insensitive" };
+      where.state = { contains: state };
     }
 
     // Get prices from Approved_Prices table

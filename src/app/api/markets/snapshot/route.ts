@@ -29,7 +29,7 @@ export async function GET(request: NextRequest) {
       market = await prisma.markets.findFirst({ where: { market_id: marketId } });
     } else if (marketName) {
       market = await prisma.markets.findFirst({
-        where: { market_name: { contains: marketName, mode: "insensitive" } },
+        where: { market_name: { contains: marketName } },
       });
     }
 

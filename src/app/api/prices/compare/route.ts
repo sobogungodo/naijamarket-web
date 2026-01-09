@@ -31,7 +31,7 @@ export async function POST(request: NextRequest) {
     if (item_id) {
       where.item_id = item_id;
     } else if (item_name) {
-      where.item_name = { contains: item_name, mode: "insensitive" };
+      where.item_name = { contains: item_name };
     }
 
     if (market_ids?.length) {
@@ -173,11 +173,11 @@ export async function GET(request: NextRequest) {
     }
 
     const where: any = {
-      item_name: { contains: itemName, mode: "insensitive" },
+      item_name: { contains: itemName },
     };
 
     if (state) {
-      where.state = { contains: state, mode: "insensitive" };
+      where.state = { contains: state };
     }
 
     const prices = await prisma.approved_Prices.findMany({
