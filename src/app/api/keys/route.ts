@@ -195,7 +195,7 @@ export async function DELETE(request: NextRequest) {
     }
 
     // Verify ownership and revoke
-    const result = await prisma.$executeRaw`
+    await prisma.$executeRaw`
       UPDATE API_Keys 
       SET status = 'revoked', updated_at = GETDATE()
       WHERE key_id = ${keyId} AND phone_number = ${phone}
