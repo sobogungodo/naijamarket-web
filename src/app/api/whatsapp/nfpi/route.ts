@@ -239,12 +239,12 @@ export async function GET(request: NextRequest) {
       formatted += '\n';
     }
 
-    // Top movers (all tiers) - with safety check
+    // Top movers (all tiers) - with explicit type guards
     const sortedItems = [...basketPrices].sort((a, b) => b.item_index - a.item_index);
-    if (sortedItems.length > 0) {
-      const topGainer = sortedItems[0];
-      const topLoser = sortedItems[sortedItems.length - 1];
-      
+    const topGainer: BasketPriceItem | undefined = sortedItems[0];
+    const topLoser: BasketPriceItem | undefined = sortedItems[sortedItems.length - 1];
+    
+    if (topGainer && topLoser) {
       formatted += `🔥 *TOP MOVERS*\n`;
       formatted += `📈 ${topGainer.item}: ${topGainer.item_index.toFixed(0)} (+${((topGainer.item_index - 100)).toFixed(1)}%)\n`;
       formatted += `📉 ${topLoser.item}: ${topLoser.item_index.toFixed(0)} (${((topLoser.item_index - 100)).toFixed(1)}%)\n\n`;
