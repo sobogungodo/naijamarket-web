@@ -3,13 +3,65 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Eye, EyeOff, Mail, Lock, ArrowRight, Phone, MessageSquare } from "lucide-react";
+import { Eye, EyeOff, Mail, Lock, ArrowRight, Phone, MessageSquare, ChevronDown } from "lucide-react";
 import { toast } from "sonner";
 import { signIn } from "next-auth/react";
 
 import { Button } from "@/components/ui/button";
 import { Input, FormField } from "@/components/ui/input";
 
+// ============================================================================
+// COUNTRY CODES - EU, West Africa, US, Canada
+// ============================================================================
+
+const COUNTRY_CODES = [
+  // West Africa
+  { code: "+234", country: "Nigeria", flag: "🇳🇬", maxLength: 10 },
+  { code: "+233", country: "Ghana", flag: "🇬🇭", maxLength: 9 },
+  { code: "+225", country: "Ivory Coast", flag: "🇨🇮", maxLength: 10 },
+  { code: "+221", country: "Senegal", flag: "🇸🇳", maxLength: 9 },
+  { code: "+228", country: "Togo", flag: "🇹🇬", maxLength: 8 },
+  { code: "+229", country: "Benin", flag: "🇧🇯", maxLength: 8 },
+  { code: "+226", country: "Burkina Faso", flag: "🇧🇫", maxLength: 8 },
+  { code: "+227", country: "Niger", flag: "🇳🇪", maxLength: 8 },
+  { code: "+223", country: "Mali", flag: "🇲🇱", maxLength: 8 },
+  { code: "+220", country: "Gambia", flag: "🇬🇲", maxLength: 7 },
+  { code: "+232", country: "Sierra Leone", flag: "🇸🇱", maxLength: 8 },
+  { code: "+231", country: "Liberia", flag: "🇱🇷", maxLength: 9 },
+  { code: "+224", country: "Guinea", flag: "🇬🇳", maxLength: 9 },
+  
+  // North America
+  { code: "+1", country: "USA", flag: "🇺🇸", maxLength: 10 },
+  { code: "+1", country: "Canada", flag: "🇨🇦", maxLength: 10 },
+  
+  // Europe
+  { code: "+44", country: "United Kingdom", flag: "🇬🇧", maxLength: 10 },
+  { code: "+49", country: "Germany", flag: "🇩🇪", maxLength: 11 },
+  { code: "+33", country: "France", flag: "🇫🇷", maxLength: 9 },
+  { code: "+39", country: "Italy", flag: "🇮🇹", maxLength: 10 },
+  { code: "+34", country: "Spain", flag: "🇪🇸", maxLength: 9 },
+  { code: "+31", country: "Netherlands", flag: "🇳🇱", maxLength: 9 },
+  { code: "+32", country: "Belgium", flag: "🇧🇪", maxLength: 9 },
+  { code: "+41", country: "Switzerland", flag: "🇨🇭", maxLength: 9 },
+  { code: "+43", country: "Austria", flag: "🇦🇹", maxLength: 10 },
+  { code: "+46", country: "Sweden", flag: "🇸🇪", maxLength: 9 },
+  { code: "+47", country: "Norway", flag: "🇳🇴", maxLength: 8 },
+  { code: "+45", country: "Denmark", flag: "🇩🇰", maxLength: 8 },
+  { code: "+358", country: "Finland", flag: "🇫🇮", maxLength: 10 },
+  { code: "+353", country: "Ireland", flag: "🇮🇪", maxLength: 9 },
+  { code: "+351", country: "Portugal", flag: "🇵🇹", maxLength: 9 },
+  { code: "+48", country: "Poland", flag: "🇵🇱", maxLength: 9 },
+  { code: "+420", country: "Czech Republic", flag: "🇨🇿", maxLength: 9 },
+  { code: "+36", country: "Hungary", flag: "🇭🇺", maxLength: 9 },
+  { code: "+30", country: "Greece", flag: "🇬🇷", maxLength: 10 },
+  
+  // Other Africa
+  { code: "+27", country: "South Africa", flag: "🇿🇦", maxLength: 9 },
+  { code: "+254", country: "Kenya", flag: "🇰🇪", maxLength: 9 },
+  { code: "+256", country: "Uganda", flag: "🇺🇬", maxLength: 9 },
+  { code: "+255", country: "Tanzania", flag: "🇹🇿", maxLength: 9 },
+  { code: "+20", country: "Egypt", flag: "🇪🇬", maxLength: 10 },
+];
 
 // ============================================================================
 // LOGIN PAGE - WITH EMAIL/PASSWORD AND PHONE OTP OPTIONS
@@ -35,6 +87,8 @@ export default function LoginPage() {
     phone: "",
     otp: "",
   });
+  const [selectedCountry, setSelectedCountry] = useState(COUNTRY_CODES[0]); // Default: Nigeria
+  const [showCountryDropdown, setShowCountryDropdown] = useState(false);
   const [otpStep, setOtpStep] = useState<"phone" | "otp">("phone");
   const [maskedPhone, setMaskedPhone] = useState("");
   
@@ -116,10 +170,20 @@ export default function LoginPage() {
     }
   };
 
+  const getFullPhoneNumber = () => {
+    // Remove leading 0 if present (common in many countries)
+    let phone = phoneData.phone;
+    if (phone.startsWith("0")) {
+      phone = phone.substring(1);
+    }
+    // Combine country code (without +) and phone number
+    return selectedCountry.code.replace("+", "") + phone;
+  };
+
   const handleSendOTP = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!phoneData.phone || phoneData.phone.length < 10) {
+    if (!phoneData.phone || phoneData.phone.length < 7) {
       setErrors({ phone: "Please enter a valid phone number" });
       return;
     }
@@ -128,10 +192,12 @@ export default function LoginPage() {
     setErrors({});
 
     try {
+      const fullPhone = getFullPhoneNumber();
+      
       const response = await fetch("/api/auth/send-otp", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phone: phoneData.phone }),
+        body: JSON.stringify({ phone: fullPhone }),
       });
 
       const data = await response.json();
@@ -167,8 +233,10 @@ export default function LoginPage() {
     setErrors({});
 
     try {
+      const fullPhone = getFullPhoneNumber();
+      
       const result = await signIn("phone-otp", {
-        phone: phoneData.phone,
+        phone: fullPhone,
         otp: phoneData.otp,
         redirect: false,
       });
@@ -199,10 +267,12 @@ export default function LoginPage() {
     setErrors({});
 
     try {
+      const fullPhone = getFullPhoneNumber();
+      
       const response = await fetch("/api/auth/send-otp", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phone: phoneData.phone }),
+        body: JSON.stringify({ phone: fullPhone }),
       });
 
       const data = await response.json();
@@ -221,6 +291,12 @@ export default function LoginPage() {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const selectCountry = (country: typeof COUNTRY_CODES[0]) => {
+    setSelectedCountry(country);
+    setShowCountryDropdown(false);
+    setPhoneData((prev) => ({ ...prev, phone: "" }));
   };
 
   // ============================================================================
@@ -374,19 +450,51 @@ export default function LoginPage() {
               {otpStep === "phone" ? (
                 <form onSubmit={handleSendOTP} className="space-y-5">
                   <FormField label="Phone Number" error={errors.phone} required>
-                    <div className="relative">
-                      <div className="absolute left-3 top-1/2 -translate-y-1/2 flex items-center gap-1 text-gray-400 text-sm">
-                        <span>🇳🇬</span>
-                        <span>+234</span>
+                    <div className="flex gap-2">
+                      {/* Country Selector */}
+                      <div className="relative">
+                        <button
+                          type="button"
+                          onClick={() => setShowCountryDropdown(!showCountryDropdown)}
+                          className="flex items-center gap-2 px-3 py-3 bg-terminal-surface border border-terminal-border rounded-lg text-white hover:border-gray-500 transition-colors min-w-[100px]"
+                        >
+                          <span className="text-lg">{selectedCountry.flag}</span>
+                          <span className="text-sm">{selectedCountry.code}</span>
+                          <ChevronDown className="w-4 h-4 text-gray-400" />
+                        </button>
+                        
+                        {/* Dropdown */}
+                        {showCountryDropdown && (
+                          <div className="absolute top-full left-0 mt-1 w-64 max-h-60 overflow-y-auto bg-terminal-surface border border-terminal-border rounded-lg shadow-xl z-50">
+                            {COUNTRY_CODES.map((country, idx) => (
+                              <button
+                                key={`${country.code}-${country.country}-${idx}`}
+                                type="button"
+                                onClick={() => selectCountry(country)}
+                                className={`w-full flex items-center gap-3 px-3 py-2 hover:bg-terminal-border transition-colors text-left ${
+                                  selectedCountry.code === country.code && selectedCountry.country === country.country
+                                    ? "bg-naija-green/20 text-naija-green"
+                                    : "text-white"
+                                }`}
+                              >
+                                <span className="text-lg">{country.flag}</span>
+                                <span className="flex-1 text-sm">{country.country}</span>
+                                <span className="text-xs text-gray-400">{country.code}</span>
+                              </button>
+                            ))}
+                          </div>
+                        )}
                       </div>
+                      
+                      {/* Phone Input */}
                       <input
                         type="tel"
                         name="phone"
                         placeholder="8012345678"
                         value={phoneData.phone}
                         onChange={handlePhoneChange}
-                        maxLength={11}
-                        className={`w-full pl-20 pr-4 py-3 bg-terminal-surface border rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-naija-green focus:border-transparent transition-all ${
+                        maxLength={selectedCountry.maxLength}
+                        className={`flex-1 px-4 py-3 bg-terminal-surface border rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-naija-green focus:border-transparent transition-all ${
                           errors.phone ? "border-price-down" : "border-terminal-border"
                         }`}
                         disabled={isLoading}
@@ -405,7 +513,7 @@ export default function LoginPage() {
                     size="lg"
                     isLoading={isLoading}
                     loadingText="Sending OTP..."
-                    disabled={phoneData.phone.length < 10}
+                    disabled={phoneData.phone.length < 7}
                   >
                     Send OTP
                     <ArrowRight className="w-4 h-4" />
@@ -418,7 +526,10 @@ export default function LoginPage() {
                       <MessageSquare className="w-6 h-6 text-naija-green" />
                     </div>
                     <p className="text-gray-400 text-sm">
-                      Enter the 6-digit code sent to WhatsApp ({maskedPhone})
+                      Enter the 6-digit code sent to WhatsApp
+                    </p>
+                    <p className="text-white text-sm mt-1">
+                      {selectedCountry.flag} {selectedCountry.code} {maskedPhone}
                     </p>
                   </div>
 
@@ -571,6 +682,14 @@ export default function LoginPage() {
           </p>
         </div>
       </div>
+      
+      {/* Click outside to close dropdown */}
+      {showCountryDropdown && (
+        <div 
+          className="fixed inset-0 z-40" 
+          onClick={() => setShowCountryDropdown(false)}
+        />
+      )}
     </div>
   );
 }
