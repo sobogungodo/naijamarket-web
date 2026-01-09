@@ -63,6 +63,9 @@ const COUNTRY_CODES = [
   { code: "+20", country: "Egypt", flag: "🇪🇬", maxLength: 10 },
 ];
 
+// Default country (Nigeria)
+const DEFAULT_COUNTRY = COUNTRY_CODES[0];
+
 // ============================================================================
 // LOGIN PAGE - WITH EMAIL/PASSWORD AND PHONE OTP OPTIONS
 // ============================================================================
@@ -87,7 +90,7 @@ export default function LoginPage() {
     phone: "",
     otp: "",
   });
-  const [selectedCountry, setSelectedCountry] = useState(COUNTRY_CODES[0]); // Default: Nigeria
+  const [selectedCountry, setSelectedCountry] = useState(DEFAULT_COUNTRY);
   const [showCountryDropdown, setShowCountryDropdown] = useState(false);
   const [otpStep, setOtpStep] = useState<"phone" | "otp">("phone");
   const [maskedPhone, setMaskedPhone] = useState("");
@@ -177,7 +180,8 @@ export default function LoginPage() {
       phone = phone.substring(1);
     }
     // Combine country code (without +) and phone number
-    return selectedCountry?.code?.replace("+", "") + phone;
+    const countryCode = selectedCountry.code.replace("+", "");
+    return countryCode + phone;
   };
 
   const handleSendOTP = async (e: React.FormEvent) => {
