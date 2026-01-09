@@ -251,6 +251,8 @@ async function findArbitrageOpportunities(
         const buyPrice = sorted[i];
         const sellPrice = sorted[j];
         
+        if (!buyPrice || !sellPrice) continue;
+        
         const buyPriceNum = Number(buyPrice.price || 0);
         const sellPriceNum = Number(sellPrice.price || 0);
         
