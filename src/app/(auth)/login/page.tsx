@@ -462,8 +462,8 @@ export default function LoginPage() {
                           onClick={() => setShowCountryDropdown(!showCountryDropdown)}
                           className="flex items-center gap-2 px-3 py-3 bg-terminal-surface border border-terminal-border rounded-lg text-white hover:border-gray-500 transition-colors min-w-[100px]"
                         >
-                          <span className="text-lg">{selectedCountry.flag}</span>
-                          <span className="text-sm">{selectedCountry.code}</span>
+                          <span className="text-lg">{selectedCountry?.flag}</span>
+                          <span className="text-sm">{selectedCountry?.code}</span>
                           <ChevronDown className="w-4 h-4 text-gray-400" />
                         </button>
                         
@@ -476,7 +476,7 @@ export default function LoginPage() {
                                 type="button"
                                 onClick={() => selectCountry(country)}
                                 className={`w-full flex items-center gap-3 px-3 py-2 hover:bg-terminal-border transition-colors text-left ${
-                                  selectedCountry.code === country.code && selectedCountry.country === country.country
+                                  selectedCountry?.code === country.code && selectedCountry?.country === country.country
                                     ? "bg-naija-green/20 text-naija-green"
                                     : "text-white"
                                 }`}
@@ -497,7 +497,7 @@ export default function LoginPage() {
                         placeholder="8012345678"
                         value={phoneData.phone}
                         onChange={handlePhoneChange}
-                        maxLength={selectedCountry.maxLength}
+                        maxLength={(selectedCountry?.maxLength || 11)}
                         className={`flex-1 px-4 py-3 bg-terminal-surface border rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-naija-green focus:border-transparent transition-all ${
                           errors.phone ? "border-price-down" : "border-terminal-border"
                         }`}
@@ -533,7 +533,7 @@ export default function LoginPage() {
                       Enter the 6-digit code sent to WhatsApp
                     </p>
                     <p className="text-white text-sm mt-1">
-                      {selectedCountry.flag} {selectedCountry.code} {maskedPhone}
+                      {selectedCountry?.flag} {selectedCountry?.code} {maskedPhone}
                     </p>
                   </div>
 
