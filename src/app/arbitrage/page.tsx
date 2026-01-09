@@ -18,7 +18,6 @@ import {
   Clock,
   ChevronDown,
   ChevronUp,
-  ExternalLink,
 } from "lucide-react";
 
 // ============================================================================
