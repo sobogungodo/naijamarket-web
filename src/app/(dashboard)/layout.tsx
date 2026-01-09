@@ -1,17 +1,24 @@
+"use client";
+
+import { useState } from "react";
 import Link from "next/link";
-import { 
-  LayoutDashboard, 
-  TrendingUp, 
-  MapPin, 
-  Bell, 
+import { usePathname } from "next/navigation";
+import { signOut, useSession } from "next-auth/react";
+import {
+  LayoutDashboard,
+  TrendingUp,
+  MapPin,
+  Bell,
   Star,
-  BarChart3, 
+  BarChart3,
   Settings,
   LogOut,
   Search,
   Command,
   HelpCircle,
-  Download
+  Download,
+  GitCompare,
+  ArrowLeftRight,
 } from "lucide-react";
 
 // ============================================================================
@@ -23,6 +30,35 @@ export default function DashboardLayout({
 }: {
   children: React.ReactNode;
 }) {
+  const pathname = usePathname();
+  const { data: session } = useSession();
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
+
+  // Get user info from session
+  const user = session?.user as { name?: string; tier?: string } | undefined;
+  const userName = user?.name || "User";
+  const userTier = user?.tier || "FREE";
+  const userInitials = userName
+    .split(" ")
+    .map((n) => n[0])
+    .join("")
+    .toUpperCase()
+    .slice(0, 2);
+
+  // Handle logout
+  const handleLogout = async () => {
+    setIsLoggingOut(true);
+    try {
+      await signOut({ 
+        callbackUrl: "/login",
+        redirect: true 
+      });
+    } catch (error) {
+      console.error("Logout error:", error);
+      setIsLoggingOut(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-terminal-bg">
       {/* Sidebar */}
@@ -42,20 +78,22 @@ export default function DashboardLayout({
         {/* Navigation */}
         <nav className="sidebar-nav custom-scrollbar">
           <div className="space-y-1">
-            <NavLink href="/dashboard" icon={LayoutDashboard} label="Dashboard" />
-            <NavLink href="/dashboard/prices" icon={TrendingUp} label="Prices" />
-            <NavLink href="/dashboard/markets" icon={MapPin} label="Markets" />
-            <NavLink href="/dashboard/watchlists" icon={Star} label="Watchlists" />
-            <NavLink href="/dashboard/alerts" icon={Bell} label="Price Alerts" />
-            <NavLink href="/dashboard/analytics" icon={BarChart3} label="Analytics" />
+            <NavLink href="/dashboard" icon={LayoutDashboard} label="Dashboard" currentPath={pathname} />
+            <NavLink href="/dashboard/prices" icon={TrendingUp} label="Prices" currentPath={pathname} />
+            <NavLink href="/dashboard/markets" icon={MapPin} label="Markets" currentPath={pathname} />
+            <NavLink href="/dashboard/compare" icon={GitCompare} label="Compare" currentPath={pathname} />
+            <NavLink href="/dashboard/arbitrage" icon={ArrowLeftRight} label="Arbitrage" badge="PRO" currentPath={pathname} />
+            <NavLink href="/dashboard/watchlist" icon={Star} label="Watchlist" currentPath={pathname} />
+            <NavLink href="/dashboard/alerts" icon={Bell} label="Price Alerts" currentPath={pathname} />
+            <NavLink href="/dashboard/analytics" icon={BarChart3} label="Analytics" currentPath={pathname} />
           </div>
 
           <div className="mt-8 pt-8 border-t border-terminal-border">
             <div className="px-4 mb-2 text-2xs font-medium text-gray-500 uppercase tracking-wider">
               Tools
             </div>
-            <NavLink href="/dashboard/export" icon={Download} label="Export Data" />
-            <NavLink href="/dashboard/api" icon={Command} label="API Keys" badge="PRO" />
+            <NavLink href="/dashboard/export" icon={Download} label="Export Data" currentPath={pathname} />
+            <NavLink href="/dashboard/api" icon={Command} label="API Keys" badge="PRO" currentPath={pathname} />
           </div>
         </nav>
 
@@ -64,11 +102,11 @@ export default function DashboardLayout({
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-2">
               <div className="w-8 h-8 rounded-full bg-naija-green/20 flex items-center justify-center text-naija-green text-sm font-medium">
-                OS
+                {userInitials}
               </div>
               <div>
-                <div className="text-sm text-white">Olawale S.</div>
-                <div className="text-2xs text-gray-500">CORPORATE</div>
+                <div className="text-sm text-white">{userName}</div>
+                <div className="text-2xs text-gray-500">{userTier}</div>
               </div>
             </div>
           </div>
@@ -80,8 +118,17 @@ export default function DashboardLayout({
               <Settings className="w-3.5 h-3.5" />
               Settings
             </Link>
-            <button className="flex items-center justify-center gap-2 py-2 px-3 text-xs text-gray-400 hover:text-price-down bg-terminal-surface rounded hover:bg-terminal-elevated transition-colors">
-              <LogOut className="w-3.5 h-3.5" />
+            <button 
+              onClick={handleLogout}
+              disabled={isLoggingOut}
+              className="flex items-center justify-center gap-2 py-2 px-3 text-xs text-gray-400 hover:text-price-down bg-terminal-surface rounded hover:bg-terminal-elevated transition-colors disabled:opacity-50"
+              title="Sign out"
+            >
+              {isLoggingOut ? (
+                <div className="w-3.5 h-3.5 border-2 border-red-400 border-t-transparent rounded-full animate-spin" />
+              ) : (
+                <LogOut className="w-3.5 h-3.5" />
+              )}
             </button>
           </div>
         </div>
@@ -108,9 +155,12 @@ export default function DashboardLayout({
 
             {/* Quick Actions */}
             <div className="flex items-center gap-2">
-              <button className="p-2 text-gray-400 hover:text-white hover:bg-terminal-surface rounded-lg transition-colors">
+              <Link 
+                href="/dashboard/alerts"
+                className="p-2 text-gray-400 hover:text-white hover:bg-terminal-surface rounded-lg transition-colors"
+              >
                 <Bell className="w-4 h-4" />
-              </button>
+              </Link>
               <button className="p-2 text-gray-400 hover:text-white hover:bg-terminal-surface rounded-lg transition-colors">
                 <HelpCircle className="w-4 h-4" />
               </button>
@@ -161,11 +211,13 @@ interface NavLinkProps {
   icon: React.ElementType;
   label: string;
   badge?: string;
+  currentPath: string | null;
 }
 
-function NavLink({ href, icon: Icon, label, badge }: NavLinkProps) {
-  // In a real app, you'd use usePathname() to determine active state
-  const isActive = false;
+function NavLink({ href, icon: Icon, label, badge, currentPath }: NavLinkProps) {
+  // Determine if this link is active
+  const isActive = currentPath === href || 
+    (href !== "/dashboard" && currentPath?.startsWith(href));
 
   return (
     <Link
