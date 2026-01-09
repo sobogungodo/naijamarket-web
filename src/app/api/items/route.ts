@@ -21,10 +21,10 @@ export async function GET(request: NextRequest) {
 
     if (categoryId) where.category_id = categoryId;
     if (categoryName) {
-      where.category_name = { contains: categoryName, mode: "insensitive" };
+      where.category_name = { contains: categoryName };
     }
     if (search) {
-      where.item_name = { contains: search, mode: "insensitive" };
+      where.item_name = { contains: search };
     }
 
     // Get items
@@ -79,7 +79,7 @@ export async function POST(request: NextRequest) {
       });
     } else if (item_name) {
       item = await prisma.items_Catalog.findFirst({
-        where: { item_name: { contains: item_name, mode: "insensitive" } },
+        where: { item_name: { contains: item_name } },
       });
     }
 
