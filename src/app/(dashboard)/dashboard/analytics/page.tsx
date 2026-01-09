@@ -474,7 +474,7 @@ export default function AnalyticsPage() {
                 outerRadius={70}
                 paddingAngle={2}
               >
-                {data.categoryBreakdown.map((entry, index) => (
+                {data.categoryBreakdown.map((_, index) => (
                   <Cell key={index} fill={PIE_COLORS[index % PIE_COLORS.length]} />
                 ))}
               </Pie>
