@@ -112,7 +112,7 @@ export default function APIKeysPage() {
   const user = session?.user as { tier?: string } | undefined;
   const userTier = user?.tier || "FREE";
   const hasAPIAccess = hasTierAccess(userTier, "BUSINESS");
-  const limits = API_LIMITS[userTier] || API_LIMITS.FREE;
+  const limits = API_LIMITS[userTier as keyof typeof API_LIMITS] ?? { requests: 0, rateLimit: "N/A" };
 
   // Toggle key visibility
   const toggleKeyVisibility = (keyId: string) => {
