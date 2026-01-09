@@ -251,7 +251,7 @@ function getTopMovers(priceData: any[]) {
 }
 
 // Helper: Calculate NFPI history
-function calculateNFPIHistory(priceData: any[], days: number) {
+function calculateNFPIHistory(_priceData: any[], days: number) {
   const history: any[] = [];
   const now = new Date();
   let baseNFPI = 100;
