@@ -80,11 +80,6 @@ const REGION_NAMES: Record<string, string> = {
   'SS': 'South-South'
 };
 
-// Format price with Naira symbol
-function formatPrice(price: number): string {
-  return `₦${price.toLocaleString('en-NG')}`;
-}
-
 // Get trend indicator
 function getTrendEmoji(change: number): string {
   if (change > 2) return '📈';
@@ -173,7 +168,7 @@ export async function GET(request: NextRequest) {
     // Calculate regional indices (if full national)
     const regionalIndices: Record<string, number> = {};
     if (region === 'ALL') {
-      for (const [regionCode, states] of Object.entries(REGION_STATES)) {
+      for (const [regionCode] of Object.entries(REGION_STATES)) {
         // Simplified: use variation from national average
         const variation = (Math.random() - 0.5) * 10; // ±5% variation
         regionalIndices[regionCode] = Math.round((nfpiValue + variation) * 10) / 10;
