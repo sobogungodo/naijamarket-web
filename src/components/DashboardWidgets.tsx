@@ -34,16 +34,16 @@ interface WatchlistItem {
 }
 
 interface PriceAlert {
-  id: string;
-  itemName: string;
-  marketName: string;
-  alertType: "above" | "below" | "change";
-  targetPrice?: number;
-  changePercent?: number;
-  currentPrice: number;
-  triggered: boolean;
-  triggeredAt?: string;
-  createdAt: string;
+  alert_id: string;
+  item_name: string;
+  market_name: string;
+  alert_type: "ABOVE" | "BELOW";
+  target_price: number;
+  current_price: number | null;
+  status: "ACTIVE" | "TRIGGERED" | "PAUSED" | "DELETED";
+  should_trigger?: boolean;
+  triggered_at?: string;
+  created_at: string;
 }
 
 interface WidgetProps {
@@ -227,7 +227,6 @@ export function WatchlistWidget({ phone, tier = "FREE" }: WidgetProps) {
 export function PriceAlertsWidget({ phone, tier = "FREE" }: WidgetProps) {
   const [alerts, setAlerts] = useState<PriceAlert[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [triggeredCount, setTriggeredCount] = useState(0);
 
   useEffect(() => {
@@ -301,10 +300,10 @@ export function PriceAlertsWidget({ phone, tier = "FREE" }: WidgetProps) {
         <div className="space-y-3">
           {alerts.map((alert) => (
             <div
-              key={alert.id}
+              key={alert.alert_id}
               className={`
                 flex items-center justify-between p-2 rounded-lg transition-colors
-                ${alert.triggered 
+                ${alert.status === "TRIGGERED" || alert.should_trigger
                   ? "bg-amber-500/10 border border-amber-500/30" 
                   : "hover:bg-gray-800/50"
                 }
@@ -313,30 +312,29 @@ export function PriceAlertsWidget({ phone, tier = "FREE" }: WidgetProps) {
               <div className="flex items-center gap-3">
                 <div className={`
                   w-8 h-8 rounded-lg flex items-center justify-center
-                  ${alert.triggered ? "bg-amber-500/20" : "bg-gray-800"}
+                  ${alert.status === "TRIGGERED" || alert.should_trigger ? "bg-amber-500/20" : "bg-gray-800"}
                 `}>
-                  <Bell className={`w-4 h-4 ${alert.triggered ? "text-amber-400" : "text-gray-500"}`} />
+                  <Bell className={`w-4 h-4 ${alert.status === "TRIGGERED" || alert.should_trigger ? "text-amber-400" : "text-gray-500"}`} />
                 </div>
                 <div>
                   <div className="text-sm text-white font-medium">
-                    {alert.itemName}
+                    {alert.item_name}
                   </div>
                   <div className="text-xs text-gray-500">
-                    {alert.alertType === "above" && `Above ${formatPrice(alert.targetPrice || 0)}`}
-                    {alert.alertType === "below" && `Below ${formatPrice(alert.targetPrice || 0)}`}
-                    {alert.alertType === "change" && `±${alert.changePercent}% change`}
+                    {alert.alert_type === "ABOVE" && `Above ${formatPrice(alert.target_price)}`}
+                    {alert.alert_type === "BELOW" && `Below ${formatPrice(alert.target_price)}`}
                   </div>
                 </div>
               </div>
               
               <div className="text-right">
                 <div className="text-sm text-white font-medium">
-                  {formatPrice(alert.currentPrice)}
+                  {alert.current_price ? formatPrice(alert.current_price) : "—"}
                 </div>
                 <div className="text-xs text-gray-500 flex items-center gap-1 justify-end">
                   <Clock className="w-3 h-3" />
-                  {alert.triggered 
-                    ? formatTimeAgo(alert.triggeredAt || alert.createdAt)
+                  {alert.status === "TRIGGERED" || alert.should_trigger
+                    ? formatTimeAgo(alert.triggered_at || alert.created_at)
                     : "Watching"
                   }
                 </div>
