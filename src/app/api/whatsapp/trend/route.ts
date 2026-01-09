@@ -45,15 +45,6 @@ function formatPrice(price: number | string): string {
   return `₦${numPrice.toLocaleString('en-NG')}`;
 }
 
-// Format date for display
-function formatDate(date: Date | string): string {
-  const d = new Date(date);
-  return d.toLocaleDateString('en-NG', { 
-    day: 'numeric', 
-    month: 'short'
-  });
-}
-
 // Calculate trend direction
 function getTrendIndicator(change: number): string {
   if (change > 5) return '📈 Strongly Up';
@@ -104,7 +95,7 @@ export async function GET(request: NextRequest) {
 
     // Build WHERE clause
     let whereClause = `WHERE validation_status = 'APPROVED' AND item_name LIKE @p1 AND submission_date >= @p2`;
-    const params: any[] = [`%${item}%`, startDate.toISOString()];
+    const params: string[] = [`%${item}%`, startDate.toISOString()];
     let paramIndex = 3;
 
     if (market) {
@@ -132,10 +123,25 @@ export async function GET(request: NextRequest) {
       FROM Approved_Prices
       ${whereClause}
       ORDER BY submission_date ASC
-    `, ...params) as any[];
+    `, ...params) as Array<{
+      item_name: string;
+      market_name: string;
+      state: string;
+      price: string;
+      unit: string;
+      submission_date: Date;
+      price_trend: string;
+    }>;
 
     // Also check Price_History_NBS for more historical data
-    let nbsHistory: any[] = [];
+    let nbsHistory: Array<{
+      item_name: string;
+      price: string | number;
+      price_date: Date;
+      state: string;
+      market_name: string;
+    }> = [];
+    
     try {
       nbsHistory = await prisma.$queryRawUnsafe(`
         SELECT TOP 100
@@ -148,7 +154,7 @@ export async function GET(request: NextRequest) {
         WHERE item_name LIKE @p1 
           AND price_date >= @p2
         ORDER BY price_date ASC
-      `, `%${item}%`, startDate.toISOString()) as any[];
+      `, `%${item}%`, startDate.toISOString()) as typeof nbsHistory;
     } catch (e) {
       // Table might not exist yet or be empty - continue with Approved_Prices only
       console.log("NBS history not available:", e);
@@ -156,17 +162,17 @@ export async function GET(request: NextRequest) {
 
     // Combine and process data
     const allPrices = [
-      ...historicalPrices.map((p: any) => ({
+      ...historicalPrices.map((p) => ({
         ...p,
-        priceNum: typeof p.price === 'string' ? parseFloat(p.price.replace(/[₦,]/g, '')) : p.price,
+        priceNum: typeof p.price === 'string' ? parseFloat(p.price.replace(/[₦,]/g, '')) : Number(p.price),
         date: new Date(p.submission_date),
-        source: 'crowdsourced'
+        source: 'crowdsourced' as const
       })),
-      ...nbsHistory.map((p: any) => ({
+      ...nbsHistory.map((p) => ({
         ...p,
-        priceNum: typeof p.price === 'string' ? parseFloat(p.price.replace(/[₦,]/g, '')) : p.price,
+        priceNum: typeof p.price === 'string' ? parseFloat(p.price.replace(/[₦,]/g, '')) : Number(p.price),
         date: new Date(p.price_date),
-        source: 'nbs'
+        source: 'nbs' as const
       }))
     ].sort((a, b) => a.date.getTime() - b.date.getTime());
 
@@ -185,9 +191,9 @@ export async function GET(request: NextRequest) {
     const minPrice = Math.min(...prices);
     const maxPrice = Math.max(...prices);
     const avgPrice = prices.reduce((a, b) => a + b, 0) / prices.length;
-    const firstPrice = prices[0];
-    const lastPrice = prices[prices.length - 1];
-    const changePercent = ((lastPrice - firstPrice) / firstPrice * 100).toFixed(1);
+    const firstPrice = prices[0] ?? 0;
+    const lastPrice = prices[prices.length - 1] ?? 0;
+    const changePercent = firstPrice > 0 ? ((lastPrice - firstPrice) / firstPrice * 100).toFixed(1) : '0';
     const changeAmount = lastPrice - firstPrice;
 
     // Get unique markets for context
