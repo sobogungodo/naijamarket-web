@@ -3,27 +3,46 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Eye, EyeOff, Mail, Lock, ArrowRight } from "lucide-react";
+import { Eye, EyeOff, Mail, Lock, ArrowRight, Phone, MessageSquare } from "lucide-react";
 import { toast } from "sonner";
+import { signIn } from "next-auth/react";
 
 import { Button } from "@/components/ui/button";
 import { Input, FormField } from "@/components/ui/input";
 
 
 // ============================================================================
-// LOGIN PAGE
+// LOGIN PAGE - WITH EMAIL/PASSWORD AND PHONE OTP OPTIONS
 // ============================================================================
 
 export default function LoginPage() {
   const router = useRouter();
   const [isLoading, setIsLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  
+  // Toggle between email and phone login
+  const [loginMethod, setLoginMethod] = useState<"email" | "phone">("email");
+  
+  // Email form data
   const [formData, setFormData] = useState({
     email: "",
     password: "",
     remember: false,
   });
+  
+  // Phone OTP form data
+  const [phoneData, setPhoneData] = useState({
+    phone: "",
+    otp: "",
+  });
+  const [otpStep, setOtpStep] = useState<"phone" | "otp">("phone");
+  const [maskedPhone, setMaskedPhone] = useState("");
+  
   const [errors, setErrors] = useState<Record<string, string>>({});
+
+  // ============================================================================
+  // EMAIL/PASSWORD HANDLERS
+  // ============================================================================
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value, type, checked } = e.target;
@@ -31,7 +50,6 @@ export default function LoginPage() {
       ...prev,
       [name]: type === "checkbox" ? checked : value,
     }));
-    // Clear error when user types
     if (errors[name]) {
       setErrors((prev) => ({ ...prev, [name]: "" }));
     }
@@ -56,22 +74,15 @@ export default function LoginPage() {
     return Object.keys(newErrors).length === 0;
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleEmailSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (!validateForm()) return;
 
     setIsLoading(true);
 
     try {
-      // TODO: Implement actual authentication
-      // const response = await signIn("credentials", {
-      //   email: formData.email,
-      //   password: formData.password,
-      //   redirect: false,
-      // });
-
-      // Simulate API call
+      // TODO: Implement actual email authentication
       await new Promise((resolve) => setTimeout(resolve, 1500));
 
       toast.success("Welcome back!", {
@@ -87,6 +98,134 @@ export default function LoginPage() {
       setIsLoading(false);
     }
   };
+
+  // ============================================================================
+  // PHONE OTP HANDLERS
+  // ============================================================================
+
+  const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const { name, value } = e.target;
+    // Only allow numbers
+    const numericValue = value.replace(/\D/g, "");
+    setPhoneData((prev) => ({
+      ...prev,
+      [name]: numericValue,
+    }));
+    if (errors[name]) {
+      setErrors((prev) => ({ ...prev, [name]: "" }));
+    }
+  };
+
+  const handleSendOTP = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (!phoneData.phone || phoneData.phone.length < 10) {
+      setErrors({ phone: "Please enter a valid phone number" });
+      return;
+    }
+
+    setIsLoading(true);
+    setErrors({});
+
+    try {
+      const response = await fetch("/api/auth/send-otp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ phone: phoneData.phone }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || "Failed to send OTP");
+      }
+
+      setMaskedPhone(data.phone);
+      setOtpStep("otp");
+      toast.success("OTP Sent!", {
+        description: "Check your WhatsApp for the verification code",
+      });
+    } catch (error: any) {
+      toast.error("Failed to send OTP", {
+        description: error.message || "Please try again",
+      });
+      setErrors({ phone: error.message });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleVerifyOTP = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (!phoneData.otp || phoneData.otp.length !== 6) {
+      setErrors({ otp: "Please enter the 6-digit code" });
+      return;
+    }
+
+    setIsLoading(true);
+    setErrors({});
+
+    try {
+      const result = await signIn("phone-otp", {
+        phone: phoneData.phone,
+        otp: phoneData.otp,
+        redirect: false,
+      });
+
+      if (result?.error) {
+        throw new Error(result.error);
+      }
+
+      toast.success("Welcome!", {
+        description: "Redirecting to dashboard...",
+      });
+
+      router.push("/dashboard");
+      router.refresh();
+    } catch (error: any) {
+      toast.error("Verification failed", {
+        description: error.message || "Invalid OTP. Please try again.",
+      });
+      setErrors({ otp: "Invalid or expired code" });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleResendOTP = async () => {
+    setIsLoading(true);
+    setPhoneData((prev) => ({ ...prev, otp: "" }));
+    setErrors({});
+
+    try {
+      const response = await fetch("/api/auth/send-otp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ phone: phoneData.phone }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || "Failed to resend OTP");
+      }
+
+      toast.success("OTP Resent!", {
+        description: "Check your WhatsApp for the new code",
+      });
+    } catch (error: any) {
+      toast.error("Failed to resend", {
+        description: error.message,
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // ============================================================================
+  // RENDER
+  // ============================================================================
 
   return (
     <div className="min-h-screen bg-terminal-bg flex">
@@ -115,82 +254,227 @@ export default function LoginPage() {
             </p>
           </div>
 
-          {/* Form */}
-          <form onSubmit={handleSubmit} className="space-y-5">
-            <FormField label="Email Address" error={errors.email} required>
-              <Input
-                type="email"
-                name="email"
-                placeholder="you@company.com"
-                value={formData.email}
-                onChange={handleChange}
-                error={errors.email}
-                leftIcon={<Mail className="w-4 h-4" />}
-                autoComplete="email"
-                disabled={isLoading}
-              />
-            </FormField>
+          {/* Login Method Toggle */}
+          <div className="flex bg-terminal-surface rounded-lg p-1">
+            <button
+              type="button"
+              onClick={() => {
+                setLoginMethod("email");
+                setErrors({});
+              }}
+              className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-md text-sm font-medium transition-all ${
+                loginMethod === "email"
+                  ? "bg-naija-green text-terminal-bg"
+                  : "text-gray-400 hover:text-white"
+              }`}
+            >
+              <Mail className="w-4 h-4" />
+              Email
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setLoginMethod("phone");
+                setOtpStep("phone");
+                setErrors({});
+              }}
+              className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-md text-sm font-medium transition-all ${
+                loginMethod === "phone"
+                  ? "bg-naija-green text-terminal-bg"
+                  : "text-gray-400 hover:text-white"
+              }`}
+            >
+              <Phone className="w-4 h-4" />
+              Phone
+            </button>
+          </div>
 
-            <FormField label="Password" error={errors.password} required>
-              <Input
-                type={showPassword ? "text" : "password"}
-                name="password"
-                placeholder="••••••••"
-                value={formData.password}
-                onChange={handleChange}
-                error={errors.password}
-                leftIcon={<Lock className="w-4 h-4" />}
-                rightIcon={
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    className="hover:text-white transition-colors"
-                  >
-                    {showPassword ? (
-                      <EyeOff className="w-4 h-4" />
-                    ) : (
-                      <Eye className="w-4 h-4" />
-                    )}
-                  </button>
-                }
-                autoComplete="current-password"
-                disabled={isLoading}
-              />
-            </FormField>
-
-            {/* Remember & Forgot */}
-            <div className="flex items-center justify-between">
-              <label className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  name="remember"
-                  checked={formData.remember}
+          {/* Email/Password Form */}
+          {loginMethod === "email" && (
+            <form onSubmit={handleEmailSubmit} className="space-y-5">
+              <FormField label="Email Address" error={errors.email} required>
+                <Input
+                  type="email"
+                  name="email"
+                  placeholder="you@company.com"
+                  value={formData.email}
                   onChange={handleChange}
-                  className="w-4 h-4 rounded border-terminal-border bg-terminal-surface text-naija-green focus:ring-naija-green focus:ring-offset-terminal-bg"
+                  error={errors.email}
+                  leftIcon={<Mail className="w-4 h-4" />}
+                  autoComplete="email"
                   disabled={isLoading}
                 />
-                <span className="text-sm text-gray-400">Remember me</span>
-              </label>
-              <Link
-                href="/forgot-password"
-                className="text-sm text-naija-green hover:text-naija-green-300 transition-colors"
-              >
-                Forgot password?
-              </Link>
-            </div>
+              </FormField>
 
-            {/* Submit */}
-            <Button
-              type="submit"
-              className="w-full"
-              size="lg"
-              isLoading={isLoading}
-              loadingText="Signing in..."
-            >
-              Sign In
-              <ArrowRight className="w-4 h-4" />
-            </Button>
-          </form>
+              <FormField label="Password" error={errors.password} required>
+                <Input
+                  type={showPassword ? "text" : "password"}
+                  name="password"
+                  placeholder="••••••••"
+                  value={formData.password}
+                  onChange={handleChange}
+                  error={errors.password}
+                  leftIcon={<Lock className="w-4 h-4" />}
+                  rightIcon={
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="hover:text-white transition-colors"
+                    >
+                      {showPassword ? (
+                        <EyeOff className="w-4 h-4" />
+                      ) : (
+                        <Eye className="w-4 h-4" />
+                      )}
+                    </button>
+                  }
+                  autoComplete="current-password"
+                  disabled={isLoading}
+                />
+              </FormField>
+
+              {/* Remember & Forgot */}
+              <div className="flex items-center justify-between">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    name="remember"
+                    checked={formData.remember}
+                    onChange={handleChange}
+                    className="w-4 h-4 rounded border-terminal-border bg-terminal-surface text-naija-green focus:ring-naija-green focus:ring-offset-terminal-bg"
+                    disabled={isLoading}
+                  />
+                  <span className="text-sm text-gray-400">Remember me</span>
+                </label>
+                <Link
+                  href="/forgot-password"
+                  className="text-sm text-naija-green hover:text-naija-green-300 transition-colors"
+                >
+                  Forgot password?
+                </Link>
+              </div>
+
+              {/* Submit */}
+              <Button
+                type="submit"
+                className="w-full"
+                size="lg"
+                isLoading={isLoading}
+                loadingText="Signing in..."
+              >
+                Sign In
+                <ArrowRight className="w-4 h-4" />
+              </Button>
+            </form>
+          )}
+
+          {/* Phone OTP Form */}
+          {loginMethod === "phone" && (
+            <>
+              {otpStep === "phone" ? (
+                <form onSubmit={handleSendOTP} className="space-y-5">
+                  <FormField label="Phone Number" error={errors.phone} required>
+                    <div className="relative">
+                      <div className="absolute left-3 top-1/2 -translate-y-1/2 flex items-center gap-1 text-gray-400 text-sm">
+                        <span>🇳🇬</span>
+                        <span>+234</span>
+                      </div>
+                      <input
+                        type="tel"
+                        name="phone"
+                        placeholder="8012345678"
+                        value={phoneData.phone}
+                        onChange={handlePhoneChange}
+                        maxLength={11}
+                        className={`w-full pl-20 pr-4 py-3 bg-terminal-surface border rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-naija-green focus:border-transparent transition-all ${
+                          errors.phone ? "border-price-down" : "border-terminal-border"
+                        }`}
+                        disabled={isLoading}
+                      />
+                    </div>
+                  </FormField>
+                  
+                  <p className="text-xs text-gray-500 flex items-center gap-2">
+                    <MessageSquare className="w-4 h-4 text-naija-green" />
+                    We&apos;ll send a verification code to your WhatsApp
+                  </p>
+
+                  <Button
+                    type="submit"
+                    className="w-full"
+                    size="lg"
+                    isLoading={isLoading}
+                    loadingText="Sending OTP..."
+                    disabled={phoneData.phone.length < 10}
+                  >
+                    Send OTP
+                    <ArrowRight className="w-4 h-4" />
+                  </Button>
+                </form>
+              ) : (
+                <form onSubmit={handleVerifyOTP} className="space-y-5">
+                  <div className="text-center mb-4">
+                    <div className="inline-flex items-center justify-center w-12 h-12 bg-naija-green/20 rounded-full mb-3">
+                      <MessageSquare className="w-6 h-6 text-naija-green" />
+                    </div>
+                    <p className="text-gray-400 text-sm">
+                      Enter the 6-digit code sent to WhatsApp ({maskedPhone})
+                    </p>
+                  </div>
+
+                  <FormField label="Verification Code" error={errors.otp} required>
+                    <input
+                      type="text"
+                      name="otp"
+                      placeholder="000000"
+                      value={phoneData.otp}
+                      onChange={handlePhoneChange}
+                      maxLength={6}
+                      className={`w-full px-4 py-4 bg-terminal-surface border rounded-lg text-white text-center text-2xl tracking-[0.5em] placeholder-gray-600 focus:outline-none focus:ring-2 focus:ring-naija-green focus:border-transparent transition-all ${
+                        errors.otp ? "border-price-down" : "border-terminal-border"
+                      }`}
+                      disabled={isLoading}
+                      autoFocus
+                    />
+                  </FormField>
+
+                  <Button
+                    type="submit"
+                    className="w-full"
+                    size="lg"
+                    isLoading={isLoading}
+                    loadingText="Verifying..."
+                    disabled={phoneData.otp.length !== 6}
+                  >
+                    Verify & Sign In
+                    <ArrowRight className="w-4 h-4" />
+                  </Button>
+
+                  <div className="flex items-center justify-between text-sm">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setOtpStep("phone");
+                        setPhoneData((prev) => ({ ...prev, otp: "" }));
+                        setErrors({});
+                      }}
+                      className="text-gray-400 hover:text-white transition-colors"
+                    >
+                      ← Change number
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleResendOTP}
+                      disabled={isLoading}
+                      className="text-naija-green hover:text-naija-green-300 transition-colors disabled:text-gray-500"
+                    >
+                      Resend code
+                    </button>
+                  </div>
+                </form>
+              )}
+            </>
+          )}
 
           {/* Divider */}
           <div className="relative">
@@ -237,7 +521,7 @@ export default function LoginPage() {
 
           {/* Sign Up Link */}
           <p className="text-center text-sm text-gray-400">
-            Don't have an account?{" "}
+            Don&apos;t have an account?{" "}
             <Link
               href="/register"
               className="text-naija-green hover:text-naija-green-300 font-medium transition-colors"
@@ -282,7 +566,7 @@ export default function LoginPage() {
             Real-Time Market Intelligence
           </h2>
           <p className="text-gray-400">
-            Access GPS-verified commodity prices from 226+ markets across Nigeria. 
+            Access GPS-verified commodity prices from 226+ markets across Nigeria.
             Make data-driven procurement decisions with confidence.
           </p>
         </div>
