@@ -1,5 +1,5 @@
 // src/app/api/export/route.ts
-// NaijaMarket Intel - Export API for CSV/XLSX/JSON Downloads
+// NaijaMarket Intel - Export API with Robust Error Handling
 
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
@@ -41,6 +41,9 @@ function escapeCSV(value: any): string {
 }
 
 function arrayToCSV(data: any[], columns: { key: string; header: string }[]): string {
+  if (data.length === 0) {
+    return columns.map(c => escapeCSV(c.header)).join(",") + "\nNo data available";
+  }
   const headers = columns.map(c => escapeCSV(c.header)).join(",");
   const rows = data.map(row => 
     columns.map(c => escapeCSV(row[c.key])).join(",")
@@ -53,216 +56,198 @@ function arrayToJSON(data: any[]): string {
 }
 
 // ============================================================================
-// DATA FETCHING FUNCTIONS
+// SAFE DATA FETCHING FUNCTIONS
 // ============================================================================
 
 async function fetchMarkets() {
-  const markets = await prisma.$queryRaw`
-    SELECT 
-      market_id,
-      market_name,
-      market_type,
-      address,
-      city,
-      state,
-      region,
-      latitude,
-      longitude,
-      operating_days,
-      opening_time,
-      closing_time,
-      created_at
-    FROM Markets
-    ORDER BY state, market_name
-  ` as any[];
+  try {
+    // Try to get markets - adjust column names as needed
+    const markets = await prisma.$queryRaw`
+      SELECT * FROM Markets
+      ORDER BY market_name
+    ` as any[];
 
-  return {
-    data: markets,
-    columns: [
-      { key: "market_id", header: "Market ID" },
-      { key: "market_name", header: "Market Name" },
-      { key: "market_type", header: "Type" },
-      { key: "address", header: "Address" },
-      { key: "city", header: "City" },
-      { key: "state", header: "State" },
-      { key: "region", header: "Region" },
-      { key: "latitude", header: "Latitude" },
-      { key: "longitude", header: "Longitude" },
-      { key: "operating_days", header: "Operating Days" },
-      { key: "opening_time", header: "Opening Time" },
-      { key: "closing_time", header: "Closing Time" },
-      { key: "created_at", header: "Created At" },
-    ],
-    filename: "naijamarket_markets",
-  };
+    if (markets.length === 0) {
+      return {
+        data: [],
+        columns: [{ key: "message", header: "Message" }],
+        filename: "naijamarket_markets",
+      };
+    }
+
+    // Dynamically get columns from first row
+    const firstRow = markets[0];
+    const columns = Object.keys(firstRow).map(key => ({
+      key,
+      header: key.replace(/_/g, " ").replace(/\b\w/g, l => l.toUpperCase()),
+    }));
+
+    return { data: markets, columns, filename: "naijamarket_markets" };
+  } catch (error) {
+    console.error("fetchMarkets error:", error);
+    throw new Error("Markets table not found or query failed");
+  }
 }
 
 async function fetchItems() {
-  const items = await prisma.$queryRaw`
-    SELECT 
-      i.item_id,
-      i.item_name,
-      c.category_name,
-      i.unit,
-      i.description,
-      i.baseline_price,
-      i.created_at
-    FROM Items_Catalog i
-    LEFT JOIN Categories c ON i.category_id = c.category_id
-    ORDER BY c.category_name, i.item_name
-  ` as any[];
+  try {
+    // Try simple query first
+    const items = await prisma.$queryRaw`
+      SELECT * FROM Items_Catalog
+      ORDER BY item_name
+    ` as any[];
 
-  return {
-    data: items,
-    columns: [
-      { key: "item_id", header: "Item ID" },
-      { key: "item_name", header: "Item Name" },
-      { key: "category_name", header: "Category" },
-      { key: "unit", header: "Unit" },
-      { key: "description", header: "Description" },
-      { key: "baseline_price", header: "Baseline Price (₦)" },
-      { key: "created_at", header: "Created At" },
-    ],
-    filename: "naijamarket_items",
-  };
+    if (items.length === 0) {
+      return {
+        data: [],
+        columns: [{ key: "message", header: "Message" }],
+        filename: "naijamarket_items",
+      };
+    }
+
+    const firstRow = items[0];
+    const columns = Object.keys(firstRow).map(key => ({
+      key,
+      header: key.replace(/_/g, " ").replace(/\b\w/g, l => l.toUpperCase()),
+    }));
+
+    return { data: items, columns, filename: "naijamarket_items" };
+  } catch (error) {
+    console.error("fetchItems error:", error);
+    throw new Error("Items_Catalog table not found or query failed");
+  }
 }
 
 async function fetchPrices(dateRange: string) {
-  const now = new Date();
-  const daysBack = dateRange === "7d" ? 7 : dateRange === "90d" ? 90 : dateRange === "1y" ? 365 : 30;
-  const startDate = new Date(now.getTime() - daysBack * 24 * 60 * 60 * 1000).toISOString();
+  try {
+    const now = new Date();
+    const daysBack = dateRange === "7d" ? 7 : dateRange === "90d" ? 90 : dateRange === "1y" ? 365 : 30;
+    const startDate = new Date(now.getTime() - daysBack * 24 * 60 * 60 * 1000);
 
-  const prices = await prisma.$queryRaw`
-    SELECT 
-      price_id,
-      item_name,
-      market_name,
-      price,
-      unit,
-      price_trend,
-      price_change_percent,
-      validation_status,
-      validated_at,
-      created_at
-    FROM Approved_Prices
-    WHERE created_at >= ${startDate}
-    ORDER BY created_at DESC
-  ` as any[];
+    const prices = await prisma.$queryRaw`
+      SELECT * FROM Approved_Prices
+      WHERE created_at >= ${startDate}
+      ORDER BY created_at DESC
+    ` as any[];
 
-  return {
-    data: prices.map((p: any) => ({
-      ...p,
-      price: parseFloat(p.price) || 0,
-      price_change_percent: parseFloat(p.price_change_percent) || 0,
-      validated_at: p.validated_at ? new Date(p.validated_at).toISOString() : "",
-      created_at: p.created_at ? new Date(p.created_at).toISOString() : "",
-    })),
-    columns: [
-      { key: "price_id", header: "Price ID" },
-      { key: "item_name", header: "Item" },
-      { key: "market_name", header: "Market" },
-      { key: "price", header: "Price (₦)" },
-      { key: "unit", header: "Unit" },
-      { key: "price_trend", header: "Trend" },
-      { key: "price_change_percent", header: "Change %" },
-      { key: "validation_status", header: "Status" },
-      { key: "validated_at", header: "Validated At" },
-      { key: "created_at", header: "Created At" },
-    ],
-    filename: `naijamarket_prices_${dateRange}`,
-  };
+    if (prices.length === 0) {
+      // Try without date filter
+      const allPrices = await prisma.$queryRaw`
+        SELECT TOP 1000 * FROM Approved_Prices
+        ORDER BY created_at DESC
+      ` as any[];
+      
+      if (allPrices.length === 0) {
+        return {
+          data: [],
+          columns: [{ key: "message", header: "Message" }],
+          filename: `naijamarket_prices_${dateRange}`,
+        };
+      }
+
+      const firstRow = allPrices[0];
+      const columns = Object.keys(firstRow).map(key => ({
+        key,
+        header: key.replace(/_/g, " ").replace(/\b\w/g, l => l.toUpperCase()),
+      }));
+
+      return { data: allPrices, columns, filename: `naijamarket_prices_${dateRange}` };
+    }
+
+    const firstRow = prices[0];
+    const columns = Object.keys(firstRow).map(key => ({
+      key,
+      header: key.replace(/_/g, " ").replace(/\b\w/g, l => l.toUpperCase()),
+    }));
+
+    return { data: prices, columns, filename: `naijamarket_prices_${dateRange}` };
+  } catch (error) {
+    console.error("fetchPrices error:", error);
+    throw new Error("Approved_Prices table not found or query failed");
+  }
 }
 
-async function fetchTrends(dateRange: string) {
-  const now = new Date();
-  const daysBack = dateRange === "7d" ? 7 : dateRange === "90d" ? 90 : dateRange === "1y" ? 365 : 30;
-  const startDate = new Date(now.getTime() - daysBack * 24 * 60 * 60 * 1000).toISOString();
+async function fetchCategories() {
+  try {
+    const categories = await prisma.$queryRaw`
+      SELECT * FROM Categories
+      ORDER BY category_name
+    ` as any[];
 
-  const trends = await prisma.$queryRaw`
-    SELECT 
-      item_name,
-      market_name,
-      CAST(created_at AS DATE) as price_date,
-      AVG(CAST(price AS FLOAT)) as avg_price,
-      MIN(CAST(price AS FLOAT)) as min_price,
-      MAX(CAST(price AS FLOAT)) as max_price,
-      COUNT(*) as sample_count
-    FROM Approved_Prices
-    WHERE created_at >= ${startDate}
-    GROUP BY item_name, market_name, CAST(created_at AS DATE)
-    ORDER BY item_name, market_name, price_date
-  ` as any[];
+    if (categories.length === 0) {
+      return {
+        data: [],
+        columns: [{ key: "message", header: "Message" }],
+        filename: "naijamarket_categories",
+      };
+    }
 
-  return {
-    data: trends.map((t: any) => ({
-      item_name: t.item_name,
-      market_name: t.market_name,
-      price_date: new Date(t.price_date).toISOString().slice(0, 10),
-      avg_price: parseFloat(t.avg_price).toFixed(2),
-      min_price: parseFloat(t.min_price).toFixed(2),
-      max_price: parseFloat(t.max_price).toFixed(2),
-      sample_count: parseInt(t.sample_count),
-    })),
-    columns: [
-      { key: "item_name", header: "Item" },
-      { key: "market_name", header: "Market" },
-      { key: "price_date", header: "Date" },
-      { key: "avg_price", header: "Avg Price (₦)" },
-      { key: "min_price", header: "Min Price (₦)" },
-      { key: "max_price", header: "Max Price (₦)" },
-      { key: "sample_count", header: "Samples" },
-    ],
-    filename: `naijamarket_trends_${dateRange}`,
-  };
+    const firstRow = categories[0];
+    const columns = Object.keys(firstRow).map(key => ({
+      key,
+      header: key.replace(/_/g, " ").replace(/\b\w/g, l => l.toUpperCase()),
+    }));
+
+    return { data: categories, columns, filename: "naijamarket_categories" };
+  } catch (error) {
+    console.error("fetchCategories error:", error);
+    throw new Error("Categories table not found or query failed");
+  }
 }
 
-async function fetchRegional(dateRange: string) {
-  const now = new Date();
-  const daysBack = dateRange === "7d" ? 7 : dateRange === "90d" ? 90 : dateRange === "1y" ? 365 : 30;
-  const startDate = new Date(now.getTime() - daysBack * 24 * 60 * 60 * 1000).toISOString();
+async function fetchConsumers() {
+  try {
+    const consumers = await prisma.$queryRaw`
+      SELECT 
+        consumer_id, phone_number, display_name, subscription_tier,
+        query_count, created_at
+      FROM Consumers
+      ORDER BY created_at DESC
+    ` as any[];
 
-  const regional = await prisma.$queryRaw`
-    SELECT 
-      m.state,
-      m.region,
-      c.category_name,
-      COUNT(DISTINCT m.market_id) as market_count,
-      COUNT(p.price_id) as price_count,
-      AVG(CAST(p.price AS FLOAT)) as avg_price,
-      MIN(CAST(p.price AS FLOAT)) as min_price,
-      MAX(CAST(p.price AS FLOAT)) as max_price
-    FROM Markets m
-    LEFT JOIN Approved_Prices p ON m.market_name = p.market_name
-    LEFT JOIN Items_Catalog i ON p.item_name = i.item_name
-    LEFT JOIN Categories c ON i.category_id = c.category_id
-    WHERE p.created_at >= ${startDate} OR p.created_at IS NULL
-    GROUP BY m.state, m.region, c.category_name
-    ORDER BY m.state, c.category_name
-  ` as any[];
+    if (consumers.length === 0) {
+      return {
+        data: [],
+        columns: [{ key: "message", header: "Message" }],
+        filename: "naijamarket_consumers",
+      };
+    }
 
-  return {
-    data: regional.map((r: any) => ({
-      state: r.state || "Unknown",
-      region: r.region || "Unknown",
-      category: r.category_name || "All",
-      market_count: parseInt(r.market_count) || 0,
-      price_count: parseInt(r.price_count) || 0,
-      avg_price: r.avg_price ? parseFloat(r.avg_price).toFixed(2) : "N/A",
-      min_price: r.min_price ? parseFloat(r.min_price).toFixed(2) : "N/A",
-      max_price: r.max_price ? parseFloat(r.max_price).toFixed(2) : "N/A",
-    })),
-    columns: [
-      { key: "state", header: "State" },
-      { key: "region", header: "Region" },
-      { key: "category", header: "Category" },
-      { key: "market_count", header: "Markets" },
-      { key: "price_count", header: "Price Count" },
-      { key: "avg_price", header: "Avg Price (₦)" },
-      { key: "min_price", header: "Min Price (₦)" },
-      { key: "max_price", header: "Max Price (₦)" },
-    ],
-    filename: `naijamarket_regional_${dateRange}`,
-  };
+    const firstRow = consumers[0];
+    const columns = Object.keys(firstRow).map(key => ({
+      key,
+      header: key.replace(/_/g, " ").replace(/\b\w/g, l => l.toUpperCase()),
+    }));
+
+    return { data: consumers, columns, filename: "naijamarket_consumers" };
+  } catch (error) {
+    console.error("fetchConsumers error:", error);
+    throw new Error("Consumers table not found or query failed");
+  }
+}
+
+// ============================================================================
+// LIST AVAILABLE TABLES (for debugging)
+// ============================================================================
+
+async function listTables() {
+  try {
+    const tables = await prisma.$queryRaw`
+      SELECT TABLE_NAME 
+      FROM INFORMATION_SCHEMA.TABLES 
+      WHERE TABLE_TYPE = 'BASE TABLE'
+      ORDER BY TABLE_NAME
+    ` as any[];
+
+    return {
+      data: tables,
+      columns: [{ key: "TABLE_NAME", header: "Table Name" }],
+      filename: "naijamarket_tables",
+    };
+  } catch (error) {
+    console.error("listTables error:", error);
+    throw new Error("Could not list tables");
+  }
 }
 
 // ============================================================================
@@ -286,36 +271,47 @@ export async function GET(request: NextRequest) {
     }
 
     // Validate format
-    if (!["CSV", "JSON", "XLSX"].includes(format)) {
+    if (!["CSV", "JSON"].includes(format)) {
       return NextResponse.json(
-        { success: false, error: "Invalid format. Use CSV, JSON, or XLSX" },
+        { success: false, error: "Invalid format. Use CSV or JSON" },
         { status: 400 }
       );
     }
 
     // Fetch data based on type
     let result;
-    switch (exportType) {
-      case "markets":
-        result = await fetchMarkets();
-        break;
-      case "items":
-        result = await fetchItems();
-        break;
-      case "prices":
-        result = await fetchPrices(dateRange);
-        break;
-      case "trends":
-        result = await fetchTrends(dateRange);
-        break;
-      case "regional":
-        result = await fetchRegional(dateRange);
-        break;
-      default:
-        return NextResponse.json(
-          { success: false, error: "Invalid export type" },
-          { status: 400 }
-        );
+    try {
+      switch (exportType) {
+        case "markets":
+          result = await fetchMarkets();
+          break;
+        case "items":
+          result = await fetchItems();
+          break;
+        case "prices":
+          result = await fetchPrices(dateRange);
+          break;
+        case "categories":
+          result = await fetchCategories();
+          break;
+        case "consumers":
+          result = await fetchConsumers();
+          break;
+        case "tables":
+          result = await listTables();
+          break;
+        default:
+          return NextResponse.json(
+            { success: false, error: `Invalid export type: ${exportType}. Valid types: markets, items, prices, categories, consumers, tables` },
+            { status: 400 }
+          );
+      }
+    } catch (fetchError: any) {
+      console.error("Fetch error:", fetchError);
+      return NextResponse.json(
+        { success: false, error: fetchError.message || "Database query failed" },
+        { status: 500 }
+      );
     }
 
     // Generate file content
@@ -327,13 +323,7 @@ export async function GET(request: NextRequest) {
       content = arrayToJSON(result.data);
       contentType = "application/json";
       fileExtension = "json";
-    } else if (format === "CSV") {
-      content = arrayToCSV(result.data, result.columns);
-      contentType = "text/csv";
-      fileExtension = "csv";
     } else {
-      // XLSX - return CSV for now (XLSX requires external library)
-      // In production, use 'xlsx' or 'exceljs' library
       content = arrayToCSV(result.data, result.columns);
       contentType = "text/csv";
       fileExtension = "csv";
@@ -351,23 +341,23 @@ export async function GET(request: NextRequest) {
       },
     });
 
-  } catch (error) {
+  } catch (error: any) {
     console.error("Export API Error:", error);
     return NextResponse.json(
-      { success: false, error: "Failed to generate export" },
+      { success: false, error: error.message || "Failed to generate export" },
       { status: 500 }
     );
   }
 }
 
 // ============================================================================
-// POST: Get export preview (returns JSON with row count)
+// POST: Get export preview
 // ============================================================================
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { type, range: _range, tier } = body;
+    const { type, tier } = body;
 
     if (!hasTierAccess(tier || "FREE", type || "markets")) {
       return NextResponse.json(
@@ -378,47 +368,68 @@ export async function POST(request: NextRequest) {
 
     // Get row count preview
     let rowCount = 0;
-    let estimatedSize = "0 KB";
+    let tableName = "";
 
-    switch (type) {
-      case "markets":
-        const markets = await prisma.$queryRaw`SELECT COUNT(*) as count FROM Markets` as any[];
-        rowCount = parseInt(markets[0]?.count || "0");
-        break;
-      case "items":
-        const items = await prisma.$queryRaw`SELECT COUNT(*) as count FROM Items_Catalog` as any[];
-        rowCount = parseInt(items[0]?.count || "0");
-        break;
-      case "prices":
-        const prices = await prisma.$queryRaw`SELECT COUNT(*) as count FROM Approved_Prices` as any[];
-        rowCount = parseInt(prices[0]?.count || "0");
-        break;
-      default:
-        rowCount = 0;
+    try {
+      switch (type) {
+        case "markets":
+          tableName = "Markets";
+          const markets = await prisma.$queryRaw`SELECT COUNT(*) as count FROM Markets` as any[];
+          rowCount = parseInt(markets[0]?.count || "0");
+          break;
+        case "items":
+          tableName = "Items_Catalog";
+          const items = await prisma.$queryRaw`SELECT COUNT(*) as count FROM Items_Catalog` as any[];
+          rowCount = parseInt(items[0]?.count || "0");
+          break;
+        case "prices":
+          tableName = "Approved_Prices";
+          const prices = await prisma.$queryRaw`SELECT COUNT(*) as count FROM Approved_Prices` as any[];
+          rowCount = parseInt(prices[0]?.count || "0");
+          break;
+        case "categories":
+          tableName = "Categories";
+          const cats = await prisma.$queryRaw`SELECT COUNT(*) as count FROM Categories` as any[];
+          rowCount = parseInt(cats[0]?.count || "0");
+          break;
+        case "consumers":
+          tableName = "Consumers";
+          const cons = await prisma.$queryRaw`SELECT COUNT(*) as count FROM Consumers` as any[];
+          rowCount = parseInt(cons[0]?.count || "0");
+          break;
+        default:
+          rowCount = 0;
+      }
+    } catch (countError: any) {
+      console.error("Count error for", tableName, ":", countError.message);
+      return NextResponse.json({
+        success: false,
+        error: `Table "${tableName}" not found. Run: /api/export?type=tables&format=JSON&tier=CORPORATE to see available tables.`,
+        canExport: false,
+      });
     }
 
-    // Estimate file size (rough estimate: ~100 bytes per row for CSV)
+    // Estimate file size
     const sizeBytes = rowCount * 100;
-    if (sizeBytes >= 1024 * 1024) {
-      estimatedSize = `${(sizeBytes / (1024 * 1024)).toFixed(1)} MB`;
-    } else {
-      estimatedSize = `${(sizeBytes / 1024).toFixed(0)} KB`;
-    }
+    const estimatedSize = sizeBytes >= 1024 * 1024 
+      ? `${(sizeBytes / (1024 * 1024)).toFixed(1)} MB`
+      : `${Math.max(1, Math.floor(sizeBytes / 1024))} KB`;
 
     return NextResponse.json({
       success: true,
       preview: {
         type,
+        tableName,
         rowCount,
         estimatedSize,
         canExport: true,
       },
     });
 
-  } catch (error) {
+  } catch (error: any) {
     console.error("Export Preview Error:", error);
     return NextResponse.json(
-      { success: false, error: "Failed to get preview" },
+      { success: false, error: error.message || "Failed to get preview" },
       { status: 500 }
     );
   }
