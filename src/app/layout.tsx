@@ -6,6 +6,7 @@ import { Toaster } from "sonner";
 
 import "@/styles/globals.css";
 import { cn } from "@/lib/utils";
+import Providers from "@/components/Providers";
 
 // ============================================================================
 // FONTS
@@ -160,29 +161,33 @@ export default function RootLayout({
           "selection:bg-naija-green/30 selection:text-naija-green"
         )}
       >
-        {/* Main Content */}
-        {children}
+        {/* NextAuth Session Provider */}
+        <Providers>
+          {/* Main Content */}
+          {children}
 
-        {/* Toast Notifications */}
-        <Toaster
-          theme="dark"
-          position="top-right"
-          toastOptions={{
-            style: {
-              background: "#141414",
-              border: "1px solid #2a2a2a",
-              color: "#fff",
-            },
-            classNames: {
-              success: "!border-price-up/50",
-              error: "!border-price-down/50",
-              warning: "!border-naija-gold/50",
-              info: "!border-naija-blue/50",
-            },
-          }}
-          closeButton
-        />
+          {/* Toast Notifications */}
+          <Toaster
+            theme="dark"
+            position="top-right"
+            toastOptions={{
+              style: {
+                background: "#141414",
+                border: "1px solid #2a2a2a",
+                color: "#fff",
+              },
+              classNames: {
+                success: "!border-price-up/50",
+                error: "!border-price-down/50",
+                warning: "!border-naija-gold/50",
+                info: "!border-naija-blue/50",
+              },
+            }}
+            closeButton
+          />
+        </Providers>
       </body>
     </html>
   );
 }
+
