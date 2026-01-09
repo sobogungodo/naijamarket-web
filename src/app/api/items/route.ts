@@ -94,7 +94,7 @@ export async function POST(request: NextRequest) {
     const prices = await prisma.approved_Prices.findMany({
       where: { item_id: item.item_id },
       take: 10,
-      orderBy: { price_date: "desc" },
+      
     });
 
     return NextResponse.json({
