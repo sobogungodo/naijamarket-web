@@ -102,6 +102,18 @@ const TIER_ACCESS = {
   'ENTERPRISE': { regional: true, categories: true, history: 104 }
 };
 
+// Type definition for basket price item
+interface BasketPriceItem {
+  item: string;
+  category: string;
+  weight: number;
+  current_price: number;
+  baseline_price: number;
+  item_index: number;
+  weighted_contribution: number;
+  data_points: number;
+}
+
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
@@ -112,16 +124,7 @@ export async function GET(request: NextRequest) {
     const access = TIER_ACCESS[tier as keyof typeof TIER_ACCESS] || TIER_ACCESS.FREE;
 
     // Calculate current index for each basket item
-    const basketPrices: Array<{
-      item: string;
-      category: string;
-      weight: number;
-      current_price: number;
-      baseline_price: number;
-      item_index: number;
-      weighted_contribution: number;
-      data_points: number;
-    }> = [];
+    const basketPrices: BasketPriceItem[] = [];
     
     for (const item of NFPI_BASKET) {
       // Build region filter
@@ -236,11 +239,16 @@ export async function GET(request: NextRequest) {
       formatted += '\n';
     }
 
-    // Top movers (all tiers)
+    // Top movers (all tiers) - with safety check
     const sortedItems = [...basketPrices].sort((a, b) => b.item_index - a.item_index);
-    formatted += `🔥 *TOP MOVERS*\n`;
-    formatted += `📈 ${sortedItems[0].item}: ${sortedItems[0].item_index.toFixed(0)} (+${((sortedItems[0].item_index - 100)).toFixed(1)}%)\n`;
-    formatted += `📉 ${sortedItems[sortedItems.length - 1].item}: ${sortedItems[sortedItems.length - 1].item_index.toFixed(0)} (${((sortedItems[sortedItems.length - 1].item_index - 100)).toFixed(1)}%)\n\n`;
+    if (sortedItems.length > 0) {
+      const topGainer = sortedItems[0];
+      const topLoser = sortedItems[sortedItems.length - 1];
+      
+      formatted += `🔥 *TOP MOVERS*\n`;
+      formatted += `📈 ${topGainer.item}: ${topGainer.item_index.toFixed(0)} (+${((topGainer.item_index - 100)).toFixed(1)}%)\n`;
+      formatted += `📉 ${topLoser.item}: ${topLoser.item_index.toFixed(0)} (${((topLoser.item_index - 100)).toFixed(1)}%)\n\n`;
+    }
 
     // Data freshness
     const totalDataPoints = basketPrices.reduce((sum, p) => sum + p.data_points, 0);
