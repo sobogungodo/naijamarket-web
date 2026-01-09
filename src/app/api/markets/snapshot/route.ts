@@ -147,5 +147,5 @@ function getCategoryEmoji(categoryName: string): string {
       return emoji;
     }
   }
-  return emojiMap["Default"];
+  return emojiMap["Default"] || "??";
 }
