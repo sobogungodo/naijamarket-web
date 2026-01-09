@@ -48,7 +48,7 @@ export async function GET(request: NextRequest) {
     const prices = await prisma.approved_Prices.findMany({
       where: priceWhere,
       take: limit,
-      orderBy: { price_date: "desc" },
+      
     });
 
     // Group by category

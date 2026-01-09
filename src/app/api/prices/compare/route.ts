@@ -45,7 +45,7 @@ export async function POST(request: NextRequest) {
     // Get prices
     const prices = await prisma.approved_Prices.findMany({
       where,
-      orderBy: { price: "asc" },
+      
     });
 
     if (prices.length === 0) {
@@ -183,7 +183,7 @@ export async function GET(request: NextRequest) {
     const prices = await prisma.approved_Prices.findMany({
       where,
       take: limit,
-      orderBy: { price: "asc" },
+      
     });
 
     if (prices.length === 0) {

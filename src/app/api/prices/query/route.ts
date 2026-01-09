@@ -48,7 +48,7 @@ export async function GET(request: NextRequest) {
       where,
       take: Math.min(limit, 100), // Max 100 results
       skip: offset,
-      orderBy: { price_date: "desc" },
+      
     });
 
     // Get total count for pagination
@@ -134,7 +134,7 @@ export async function POST(request: NextRequest) {
       where,
       take: Math.min(limit, 100),
       skip: offset,
-      orderBy: { price_date: "desc" },
+      
     });
 
     const total = await prisma.approved_Prices.count({ where });
