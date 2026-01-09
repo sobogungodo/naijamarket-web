@@ -169,7 +169,8 @@ export default function ExportDataPage() {
       // Get the filename from Content-Disposition header
       const disposition = response.headers.get("Content-Disposition");
       const filenameMatch = disposition?.match(/filename="(.+)"/);
-      const filename = filenameMatch ? filenameMatch[1] : `export_${selectedExport}.${selectedFormat.toLowerCase()}`;
+      const defaultFilename = `export_${selectedExport}_${new Date().toISOString().slice(0, 10)}.${selectedFormat.toLowerCase()}`;
+      const filename: string = filenameMatch?.[1] ?? defaultFilename;
 
       // Get rows exported
       const rowsExported = response.headers.get("X-Rows-Exported") || "0";
