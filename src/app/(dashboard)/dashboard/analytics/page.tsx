@@ -15,7 +15,6 @@ import {
   PieChart,
   ArrowUpRight,
   ArrowDownRight,
-  ExternalLink,
   Maximize2,
   X,
 } from "lucide-react";
