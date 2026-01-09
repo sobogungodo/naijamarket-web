@@ -367,7 +367,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { type, range, tier } = body;
+    const { type, range: _range, tier } = body;
 
     if (!hasTierAccess(tier || "FREE", type || "markets")) {
       return NextResponse.json(
