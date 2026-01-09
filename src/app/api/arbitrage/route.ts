@@ -2,55 +2,97 @@
 // NAIJAMARKET INTEL - ARBITRAGE OPPORTUNITIES API
 // File: src/app/api/arbitrage/route.ts
 // Bloomberg Equivalent: ARBI <GO>
-// Version: 1.1 - Fixed for actual Prisma schema
+// Version: 2.0 - Fully Type-Safe
 // ============================================================================
 
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
 // ============================================================================
+// TYPES
+// ============================================================================
+
+interface TierConfig {
+  hasAccess: boolean;
+  minProfitPct: number;
+  maxResults: number;
+}
+
+interface MarketCoordinate {
+  lat: number;
+  lon: number;
+  state: string;
+}
+
+interface TransportResult {
+  distance: number;
+  baseCost: number;
+  riskPremium: number;
+  totalCost: number;
+  label: string;
+}
+
+interface ConfidenceResult {
+  score: number;
+  label: string;
+  color: string;
+}
+
+interface MarketInfo {
+  id: string;
+  name: string;
+  state: string;
+  price: number;
+  updatedAt: string;
+}
+
+interface ArbitrageOpportunity {
+  id: string;
+  itemId: string;
+  itemName: string;
+  categoryName: string;
+  unit: string;
+  buyMarket: MarketInfo;
+  sellMarket: MarketInfo;
+  grossProfit: number;
+  transportCost: number;
+  netProfit: number;
+  profitPercentage: number;
+  distance: number;
+  confidence: ConfidenceResult;
+  transportLabel: string;
+}
+
+// ============================================================================
 // CONFIGURATION
 // ============================================================================
 
-// Market GPS coordinates for distance calculation
-const MARKET_COORDINATES: Record<string, { lat: number; lon: number; state: string }> = {
-  // Lagos Markets
+const MARKET_COORDINATES: Record<string, MarketCoordinate> = {
   "Mile 12 Market": { lat: 6.5833, lon: 3.3833, state: "Lagos" },
   "Alaba International Market": { lat: 6.4631, lon: 3.1937, state: "Lagos" },
   "Oyingbo Market": { lat: 6.4778, lon: 3.3894, state: "Lagos" },
   "Balogun Market": { lat: 6.4539, lon: 3.3944, state: "Lagos" },
   "Computer Village": { lat: 6.6018, lon: 3.3515, state: "Lagos" },
   "Iddo Market": { lat: 6.4647, lon: 3.3847, state: "Lagos" },
-  
-  // Southeast Markets
   "Onitsha Main Market": { lat: 6.1456, lon: 6.7856, state: "Anambra" },
   "Ariaria Market": { lat: 5.1167, lon: 7.3667, state: "Abia" },
   "Ogbete Market": { lat: 6.4411, lon: 7.4939, state: "Enugu" },
-  
-  // Northern Markets
   "Kano Main Market": { lat: 12.0022, lon: 8.5167, state: "Kano" },
   "Dawanau Market": { lat: 11.9467, lon: 8.4961, state: "Kano" },
   "Kurmi Market": { lat: 12.0000, lon: 8.5167, state: "Kano" },
   "Jos Main Market": { lat: 9.8965, lon: 8.8583, state: "Plateau" },
   "Kaduna Central Market": { lat: 10.5222, lon: 7.4403, state: "Kaduna" },
-  
-  // Southwest Markets
   "Bodija Market": { lat: 7.4167, lon: 3.9000, state: "Oyo" },
   "Dugbe Market": { lat: 7.3833, lon: 3.8833, state: "Oyo" },
   "Oja Oba Market": { lat: 7.6292, lon: 4.7433, state: "Osun" },
-  
-  // South-South Markets
   "Watt Market": { lat: 4.9333, lon: 8.3333, state: "Cross River" },
   "Oil Mill Market": { lat: 4.7833, lon: 7.0167, state: "Rivers" },
-  
-  // FCT Markets
   "Wuse Market": { lat: 9.0765, lon: 7.4898, state: "FCT" },
   "Utako Market": { lat: 9.0667, lon: 7.4333, state: "FCT" },
   "Garki Market": { lat: 9.0167, lon: 7.4833, state: "FCT" },
   "Nyanya Market": { lat: 9.0167, lon: 7.5667, state: "FCT" },
 };
 
-// Transport cost tiers based on distance (2024-2025 Nigeria rates)
 const TRANSPORT_COSTS = {
   SAME_CITY: { maxKm: 50, costPer50kg: 500, label: "Same City" },
   SAME_STATE: { maxKm: 100, costPer50kg: 1000, label: "Same State" },
@@ -61,17 +103,17 @@ const TRANSPORT_COSTS = {
   CROSS_COUNTRY: { maxKm: 99999, costPer50kg: 10000, label: "Cross Country" },
 };
 
-// Risk premiums for certain routes
 const ROUTE_RISKS: Record<string, number> = {
   "Lagos-Kano": 1500,
   "Lagos-Kaduna": 1500,
   "Abuja-Kano": 1000,
   "Abuja-Kaduna": 500,
-  DEFAULT: 0,
+  "DEFAULT": 0,
 };
 
-// Tier access configuration
-const TIER_ACCESS: Record<string, { hasAccess: boolean; minProfitPct: number; maxResults: number }> = {
+const DEFAULT_TIER_CONFIG: TierConfig = { hasAccess: false, minProfitPct: 100, maxResults: 0 };
+
+const TIER_ACCESS: Record<string, TierConfig> = {
   FREE: { hasAccess: false, minProfitPct: 100, maxResults: 0 },
   SILVER: { hasAccess: false, minProfitPct: 100, maxResults: 0 },
   GOLD: { hasAccess: true, minProfitPct: 5, maxResults: 10 },
@@ -85,6 +127,14 @@ const TIER_ACCESS: Record<string, { hasAccess: boolean; minProfitPct: number; ma
 // ============================================================================
 // HELPER FUNCTIONS
 // ============================================================================
+
+function getTierConfig(tier: string): TierConfig {
+  const config = TIER_ACCESS[tier];
+  if (config) return config;
+  const freeConfig = TIER_ACCESS["FREE"];
+  if (freeConfig) return freeConfig;
+  return DEFAULT_TIER_CONFIG;
+}
 
 function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
   const R = 6371;
@@ -100,13 +150,7 @@ function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: numbe
   return R * c;
 }
 
-function getTransportCost(fromMarket: string, toMarket: string): {
-  distance: number;
-  baseCost: number;
-  riskPremium: number;
-  totalCost: number;
-  label: string;
-} {
+function getTransportCost(fromMarket: string, toMarket: string): TransportResult {
   const from = MARKET_COORDINATES[fromMarket];
   const to = MARKET_COORDINATES[toMarket];
   
@@ -129,7 +173,7 @@ function getTransportCost(fromMarket: string, toMarket: string): {
   
   const routeKey1 = `${from.state}-${to.state}`;
   const routeKey2 = `${to.state}-${from.state}`;
-  const riskPremium: number = ROUTE_RISKS[routeKey1] ?? ROUTE_RISKS[routeKey2] ?? ROUTE_RISKS.DEFAULT ?? 0;
+  const riskPremium: number = ROUTE_RISKS[routeKey1] ?? ROUTE_RISKS[routeKey2] ?? ROUTE_RISKS["DEFAULT"] ?? 0;
   
   return {
     distance: Math.round(distance),
@@ -140,7 +184,7 @@ function getTransportCost(fromMarket: string, toMarket: string): {
   };
 }
 
-function calculateConfidence(validatedAt: Date | null): { score: number; label: string; color: string } {
+function calculateConfidence(validatedAt: Date | null): ConfidenceResult {
   if (!validatedAt) return { score: 50, label: "Unknown", color: "gray" };
   
   const now = new Date();
@@ -163,43 +207,6 @@ function calculateConfidence(validatedAt: Date | null): { score: number; label: 
 }
 
 // ============================================================================
-// TYPES
-// ============================================================================
-
-interface ArbitrageOpportunity {
-  id: string;
-  itemId: string;
-  itemName: string;
-  categoryName: string;
-  unit: string;
-  buyMarket: {
-    id: string;
-    name: string;
-    state: string;
-    price: number;
-    updatedAt: string;
-  };
-  sellMarket: {
-    id: string;
-    name: string;
-    state: string;
-    price: number;
-    updatedAt: string;
-  };
-  grossProfit: number;
-  transportCost: number;
-  netProfit: number;
-  profitPercentage: number;
-  distance: number;
-  confidence: {
-    score: number;
-    label: string;
-    color: string;
-  };
-  transportLabel: string;
-}
-
-// ============================================================================
 // ARBITRAGE FINDER
 // ============================================================================
 
@@ -209,7 +216,6 @@ async function findArbitrageOpportunities(
   filterItem?: string,
   filterCategory?: string
 ): Promise<ArbitrageOpportunity[]> {
-  // Get all approved prices from Approved_Prices table
   const prices = await prisma.approved_Prices.findMany({
     where: {
       validation_status: "APPROVED",
@@ -223,7 +229,6 @@ async function findArbitrageOpportunities(
     },
   });
 
-  // Group prices by item_id
   const pricesByItem: Record<string, typeof prices> = {};
   
   for (const price of prices) {
@@ -236,16 +241,13 @@ async function findArbitrageOpportunities(
 
   const opportunities: ArbitrageOpportunity[] = [];
 
-  // Find arbitrage opportunities for each item
   for (const [itemId, itemPrices] of Object.entries(pricesByItem)) {
     if (itemPrices.length < 2) continue;
 
-    // Sort by price (ascending)
     const sorted = [...itemPrices].sort((a, b) => 
       Number(a.price || 0) - Number(b.price || 0)
     );
 
-    // Compare lowest price markets with highest price markets
     for (let i = 0; i < Math.min(3, sorted.length); i++) {
       for (let j = sorted.length - 1; j > i && j >= sorted.length - 3; j--) {
         const buyPrice = sorted[i];
@@ -261,18 +263,14 @@ async function findArbitrageOpportunities(
         const buyMarketName = buyPrice.market_name || "Unknown";
         const sellMarketName = sellPrice.market_name || "Unknown";
         
-        // Calculate transport cost
         const transport = getTransportCost(buyMarketName, sellMarketName);
         
-        // Calculate profits
         const grossProfit = sellPriceNum - buyPriceNum;
         const netProfit = grossProfit - transport.totalCost;
         const profitPct = (netProfit / buyPriceNum) * 100;
         
-        // Filter by minimum profit percentage
         if (profitPct < minProfitPct) continue;
         
-        // Calculate confidence
         const buyConfidence = calculateConfidence(buyPrice.validated_at);
         const sellConfidence = calculateConfidence(sellPrice.validated_at);
         const avgConfidence = Math.round((buyConfidence.score + sellConfidence.score) / 2);
@@ -316,7 +314,6 @@ async function findArbitrageOpportunities(
     }
   }
 
-  // Sort by profit percentage (descending)
   opportunities.sort((a, b) => b.profitPercentage - a.profitPercentage);
 
   return opportunities.slice(0, maxResults);
@@ -336,8 +333,7 @@ export async function GET(request: NextRequest) {
     const page = parseInt(searchParams.get("page") || "1");
     const limit = parseInt(searchParams.get("limit") || "20");
     
-    // Check tier access
-    const tierConfig = TIER_ACCESS[tier] || TIER_ACCESS.FREE;
+    const tierConfig = getTierConfig(tier);
     
     if (!tierConfig.hasAccess) {
       return NextResponse.json({
@@ -349,7 +345,6 @@ export async function GET(request: NextRequest) {
       }, { status: 403 });
     }
     
-    // Find opportunities
     const allOpportunities = await findArbitrageOpportunities(
       tierConfig.minProfitPct,
       tierConfig.maxResults,
@@ -357,7 +352,6 @@ export async function GET(request: NextRequest) {
       category
     );
     
-    // Paginate results
     const startIdx = (page - 1) * limit;
     const endIdx = startIdx + limit;
     const opportunities = allOpportunities.slice(startIdx, endIdx);
@@ -400,7 +394,7 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { buyMarketId, sellMarketId, itemId, tier = "FREE" } = body;
     
-    const tierConfig = TIER_ACCESS[tier.toUpperCase()] || TIER_ACCESS.FREE;
+    const tierConfig = getTierConfig(tier.toUpperCase());
     
     if (!tierConfig.hasAccess) {
       return NextResponse.json({
@@ -410,7 +404,6 @@ export async function POST(request: NextRequest) {
       }, { status: 403 });
     }
     
-    // Get specific prices from Approved_Prices
     const buyPrice = await prisma.approved_Prices.findFirst({
       where: {
         item_id: itemId,
@@ -442,7 +435,6 @@ export async function POST(request: NextRequest) {
     
     const transport = getTransportCost(buyMarketName, sellMarketName);
     
-    // Calculate profits at various quantities
     const quantities = [1, 5, 10, 25, 50, 100];
     const profitBreakdown = quantities.map(qty => {
       const totalBuyCost = buyPriceNum * qty;
