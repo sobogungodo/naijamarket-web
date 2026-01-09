@@ -94,10 +94,10 @@ export async function POST(request: NextRequest) {
       success: true,
       data: {
         item: {
-          item_id: prices[0].item_id,
-          item_name: prices[0].item_name,
-          category_name: prices[0].category_name,
-          unit: prices[0].unit,
+          item_id: prices[0]?.item_id,
+          item_name: prices[0]?.item_name,
+          category_name: prices[0]?.category_name,
+          unit: prices[0]?.unit,
         },
         comparison: {
           markets_compared: prices.length,
@@ -200,7 +200,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       success: true,
       data: {
-        item_name: prices[0].item_name,
+        item_name: prices[0]?.item_name,
         markets_found: prices.length,
         price_range: {
           min: `₦${minPrice.toLocaleString()}`,
