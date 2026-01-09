@@ -352,13 +352,11 @@ export async function GET(request: NextRequest) {
     }));
 
     // Calculate current NFPI
-    const latestNFPI = nfpiHistory.length > 0 
-      ? nfpiHistory[nfpiHistory.length - 1].nfpi 
-      : 100;
+    const latestEntry = nfpiHistory[nfpiHistory.length - 1];
+    const latestNFPI = latestEntry?.nfpi ?? 100;
     
-    const weekAgoNFPI = nfpiHistory.length > 7 
-      ? nfpiHistory[nfpiHistory.length - 8].nfpi 
-      : 100;
+    const weekAgoEntry = nfpiHistory[nfpiHistory.length - 8];
+    const weekAgoNFPI = weekAgoEntry?.nfpi ?? 100;
     
     const weeklyChange = latestNFPI - weekAgoNFPI;
 
