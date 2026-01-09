@@ -26,23 +26,6 @@ import { PrismaClient } from "@prisma/client";
 
 const prisma = new PrismaClient();
 
-// Format price with Naira symbol
-function formatPrice(price: number | string): string {
-  const numPrice = typeof price === 'string' 
-    ? parseFloat(price.replace(/[₦,]/g, '')) 
-    : price;
-  return `₦${numPrice.toLocaleString('en-NG')}`;
-}
-
-// Get trend emoji
-function getTrendEmoji(trend: string): string {
-  switch(trend) {
-    case '↑': case 'UP': return '📈';
-    case '↓': case 'DOWN': return '📉';
-    default: return '➡️';
-  }
-}
-
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
@@ -53,7 +36,7 @@ export async function GET(request: NextRequest) {
 
     // Build WHERE clause
     let whereClause = `WHERE validation_status = 'APPROVED' AND validated_at >= DATEADD(day, -7, GETDATE())`;
-    const params: any[] = [];
+    const params: string[] = [];
     let paramIndex = 1;
 
     if (market) {
@@ -84,7 +67,13 @@ export async function GET(request: NextRequest) {
         AVG(CAST(price_change_percent AS DECIMAL(10,2))) as avg_change
       FROM Approved_Prices
       ${whereClause}
-    `, ...params) as any[];
+    `, ...params) as Array<{
+      total_items: number;
+      total_markets: number;
+      total_states: number;
+      total_prices: number;
+      avg_change: number | null;
+    }>;
 
     const stats = statsResult[0] || {
       total_items: 0,
@@ -109,7 +98,16 @@ export async function GET(request: NextRequest) {
       ${whereClause}
         AND price_change_percent > 0
       ORDER BY CAST(price_change_percent AS DECIMAL(10,2)) DESC
-    `, ...params) as any[];
+    `, ...params) as Array<{
+      item_name: string;
+      market_name: string;
+      state: string;
+      price: string;
+      unit: string;
+      price_trend: string;
+      price_change_percent: string;
+      validated_at: Date;
+    }>;
 
     // Get top losers (biggest price drops)
     const losersResult = await prisma.$queryRawUnsafe(`
@@ -126,7 +124,16 @@ export async function GET(request: NextRequest) {
       ${whereClause}
         AND price_change_percent < 0
       ORDER BY CAST(price_change_percent AS DECIMAL(10,2)) ASC
-    `, ...params) as any[];
+    `, ...params) as Array<{
+      item_name: string;
+      market_name: string;
+      state: string;
+      price: string;
+      unit: string;
+      price_trend: string;
+      price_change_percent: string;
+      validated_at: Date;
+    }>;
 
     // Get most active items (most price submissions)
     const activeResult = await prisma.$queryRawUnsafe(`
@@ -138,7 +145,11 @@ export async function GET(request: NextRequest) {
       ${whereClause}
       GROUP BY item_name
       ORDER BY COUNT(*) DESC
-    `, ...params) as any[];
+    `, ...params) as Array<{
+      item_name: string;
+      submission_count: number;
+      avg_price: number;
+    }>;
 
     // Get price by category
     const categoryResult = await prisma.$queryRawUnsafe(`
@@ -150,11 +161,14 @@ export async function GET(request: NextRequest) {
       ${whereClause}
       GROUP BY category_name
       ORDER BY avg_change DESC
-    `, ...params) as any[];
+    `, ...params) as Array<{
+      category_name: string;
+      item_count: number;
+      avg_change: number | null;
+    }>;
 
     // Handle no data
     if (stats.total_prices === 0) {
-      const scope = market || state || 'nationwide';
       return NextResponse.json({
         success: false,
         data: null,
@@ -174,17 +188,18 @@ export async function GET(request: NextRequest) {
     formatted += `${'━'.repeat(28)}\n\n`;
 
     // Overall Stats
+    const avgChangeNum = stats.avg_change || 0;
     formatted += `📊 *OVERVIEW*\n`;
     formatted += `├ Items tracked: ${stats.total_items}\n`;
     formatted += `├ Markets: ${stats.total_markets}\n`;
     formatted += `├ States: ${stats.total_states}\n`;
     formatted += `├ Price reports: ${stats.total_prices}\n`;
-    formatted += `└ Avg change: ${stats.avg_change >= 0 ? '+' : ''}${parseFloat(stats.avg_change || 0).toFixed(1)}%\n\n`;
+    formatted += `└ Avg change: ${avgChangeNum >= 0 ? '+' : ''}${avgChangeNum.toFixed(1)}%\n\n`;
 
     // Top Gainers
     if (gainersResult.length > 0) {
       formatted += `🔥 *TOP GAINERS*\n`;
-      gainersResult.forEach((item: any, idx: number) => {
+      gainersResult.forEach((item, idx) => {
         formatted += `${idx + 1}. ${item.item_name}\n`;
         formatted += `   📈 +${parseFloat(item.price_change_percent).toFixed(1)}% @ ${item.market_name}\n`;
       });
@@ -194,7 +209,7 @@ export async function GET(request: NextRequest) {
     // Top Losers
     if (losersResult.length > 0) {
       formatted += `📉 *PRICE DROPS*\n`;
-      losersResult.forEach((item: any, idx: number) => {
+      losersResult.forEach((item, idx) => {
         formatted += `${idx + 1}. ${item.item_name}\n`;
         formatted += `   📉 ${parseFloat(item.price_change_percent).toFixed(1)}% @ ${item.market_name}\n`;
       });
@@ -204,8 +219,8 @@ export async function GET(request: NextRequest) {
     // Category Performance
     if (categoryResult.length > 0) {
       formatted += `📦 *BY CATEGORY*\n`;
-      categoryResult.slice(0, 5).forEach((cat: any) => {
-        const changeNum = parseFloat(cat.avg_change || 0);
+      categoryResult.slice(0, 5).forEach((cat) => {
+        const changeNum = cat.avg_change || 0;
         const emoji = changeNum > 0 ? '📈' : changeNum < 0 ? '📉' : '➡️';
         formatted += `├ ${cat.category_name}: ${changeNum >= 0 ? '+' : ''}${changeNum.toFixed(1)}% ${emoji}\n`;
       });
@@ -215,7 +230,7 @@ export async function GET(request: NextRequest) {
     // Most Active Items
     if (activeResult.length > 0) {
       formatted += `🔄 *MOST TRADED*\n`;
-      activeResult.slice(0, 3).forEach((item: any, idx: number) => {
+      activeResult.slice(0, 3).forEach((item, idx) => {
         formatted += `${idx + 1}. ${item.item_name} (${item.submission_count} reports)\n`;
       });
       formatted += '\n';
@@ -229,35 +244,35 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       success: true,
       stats: {
-        total_items: parseInt(stats.total_items) || 0,
-        total_markets: parseInt(stats.total_markets) || 0,
-        total_states: parseInt(stats.total_states) || 0,
-        total_prices: parseInt(stats.total_prices) || 0,
-        avg_change: parseFloat(stats.avg_change) || 0
+        total_items: Number(stats.total_items) || 0,
+        total_markets: Number(stats.total_markets) || 0,
+        total_states: Number(stats.total_states) || 0,
+        total_prices: Number(stats.total_prices) || 0,
+        avg_change: Number(stats.avg_change) || 0
       },
-      gainers: gainersResult.map((g: any) => ({
+      gainers: gainersResult.map((g) => ({
         item: g.item_name,
         market: g.market_name,
         state: g.state,
         price: g.price,
         change_percent: parseFloat(g.price_change_percent)
       })),
-      losers: losersResult.map((l: any) => ({
+      losers: losersResult.map((l) => ({
         item: l.item_name,
         market: l.market_name,
         state: l.state,
         price: l.price,
         change_percent: parseFloat(l.price_change_percent)
       })),
-      categories: categoryResult.map((c: any) => ({
+      categories: categoryResult.map((c) => ({
         category: c.category_name,
-        count: parseInt(c.item_count),
-        avg_change: parseFloat(c.avg_change) || 0
+        count: Number(c.item_count),
+        avg_change: Number(c.avg_change) || 0
       })),
-      active_items: activeResult.map((a: any) => ({
+      active_items: activeResult.map((a) => ({
         item: a.item_name,
-        submissions: parseInt(a.submission_count),
-        avg_price: parseFloat(a.avg_price)
+        submissions: Number(a.submission_count),
+        avg_price: Number(a.avg_price)
       })),
       formatted: formatted,
       scope: { market, state, category }
