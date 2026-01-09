@@ -1,11 +1,10 @@
 // src/app/api/auth/[...nextauth]/route.ts
 // NaijaMarket Intel - NextAuth Configuration with Phone OTP
+// Updated: Refreshes tier from database on each session
 
 import NextAuth, { NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
-import { PrismaClient } from "@prisma/client";
-
-const prisma = new PrismaClient();
+import { prisma } from "@/lib/prisma"; // Use singleton
 
 const authOptions: NextAuthOptions = {
   providers: [
@@ -27,8 +26,8 @@ const authOptions: NextAuthOptions = {
         try {
           // Verify OTP
           const otpRecords = await prisma.$queryRaw`
-            SELECT * FROM Consumer_OTP 
-            WHERE phone_number = ${phone} 
+            SELECT * FROM Consumer_OTP
+            WHERE phone_number = ${phone}
             AND otp_code = ${otp}
             AND verified = 0
             AND expires_at > GETDATE()
@@ -41,8 +40,8 @@ const authOptions: NextAuthOptions = {
 
           // Mark OTP as verified
           await prisma.$executeRaw`
-            UPDATE Consumer_OTP 
-            SET verified = 1 
+            UPDATE Consumer_OTP
+            SET verified = 1
             WHERE phone_number = ${phone} AND otp_code = ${otp}
           `;
 
@@ -55,10 +54,10 @@ const authOptions: NextAuthOptions = {
 
           if (consumers && consumers.length > 0) {
             consumer = consumers[0];
-            
+
             // Update last active
             await prisma.$executeRaw`
-              UPDATE Consumers 
+              UPDATE Consumers
               SET last_active_at = GETDATE(), updated_at = GETDATE()
               WHERE phone_number = ${phone}
             `;
@@ -66,13 +65,13 @@ const authOptions: NextAuthOptions = {
             // Create new consumer
             const consumerId = `CON${Date.now()}`;
             const now = new Date().toISOString();
-            
+
             await prisma.$executeRaw`
               INSERT INTO Consumers (
-                consumer_id, phone_number, subscription_tier, 
+                consumer_id, phone_number, subscription_tier,
                 account_status, registration_date, created_at, updated_at
               ) VALUES (
-                ${consumerId}, ${phone}, 'FREE', 
+                ${consumerId}, ${phone}, 'FREE',
                 'ACTIVE', ${now}, ${now}, ${now}
               )
             `;
@@ -81,7 +80,7 @@ const authOptions: NextAuthOptions = {
             const newConsumers = await prisma.$queryRaw`
               SELECT * FROM Consumers WHERE consumer_id = ${consumerId}
             ` as any[];
-            
+
             consumer = newConsumers[0];
           }
 
@@ -107,13 +106,39 @@ const authOptions: NextAuthOptions = {
   },
 
   callbacks: {
-    async jwt({ token, user }) {
+    async jwt({ token, user, trigger }) {
+      // On initial sign in, store user data in token
       if (user) {
         token.id = user.id;
         token.phone = (user as any).phone;
         token.tier = (user as any).tier;
         token.status = (user as any).status;
+        token.name = user.name;
       }
+
+      // Refresh tier from database every time (or you can add a timestamp check)
+      // This ensures tier changes are reflected immediately
+      if (token.phone) {
+        try {
+          const consumers = await prisma.$queryRaw`
+            SELECT consumer_id, consumer_name, full_name, subscription_tier, account_status
+            FROM Consumers 
+            WHERE phone_number = ${token.phone}
+          ` as any[];
+
+          if (consumers && consumers.length > 0) {
+            const consumer = consumers[0];
+            token.id = consumer.consumer_id;
+            token.tier = consumer.subscription_tier || "FREE";
+            token.status = consumer.account_status || "ACTIVE";
+            token.name = consumer.consumer_name || consumer.full_name || token.name;
+          }
+        } catch (error) {
+          console.error("Error refreshing user data:", error);
+          // Keep existing token data if refresh fails
+        }
+      }
+
       return token;
     },
 
@@ -123,6 +148,7 @@ const authOptions: NextAuthOptions = {
         (session.user as any).phone = token.phone;
         (session.user as any).tier = token.tier;
         (session.user as any).status = token.status;
+        session.user.name = token.name as string;
       }
       return session;
     },
@@ -136,25 +162,26 @@ const authOptions: NextAuthOptions = {
   debug: process.env.NODE_ENV === "development",
 };
 
-// Helper function to normalize Nigerian phone numbers
+// Helper function to normalize phone numbers
 function normalizePhone(phone: string): string {
   let cleaned = phone.replace(/\D/g, "");
-  
-  // Convert 080... to 234...
+
+  // Convert 080... to 234... (Nigerian format)
   if (cleaned.startsWith("0") && cleaned.length === 11) {
     cleaned = "234" + cleaned.substring(1);
   }
-  
-  // Remove leading + if present
+
+  // Handle numbers with + prefix
   if (cleaned.startsWith("234") && cleaned.length === 13) {
     return cleaned;
   }
-  
-  // Handle Finnish numbers for testing
+
+  // Handle Finnish numbers for testing (+358)
   if (cleaned.startsWith("358")) {
     return cleaned;
   }
-  
+
+  // Handle other international formats - return as-is
   return cleaned;
 }
 
