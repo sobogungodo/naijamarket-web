@@ -61,6 +61,9 @@ const BASELINE_PRICES: Record<string, number> = {
   'Beef': 8000
 };
 
+// Default baseline price if item not found
+const DEFAULT_BASELINE = 50000;
+
 // Regional mapping
 const REGION_STATES: Record<string, string[]> = {
   'NW': ['Kano', 'Kaduna', 'Katsina', 'Sokoto', 'Zamfara', 'Kebbi', 'Jigawa'],
@@ -109,14 +112,23 @@ export async function GET(request: NextRequest) {
     const access = TIER_ACCESS[tier as keyof typeof TIER_ACCESS] || TIER_ACCESS.FREE;
 
     // Calculate current index for each basket item
-    const basketPrices: any[] = [];
+    const basketPrices: Array<{
+      item: string;
+      category: string;
+      weight: number;
+      current_price: number;
+      baseline_price: number;
+      item_index: number;
+      weighted_contribution: number;
+      data_points: number;
+    }> = [];
     
     for (const item of NFPI_BASKET) {
       // Build region filter
       let regionFilter = '';
       if (region !== 'ALL' && REGION_STATES[region]) {
-        const states = REGION_STATES[region].map(s => `'${s}'`).join(',');
-        regionFilter = `AND state IN (${states})`;
+        const statesList = REGION_STATES[region].map(s => `'${s}'`).join(',');
+        regionFilter = `AND state IN (${statesList})`;
       }
 
       // Get average price for this item (last 7 days)
@@ -129,10 +141,11 @@ export async function GET(request: NextRequest) {
           AND item_name LIKE @p1
           AND validated_at >= DATEADD(day, -7, GETDATE())
           ${regionFilter}
-      `, item.item_pattern) as any[];
+      `, item.item_pattern) as Array<{ avg_price: number | null; data_points: number }>;
 
-      const avgPrice = result[0]?.avg_price || BASELINE_PRICES[item.display];
-      const baseline = BASELINE_PRICES[item.display];
+      // Get baseline with fallback
+      const baseline = BASELINE_PRICES[item.display] || DEFAULT_BASELINE;
+      const avgPrice = result[0]?.avg_price || baseline;
       const itemIndex = (avgPrice / baseline) * 100;
 
       basketPrices.push({
@@ -161,14 +174,16 @@ export async function GET(request: NextRequest) {
     for (const cat of categories) {
       const catItems = basketPrices.filter(p => p.category === cat);
       const catWeight = catItems.reduce((sum, p) => sum + p.weight, 0);
-      const catIndex = catItems.reduce((sum, p) => sum + p.item_index * (p.weight / catWeight), 0);
+      const catIndex = catWeight > 0 
+        ? catItems.reduce((sum, p) => sum + p.item_index * (p.weight / catWeight), 0)
+        : 100;
       categoryIndices[cat] = Math.round(catIndex * 10) / 10;
     }
 
     // Calculate regional indices (if full national)
     const regionalIndices: Record<string, number> = {};
     if (region === 'ALL') {
-      for (const [regionCode] of Object.entries(REGION_STATES)) {
+      for (const regionCode of Object.keys(REGION_STATES)) {
         // Simplified: use variation from national average
         const variation = (Math.random() - 0.5) * 10; // ±5% variation
         regionalIndices[regionCode] = Math.round((nfpiValue + variation) * 10) / 10;
