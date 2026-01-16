@@ -88,7 +88,7 @@ const authOptions: NextAuthOptions = {
           return {
             id: consumer.consumer_id,
             phone: consumer.phone_number,
-            name: consumer.consumer_name || consumer.full_name || `User ${phone.slice(-4)}`,
+            name: consumer.full_name || `${consumer.first_name || ''} ${consumer.last_name || ''}`.trim() || `User ${phone.slice(-4)}`,
             tier: consumer.subscription_tier || "FREE",
             status: consumer.account_status || "ACTIVE",
           };
@@ -131,7 +131,7 @@ const authOptions: NextAuthOptions = {
             token.id = consumer.consumer_id;
             token.tier = consumer.subscription_tier || "FREE";
             token.status = consumer.account_status || "ACTIVE";
-            token.name = consumer.consumer_name || consumer.full_name || token.name;
+            token.name = consumer.full_name || `${consumer.first_name || ''} ${consumer.last_name || ''}`.trim() || token.name;
           }
         } catch (error) {
           console.error("Error refreshing user data:", error);
