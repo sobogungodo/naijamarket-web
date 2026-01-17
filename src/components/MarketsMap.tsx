@@ -39,7 +39,8 @@ const Popup = dynamic(
 
 export default function MarketsMap({ markets, height = "300px" }: MarketsMapProps) {
   const [isClient, setIsClient] = useState(false);
-  const [L, setL] = useState<typeof import("leaflet") | null>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [L, setL] = useState<any>(null);
 
   // Nigeria center coordinates
   const nigeriaCenter: [number, number] = [9.0820, 8.6753];
@@ -49,10 +50,11 @@ export default function MarketsMap({ markets, height = "300px" }: MarketsMapProp
     setIsClient(true);
     // Import Leaflet on client side only
     import("leaflet").then((leaflet) => {
-      setL(leaflet.default as unknown as typeof import("leaflet"));
+      setL(leaflet.default);
       
-      // Fix default marker icons
-      delete (leaflet.default.Icon.Default.prototype as Record<string, unknown>)._getIconUrl;
+      // Fix default marker icons - use any to avoid TypeScript issues with Leaflet internals
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      delete (leaflet.default.Icon.Default.prototype as any)._getIconUrl;
       leaflet.default.Icon.Default.mergeOptions({
         iconRetinaUrl: "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon-2x.png",
         iconUrl: "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon.png",
