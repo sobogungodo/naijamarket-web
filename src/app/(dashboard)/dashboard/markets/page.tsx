@@ -1,3 +1,5 @@
+"use client";
+
 import { 
   MapPin, 
   Search, 
@@ -10,6 +12,7 @@ import {
   ExternalLink
 } from "lucide-react";
 import Link from "next/link";
+import MarketsMap from "@/components/MarketsMap";
 
 // ============================================================================
 // MARKETS PAGE
@@ -83,16 +86,8 @@ export default function MarketsPage() {
         ))}
       </div>
 
-      {/* Map Placeholder */}
-      <div className="bg-terminal-surface border border-terminal-border rounded-xl overflow-hidden">
-        <div className="h-[300px] bg-gradient-to-br from-terminal-surface to-terminal-bg flex items-center justify-center">
-          <div className="text-center">
-            <MapPin className="w-12 h-12 text-naija-green/30 mx-auto mb-3" />
-            <p className="text-gray-500">Interactive Map Coming Soon</p>
-            <p className="text-xs text-gray-600 mt-1">Mapbox integration in Phase 2</p>
-          </div>
-        </div>
-      </div>
+      {/* Interactive Map */}
+      <MarketsMap markets={marketsWithCoords} height="350px" />
 
       {/* Markets Grid */}
       <div className="grid grid-cols-3 gap-4">
@@ -169,20 +164,31 @@ export default function MarketsPage() {
 }
 
 // ============================================================================
-// MOCK DATA
+// MOCK DATA (with GPS coordinates for map)
 // ============================================================================
 
 const marketsData = [
-  { id: "mile-12", name: "Mile 12 Market", state: "Lagos", status: "Active", items: 156, avgChange: 2.3, lastUpdate: "2 min ago" },
-  { id: "onitsha", name: "Onitsha Main Market", state: "Anambra", status: "Active", items: 203, avgChange: -1.2, lastUpdate: "5 min ago" },
-  { id: "iddo", name: "Iddo Market", state: "Lagos", status: "Active", items: 89, avgChange: 0.8, lastUpdate: "8 min ago" },
-  { id: "ariaria", name: "Ariaria Market", state: "Abia", status: "Active", items: 178, avgChange: 3.1, lastUpdate: "3 min ago" },
-  { id: "alaba", name: "Alaba International", state: "Lagos", status: "Active", items: 134, avgChange: -0.5, lastUpdate: "12 min ago" },
-  { id: "wuse", name: "Wuse Market", state: "FCT", status: "Active", items: 98, avgChange: 1.7, lastUpdate: "6 min ago" },
-  { id: "kano-main", name: "Kano Main Market", state: "Kano", status: "Active", items: 167, avgChange: 4.2, lastUpdate: "4 min ago" },
-  { id: "jos-main", name: "Jos Main Market", state: "Plateau", status: "Active", items: 112, avgChange: -2.1, lastUpdate: "15 min ago" },
-  { id: "bodija", name: "Bodija Market", state: "Oyo", status: "Inactive", items: 145, avgChange: 0, lastUpdate: "2 hours ago" },
+  { id: "mile-12", name: "Mile 12 Market", state: "Lagos", status: "Active", items: 156, avgChange: 2.3, lastUpdate: "2 min ago", latitude: 6.5833, longitude: 3.3833 },
+  { id: "onitsha", name: "Onitsha Main Market", state: "Anambra", status: "Active", items: 203, avgChange: -1.2, lastUpdate: "5 min ago", latitude: 6.1667, longitude: 6.7833 },
+  { id: "iddo", name: "Iddo Market", state: "Lagos", status: "Active", items: 89, avgChange: 0.8, lastUpdate: "8 min ago", latitude: 6.4698, longitude: 3.3877 },
+  { id: "ariaria", name: "Ariaria Market", state: "Abia", status: "Active", items: 178, avgChange: 3.1, lastUpdate: "3 min ago", latitude: 5.1167, longitude: 7.3667 },
+  { id: "alaba", name: "Alaba International", state: "Lagos", status: "Active", items: 134, avgChange: -0.5, lastUpdate: "12 min ago", latitude: 6.4631, longitude: 3.1897 },
+  { id: "wuse", name: "Wuse Market", state: "FCT", status: "Active", items: 98, avgChange: 1.7, lastUpdate: "6 min ago", latitude: 9.0765, longitude: 7.4983 },
+  { id: "kano-main", name: "Kano Main Market", state: "Kano", status: "Active", items: 167, avgChange: 4.2, lastUpdate: "4 min ago", latitude: 12.0022, longitude: 8.5167 },
+  { id: "jos-main", name: "Jos Main Market", state: "Plateau", status: "Active", items: 112, avgChange: -2.1, lastUpdate: "15 min ago", latitude: 9.8965, longitude: 8.8583 },
+  { id: "bodija", name: "Bodija Market", state: "Oyo", status: "Inactive", items: 145, avgChange: 0, lastUpdate: "2 hours ago", latitude: 7.4167, longitude: 3.9000 },
 ];
+
+// Transform for map component
+const marketsWithCoords = marketsData.map(m => ({
+  id: m.id,
+  name: m.name,
+  state: m.state,
+  status: m.status,
+  latitude: m.latitude,
+  longitude: m.longitude,
+  items: m.items,
+}));
 
 const regions = [
   { code: "NW", name: "North West", emoji: "🏜️", markets: 42 },
