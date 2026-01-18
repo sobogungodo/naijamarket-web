@@ -8,17 +8,40 @@ function generateOTP(): string {
   return Math.floor(100000 + Math.random() * 900000).toString();
 }
 
-// Format Nigerian phone number
-function formatPhoneNumber(phone: string): string {
-  let cleaned = phone.replace(/[\s\-\(\)\+]/g, "");
+// Format phone number for international use
+function formatPhoneNumber(phone: string, countryCode?: string): string {
+  // Remove all non-digit characters except leading +
+  let cleaned = phone.replace(/[\s\-\(\)]/g, "");
   
-  // Handle Nigerian numbers
-  if (cleaned.startsWith("0")) {
-    cleaned = "234" + cleaned.substring(1);
-  } else if (!cleaned.startsWith("234")) {
-    cleaned = "234" + cleaned;
+  // If phone already starts with +, just remove the + and return
+  if (cleaned.startsWith("+")) {
+    return cleaned.substring(1);
   }
   
+  // If country code is provided separately (from UI dropdown)
+  if (countryCode) {
+    // Remove + from country code if present
+    const cleanCountryCode = countryCode.replace("+", "");
+    
+    // If phone starts with 0, remove it (local format)
+    if (cleaned.startsWith("0")) {
+      cleaned = cleaned.substring(1);
+    }
+    
+    // If phone already starts with country code, don't duplicate
+    if (cleaned.startsWith(cleanCountryCode)) {
+      return cleaned;
+    }
+    
+    return cleanCountryCode + cleaned;
+  }
+  
+  // If no country code and starts with 0, assume Nigerian
+  if (cleaned.startsWith("0")) {
+    return "234" + cleaned.substring(1);
+  }
+  
+  // Return as-is (already has country code without +)
   return cleaned;
 }
 
@@ -29,13 +52,15 @@ async function sendWhatsAppOTP(phone: string, otp: string): Promise<boolean> {
   const twilioWhatsAppNumber = process.env.TWILIO_WHATSAPP_NUMBER || "whatsapp:+14155238886";
 
   if (!twilioAccountSid || !twilioAuthToken) {
-    console.log("Twilio credentials not configured. OTP:", otp);
+    console.log("⚠️ Twilio credentials not configured. OTP for testing:", otp);
     return true; // Return true for development
   }
 
   try {
     const formattedPhone = `whatsapp:+${phone}`;
     const message = `🔐 *NaijaMarket Intel*\n\nYour verification code is: *${otp}*\n\nThis code expires in 10 minutes.\n\n⚠️ Never share this code with anyone.`;
+
+    console.log(`📱 Sending WhatsApp OTP to: ${formattedPhone}`);
 
     const response = await fetch(
       `https://api.twilio.com/2010-04-01/Accounts/${twilioAccountSid}/Messages.json`,
@@ -56,14 +81,14 @@ async function sendWhatsAppOTP(phone: string, otp: string): Promise<boolean> {
     const result = await response.json();
     
     if (!response.ok) {
-      console.error("WhatsApp send failed:", result);
+      console.error("❌ WhatsApp send failed:", JSON.stringify(result));
       return false;
     }
 
-    console.log("WhatsApp OTP sent successfully:", result.sid);
+    console.log("✅ WhatsApp OTP sent successfully. SID:", result.sid);
     return true;
   } catch (error) {
-    console.error("WhatsApp send error:", error);
+    console.error("❌ WhatsApp send error:", error);
     return false;
   }
 }
@@ -73,11 +98,13 @@ async function sendEmailOTP(email: string, otp: string): Promise<boolean> {
   const resendApiKey = process.env.RESEND_API_KEY;
 
   if (!resendApiKey) {
-    console.log("Resend API key not configured. OTP:", otp);
+    console.log("⚠️ Resend API key not configured. OTP for testing:", otp);
     return true; // Return true for development
   }
 
   try {
+    console.log(`📧 Sending Email OTP to: ${email}`);
+
     const response = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: {
@@ -105,14 +132,14 @@ async function sendEmailOTP(email: string, otp: string): Promise<boolean> {
 
     if (!response.ok) {
       const error = await response.json();
-      console.error("Email send failed:", error);
+      console.error("❌ Email send failed:", JSON.stringify(error));
       return false;
     }
 
-    console.log("Email OTP sent successfully");
+    console.log("✅ Email OTP sent successfully");
     return true;
   } catch (error) {
-    console.error("Email send error:", error);
+    console.error("❌ Email send error:", error);
     return false;
   }
 }
@@ -120,7 +147,9 @@ async function sendEmailOTP(email: string, otp: string): Promise<boolean> {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    let { type, phone, email } = body;
+    let { type, phone, email, countryCode } = body;
+
+    console.log("📥 OTP Request:", { type, phone, email, countryCode });
 
     // Auto-detect type if not provided
     if (!type) {
@@ -148,7 +177,8 @@ export async function POST(request: NextRequest) {
           { status: 400 }
         );
       }
-      identifier = formatPhoneNumber(phone);
+      identifier = formatPhoneNumber(phone, countryCode);
+      console.log("📱 Formatted phone:", identifier);
     } else {
       if (!email) {
         return NextResponse.json(
@@ -185,6 +215,8 @@ export async function POST(request: NextRequest) {
     // Generate new OTP
     const otp = generateOTP();
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+
+    console.log("🔑 Generated OTP:", otp, "for", identifier);
 
     // Delete old unverified OTPs for this identifier
     await prisma.oTP_Codes.deleteMany({
@@ -231,7 +263,7 @@ export async function POST(request: NextRequest) {
     });
 
   } catch (error) {
-    console.error("Send OTP error:", error);
+    console.error("❌ Send OTP error:", error);
     return NextResponse.json(
       { error: "Failed to send verification code" },
       { status: 500 }
