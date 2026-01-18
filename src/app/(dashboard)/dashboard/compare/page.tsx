@@ -18,6 +18,7 @@ import {
   PiggyBank,
   X,
   AlertCircle,
+  ChevronDown,
 } from "lucide-react";
 
 // ============================================================================
@@ -120,49 +121,102 @@ function RankBadge({ rank }: { rank: number }) {
 }
 
 // ============================================================================
-// SELECTION COMPONENTS
+// DROPDOWN CATEGORY SELECTOR
 // ============================================================================
 
-function CategorySelector({ 
+function CategoryDropdown({ 
   categories, 
   selected, 
-  onSelect 
+  onSelect,
+  loading 
 }: { 
   categories: Category[]; 
   selected: string | null;
-  onSelect: (id: string) => void;
+  onSelect: (id: string, name: string) => void;
+  loading: boolean;
 }) {
-  if (categories.length === 0) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [searchTerm, setSearchTerm] = useState("");
+
+  const selectedCategory = categories.find(c => c.category_id === selected);
+  
+  const filteredCategories = categories.filter(cat =>
+    cat.category_name.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  if (loading) {
     return (
-      <div className="flex flex-col items-center justify-center py-12 text-gray-500">
-        <AlertCircle className="w-8 h-8 mb-2" />
-        <p>No categories available</p>
+      <div className="flex items-center justify-center py-4">
+        <RefreshCw className="w-5 h-5 text-emerald-400 animate-spin" />
+        <span className="ml-2 text-gray-400">Loading categories...</span>
       </div>
     );
   }
 
   return (
-    <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-      {categories.map((cat) => (
-        <button
-          key={cat.category_id}
-          onClick={() => onSelect(cat.category_id)}
-          className={`
-            p-3 rounded-lg border text-left transition-all
-            ${selected === cat.category_id 
-              ? "bg-emerald-500/20 border-emerald-500/50 text-emerald-400" 
-              : "bg-[#1a1a1a] border-[#2a2a2a] text-gray-300 hover:border-gray-600"
-            }
-          `}
-        >
-          <span className="text-sm font-medium truncate block">{cat.category_name}</span>
-        </button>
-      ))}
+    <div className="relative">
+      <button
+        onClick={() => setIsOpen(!isOpen)}
+        className="w-full flex items-center justify-between p-4 bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg text-left hover:border-gray-600 transition-colors"
+      >
+        <span className={selectedCategory ? "text-white" : "text-gray-500"}>
+          {selectedCategory ? selectedCategory.category_name : "Select a category..."}
+        </span>
+        <ChevronDown className={`w-5 h-5 text-gray-400 transition-transform ${isOpen ? "rotate-180" : ""}`} />
+      </button>
+
+      {isOpen && (
+        <div className="absolute z-50 w-full mt-2 bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg shadow-xl max-h-80 overflow-hidden">
+          {/* Search input */}
+          <div className="p-2 border-b border-[#2a2a2a]">
+            <input
+              type="text"
+              placeholder="Search categories..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full px-3 py-2 bg-[#0f0f0f] border border-[#2a2a2a] rounded-md text-white placeholder-gray-500 focus:outline-none focus:border-emerald-500"
+              autoFocus
+            />
+          </div>
+          
+          {/* Category list */}
+          <div className="max-h-60 overflow-y-auto">
+            {filteredCategories.length === 0 ? (
+              <div className="p-4 text-center text-gray-500">
+                No categories found
+              </div>
+            ) : (
+              filteredCategories.map((cat) => (
+                <button
+                  key={cat.category_id}
+                  onClick={() => {
+                    onSelect(cat.category_id, cat.category_name);
+                    setIsOpen(false);
+                    setSearchTerm("");
+                  }}
+                  className={`w-full px-4 py-3 text-left hover:bg-[#2a2a2a] transition-colors flex items-center justify-between
+                    ${selected === cat.category_id ? "bg-emerald-500/10 text-emerald-400" : "text-gray-300"}
+                  `}
+                >
+                  <span>{cat.category_name}</span>
+                  {selected === cat.category_id && (
+                    <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                  )}
+                </button>
+              ))
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
-function ItemSelector({ 
+// ============================================================================
+// ITEM SELECTOR (DROPDOWN)
+// ============================================================================
+
+function ItemDropdown({ 
   items, 
   selected, 
   onSelect,
@@ -173,46 +227,105 @@ function ItemSelector({
   onSelect: (id: string, name: string) => void;
   loading: boolean;
 }) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [searchTerm, setSearchTerm] = useState("");
+
+  const selectedItem = items.find(i => i.item_id === selected);
+  
+  const filteredItems = items.filter(item =>
+    item.item_name.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-8">
-        <RefreshCw className="w-6 h-6 text-emerald-400 animate-spin" />
+      <div className="flex items-center justify-center py-4">
+        <RefreshCw className="w-5 h-5 text-emerald-400 animate-spin" />
+        <span className="ml-2 text-gray-400">Loading items...</span>
       </div>
     );
   }
 
-  // FIXED: Add empty state handling
-  if (!items || items.length === 0) {
+  if (items.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center py-12 text-gray-500">
+      <div className="flex flex-col items-center justify-center py-8 text-gray-500">
         <AlertCircle className="w-8 h-8 mb-2" />
         <p>No items found in this category</p>
-        <p className="text-sm mt-1">Try selecting a different category</p>
       </div>
     );
   }
 
   return (
-    <div className="grid grid-cols-2 md:grid-cols-3 gap-2 max-h-96 overflow-y-auto">
-      {items.map((item) => (
-        <button
-          key={item.item_id}
-          onClick={() => onSelect(item.item_id, item.item_name || "")}
-          className={`
-            p-3 rounded-lg border text-left transition-all
-            ${selected === item.item_id 
-              ? "bg-emerald-500/20 border-emerald-500/50 text-emerald-400" 
-              : "bg-[#1a1a1a] border-[#2a2a2a] text-gray-300 hover:border-gray-600"
-            }
-          `}
-        >
-          <span className="text-sm font-medium truncate block">{item.item_name}</span>
-          <span className="text-xs text-gray-500">{item.unit || "unit"}</span>
-        </button>
-      ))}
+    <div className="relative">
+      <button
+        onClick={() => setIsOpen(!isOpen)}
+        className="w-full flex items-center justify-between p-4 bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg text-left hover:border-gray-600 transition-colors"
+      >
+        <div>
+          <span className={selectedItem ? "text-white" : "text-gray-500"}>
+            {selectedItem ? selectedItem.item_name : "Select an item..."}
+          </span>
+          {selectedItem && selectedItem.unit && (
+            <span className="ml-2 text-gray-500 text-sm">({selectedItem.unit})</span>
+          )}
+        </div>
+        <ChevronDown className={`w-5 h-5 text-gray-400 transition-transform ${isOpen ? "rotate-180" : ""}`} />
+      </button>
+
+      {isOpen && (
+        <div className="absolute z-50 w-full mt-2 bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg shadow-xl max-h-80 overflow-hidden">
+          {/* Search input */}
+          <div className="p-2 border-b border-[#2a2a2a]">
+            <input
+              type="text"
+              placeholder="Search items..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full px-3 py-2 bg-[#0f0f0f] border border-[#2a2a2a] rounded-md text-white placeholder-gray-500 focus:outline-none focus:border-emerald-500"
+              autoFocus
+            />
+          </div>
+          
+          {/* Items list */}
+          <div className="max-h-60 overflow-y-auto">
+            {filteredItems.length === 0 ? (
+              <div className="p-4 text-center text-gray-500">
+                No items found
+              </div>
+            ) : (
+              filteredItems.map((item) => (
+                <button
+                  key={item.item_id}
+                  onClick={() => {
+                    onSelect(item.item_id, item.item_name);
+                    setIsOpen(false);
+                    setSearchTerm("");
+                  }}
+                  className={`w-full px-4 py-3 text-left hover:bg-[#2a2a2a] transition-colors flex items-center justify-between
+                    ${selected === item.item_id ? "bg-emerald-500/10 text-emerald-400" : "text-gray-300"}
+                  `}
+                >
+                  <div>
+                    <span>{item.item_name}</span>
+                    {item.unit && (
+                      <span className="ml-2 text-gray-500 text-sm">({item.unit})</span>
+                    )}
+                  </div>
+                  {selected === item.item_id && (
+                    <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                  )}
+                </button>
+              ))
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
+
+// ============================================================================
+// MARKET SELECTOR
+// ============================================================================
 
 function MarketSelector({ 
   markets, 
@@ -227,6 +340,8 @@ function MarketSelector({
   maxMarkets: number;
   loading: boolean;
 }) {
+  const [searchTerm, setSearchTerm] = useState("");
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-8">
@@ -235,7 +350,6 @@ function MarketSelector({
     );
   }
 
-  // FIXED: Add empty state handling
   if (!markets || markets.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-12 text-gray-500">
@@ -245,13 +359,31 @@ function MarketSelector({
     );
   }
 
+  const filteredMarkets = markets.filter(market =>
+    market.market_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    market.state.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
   return (
-    <div className="space-y-2">
-      <p className="text-gray-500 text-sm">
-        Select up to {maxMarkets} markets ({selected.length}/{maxMarkets} selected)
-      </p>
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-2 max-h-96 overflow-y-auto">
-        {markets.map((market) => {
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <p className="text-gray-500 text-sm">
+          Select up to {maxMarkets} markets ({selected.length}/{maxMarkets} selected)
+        </p>
+      </div>
+
+      {/* Search */}
+      <input
+        type="text"
+        placeholder="Search markets..."
+        value={searchTerm}
+        onChange={(e) => setSearchTerm(e.target.value)}
+        className="w-full px-4 py-2 bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg text-white placeholder-gray-500 focus:outline-none focus:border-emerald-500"
+      />
+
+      {/* Markets grid */}
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-2 max-h-72 overflow-y-auto">
+        {filteredMarkets.map((market) => {
           const isSelected = selected.includes(market.market_id);
           const isDisabled = !isSelected && selected.length >= maxMarkets;
           
@@ -393,7 +525,7 @@ function ComparisonResults({ result, onReset }: { result: ComparisonResult; onRe
               <div className="flex items-center gap-4">
                 <div className="flex items-center gap-1">
                   <TrendIcon trend={market.trend} />
-                  {market.trendPercentage !== 0 && (
+                  {market.trendPercentage !== 0 && market.trendPercentage && (
                     <span className={`text-xs ${market.trend === "UP" ? "text-red-400" : "text-emerald-400"}`}>
                       {market.trendPercentage}%
                     </span>
@@ -435,12 +567,13 @@ export default function ComparePage() {
   const [markets, setMarkets] = useState<Market[]>([]);
   
   // Selections
-  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+  const [selectedCategory, setSelectedCategory] = useState<{ id: string; name: string } | null>(null);
   const [selectedItem, setSelectedItem] = useState<{ id: string; name: string } | null>(null);
   const [selectedMarkets, setSelectedMarkets] = useState<string[]>([]);
   
   // Results
   const [result, setResult] = useState<ComparisonResult | null>(null);
+  const [error, setError] = useState<string | null>(null);
   
   // Loading states
   const [loadingCategories, setLoadingCategories] = useState(true);
@@ -458,7 +591,7 @@ export default function ComparePage() {
       try {
         const response = await fetch("/api/categories");
         const data = await response.json();
-        console.log("Categories API response:", data); // DEBUG
+        console.log("Categories API response:", data);
         if (data.success && data.data) {
           setCategories(data.data);
         }
@@ -472,59 +605,46 @@ export default function ComparePage() {
     fetchCategories();
   }, []);
 
-  // Fetch items when category selected
-  useEffect(() => {
-    if (!selectedCategory) return;
+  // Handle category selection
+  const handleCategorySelect = (id: string, name: string) => {
+    setSelectedCategory({ id, name });
+    setSelectedItem(null);
+    setItems([]);
+    setStep("item");
     
-    const fetchItems = async () => {
-      setLoadingItems(true);
-      setItems([]); // Clear previous items
-      try {
-        const response = await fetch(`/api/items?category=${selectedCategory}`);
-        const data = await response.json();
-        console.log("Items API response:", data); // DEBUG
-        console.log("Items count:", data.data?.length || 0); // DEBUG
+    // Fetch items
+    setLoadingItems(true);
+    fetch(`/api/items?category=${id}`)
+      .then(res => res.json())
+      .then(data => {
+        console.log("Items API response:", data);
         if (data.success && data.data) {
           setItems(data.data);
-          setStep("item");
-        } else {
-          console.error("Items API failed or empty:", data);
-          setStep("item"); // Still move to item step to show empty state
         }
-      } catch (err) {
-        console.error("Failed to fetch items:", err);
-        setStep("item"); // Still move to item step to show error
-      } finally {
-        setLoadingItems(false);
-      }
-    };
-    
-    fetchItems();
-  }, [selectedCategory]);
+      })
+      .catch(err => console.error("Failed to fetch items:", err))
+      .finally(() => setLoadingItems(false));
+  };
 
-  // Fetch markets when item selected
-  useEffect(() => {
-    if (!selectedItem) return;
+  // Handle item selection
+  const handleItemSelect = (id: string, name: string) => {
+    setSelectedItem({ id, name });
+    setSelectedMarkets([]);
+    setStep("markets");
     
-    const fetchMarkets = async () => {
-      setLoadingMarkets(true);
-      try {
-        const response = await fetch("/api/markets");
-        const data = await response.json();
-        console.log("Markets API response:", data); // DEBUG
+    // Fetch markets
+    setLoadingMarkets(true);
+    fetch("/api/markets")
+      .then(res => res.json())
+      .then(data => {
+        console.log("Markets API response:", data);
         if (data.success && data.data) {
           setMarkets(data.data);
-          setStep("markets");
         }
-      } catch (err) {
-        console.error("Failed to fetch markets:", err);
-      } finally {
-        setLoadingMarkets(false);
-      }
-    };
-    
-    fetchMarkets();
-  }, [selectedItem]);
+      })
+      .catch(err => console.error("Failed to fetch markets:", err))
+      .finally(() => setLoadingMarkets(false));
+  };
 
   // Handle market toggle
   const handleMarketToggle = (marketId: string) => {
@@ -544,22 +664,29 @@ export default function ComparePage() {
     if (!selectedItem || selectedMarkets.length < 2) return;
     
     setLoadingResults(true);
+    setError(null);
+    
     try {
       const params = new URLSearchParams({
         item: selectedItem.name,
+        item_id: selectedItem.id,
         markets: selectedMarkets.join(","),
         tier,
       });
       
       const response = await fetch(`/api/compare?${params}`);
       const data = await response.json();
+      console.log("Compare API response:", data);
       
-      if (data.success) {
+      if (data.success && data.data) {
         setResult(data.data);
         setStep("results");
+      } else {
+        setError(data.message || data.error || "No prices found");
       }
     } catch (err) {
       console.error("Failed to compare:", err);
+      setError("Failed to compare prices");
     } finally {
       setLoadingResults(false);
     }
@@ -572,6 +699,7 @@ export default function ComparePage() {
     setSelectedItem(null);
     setSelectedMarkets([]);
     setResult(null);
+    setError(null);
     setItems([]);
   };
 
@@ -631,38 +759,35 @@ export default function ComparePage() {
       <div className="max-w-4xl mx-auto px-4 py-8">
         {step === "category" && (
           <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <h2 className="text-lg font-semibold">Select Category</h2>
-              {loadingCategories && <RefreshCw className="w-5 h-5 text-emerald-400 animate-spin" />}
-            </div>
-            <CategorySelector
+            <h2 className="text-lg font-semibold">Select Category</h2>
+            <CategoryDropdown
               categories={categories}
-              selected={selectedCategory}
-              onSelect={setSelectedCategory}
+              selected={selectedCategory?.id || null}
+              onSelect={handleCategorySelect}
+              loading={loadingCategories}
             />
           </div>
         )}
 
         {step === "item" && (
           <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <button 
-                  onClick={() => { setStep("category"); setSelectedCategory(null); setItems([]); }}
-                  className="text-gray-500 text-sm hover:text-white mb-1"
-                >
-                  ← Back to categories
-                </button>
-                <h2 className="text-lg font-semibold">Select Item</h2>
-                <p className="text-gray-500 text-sm">
-                  {items.length} items in this category
-                </p>
-              </div>
+            <div>
+              <button 
+                onClick={() => { setStep("category"); setSelectedCategory(null); setItems([]); }}
+                className="text-gray-500 text-sm hover:text-white mb-2"
+              >
+                ← Back to categories
+              </button>
+              <h2 className="text-lg font-semibold">Select Item</h2>
+              <p className="text-gray-500 text-sm">
+                Category: <span className="text-emerald-400">{selectedCategory?.name}</span>
+                {items.length > 0 && ` • ${items.length} items`}
+              </p>
             </div>
-            <ItemSelector
+            <ItemDropdown
               items={items}
               selected={selectedItem?.id || null}
-              onSelect={(id, name) => setSelectedItem({ id, name })}
+              onSelect={handleItemSelect}
               loading={loadingItems}
             />
           </div>
@@ -670,21 +795,17 @@ export default function ComparePage() {
 
         {step === "markets" && (
           <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <button 
-                  onClick={() => { setStep("item"); setSelectedItem(null); setSelectedMarkets([]); }}
-                  className="text-gray-500 text-sm hover:text-white mb-1"
-                >
-                  ← Back to items
-                </button>
-                <h2 className="text-lg font-semibold">
-                  Select Markets to Compare
-                </h2>
-                <p className="text-gray-500 text-sm">
-                  Comparing: <span className="text-emerald-400">{selectedItem?.name}</span>
-                </p>
-              </div>
+            <div>
+              <button 
+                onClick={() => { setStep("item"); setSelectedItem(null); setSelectedMarkets([]); }}
+                className="text-gray-500 text-sm hover:text-white mb-2"
+              >
+                ← Back to items
+              </button>
+              <h2 className="text-lg font-semibold">Select Markets to Compare</h2>
+              <p className="text-gray-500 text-sm">
+                Comparing: <span className="text-emerald-400">{selectedItem?.name}</span>
+              </p>
             </div>
             
             <MarketSelector
@@ -694,6 +815,14 @@ export default function ComparePage() {
               maxMarkets={maxMarkets}
               loading={loadingMarkets}
             />
+
+            {/* Error message */}
+            {error && (
+              <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-4 text-red-400">
+                <p>{error}</p>
+                <p className="text-sm mt-1 text-red-400/70">Try selecting different markets or another item.</p>
+              </div>
+            )}
             
             {selectedMarkets.length >= 2 && (
               <div className="pt-4">
