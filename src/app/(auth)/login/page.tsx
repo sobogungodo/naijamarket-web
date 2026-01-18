@@ -252,9 +252,7 @@ export default function LoginPage() {
     try {
       const fullPhone = getFullPhoneNumber();
       
-      // ============================================================================
-      // FIXED: Call our verify-otp API directly instead of NextAuth
-      // ============================================================================
+      // Call our verify-otp API
       const response = await fetch("/api/auth/verify-otp", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -271,23 +269,17 @@ export default function LoginPage() {
         throw new Error(data.error || "Invalid OTP");
       }
 
-      // OTP verified successfully - now sign in with NextAuth
-      const result = await signIn("credentials", {
-        phone: fullPhone,
-        redirect: false,
-      });
-
-      if (result?.error) {
-        // Even if NextAuth fails, OTP was verified - just redirect
-        console.log("NextAuth result:", result);
-      }
+      // OTP verified successfully!
+      // Store phone in localStorage for session (temporary solution)
+      localStorage.setItem("naijamarket_phone", fullPhone);
+      localStorage.setItem("naijamarket_authenticated", "true");
 
       toast.success("Welcome!", {
         description: "Redirecting to dashboard...",
       });
 
+      // Redirect to dashboard
       router.push("/dashboard");
-      router.refresh();
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : "Invalid OTP. Please try again.";
       toast.error("Verification failed", {
