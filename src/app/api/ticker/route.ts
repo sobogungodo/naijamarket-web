@@ -162,7 +162,8 @@ export async function GET() {
 
 // Create Bloomberg-style symbol from item name
 function createSymbol(itemName: string): string {
-  // Extract key words and create symbol
+  if (!itemName) return "ITEM.NGN";
+  
   const name = itemName.toUpperCase();
   
   // Common mappings
@@ -192,8 +193,9 @@ function createSymbol(itemName: string): string {
   if (name.includes("FISH")) return "FISH.NGN";
   if (name.includes("MILK")) return "MILK.NGN";
   
-  // Default: take first word and add .NGN
-  const firstWord = name.split(/[\s\-\(]/)[0].substring(0, 6);
+  // Default: take first word and add .NGN (with null safety)
+  const parts = name.split(/[\s\-\(]/);
+  const firstWord = parts.length > 0 && parts[0] ? parts[0].substring(0, 6) : "ITEM";
   return `${firstWord}.NGN`;
 }
 
