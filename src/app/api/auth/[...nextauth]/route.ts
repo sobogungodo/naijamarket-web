@@ -1,6 +1,6 @@
 // src/app/api/auth/[...nextauth]/route.ts
 // NaijaMarket Intel - NextAuth Configuration with Phone OTP
-// FIXED: Corrected column names and phone matching
+// FIXED v2: Now checks for verified=1 (OTP already verified by /api/auth/verify-otp)
 // Updated: 2026-01-18
 
 import NextAuth, { NextAuthOptions } from "next-auth";
@@ -27,29 +27,48 @@ const authOptions: NextAuthOptions = {
         console.log("[AUTH] Attempting login for phone:", phone);
 
         try {
-          // Verify OTP
+          // ============================================================
+          // FIX: Look for OTP that was ALREADY VERIFIED by verify-otp API
+          // The flow is: verify-otp sets verified=1, then NextAuth checks it
+          // ============================================================
           const otpRecords = await prisma.$queryRaw`
             SELECT * FROM Consumer_OTP
             WHERE phone_number = ${phone}
             AND otp_code = ${otp}
-            AND verified = 0
+            AND verified = 1
             AND expires_at > GETDATE()
             ORDER BY created_at DESC
           ` as any[];
 
           if (!otpRecords || otpRecords.length === 0) {
-            console.log("[AUTH] OTP verification failed for:", phone);
-            throw new Error("Invalid or expired OTP");
+            console.log("[AUTH] No verified OTP found for:", phone);
+            
+            // Also check if there's an unverified one (user didn't go through verify-otp)
+            const unverifiedOtp = await prisma.$queryRaw`
+              SELECT * FROM Consumer_OTP
+              WHERE phone_number = ${phone}
+              AND otp_code = ${otp}
+              AND verified = 0
+              AND expires_at > GETDATE()
+            ` as any[];
+            
+            if (unverifiedOtp && unverifiedOtp.length > 0) {
+              // OTP exists but wasn't verified through the API - let's verify it now
+              console.log("[AUTH] Found unverified OTP, verifying now...");
+              await prisma.$executeRaw`
+                UPDATE Consumer_OTP
+                SET verified = 1
+                WHERE phone_number = ${phone} AND otp_code = ${otp}
+              `;
+            } else {
+              throw new Error("Invalid or expired OTP");
+            }
           }
 
-          // Mark OTP as verified
-          await prisma.$executeRaw`
-            UPDATE Consumer_OTP
-            SET verified = 1
-            WHERE phone_number = ${phone} AND otp_code = ${otp}
-          `;
+          console.log("[AUTH] OTP verified for:", phone);
 
-          // Find or create consumer - use LIKE for flexible matching
+          // Find or create consumer - use flexible phone matching
+          const phoneLastDigits = phone.slice(-9);
           let consumers = await prisma.$queryRaw`
             SELECT 
               consumer_id,
@@ -61,7 +80,7 @@ const authOptions: NextAuthOptions = {
               account_status
             FROM Consumers 
             WHERE phone_number = ${phone}
-               OR phone_number LIKE ${'%' + phone.slice(-9)}
+               OR phone_number LIKE ${'%' + phoneLastDigits}
           ` as any[];
 
           let consumer;
@@ -115,6 +134,8 @@ const authOptions: NextAuthOptions = {
             || `${consumer.first_name || ''} ${consumer.last_name || ''}`.trim() 
             || `User ${phone.slice(-4)}`;
 
+          console.log("[AUTH] Login successful - Name:", displayName, "Tier:", consumer.subscription_tier);
+
           // Return user object for session
           return {
             id: consumer.consumer_id,
@@ -124,7 +145,7 @@ const authOptions: NextAuthOptions = {
             status: consumer.account_status || "ACTIVE",
           };
         } catch (error: any) {
-          console.error("[AUTH] Error:", error);
+          console.error("[AUTH] Error:", error.message);
           throw new Error(error.message || "Authentication failed");
         }
       },
@@ -145,14 +166,13 @@ const authOptions: NextAuthOptions = {
         token.tier = (user as any).tier;
         token.status = (user as any).status;
         token.name = user.name;
-        console.log("[JWT] Initial sign-in - Tier:", token.tier);
+        console.log("[JWT] Initial sign-in - ID:", token.id, "Tier:", token.tier, "Name:", token.name);
       }
 
       // Refresh tier from database on each request
-      // This ensures tier changes are reflected immediately
       if (token.phone) {
         try {
-          // FIXED: Only select columns that actually exist!
+          const phoneLastDigits = String(token.phone).slice(-9);
           const consumers = await prisma.$queryRaw`
             SELECT 
               consumer_id,
@@ -164,7 +184,7 @@ const authOptions: NextAuthOptions = {
               account_status
             FROM Consumers 
             WHERE phone_number = ${token.phone}
-               OR phone_number LIKE ${'%' + String(token.phone).slice(-9)}
+               OR phone_number LIKE ${'%' + phoneLastDigits}
           ` as any[];
 
           if (consumers && consumers.length > 0) {
@@ -182,13 +202,12 @@ const authOptions: NextAuthOptions = {
               token.name = newName;
             }
 
-            console.log("[JWT] Refreshed from DB - ID:", token.id, "Tier:", token.tier, "Name:", token.name);
+            console.log("[JWT] Refreshed - ID:", token.id, "Tier:", token.tier, "Name:", token.name);
           } else {
             console.log("[JWT] No consumer found for phone:", token.phone);
           }
         } catch (error) {
           console.error("[JWT] Error refreshing user data:", error);
-          // Keep existing token data if refresh fails
         }
       }
 
@@ -204,7 +223,7 @@ const authOptions: NextAuthOptions = {
         session.user.name = token.name as string;
       }
       
-      console.log("[SESSION] Built session - Name:", session.user?.name, "Tier:", (session.user as any)?.tier);
+      console.log("[SESSION] Name:", session.user?.name, "Tier:", (session.user as any)?.tier);
       
       return session;
     },
@@ -227,7 +246,7 @@ function normalizePhone(phone: string): string {
     cleaned = "234" + cleaned.substring(1);
   }
 
-  // Handle numbers with + prefix
+  // Handle numbers with + prefix already removed
   if (cleaned.startsWith("234") && cleaned.length === 13) {
     return cleaned;
   }
