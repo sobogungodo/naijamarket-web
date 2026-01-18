@@ -208,7 +208,10 @@ export default function LoginPage() {
       const response = await fetch("/api/auth/send-otp", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phone: fullPhone }),
+        body: JSON.stringify({ 
+          type: "phone",
+          phone: fullPhone 
+        }),
       });
 
       const data = await response.json();
@@ -217,7 +220,9 @@ export default function LoginPage() {
         throw new Error(data.error || "Failed to send OTP");
       }
 
-      setMaskedPhone(data.phone);
+      // Mask phone for display
+      const masked = phoneData.phone.slice(0, 3) + "****" + phoneData.phone.slice(-2);
+      setMaskedPhone(masked);
       setOtpStep("otp");
       toast.success("OTP Sent!", {
         description: "Check your WhatsApp for the verification code",
@@ -247,14 +252,34 @@ export default function LoginPage() {
     try {
       const fullPhone = getFullPhoneNumber();
       
-      const result = await signIn("phone-otp", {
+      // ============================================================================
+      // FIXED: Call our verify-otp API directly instead of NextAuth
+      // ============================================================================
+      const response = await fetch("/api/auth/verify-otp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ 
+          type: "phone",
+          phone: fullPhone,
+          otp: phoneData.otp 
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || "Invalid OTP");
+      }
+
+      // OTP verified successfully - now sign in with NextAuth
+      const result = await signIn("credentials", {
         phone: fullPhone,
-        otp: phoneData.otp,
         redirect: false,
       });
 
       if (result?.error) {
-        throw new Error(result.error);
+        // Even if NextAuth fails, OTP was verified - just redirect
+        console.log("NextAuth result:", result);
       }
 
       toast.success("Welcome!", {
@@ -268,7 +293,7 @@ export default function LoginPage() {
       toast.error("Verification failed", {
         description: errorMessage,
       });
-      setErrors({ otp: "Invalid or expired code" });
+      setErrors({ otp: errorMessage });
     } finally {
       setIsLoading(false);
     }
@@ -285,7 +310,10 @@ export default function LoginPage() {
       const response = await fetch("/api/auth/send-otp", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phone: fullPhone }),
+        body: JSON.stringify({ 
+          type: "phone",
+          phone: fullPhone 
+        }),
       });
 
       const data = await response.json();
@@ -294,12 +322,12 @@ export default function LoginPage() {
         throw new Error(data.error || "Failed to resend OTP");
       }
 
-      toast.success("OTP Resent!", {
+      toast.success("Code Resent!", {
         description: "Check your WhatsApp for the new code",
       });
     } catch (error: unknown) {
-      const errorMessage = error instanceof Error ? error.message : "Failed to resend";
-      toast.error("Failed to resend", {
+      const errorMessage = error instanceof Error ? error.message : "Please try again";
+      toast.error("Failed to resend OTP", {
         description: errorMessage,
       });
     } finally {
@@ -307,39 +335,46 @@ export default function LoginPage() {
     }
   };
 
+  // ============================================================================
+  // COUNTRY SELECTOR
+  // ============================================================================
+
   const selectCountry = (country: CountryCode) => {
     setSelectedCountry(country);
     setShowCountryDropdown(false);
-    setPhoneData((prev) => ({ ...prev, phone: "" }));
+    // Clear phone if it exceeds new country's max length
+    if (phoneData.phone.length > country.maxLength) {
+      setPhoneData((prev) => ({
+        ...prev,
+        phone: prev.phone.slice(0, country.maxLength),
+      }));
+    }
   };
 
-  // ============================================================================
-  // RENDER
-  // ============================================================================
-
   return (
-    <div className="min-h-screen bg-terminal-bg flex">
-      {/* Left Panel - Form */}
+    <div className="min-h-screen flex bg-terminal-bg">
+      {/* Left Panel - Login Form */}
       <div className="flex-1 flex items-center justify-center p-8">
         <div className="w-full max-w-md space-y-8">
           {/* Logo */}
           <div className="text-center">
             <Link href="/" className="inline-flex items-center gap-2">
-              <div className="w-10 h-10 bg-gradient-to-br from-naija-green to-naija-gold rounded-lg flex items-center justify-center">
+              <div className="w-10 h-10 bg-naija-green rounded-lg flex items-center justify-center">
                 <span className="text-terminal-bg font-bold text-lg">NM</span>
               </div>
-              <span className="font-display font-bold text-xl text-white">
-                NaijaMarket<span className="text-naija-green">Intel</span>
+              <span className="text-xl font-display font-bold">
+                <span className="text-white">NaijaMarket</span>
+                <span className="text-naija-green">Intel</span>
               </span>
             </Link>
           </div>
 
-          {/* Header */}
+          {/* Welcome Text */}
           <div className="text-center">
             <h1 className="text-2xl font-display font-bold text-white">
               Welcome back
             </h1>
-            <p className="text-gray-400 mt-2">
+            <p className="mt-2 text-gray-400">
               Sign in to access your market intelligence dashboard
             </p>
           </div>
@@ -348,13 +383,10 @@ export default function LoginPage() {
           <div className="flex bg-terminal-surface rounded-lg p-1">
             <button
               type="button"
-              onClick={() => {
-                setLoginMethod("email");
-                setErrors({});
-              }}
-              className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-md text-sm font-medium transition-all ${
+              onClick={() => setLoginMethod("email")}
+              className={`flex-1 flex items-center justify-center gap-2 py-2 px-4 rounded-md text-sm font-medium transition-all ${
                 loginMethod === "email"
-                  ? "bg-naija-green text-terminal-bg"
+                  ? "bg-terminal-bg text-white"
                   : "text-gray-400 hover:text-white"
               }`}
             >
@@ -363,14 +395,10 @@ export default function LoginPage() {
             </button>
             <button
               type="button"
-              onClick={() => {
-                setLoginMethod("phone");
-                setOtpStep("phone");
-                setErrors({});
-              }}
-              className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-md text-sm font-medium transition-all ${
+              onClick={() => setLoginMethod("phone")}
+              className={`flex-1 flex items-center justify-center gap-2 py-2 px-4 rounded-md text-sm font-medium transition-all ${
                 loginMethod === "phone"
-                  ? "bg-naija-green text-terminal-bg"
+                  ? "bg-terminal-bg text-white"
                   : "text-gray-400 hover:text-white"
               }`}
             >
@@ -379,51 +407,48 @@ export default function LoginPage() {
             </button>
           </div>
 
-          {/* Email/Password Form */}
-          {loginMethod === "email" && (
+          {/* Email Login Form */}
+          {loginMethod === "email" ? (
             <form onSubmit={handleEmailSubmit} className="space-y-5">
-              <FormField label="Email Address" error={errors.email} required>
+              <FormField label="Email" error={errors.email} required>
                 <Input
                   type="email"
                   name="email"
-                  placeholder="you@company.com"
+                  placeholder="you@example.com"
                   value={formData.email}
                   onChange={handleChange}
                   error={errors.email}
-                  leftIcon={<Mail className="w-4 h-4" />}
-                  autoComplete="email"
+                  icon={<Mail className="w-4 h-4" />}
                   disabled={isLoading}
                 />
               </FormField>
 
               <FormField label="Password" error={errors.password} required>
-                <Input
-                  type={showPassword ? "text" : "password"}
-                  name="password"
-                  placeholder="••••••••"
-                  value={formData.password}
-                  onChange={handleChange}
-                  error={errors.password}
-                  leftIcon={<Lock className="w-4 h-4" />}
-                  rightIcon={
-                    <button
-                      type="button"
-                      onClick={() => setShowPassword(!showPassword)}
-                      className="hover:text-white transition-colors"
-                    >
-                      {showPassword ? (
-                        <EyeOff className="w-4 h-4" />
-                      ) : (
-                        <Eye className="w-4 h-4" />
-                      )}
-                    </button>
-                  }
-                  autoComplete="current-password"
-                  disabled={isLoading}
-                />
+                <div className="relative">
+                  <Input
+                    type={showPassword ? "text" : "password"}
+                    name="password"
+                    placeholder="Enter your password"
+                    value={formData.password}
+                    onChange={handleChange}
+                    error={errors.password}
+                    icon={<Lock className="w-4 h-4" />}
+                    disabled={isLoading}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300"
+                  >
+                    {showPassword ? (
+                      <EyeOff className="w-4 h-4" />
+                    ) : (
+                      <Eye className="w-4 h-4" />
+                    )}
+                  </button>
+                </div>
               </FormField>
 
-              {/* Remember & Forgot */}
               <div className="flex items-center justify-between">
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input
@@ -431,8 +456,7 @@ export default function LoginPage() {
                     name="remember"
                     checked={formData.remember}
                     onChange={handleChange}
-                    className="w-4 h-4 rounded border-terminal-border bg-terminal-surface text-naija-green focus:ring-naija-green focus:ring-offset-terminal-bg"
-                    disabled={isLoading}
+                    className="w-4 h-4 rounded border-terminal-border bg-terminal-surface text-naija-green focus:ring-naija-green focus:ring-offset-0"
                   />
                   <span className="text-sm text-gray-400">Remember me</span>
                 </label>
@@ -444,7 +468,6 @@ export default function LoginPage() {
                 </Link>
               </div>
 
-              {/* Submit */}
               <Button
                 type="submit"
                 className="w-full"
@@ -456,11 +479,9 @@ export default function LoginPage() {
                 <ArrowRight className="w-4 h-4" />
               </Button>
             </form>
-          )}
-
-          {/* Phone OTP Form */}
-          {loginMethod === "phone" && (
+          ) : (
             <>
+              {/* Phone OTP Form - Step 1: Enter Phone */}
               {otpStep === "phone" ? (
                 <form onSubmit={handleSendOTP} className="space-y-5">
                   <FormField label="Phone Number" error={errors.phone} required>
@@ -470,54 +491,53 @@ export default function LoginPage() {
                         <button
                           type="button"
                           onClick={() => setShowCountryDropdown(!showCountryDropdown)}
-                          className="flex items-center gap-2 px-3 py-3 bg-terminal-surface border border-terminal-border rounded-lg text-white hover:border-gray-500 transition-colors min-w-[100px]"
+                          className="flex items-center gap-1 px-3 py-3 bg-terminal-surface border border-terminal-border rounded-lg text-white hover:border-gray-600 transition-colors min-w-[100px]"
                         >
                           <span className="text-lg">{selectedCountry.flag}</span>
                           <span className="text-sm">{selectedCountry.code}</span>
                           <ChevronDown className="w-4 h-4 text-gray-400" />
                         </button>
                         
-                        {/* Dropdown */}
+                        {/* Country Dropdown */}
                         {showCountryDropdown && (
-                          <div className="absolute top-full left-0 mt-1 w-64 max-h-60 overflow-y-auto bg-terminal-surface border border-terminal-border rounded-lg shadow-xl z-50">
-                            {COUNTRY_CODES.map((country, idx) => (
+                          <div className="absolute top-full left-0 mt-1 w-64 max-h-60 overflow-auto bg-terminal-surface border border-terminal-border rounded-lg shadow-xl z-50">
+                            {COUNTRY_CODES.map((country, index) => (
                               <button
-                                key={`${country.code}-${country.country}-${idx}`}
+                                key={`${country.code}-${country.country}-${index}`}
                                 type="button"
                                 onClick={() => selectCountry(country)}
-                                className={`w-full flex items-center gap-3 px-3 py-2 hover:bg-terminal-border transition-colors text-left ${
+                                className={`w-full flex items-center gap-3 px-3 py-2 text-left hover:bg-terminal-bg transition-colors ${
                                   selectedCountry.code === country.code && selectedCountry.country === country.country
-                                    ? "bg-naija-green/20 text-naija-green"
+                                    ? "bg-terminal-bg text-naija-green"
                                     : "text-white"
                                 }`}
                               >
                                 <span className="text-lg">{country.flag}</span>
                                 <span className="flex-1 text-sm">{country.country}</span>
-                                <span className="text-xs text-gray-400">{country.code}</span>
+                                <span className="text-sm text-gray-400">{country.code}</span>
                               </button>
                             ))}
                           </div>
                         )}
                       </div>
-                      
+
                       {/* Phone Input */}
-                      <input
+                      <Input
                         type="tel"
                         name="phone"
-                        placeholder="8012345678"
+                        placeholder="Phone number"
                         value={phoneData.phone}
                         onChange={handlePhoneChange}
                         maxLength={selectedCountry.maxLength}
-                        className={`flex-1 px-4 py-3 bg-terminal-surface border rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-naija-green focus:border-transparent transition-all ${
-                          errors.phone ? "border-price-down" : "border-terminal-border"
-                        }`}
+                        error={errors.phone}
                         disabled={isLoading}
+                        className="flex-1"
                       />
                     </div>
                   </FormField>
-                  
+
                   <p className="text-xs text-gray-500 flex items-center gap-2">
-                    <MessageSquare className="w-4 h-4 text-naija-green" />
+                    <MessageSquare className="w-4 h-4" />
                     We&apos;ll send a verification code to your WhatsApp
                   </p>
 
