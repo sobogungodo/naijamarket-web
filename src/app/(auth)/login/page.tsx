@@ -3,8 +3,9 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Eye, EyeOff, Mail, ArrowRight, Phone, MessageSquare, ChevronDown } from "lucide-react";
+import { Eye, EyeOff, Mail, Lock, ArrowRight, Phone, MessageSquare, ChevronDown } from "lucide-react";
 import { toast } from "sonner";
+import { signIn } from "next-auth/react";
 
 import { Button } from "@/components/ui/button";
 import { Input, FormField } from "@/components/ui/input";
@@ -207,10 +208,7 @@ export default function LoginPage() {
       const response = await fetch("/api/auth/send-otp", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ 
-          type: "phone",
-          phone: fullPhone 
-        }),
+        body: JSON.stringify({ type: "phone", phone: fullPhone }),
       });
 
       const data = await response.json();
@@ -219,9 +217,7 @@ export default function LoginPage() {
         throw new Error(data.error || "Failed to send OTP");
       }
 
-      // Mask phone for display
-      const masked = phoneData.phone.slice(0, 3) + "****" + phoneData.phone.slice(-2);
-      setMaskedPhone(masked);
+      setMaskedPhone(data.phone);
       setOtpStep("otp");
       toast.success("OTP Sent!", {
         description: "Check your WhatsApp for the verification code",
@@ -251,8 +247,8 @@ export default function LoginPage() {
     try {
       const fullPhone = getFullPhoneNumber();
       
-      // Call our verify-otp API
-      const response = await fetch("/api/auth/verify-otp", {
+      // Step 1: Verify OTP via our API first
+      const verifyResponse = await fetch("/api/auth/verify-otp", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ 
@@ -262,23 +258,30 @@ export default function LoginPage() {
         }),
       });
 
-      const data = await response.json();
+      const verifyData = await verifyResponse.json();
 
-      if (!response.ok || !data.success) {
-        throw new Error(data.error || "Invalid OTP");
+      if (!verifyResponse.ok || !verifyData.success) {
+        throw new Error(verifyData.error || "Invalid OTP");
       }
 
-      // OTP verified successfully!
-      // Store phone in localStorage for session (temporary solution)
-      localStorage.setItem("naijamarket_phone", fullPhone);
-      localStorage.setItem("naijamarket_authenticated", "true");
+      // Step 2: OTP verified - now sign in with NextAuth
+      const result = await signIn("phone-otp", {
+        phone: fullPhone,
+        otp: phoneData.otp,
+        redirect: false,
+      });
+
+      if (result?.error) {
+        // OTP was verified, but NextAuth failed - still redirect
+        console.log("NextAuth error (OTP was valid):", result.error);
+      }
 
       toast.success("Welcome!", {
         description: "Redirecting to dashboard...",
       });
 
-      // Redirect to dashboard
       router.push("/dashboard");
+      router.refresh();
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : "Invalid OTP. Please try again.";
       toast.error("Verification failed", {
@@ -301,10 +304,7 @@ export default function LoginPage() {
       const response = await fetch("/api/auth/send-otp", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ 
-          type: "phone",
-          phone: fullPhone 
-        }),
+        body: JSON.stringify({ type: "phone", phone: fullPhone }),
       });
 
       const data = await response.json();
@@ -313,12 +313,12 @@ export default function LoginPage() {
         throw new Error(data.error || "Failed to resend OTP");
       }
 
-      toast.success("Code Resent!", {
+      toast.success("OTP Resent!", {
         description: "Check your WhatsApp for the new code",
       });
     } catch (error: unknown) {
-      const errorMessage = error instanceof Error ? error.message : "Please try again";
-      toast.error("Failed to resend OTP", {
+      const errorMessage = error instanceof Error ? error.message : "Failed to resend";
+      toast.error("Failed to resend", {
         description: errorMessage,
       });
     } finally {
@@ -326,46 +326,39 @@ export default function LoginPage() {
     }
   };
 
-  // ============================================================================
-  // COUNTRY SELECTOR
-  // ============================================================================
-
   const selectCountry = (country: CountryCode) => {
     setSelectedCountry(country);
     setShowCountryDropdown(false);
-    // Clear phone if it exceeds new country's max length
-    if (phoneData.phone.length > country.maxLength) {
-      setPhoneData((prev) => ({
-        ...prev,
-        phone: prev.phone.slice(0, country.maxLength),
-      }));
-    }
+    setPhoneData((prev) => ({ ...prev, phone: "" }));
   };
 
+  // ============================================================================
+  // RENDER
+  // ============================================================================
+
   return (
-    <div className="min-h-screen flex bg-terminal-bg">
-      {/* Left Panel - Login Form */}
+    <div className="min-h-screen bg-terminal-bg flex">
+      {/* Left Panel - Form */}
       <div className="flex-1 flex items-center justify-center p-8">
         <div className="w-full max-w-md space-y-8">
           {/* Logo */}
           <div className="text-center">
             <Link href="/" className="inline-flex items-center gap-2">
-              <div className="w-10 h-10 bg-naija-green rounded-lg flex items-center justify-center">
+              <div className="w-10 h-10 bg-gradient-to-br from-naija-green to-naija-gold rounded-lg flex items-center justify-center">
                 <span className="text-terminal-bg font-bold text-lg">NM</span>
               </div>
-              <span className="text-xl font-display font-bold">
-                <span className="text-white">NaijaMarket</span>
-                <span className="text-naija-green">Intel</span>
+              <span className="font-display font-bold text-xl text-white">
+                NaijaMarket<span className="text-naija-green">Intel</span>
               </span>
             </Link>
           </div>
 
-          {/* Welcome Text */}
+          {/* Header */}
           <div className="text-center">
             <h1 className="text-2xl font-display font-bold text-white">
               Welcome back
             </h1>
-            <p className="mt-2 text-gray-400">
+            <p className="text-gray-400 mt-2">
               Sign in to access your market intelligence dashboard
             </p>
           </div>
@@ -374,10 +367,13 @@ export default function LoginPage() {
           <div className="flex bg-terminal-surface rounded-lg p-1">
             <button
               type="button"
-              onClick={() => setLoginMethod("email")}
-              className={`flex-1 flex items-center justify-center gap-2 py-2 px-4 rounded-md text-sm font-medium transition-all ${
+              onClick={() => {
+                setLoginMethod("email");
+                setErrors({});
+              }}
+              className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-md text-sm font-medium transition-all ${
                 loginMethod === "email"
-                  ? "bg-terminal-bg text-white"
+                  ? "bg-naija-green text-terminal-bg"
                   : "text-gray-400 hover:text-white"
               }`}
             >
@@ -386,10 +382,14 @@ export default function LoginPage() {
             </button>
             <button
               type="button"
-              onClick={() => setLoginMethod("phone")}
-              className={`flex-1 flex items-center justify-center gap-2 py-2 px-4 rounded-md text-sm font-medium transition-all ${
+              onClick={() => {
+                setLoginMethod("phone");
+                setOtpStep("phone");
+                setErrors({});
+              }}
+              className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-md text-sm font-medium transition-all ${
                 loginMethod === "phone"
-                  ? "bg-terminal-bg text-white"
+                  ? "bg-naija-green text-terminal-bg"
                   : "text-gray-400 hover:text-white"
               }`}
             >
@@ -398,46 +398,51 @@ export default function LoginPage() {
             </button>
           </div>
 
-          {/* Email Login Form */}
-          {loginMethod === "email" ? (
+          {/* Email/Password Form */}
+          {loginMethod === "email" && (
             <form onSubmit={handleEmailSubmit} className="space-y-5">
-              <FormField label="Email" error={errors.email} required>
+              <FormField label="Email Address" error={errors.email} required>
                 <Input
                   type="email"
                   name="email"
-                  placeholder="you@example.com"
+                  placeholder="you@company.com"
                   value={formData.email}
                   onChange={handleChange}
                   error={errors.email}
+                  leftIcon={<Mail className="w-4 h-4" />}
+                  autoComplete="email"
                   disabled={isLoading}
                 />
               </FormField>
 
               <FormField label="Password" error={errors.password} required>
-                <div className="relative">
-                  <Input
-                    type={showPassword ? "text" : "password"}
-                    name="password"
-                    placeholder="Enter your password"
-                    value={formData.password}
-                    onChange={handleChange}
-                    error={errors.password}
-                    disabled={isLoading}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300"
-                  >
-                    {showPassword ? (
-                      <EyeOff className="w-4 h-4" />
-                    ) : (
-                      <Eye className="w-4 h-4" />
-                    )}
-                  </button>
-                </div>
+                <Input
+                  type={showPassword ? "text" : "password"}
+                  name="password"
+                  placeholder="••••••••"
+                  value={formData.password}
+                  onChange={handleChange}
+                  error={errors.password}
+                  leftIcon={<Lock className="w-4 h-4" />}
+                  rightIcon={
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="hover:text-white transition-colors"
+                    >
+                      {showPassword ? (
+                        <EyeOff className="w-4 h-4" />
+                      ) : (
+                        <Eye className="w-4 h-4" />
+                      )}
+                    </button>
+                  }
+                  autoComplete="current-password"
+                  disabled={isLoading}
+                />
               </FormField>
 
+              {/* Remember & Forgot */}
               <div className="flex items-center justify-between">
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input
@@ -445,7 +450,8 @@ export default function LoginPage() {
                     name="remember"
                     checked={formData.remember}
                     onChange={handleChange}
-                    className="w-4 h-4 rounded border-terminal-border bg-terminal-surface text-naija-green focus:ring-naija-green focus:ring-offset-0"
+                    className="w-4 h-4 rounded border-terminal-border bg-terminal-surface text-naija-green focus:ring-naija-green focus:ring-offset-terminal-bg"
+                    disabled={isLoading}
                   />
                   <span className="text-sm text-gray-400">Remember me</span>
                 </label>
@@ -457,6 +463,7 @@ export default function LoginPage() {
                 </Link>
               </div>
 
+              {/* Submit */}
               <Button
                 type="submit"
                 className="w-full"
@@ -468,9 +475,11 @@ export default function LoginPage() {
                 <ArrowRight className="w-4 h-4" />
               </Button>
             </form>
-          ) : (
+          )}
+
+          {/* Phone OTP Form */}
+          {loginMethod === "phone" && (
             <>
-              {/* Phone OTP Form - Step 1: Enter Phone */}
               {otpStep === "phone" ? (
                 <form onSubmit={handleSendOTP} className="space-y-5">
                   <FormField label="Phone Number" error={errors.phone} required>
@@ -480,53 +489,54 @@ export default function LoginPage() {
                         <button
                           type="button"
                           onClick={() => setShowCountryDropdown(!showCountryDropdown)}
-                          className="flex items-center gap-1 px-3 py-3 bg-terminal-surface border border-terminal-border rounded-lg text-white hover:border-gray-600 transition-colors min-w-[100px]"
+                          className="flex items-center gap-2 px-3 py-3 bg-terminal-surface border border-terminal-border rounded-lg text-white hover:border-gray-500 transition-colors min-w-[100px]"
                         >
                           <span className="text-lg">{selectedCountry.flag}</span>
                           <span className="text-sm">{selectedCountry.code}</span>
                           <ChevronDown className="w-4 h-4 text-gray-400" />
                         </button>
                         
-                        {/* Country Dropdown */}
+                        {/* Dropdown */}
                         {showCountryDropdown && (
-                          <div className="absolute top-full left-0 mt-1 w-64 max-h-60 overflow-auto bg-terminal-surface border border-terminal-border rounded-lg shadow-xl z-50">
-                            {COUNTRY_CODES.map((country, index) => (
+                          <div className="absolute top-full left-0 mt-1 w-64 max-h-60 overflow-y-auto bg-terminal-surface border border-terminal-border rounded-lg shadow-xl z-50">
+                            {COUNTRY_CODES.map((country, idx) => (
                               <button
-                                key={`${country.code}-${country.country}-${index}`}
+                                key={`${country.code}-${country.country}-${idx}`}
                                 type="button"
                                 onClick={() => selectCountry(country)}
-                                className={`w-full flex items-center gap-3 px-3 py-2 text-left hover:bg-terminal-bg transition-colors ${
+                                className={`w-full flex items-center gap-3 px-3 py-2 hover:bg-terminal-border transition-colors text-left ${
                                   selectedCountry.code === country.code && selectedCountry.country === country.country
-                                    ? "bg-terminal-bg text-naija-green"
+                                    ? "bg-naija-green/20 text-naija-green"
                                     : "text-white"
                                 }`}
                               >
                                 <span className="text-lg">{country.flag}</span>
                                 <span className="flex-1 text-sm">{country.country}</span>
-                                <span className="text-sm text-gray-400">{country.code}</span>
+                                <span className="text-xs text-gray-400">{country.code}</span>
                               </button>
                             ))}
                           </div>
                         )}
                       </div>
-
+                      
                       {/* Phone Input */}
-                      <Input
+                      <input
                         type="tel"
                         name="phone"
-                        placeholder="Phone number"
+                        placeholder="8012345678"
                         value={phoneData.phone}
                         onChange={handlePhoneChange}
                         maxLength={selectedCountry.maxLength}
-                        error={errors.phone}
+                        className={`flex-1 px-4 py-3 bg-terminal-surface border rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-naija-green focus:border-transparent transition-all ${
+                          errors.phone ? "border-price-down" : "border-terminal-border"
+                        }`}
                         disabled={isLoading}
-                        className="flex-1"
                       />
                     </div>
                   </FormField>
-
+                  
                   <p className="text-xs text-gray-500 flex items-center gap-2">
-                    <MessageSquare className="w-4 h-4" />
+                    <MessageSquare className="w-4 h-4 text-naija-green" />
                     We&apos;ll send a verification code to your WhatsApp
                   </p>
 
