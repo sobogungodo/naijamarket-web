@@ -5,7 +5,6 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Eye, EyeOff, Mail, ArrowRight, Phone, MessageSquare, ChevronDown } from "lucide-react";
 import { toast } from "sonner";
-import { signIn } from "next-auth/react";
 
 import { Button } from "@/components/ui/button";
 import { Input, FormField } from "@/components/ui/input";
