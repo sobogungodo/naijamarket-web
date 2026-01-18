@@ -7,6 +7,7 @@ import { Toaster } from "sonner";
 import "@/styles/globals.css";
 import { cn } from "@/lib/utils";
 import Providers from "@/components/Providers";
+import { SessionTimeoutProvider } from "@/components/SessionTimeoutProvider";
 
 // ============================================================================
 // FONTS
@@ -161,10 +162,13 @@ export default function RootLayout({
           "selection:bg-naija-green/30 selection:text-naija-green"
         )}
       >
-        {/* NextAuth Session Provider */}
+        {/* NextAuth Session Provider + Session Timeout */}
         <Providers>
-          {/* Main Content */}
-          {children}
+          {/* Session Timeout Provider - Shows warning at 4 min, auto-logout at 5 min */}
+          <SessionTimeoutProvider>
+            {/* Main Content */}
+            {children}
+          </SessionTimeoutProvider>
 
           {/* Toast Notifications */}
           <Toaster
@@ -190,4 +194,3 @@ export default function RootLayout({
     </html>
   );
 }
-
