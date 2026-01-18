@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
+import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
 
-// POST /api/auth/register
+const prisma = new PrismaClient();
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
@@ -10,107 +11,73 @@ export async function POST(request: NextRequest) {
 
     // Validate required fields
     if (!email || !phone || !password || !emailOtp) {
-      return NextResponse.json(
-        { error: "All fields are required" },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "All fields are required" }, { status: 400 });
     }
 
     // Validate email format
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      return NextResponse.json(
-        { error: "Invalid email format" },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "Invalid email format" }, { status: 400 });
     }
 
-    // Validate phone format (Nigerian)
-    const cleanedPhone = phone.replace(/[\s\-]/g, "");
-    if (!/^(\+234|234)[789][01]\d{8}$/.test(cleanedPhone)) {
-      return NextResponse.json(
-        { error: "Invalid Nigerian phone number" },
-        { status: 400 }
-      );
+    // Format phone number
+    let formattedPhone = phone.replace(/[\s\-\(\)]/g, "");
+    if (formattedPhone.startsWith("0")) {
+      formattedPhone = "234" + formattedPhone.substring(1);
     }
+    if (!formattedPhone.startsWith("234") && !formattedPhone.startsWith("+234")) {
+      formattedPhone = "234" + formattedPhone;
+    }
+    formattedPhone = formattedPhone.replace("+", "");
 
-    // Validate password strength
+    // Validate password
     if (password.length < 8) {
+      return NextResponse.json({ error: "Password must be at least 8 characters" }, { status: 400 });
+    }
+
+    // Check if user exists by phone
+    const existingByPhone = await prisma.consumers.findFirst({
+      where: { phone_number: formattedPhone },
+    });
+    if (existingByPhone) {
       return NextResponse.json(
-        { error: "Password must be at least 8 characters" },
+        { error: "An account with this phone number already exists" },
         { status: 400 }
       );
     }
 
-    // Check if user already exists
-    const existingUser = await prisma.consumers.findFirst({
-      where: {
-        OR: [
-          { email },
-          { phone: cleanedPhone },
-        ],
-      },
+    // Check if user exists by email
+    const existingByEmail = await prisma.consumers.findFirst({
+      where: { email: email },
     });
-
-    if (existingUser) {
-      if (existingUser.email === email) {
-        return NextResponse.json(
-          { error: "An account with this email already exists" },
-          { status: 400 }
-        );
-      }
-      if (existingUser.phone === cleanedPhone) {
-        return NextResponse.json(
-          { error: "An account with this phone number already exists" },
-          { status: 400 }
-        );
-      }
+    if (existingByEmail) {
+      return NextResponse.json(
+        { error: "An account with this email already exists" },
+        { status: 400 }
+      );
     }
 
     // Verify email OTP
-    const emailOtpRecord = await prisma.otp_Codes.findFirst({
-      where: {
-        identifier: email,
-        type: "email",
-        code: emailOtp,
-        verified: false,
-      },
-      orderBy: {
-        created_at: "desc",
-      },
+    const emailOtpRecord = await prisma.oTP_Codes.findFirst({
+      where: { identifier: email, type: "email", code: emailOtp, verified: false },
+      orderBy: { created_at: "desc" },
     });
 
     if (!emailOtpRecord) {
-      return NextResponse.json(
-        { error: "Invalid email verification code" },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "Invalid email verification code" }, { status: 400 });
     }
 
-    // Check if email OTP has expired
     if (new Date() > emailOtpRecord.expires_at) {
-      return NextResponse.json(
-        { error: "Email verification code has expired" },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "Email verification code has expired" }, { status: 400 });
     }
 
     // Verify phone was already verified
-    const phoneOtpRecord = await prisma.otp_Codes.findFirst({
-      where: {
-        identifier: cleanedPhone,
-        type: "phone",
-        verified: true,
-      },
-      orderBy: {
-        created_at: "desc",
-      },
+    const phoneOtpRecord = await prisma.oTP_Codes.findFirst({
+      where: { identifier: formattedPhone, type: "phone", verified: true },
+      orderBy: { created_at: "desc" },
     });
 
     if (!phoneOtpRecord) {
-      return NextResponse.json(
-        { error: "Phone number not verified" },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "Phone number not verified" }, { status: 400 });
     }
 
     // Hash password
@@ -124,45 +91,49 @@ export async function POST(request: NextRequest) {
 
     let newConsumerId = "CON00001";
     if (lastConsumer?.consumer_id) {
-      const lastNum = parseInt(lastConsumer.consumer_id.replace("CON", ""));
-      newConsumerId = `CON${String(lastNum + 1).padStart(5, "0")}`;
+      const numMatch = lastConsumer.consumer_id.match(/\d+/);
+      if (numMatch) {
+        const lastNum = parseInt(numMatch[0]);
+        newConsumerId = `CON${String(lastNum + 1).padStart(5, "0")}`;
+      }
     }
 
     // Create consumer account
     const consumer = await prisma.consumers.create({
       data: {
         consumer_id: newConsumerId,
-        email,
-        phone: cleanedPhone,
+        phone_number: formattedPhone,
+        email: email,
         password_hash: hashedPassword,
         email_verified: true,
         phone_verified: true,
-        tier: "FREE",
-        status: "ACTIVE",
-        created_at: new Date(),
-        updated_at: new Date(),
+        subscription_tier: "FREE",
+        account_status: "ACTIVE",
+        registration_source: "WEB",
+        daily_query_limit: 3,
+        max_markets: 3,
+        queries_remaining: 3,
       },
     });
 
     // Clean up OTP records
-    await prisma.otp_Codes.deleteMany({
+    await prisma.oTP_Codes.deleteMany({
       where: {
         OR: [
           { identifier: email },
-          { identifier: cleanedPhone },
+          { identifier: formattedPhone },
         ],
       },
     });
 
-    // Return success (don't expose password hash)
     return NextResponse.json({
       success: true,
       message: "Account created successfully",
       consumer: {
         id: consumer.consumer_id,
         email: consumer.email,
-        phone: consumer.phone,
-        tier: consumer.tier,
+        phone: consumer.phone_number,
+        tier: consumer.subscription_tier,
       },
     });
 

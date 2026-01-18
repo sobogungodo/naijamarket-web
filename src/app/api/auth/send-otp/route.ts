@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
+import { PrismaClient } from "@prisma/client";
+
+const prisma = new PrismaClient();
 
 // ============================================================================
 // CONFIGURATION
@@ -89,8 +91,7 @@ async function sendWhatsApp(to: string, message: string): Promise<boolean> {
 
 async function sendEmailWithResend(to: string, otp: string): Promise<boolean> {
   if (!resendApiKey) {
-    console.error("RESEND_API_KEY not configured");
-    // For development, just log the OTP
+    console.error("RESEND_API_KEY not configured - logging OTP for dev");
     console.log(`[DEV] Email OTP for ${to}: ${otp}`);
     return true;
   }
@@ -109,67 +110,26 @@ async function sendEmailWithResend(to: string, otp: string): Promise<boolean> {
         html: `
 <!DOCTYPE html>
 <html>
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-</head>
 <body style="margin: 0; padding: 0; background-color: #0a0a0a; font-family: Arial, sans-serif;">
   <div style="max-width: 600px; margin: 0 auto; padding: 40px 20px;">
     <div style="background-color: #1a1a1a; border-radius: 16px; padding: 40px; border: 1px solid #2a2a2a;">
-      
-      <!-- Logo -->
       <div style="text-align: center; margin-bottom: 30px;">
-        <div style="display: inline-block; background: linear-gradient(135deg, #10b981, #f59e0b); padding: 12px 16px; border-radius: 12px;">
-          <span style="color: #000; font-weight: bold; font-size: 18px;">NM</span>
-        </div>
         <h1 style="color: #ffffff; margin: 15px 0 0 0; font-size: 24px;">
           NaijaMarket<span style="color: #10b981;">Intel</span>
         </h1>
       </div>
-      
-      <!-- Title -->
-      <h2 style="color: #ffffff; text-align: center; margin: 0 0 10px 0; font-size: 20px;">
-        Verify your email
-      </h2>
-      <p style="color: #9ca3af; text-align: center; margin: 0 0 30px 0; font-size: 14px;">
-        Use the code below to complete your registration
-      </p>
-      
-      <!-- OTP Code -->
+      <h2 style="color: #ffffff; text-align: center; margin: 0 0 10px 0; font-size: 20px;">Verify your email</h2>
+      <p style="color: #9ca3af; text-align: center; margin: 0 0 30px 0; font-size: 14px;">Use the code below to complete your registration</p>
       <div style="background-color: #0a0a0a; border-radius: 12px; padding: 25px; text-align: center; margin-bottom: 30px; border: 1px solid #2a2a2a;">
-        <span style="font-size: 36px; font-weight: bold; color: #10b981; letter-spacing: 10px; font-family: monospace;">
-          ${otp}
-        </span>
+        <span style="font-size: 36px; font-weight: bold; color: #10b981; letter-spacing: 10px; font-family: monospace;">${otp}</span>
       </div>
-      
-      <!-- Expiry Note -->
-      <p style="color: #6b7280; text-align: center; font-size: 14px; margin: 0 0 20px 0;">
-        This code expires in <strong style="color: #ffffff;">10 minutes</strong>
-      </p>
-      
-      <!-- Security Note -->
-      <div style="background-color: #0a0a0a; border-radius: 8px; padding: 15px; border-left: 3px solid #f59e0b;">
-        <p style="color: #9ca3af; margin: 0; font-size: 13px;">
-          🔒 If you didn't request this code, please ignore this email. Never share this code with anyone.
-        </p>
-      </div>
-      
-    </div>
-    
-    <!-- Footer -->
-    <div style="text-align: center; margin-top: 30px;">
-      <p style="color: #4b5563; font-size: 12px; margin: 0;">
-        © 2025 NaijaMarket Intel. Nigeria's Premier Market Intelligence Platform.
-      </p>
-      <p style="color: #4b5563; font-size: 12px; margin: 10px 0 0 0;">
-        <a href="https://foodprice-compare.com" style="color: #10b981; text-decoration: none;">foodprice-compare.com</a>
-      </p>
+      <p style="color: #6b7280; text-align: center; font-size: 14px; margin: 0 0 20px 0;">This code expires in <strong style="color: #ffffff;">10 minutes</strong></p>
     </div>
   </div>
 </body>
 </html>
         `,
-        text: `Your NaijaMarket Intel verification code is: ${otp}. This code expires in 10 minutes. Do not share this code with anyone.`,
+        text: `Your NaijaMarket Intel verification code is: ${otp}. This code expires in 10 minutes.`,
       }),
     });
 
@@ -179,8 +139,7 @@ async function sendEmailWithResend(to: string, otp: string): Promise<boolean> {
       return false;
     }
 
-    const data = await response.json();
-    console.log(`Email sent to ${to}, ID: ${data.id}`);
+    console.log(`Email sent to ${to}`);
     return true;
   } catch (error) {
     console.error("Email error:", error);
@@ -192,7 +151,6 @@ async function sendEmailWithResend(to: string, otp: string): Promise<boolean> {
 // MAIN API HANDLER
 // ============================================================================
 
-// POST /api/auth/send-otp
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
@@ -206,21 +164,15 @@ export async function POST(request: NextRequest) {
     }
 
     if (type === "phone" && !phone) {
-      return NextResponse.json(
-        { error: "Phone number is required" },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "Phone number is required" }, { status: 400 });
     }
 
     if (type === "email" && !email) {
-      return NextResponse.json(
-        { error: "Email is required" },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "Email is required" }, { status: 400 });
     }
 
     // Format phone number (Nigerian format)
-    let formattedPhone = phone;
+    let formattedPhone = phone || "";
     if (phone) {
       formattedPhone = phone.replace(/[\s\-\(\)]/g, "");
       if (formattedPhone.startsWith("0")) {
@@ -232,26 +184,27 @@ export async function POST(request: NextRequest) {
       formattedPhone = formattedPhone.replace("+", "");
     }
 
-    // Check if user already exists
-    const existingUser = await prisma.consumers.findFirst({
-      where: {
-        OR: [
-          ...(email ? [{ email }] : []),
-          ...(formattedPhone ? [{ phone_number: formattedPhone }] : []),
-        ],
-      },
-    });
-
-    if (existingUser) {
-      if (email && existingUser.email === email) {
+    // Check if user already exists by phone_number
+    if (formattedPhone) {
+      const existingByPhone = await prisma.consumers.findFirst({
+        where: { phone_number: formattedPhone },
+      });
+      if (existingByPhone) {
         return NextResponse.json(
-          { error: "An account with this email already exists" },
+          { error: "An account with this phone number already exists" },
           { status: 400 }
         );
       }
-      if (formattedPhone && existingUser.phone_number === formattedPhone) {
+    }
+
+    // Check if user already exists by email
+    if (email) {
+      const existingByEmail = await prisma.consumers.findFirst({
+        where: { email: email },
+      });
+      if (existingByEmail) {
         return NextResponse.json(
-          { error: "An account with this phone number already exists" },
+          { error: "An account with this email already exists" },
           { status: 400 }
         );
       }
@@ -264,10 +217,7 @@ export async function POST(request: NextRequest) {
 
     // Delete any existing OTP for this identifier
     await prisma.oTP_Codes.deleteMany({
-      where: {
-        identifier,
-        type,
-      },
+      where: { identifier, type },
     });
 
     // Create new OTP record
@@ -286,16 +236,12 @@ export async function POST(request: NextRequest) {
     let sent = false;
 
     if (type === "phone") {
-      // Try SMS first, then WhatsApp
       const message = `Your NaijaMarket Intel code is: ${otp}. Valid for 10 minutes. Do not share.`;
-      
       sent = await sendSMS(formattedPhone, message);
-      
       if (!sent) {
         console.log("SMS failed, trying WhatsApp...");
         sent = await sendWhatsApp(formattedPhone, message);
       }
-
       if (!sent) {
         return NextResponse.json(
           { error: "Failed to send SMS. Please check your phone number." },
@@ -303,9 +249,7 @@ export async function POST(request: NextRequest) {
         );
       }
     } else {
-      // Send email
       sent = await sendEmailWithResend(email, otp);
-      
       if (!sent) {
         return NextResponse.json(
           { error: "Failed to send email. Please try again." },
@@ -317,7 +261,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       message: `Verification code sent to your ${type}`,
-      // Only in development for testing
       ...(process.env.NODE_ENV === "development" && { otp }),
     });
 
