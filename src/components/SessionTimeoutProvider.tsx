@@ -10,7 +10,6 @@ import { AlertTriangle, Clock, LogOut, RefreshCw } from "lucide-react";
 
 const SESSION_TIMEOUT_MS = 5 * 60 * 1000;        // 5 minutes total
 const WARNING_BEFORE_MS = 1 * 60 * 1000;         // Show warning 1 minute before timeout
-const WARNING_AT_MS = SESSION_TIMEOUT_MS - WARNING_BEFORE_MS; // 4 minutes
 
 // ============================================================================
 // CONTEXT
@@ -39,13 +38,12 @@ interface SessionTimeoutProviderProps {
 }
 
 export function SessionTimeoutProvider({ children }: SessionTimeoutProviderProps) {
-  const { data: session, status } = useSession();
+  const { status } = useSession();
   const [timeRemaining, setTimeRemaining] = useState(SESSION_TIMEOUT_MS);
   const [isWarningVisible, setIsWarningVisible] = useState(false);
   const [lastActivity, setLastActivity] = useState(Date.now());
   
   const timerRef = useRef<NodeJS.Timeout | null>(null);
-  const countdownRef = useRef<NodeJS.Timeout | null>(null);
 
   // Reset timer on user activity
   const resetTimer = useCallback(() => {
@@ -66,7 +64,6 @@ export function SessionTimeoutProvider({ children }: SessionTimeoutProviderProps
   const handleLogout = useCallback(async () => {
     // Clear timers
     if (timerRef.current) clearInterval(timerRef.current);
-    if (countdownRef.current) clearInterval(countdownRef.current);
     
     // Sign out and redirect to login
     await signOut({ callbackUrl: "/login?timeout=true" });
