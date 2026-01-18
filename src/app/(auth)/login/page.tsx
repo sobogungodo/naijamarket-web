@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Eye, EyeOff, Mail, Lock, ArrowRight, Phone, MessageSquare, ChevronDown } from "lucide-react";
+import { Eye, EyeOff, Mail, ArrowRight, Phone, MessageSquare, ChevronDown } from "lucide-react";
 import { toast } from "sonner";
 import { signIn } from "next-auth/react";
 
@@ -418,7 +418,6 @@ export default function LoginPage() {
                   value={formData.email}
                   onChange={handleChange}
                   error={errors.email}
-                  icon={<Mail className="w-4 h-4" />}
                   disabled={isLoading}
                 />
               </FormField>
@@ -432,7 +431,6 @@ export default function LoginPage() {
                     value={formData.password}
                     onChange={handleChange}
                     error={errors.password}
-                    icon={<Lock className="w-4 h-4" />}
                     disabled={isLoading}
                   />
                   <button
