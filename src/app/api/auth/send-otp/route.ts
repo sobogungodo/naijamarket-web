@@ -3,25 +3,40 @@ import { PrismaClient } from "@prisma/client";
 
 const prisma = new PrismaClient();
 
-// ============================================================================
-// CONFIGURATION
-// ============================================================================
-
-const twilioAccountSid = process.env.TWILIO_ACCOUNT_SID;
-const twilioAuthToken = process.env.TWILIO_AUTH_TOKEN;
-const resendApiKey = process.env.RESEND_API_KEY;
-
 // Generate 6-digit OTP
 function generateOTP(): string {
   return Math.floor(100000 + Math.random() * 900000).toString();
 }
 
-// ============================================================================
-// SMS FUNCTIONS (Twilio via fetch - no package needed)
-// ============================================================================
+// Format Nigerian phone number
+function formatPhoneNumber(phone: string): string {
+  let cleaned = phone.replace(/[\s\-\(\)\+]/g, "");
+  
+  // Handle Nigerian numbers
+  if (cleaned.startsWith("0")) {
+    cleaned = "234" + cleaned.substring(1);
+  } else if (!cleaned.startsWith("234")) {
+    cleaned = "234" + cleaned;
+  }
+  
+  return cleaned;
+}
 
-async function sendSMS(to: string, message: string): Promise<boolean> {
+// Send OTP via WhatsApp using Twilio
+async function sendWhatsAppOTP(phone: string, otp: string): Promise<boolean> {
+  const twilioAccountSid = process.env.TWILIO_ACCOUNT_SID;
+  const twilioAuthToken = process.env.TWILIO_AUTH_TOKEN;
+  const twilioWhatsAppNumber = process.env.TWILIO_WHATSAPP_NUMBER || "whatsapp:+14155238886";
+
+  if (!twilioAccountSid || !twilioAuthToken) {
+    console.log("Twilio credentials not configured. OTP:", otp);
+    return true; // Return true for development
+  }
+
   try {
+    const formattedPhone = `whatsapp:+${phone}`;
+    const message = `🔐 *NaijaMarket Intel*\n\nYour verification code is: *${otp}*\n\nThis code expires in 10 minutes.\n\n⚠️ Never share this code with anyone.`;
+
     const response = await fetch(
       `https://api.twilio.com/2010-04-01/Accounts/${twilioAccountSid}/Messages.json`,
       {
@@ -31,69 +46,35 @@ async function sendSMS(to: string, message: string): Promise<boolean> {
           "Content-Type": "application/x-www-form-urlencoded",
         },
         body: new URLSearchParams({
-          To: to.startsWith("+") ? to : `+${to}`,
-          From: process.env.TWILIO_PHONE_NUMBER || "+14155238886",
+          To: formattedPhone,
+          From: twilioWhatsAppNumber,
           Body: message,
         }),
       }
     );
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error("SMS failed:", errorText);
-      return false;
-    }
-
-    console.log(`SMS sent to ${to}`);
-    return true;
-  } catch (error) {
-    console.error("SMS error:", error);
-    return false;
-  }
-}
-
-async function sendWhatsApp(to: string, message: string): Promise<boolean> {
-  try {
-    const formattedTo = to.startsWith("+") ? to : `+${to}`;
+    const result = await response.json();
     
-    const response = await fetch(
-      `https://api.twilio.com/2010-04-01/Accounts/${twilioAccountSid}/Messages.json`,
-      {
-        method: "POST",
-        headers: {
-          "Authorization": `Basic ${Buffer.from(`${twilioAccountSid}:${twilioAuthToken}`).toString("base64")}`,
-          "Content-Type": "application/x-www-form-urlencoded",
-        },
-        body: new URLSearchParams({
-          To: `whatsapp:${formattedTo}`,
-          From: "whatsapp:+14155238886",
-          Body: message,
-        }),
-      }
-    );
-
     if (!response.ok) {
-      console.error("WhatsApp failed:", await response.text());
+      console.error("WhatsApp send failed:", result);
       return false;
     }
 
-    console.log(`WhatsApp sent to ${to}`);
+    console.log("WhatsApp OTP sent successfully:", result.sid);
     return true;
   } catch (error) {
-    console.error("WhatsApp error:", error);
+    console.error("WhatsApp send error:", error);
     return false;
   }
 }
 
-// ============================================================================
-// EMAIL FUNCTION (Resend via fetch - no package needed)
-// ============================================================================
+// Send OTP via Email using Resend
+async function sendEmailOTP(email: string, otp: string): Promise<boolean> {
+  const resendApiKey = process.env.RESEND_API_KEY;
 
-async function sendEmailWithResend(to: string, otp: string): Promise<boolean> {
   if (!resendApiKey) {
-    console.error("RESEND_API_KEY not configured - logging OTP for dev");
-    console.log(`[DEV] Email OTP for ${to}: ${otp}`);
-    return true;
+    console.log("Resend API key not configured. OTP:", otp);
+    return true; // Return true for development
   }
 
   try {
@@ -105,57 +86,52 @@ async function sendEmailWithResend(to: string, otp: string): Promise<boolean> {
       },
       body: JSON.stringify({
         from: "NaijaMarket Intel <otp@foodprice-compare.com>",
-        to: [to],
-        subject: "Your Verification Code - NaijaMarket Intel",
+        to: [email],
+        subject: "Your NaijaMarket Intel Verification Code",
         html: `
-<!DOCTYPE html>
-<html>
-<body style="margin: 0; padding: 0; background-color: #0a0a0a; font-family: Arial, sans-serif;">
-  <div style="max-width: 600px; margin: 0 auto; padding: 40px 20px;">
-    <div style="background-color: #1a1a1a; border-radius: 16px; padding: 40px; border: 1px solid #2a2a2a;">
-      <div style="text-align: center; margin-bottom: 30px;">
-        <h1 style="color: #ffffff; margin: 15px 0 0 0; font-size: 24px;">
-          NaijaMarket<span style="color: #10b981;">Intel</span>
-        </h1>
-      </div>
-      <h2 style="color: #ffffff; text-align: center; margin: 0 0 10px 0; font-size: 20px;">Verify your email</h2>
-      <p style="color: #9ca3af; text-align: center; margin: 0 0 30px 0; font-size: 14px;">Use the code below to complete your registration</p>
-      <div style="background-color: #0a0a0a; border-radius: 12px; padding: 25px; text-align: center; margin-bottom: 30px; border: 1px solid #2a2a2a;">
-        <span style="font-size: 36px; font-weight: bold; color: #10b981; letter-spacing: 10px; font-family: monospace;">${otp}</span>
-      </div>
-      <p style="color: #6b7280; text-align: center; font-size: 14px; margin: 0 0 20px 0;">This code expires in <strong style="color: #ffffff;">10 minutes</strong></p>
-    </div>
-  </div>
-</body>
-</html>
+          <div style="font-family: Arial, sans-serif; max-width: 500px; margin: 0 auto; padding: 20px; background: #1a1a2e; color: #fff; border-radius: 10px;">
+            <h1 style="color: #10b981; text-align: center;">NaijaMarket Intel</h1>
+            <p style="text-align: center; font-size: 16px;">Your verification code is:</p>
+            <div style="background: #16213e; padding: 20px; border-radius: 8px; text-align: center; margin: 20px 0;">
+              <span style="font-size: 36px; font-weight: bold; letter-spacing: 8px; color: #10b981;">${otp}</span>
+            </div>
+            <p style="text-align: center; color: #888; font-size: 14px;">This code expires in 10 minutes.</p>
+            <p style="text-align: center; color: #ef4444; font-size: 12px;">⚠️ Never share this code with anyone.</p>
+          </div>
         `,
-        text: `Your NaijaMarket Intel verification code is: ${otp}. This code expires in 10 minutes.`,
+        text: `Your NaijaMarket Intel verification code is: ${otp}. This code expires in 10 minutes. Never share this code with anyone.`,
       }),
     });
 
     if (!response.ok) {
-      const errorData = await response.json();
-      console.error("Resend email failed:", errorData);
+      const error = await response.json();
+      console.error("Email send failed:", error);
       return false;
     }
 
-    console.log(`Email sent to ${to}`);
+    console.log("Email OTP sent successfully");
     return true;
   } catch (error) {
-    console.error("Email error:", error);
+    console.error("Email send error:", error);
     return false;
   }
 }
 
-// ============================================================================
-// MAIN API HANDLER
-// ============================================================================
-
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { type, phone, email } = body;
+    let { type, phone, email } = body;
 
+    // Auto-detect type if not provided
+    if (!type) {
+      if (phone) {
+        type = "phone";
+      } else if (email) {
+        type = "email";
+      }
+    }
+
+    // Validate type
     if (!type || !["phone", "email"].includes(type)) {
       return NextResponse.json(
         { error: "Invalid OTP type. Must be 'phone' or 'email'" },
@@ -163,105 +139,95 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (type === "phone" && !phone) {
-      return NextResponse.json({ error: "Phone number is required" }, { status: 400 });
-    }
-
-    if (type === "email" && !email) {
-      return NextResponse.json({ error: "Email is required" }, { status: 400 });
-    }
-
-    // Format phone number (Nigerian format)
-    let formattedPhone = phone || "";
-    if (phone) {
-      formattedPhone = phone.replace(/[\s\-\(\)]/g, "");
-      if (formattedPhone.startsWith("0")) {
-        formattedPhone = "234" + formattedPhone.substring(1);
-      }
-      if (!formattedPhone.startsWith("234") && !formattedPhone.startsWith("+234")) {
-        formattedPhone = "234" + formattedPhone;
-      }
-      formattedPhone = formattedPhone.replace("+", "");
-    }
-
-    // Check if user already exists by phone_number
-    if (formattedPhone) {
-      const existingByPhone = await prisma.consumers.findFirst({
-        where: { phone_number: formattedPhone },
-      });
-      if (existingByPhone) {
+    let identifier: string;
+    
+    if (type === "phone") {
+      if (!phone) {
         return NextResponse.json(
-          { error: "An account with this phone number already exists" },
+          { error: "Phone number is required" },
           { status: 400 }
         );
       }
-    }
-
-    // Check if user already exists by email
-    if (email) {
-      const existingByEmail = await prisma.consumers.findFirst({
-        where: { email: email },
-      });
-      if (existingByEmail) {
+      identifier = formatPhoneNumber(phone);
+    } else {
+      if (!email) {
         return NextResponse.json(
-          { error: "An account with this email already exists" },
+          { error: "Email is required" },
           { status: 400 }
         );
       }
+      identifier = email.toLowerCase().trim();
     }
 
-    // Generate OTP
-    const otp = generateOTP();
-    const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
-    const identifier = type === "phone" ? formattedPhone : email;
-
-    // Delete any existing OTP for this identifier
-    await prisma.oTP_Codes.deleteMany({
-      where: { identifier, type },
+    // Check for existing unverified OTP (rate limiting)
+    const existingOTP = await prisma.oTP_Codes.findFirst({
+      where: {
+        identifier,
+        type,
+        verified: false,
+        expires_at: { gt: new Date() },
+      },
+      orderBy: { created_at: "desc" },
     });
 
-    // Create new OTP record
+    // If OTP was sent less than 60 seconds ago, don't send another
+    if (existingOTP && existingOTP.created_at) {
+      const secondsSinceCreated = (Date.now() - new Date(existingOTP.created_at).getTime()) / 1000;
+      if (secondsSinceCreated < 60) {
+        const waitTime = Math.ceil(60 - secondsSinceCreated);
+        return NextResponse.json(
+          { error: `Please wait ${waitTime} seconds before requesting another code` },
+          { status: 429 }
+        );
+      }
+    }
+
+    // Generate new OTP
+    const otp = generateOTP();
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+
+    // Delete old unverified OTPs for this identifier
+    await prisma.oTP_Codes.deleteMany({
+      where: {
+        identifier,
+        type,
+        verified: false,
+      },
+    });
+
+    // Save new OTP to database
     await prisma.oTP_Codes.create({
       data: {
         identifier,
         type,
         code: otp,
-        expires_at: expiresAt,
         attempts: 0,
         verified: false,
+        expires_at: expiresAt,
       },
     });
 
     // Send OTP
     let sent = false;
-
     if (type === "phone") {
-      const message = `Your NaijaMarket Intel code is: ${otp}. Valid for 10 minutes. Do not share.`;
-      sent = await sendSMS(formattedPhone, message);
-      if (!sent) {
-        console.log("SMS failed, trying WhatsApp...");
-        sent = await sendWhatsApp(formattedPhone, message);
-      }
-      if (!sent) {
-        return NextResponse.json(
-          { error: "Failed to send SMS. Please check your phone number." },
-          { status: 500 }
-        );
-      }
+      sent = await sendWhatsAppOTP(identifier, otp);
     } else {
-      sent = await sendEmailWithResend(email, otp);
-      if (!sent) {
-        return NextResponse.json(
-          { error: "Failed to send email. Please try again." },
-          { status: 500 }
-        );
-      }
+      sent = await sendEmailOTP(identifier, otp);
+    }
+
+    if (!sent) {
+      return NextResponse.json(
+        { error: "Failed to send verification code. Please try again." },
+        { status: 500 }
+      );
     }
 
     return NextResponse.json({
       success: true,
-      message: `Verification code sent to your ${type}`,
-      ...(process.env.NODE_ENV === "development" && { otp }),
+      message: type === "phone" 
+        ? "Verification code sent to your WhatsApp" 
+        : "Verification code sent to your email",
+      expiresIn: 600, // 10 minutes in seconds
     });
 
   } catch (error) {
