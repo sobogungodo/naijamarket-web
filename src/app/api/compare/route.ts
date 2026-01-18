@@ -51,7 +51,7 @@ export async function GET(request: NextRequest) {
             {
               OR: [
                 { item_name: { contains: itemName } },
-                { item_id: itemId || undefined },
+                ...(itemId ? [{ item_id: itemId }] : []),
               ],
             },
             { market_id: { in: limitedMarketIds } },
@@ -77,7 +77,7 @@ export async function GET(request: NextRequest) {
               OR: [
                 { item_name_nbs: { contains: itemName } },
                 { item_name_standard: { contains: itemName } },
-                { item_id: itemId || undefined },
+                ...(itemId ? [{ item_id: itemId }] : []),
               ],
             },
             { market_id: { in: limitedMarketIds } },
@@ -151,19 +151,25 @@ export async function GET(request: NextRequest) {
     // =========================================================================
     if (pricesByMarket.size < 2) {
       // Try to get market names for the requested markets to provide better error message
-      const requestedMarkets = await prisma.markets.findMany({
-        where: { market_id: { in: limitedMarketIds } },
-        select: { market_id: true, market_name: true },
-      });
-
-      const marketNames = requestedMarkets.map(m => m.market_name).join(", ");
+      let marketNames = limitedMarketIds.join(", ");
+      try {
+        const requestedMarkets = await prisma.markets.findMany({
+          where: { market_id: { in: limitedMarketIds } },
+          select: { market_id: true, market_name: true },
+        });
+        if (requestedMarkets.length > 0) {
+          marketNames = requestedMarkets.map(m => m.market_name).join(", ");
+        }
+      } catch (e) {
+        // Ignore - use market IDs as fallback
+      }
 
       return NextResponse.json({
         success: false,
         error: "no_prices",
         message: `No prices found for "${itemName}"`,
         suggestion: `Try different markets or check if the item has been recently submitted`,
-        marketsSearched: marketNames || limitedMarketIds.join(", "),
+        marketsSearched: marketNames,
         pricesFound: pricesByMarket.size,
       });
     }
@@ -191,6 +197,19 @@ export async function GET(request: NextRequest) {
       savingsPercentage: Math.round(((market.price - lowestPrice) / market.price) * 100),
     }));
 
+    // Get first and last markets (with null checks for TypeScript)
+    const firstMarket = marketsWithRank[0];
+    const lastMarket = marketsWithRank[marketsWithRank.length - 1];
+
+    // This should never happen since we checked pricesByMarket.size >= 2 above
+    if (!firstMarket || !lastMarket) {
+      return NextResponse.json({
+        success: false,
+        error: "no_prices",
+        message: `Not enough price data for comparison`,
+      });
+    }
+
     // Get category info
     let category = "Unknown";
     let unit = "unit";
@@ -210,16 +229,16 @@ export async function GET(request: NextRequest) {
         category,
         unit,
       },
-      lowestPrice: marketsWithRank[0],
-      highestPrice: marketsWithRank[marketsWithRank.length - 1],
+      lowestPrice: firstMarket,
+      highestPrice: lastMarket,
       averagePrice,
       priceRange,
       markets: marketsWithRank,
       maxSavings: {
         amount: priceRange,
         percentage: Math.round((priceRange / highestPrice) * 100),
-        fromMarket: marketsWithRank[marketsWithRank.length - 1].marketName,
-        toMarket: marketsWithRank[0].marketName,
+        fromMarket: lastMarket.marketName,
+        toMarket: firstMarket.marketName,
       },
       dataSources: {
         approvedPrices: approvedPrices.length,
