@@ -1,6 +1,6 @@
 // src/app/api/items/route.ts
 // NaijaMarket Intel - Items Catalog API
-// FIXED: SQL Server compatibility + correct parameter handling
+// FIXED: Correct column names matching Prisma schema exactly
 
 import { NextRequest, NextResponse } from "next/server";
 import { PrismaClient } from "@prisma/client";
@@ -28,12 +28,10 @@ export async function GET(request: NextRequest) {
       where.category_id = categoryId;
     }
 
-    // Search by item name (contains - SQL Server compatible)
+    // Search by item name (contains)
     if (search) {
       where.item_name = {
         contains: search,
-        // NOTE: Removed 'mode: insensitive' as it's not supported in SQL Server
-        // SQL Server LIKE is case-insensitive by default with default collation
       };
     }
 
@@ -48,16 +46,19 @@ export async function GET(request: NextRequest) {
     // Get total count for pagination
     const total = await prisma.items_Catalog.count({ where });
 
-    // Format response
+    // Format response - USE EXACT COLUMN NAMES FROM PRISMA SCHEMA
     const formattedItems = items.map((item: any) => ({
       item_id: item.item_id,
       item_name: item.item_name,
       category_id: item.category_id,
-      unit: item.unit || item.Unit, // Handle both column name cases
+      unit: item.Unit,                          // Schema has capital U
       measurement: item.measurement,
-      wholesale_price: item.wholesale_price || item.whole_sale_Price,
+      wholesale_price: item.whole_sale_Price,   // Schema has capital P
+      avg_measurement_price: item.Ave_Measurement_Price,
+      average_unit_price: item.Average_Unit_Price,
       min_price: item.min_price,
       max_price: item.max_price,
+      max_wholesale_price: item.Max_whole_sale_Price,
       status: item.status,
     }));
 
@@ -106,7 +107,6 @@ export async function POST(request: NextRequest) {
         where: { 
           item_name: { 
             contains: item_name,
-            // SQL Server compatible - no mode: insensitive
           } 
         },
       });
@@ -119,9 +119,24 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Return with correct column mapping
     return NextResponse.json({
       success: true,
-      data: item,
+      data: {
+        item_id: item.item_id,
+        item_name: item.item_name,
+        category_id: item.category_id,
+        unit: item.Unit,
+        measurement: item.measurement,
+        wholesale_price: item.whole_sale_Price,
+        avg_measurement_price: item.Ave_Measurement_Price,
+        average_unit_price: item.Average_Unit_Price,
+        min_price: item.min_price,
+        max_price: item.max_price,
+        max_wholesale_price: item.Max_whole_sale_Price,
+        status: item.status,
+        created_at: item.created_at,
+      },
     });
   } catch (error) {
     console.error("Item Detail Error:", error);
