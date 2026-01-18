@@ -8,7 +8,7 @@ datasource db {
 }
 
 // ============================================================================
-// CORE MODELS (USABLE - Have Primary Keys)
+// CORE MODELS - All have primary keys and are usable by Prisma
 // ============================================================================
 
 model Consumers {
@@ -72,22 +72,22 @@ model Consumers {
 }
 
 model OTP_Codes {
-  id          Int       @id(map: "PK__OTP_Code__3213E83F59514465") @default(autoincrement())
+  id          Int       @id @default(autoincrement())
   identifier  String    @db.NVarChar(255)
   type        String    @db.VarChar(20)
   code        String    @db.VarChar(6)
-  attempts    Int?      @default(0, map: "DF__OTP_Codes__attem__02A839AF")
-  verified    Boolean?  @default(false, map: "DF__OTP_Codes__verif__039C5DE8")
+  attempts    Int?      @default(0)
+  verified    Boolean?  @default(false)
   verified_at DateTime?
   expires_at  DateTime
-  created_at  DateTime? @default(now(), map: "DF__OTP_Codes__creat__04908221")
+  created_at  DateTime? @default(now())
 
-  @@index([expires_at], map: "IX_OTP_Expires")
-  @@index([identifier, type], map: "IX_OTP_Identifier")
+  @@index([expires_at])
+  @@index([identifier, type])
 }
 
 model Approved_Prices {
-  price_id             String    @id(map: "PK__Approved__1681726DF2AAC986") @db.VarChar(50)
+  price_id             String    @id @db.VarChar(50)
   submission_id        String?   @db.VarChar(50)
   state                String?   @db.NVarChar(100)
   market_name          String?   @db.NVarChar(200)
@@ -100,7 +100,7 @@ model Approved_Prices {
   brand_id             String?   @db.VarChar(20)
   price                Decimal?  @db.Decimal(18, 2)
   unit                 String?   @db.VarChar(50)
-  currency             String?   @default("NGN", map: "DF__Approved___curre__7ED7A8CB") @db.VarChar(10)
+  currency             String?   @default("NGN") @db.VarChar(10)
   submission_date      DateTime? @db.DateTime
   validated_at         DateTime? @db.DateTime
   validation_status    String?   @db.VarChar(30)
@@ -121,40 +121,15 @@ model Approved_Prices {
   price_trend          String?   @db.VarChar(10)
   data_source          String?   @db.VarChar(50)
   confidence_score     Int?
-  is_outlier           Boolean?  @default(false, map: "DF__Approved___is_ou__7FCBCD04")
+  is_outlier           Boolean?  @default(false)
   notes                String?   @db.NVarChar(Max)
 
-  @@index([item_id], map: "IX_Approved_Prices_item")
-  @@index([market_id], map: "IX_Approved_Prices_market")
+  @@index([item_id])
+  @@index([market_id])
 }
 
-model Export_History {
-  export_id     String    @id(map: "PK__Export_H__4B255E5ED8F4E99F") @db.VarChar(50)
-  phone_number  String?   @db.VarChar(20)
-  consumer_id   String?   @db.VarChar(50)
-  export_type   String?   @db.VarChar(30)
-  format        String?   @db.VarChar(10)
-  query_params  String?   @db.NVarChar(Max)
-  markets       String?   @db.NVarChar(Max)
-  items         String?   @db.NVarChar(Max)
-  date_range    String?   @db.VarChar(50)
-  file_url      String?   @db.NVarChar(500)
-  status        String?   @default("COMPLETED", map: "DF__Export_Hi__statu__7A47FDDE") @db.VarChar(20)
-  row_count     Int?      @default(0, map: "DF__Export_Hi__row_c__7B3C2211")
-  file_size_kb  Int?      @default(0, map: "DF__Export_Hi__file___7C30464A")
-  created_at    DateTime? @default(now(), map: "DF__Export_Hi__creat__7D246A83")
-
-  @@index([phone_number], map: "IX_Export_History_phone")
-}
-
-// ============================================================================
-// REFERENCE MODELS (@@ignore - Tables without proper primary keys)
-// These exist in your database but Prisma can't manage them directly
-// ============================================================================
-
-/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
 model Markets {
-  market_id         String?   @db.NVarChar(50)
+  market_id         String    @id @db.NVarChar(50)
   region_id         String?   @db.NVarChar(50)
   market_name       String?   @db.NVarChar(50)
   state             String?   @db.NVarChar(50)
@@ -165,27 +140,21 @@ model Markets {
   status            String?   @db.NVarChar(50)
   created_at        DateTime?
   coordinate_source String?   @db.NVarChar(50)
-  PowerAppsId__     String?   @map("__PowerAppsId__") @db.NVarChar(50)
 
-  @@ignore
+  @@index([state])
 }
 
-/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
 model Categories {
-  category_id   String?   @db.NVarChar(50)
+  category_id   String    @id @db.NVarChar(50)
   category_name String?   @db.NVarChar(50)
   description   String?   @db.NVarChar(100)
   status        String?   @db.NVarChar(50)
   display_order Int?
   created_at    DateTime?
-  PowerAppsId__ String?   @map("__PowerAppsId__") @db.NVarChar(50)
-
-  @@ignore
 }
 
-/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
 model Items_Catalog {
-  item_id               String?   @db.NVarChar(50)
+  item_id               String    @id @db.NVarChar(50)
   item_name             String?   @db.NVarChar(50)
   category_id           String?   @db.NVarChar(50)
   Unit                  String?   @db.NVarChar(50)
@@ -198,41 +167,25 @@ model Items_Catalog {
   min_price             Decimal?  @db.Decimal(18, 2)
   max_price             Decimal?  @db.Decimal(18, 2)
   created_at            DateTime?
-  PowerAppsId__         String?   @map("__PowerAppsId__") @db.NVarChar(50)
 
-  @@ignore
+  @@index([category_id])
 }
 
-/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
-model Price_History_NBS {
-  history_id         String?   @db.NVarChar(50)
-  item_id            String?   @db.NVarChar(50)
-  item_name_nbs      String?   @db.NVarChar(50)
-  item_name_standard String?   @db.NVarChar(50)
-  category_id        String?   @db.NVarChar(50)
-  category_name      String?   @db.NVarChar(50)
-  state_code_nbs     String?   @db.NVarChar(50)
-  state_name_nbs     String?   @db.NVarChar(50)
-  db_state           String?   @db.NVarChar(50)
-  market_id          String?   @db.NVarChar(50)
-  market_name        String?   @db.NVarChar(50)
-  price_naira        Decimal?  @db.Decimal(18, 2)
-  price_original     Decimal?  @db.Decimal(18, 2)
-  variation_pct      Decimal?  @db.Decimal(6, 2)
-  unit               String?   @db.NVarChar(50)
-  year               Int?
-  month              Boolean?
-  observation_date   DateTime? @db.Date
-  data_source        String?   @db.NVarChar(50)
-  import_batch       String?   @db.NVarChar(50)
-  created_at         DateTime?
+model Brands {
+  brand_id          String    @id @db.NVarChar(50)
+  brand_name        String?   @db.NVarChar(50)
+  category_id       String?   @db.NVarChar(50)
+  category          String?   @db.NVarChar(50)
+  country_of_origin String?   @db.NVarChar(50)
+  description       String?   @db.NVarChar(50)
+  status            String?   @db.NVarChar(50)
+  created_at        DateTime?
 
-  @@ignore
+  @@index([category_id])
 }
 
-/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
 model Subscription_Tiers {
-  tier_id                  String?  @db.NVarChar(50)
+  tier_id                  String   @id @db.NVarChar(50)
   tier_name                String?  @db.NVarChar(50)
   tier_rank                Int?
   price_ngn                Decimal? @db.Decimal(18, 2)
@@ -251,24 +204,66 @@ model Subscription_Tiers {
   features                 String?  @db.NVarChar(50)
   description              String?  @db.NVarChar(50)
   status                   String?  @db.NVarChar(50)
-
-  @@ignore
 }
 
-/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model Price_History_NBS {
+  id                 Int       @id @default(autoincrement())
+  history_id         String?   @db.NVarChar(50)
+  item_id            String?   @db.NVarChar(50)
+  item_name_nbs      String?   @db.NVarChar(50)
+  item_name_standard String?   @db.NVarChar(50)
+  category_id        String?   @db.NVarChar(50)
+  category_name      String?   @db.NVarChar(50)
+  state_code_nbs     String?   @db.NVarChar(50)
+  state_name_nbs     String?   @db.NVarChar(50)
+  db_state           String?   @db.NVarChar(50)
+  market_id          String?   @db.NVarChar(50)
+  market_name        String?   @db.NVarChar(50)
+  price_naira        Decimal?  @db.Decimal(18, 2)
+  price_original     Decimal?  @db.Decimal(18, 2)
+  variation_pct      Decimal?  @db.Decimal(6, 2)
+  unit               String?   @db.NVarChar(50)
+  year               Int?
+  month              Int?
+  observation_date   DateTime? @db.Date
+  data_source        String?   @db.NVarChar(50)
+  import_batch       String?   @db.NVarChar(50)
+  created_at         DateTime?
+
+  @@index([item_id])
+  @@index([market_id])
+  @@index([observation_date])
+}
+
 model Bank_Codes {
-  bank_id   Int?
+  bank_id   Int      @id @default(autoincrement())
   bank_name String?  @db.NVarChar(50)
   bank_code Int?
   bank_type String?  @db.NVarChar(50)
   is_active Boolean?
-
-  @@ignore
 }
 
-/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model Export_History {
+  export_id    String    @id @db.VarChar(50)
+  phone_number String?   @db.VarChar(20)
+  consumer_id  String?   @db.VarChar(50)
+  export_type  String?   @db.VarChar(30)
+  format       String?   @db.VarChar(10)
+  query_params String?   @db.NVarChar(Max)
+  markets      String?   @db.NVarChar(Max)
+  items        String?   @db.NVarChar(Max)
+  date_range   String?   @db.VarChar(50)
+  file_url     String?   @db.NVarChar(500)
+  status       String?   @default("COMPLETED") @db.VarChar(20)
+  row_count    Int?      @default(0)
+  file_size_kb Int?      @default(0)
+  created_at   DateTime? @default(now())
+
+  @@index([phone_number])
+}
+
 model Blacklist {
-  blacklist_id      String?   @db.NVarChar(50)
+  blacklist_id      String    @id @db.NVarChar(50)
   type              String?   @db.NVarChar(50)
   value             Int?
   reason            String?   @db.NVarChar(50)
@@ -280,28 +275,15 @@ model Blacklist {
   expires_at        DateTime?
   status            String?   @db.NVarChar(50)
   notes             String?   @db.NVarChar(50)
-
-  @@ignore
 }
 
-/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
-model Brands {
-  brand_id          String?   @db.NVarChar(50)
-  brand_name        String?   @db.NVarChar(50)
-  category_id       String?   @db.NVarChar(50)
-  category          String?   @db.NVarChar(50)
-  country_of_origin String?   @db.NVarChar(50)
-  description       String?   @db.NVarChar(50)
-  status            String?   @db.NVarChar(50)
-  created_at        DateTime?
+// ============================================================================
+// SESSION MODELS - Using session_id as primary key
+// ============================================================================
 
-  @@ignore
-}
-
-/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
 model Consumer_Query_Sessions {
+  session_id                   String    @id @db.NVarChar(50)
   Consumer_id                  String?   @db.NVarChar(50)
-  session_id                   String?   @db.NVarChar(50)
   phone_number                 String?   @db.NVarChar(20)
   session_status               String?   @db.NVarChar(50)
   current_step                 String?   @db.NVarChar(50)
@@ -336,12 +318,11 @@ model Consumer_Query_Sessions {
   selected_region              String?   @db.NVarChar(255)
   selected_region_code         String?   @db.NVarChar(255)
 
-  @@ignore
+  @@index([phone_number])
 }
 
-/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
 model Consumer_Registration_Sessions {
-  session_id         String?   @db.NVarChar(50)
+  session_id         String    @id @db.NVarChar(50)
   phone_number       String?   @db.NVarChar(20)
   preferred_language String?   @db.NVarChar(50)
   current_step       String?   @db.NVarChar(50)
@@ -364,22 +345,26 @@ model Consumer_Registration_Sessions {
   payment_provider   String?   @db.NVarChar(255)
   current_tier       String?   @db.NVarChar(50)
 
-  @@ignore
+  @@index([phone_number])
 }
 
-/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+// ============================================================================
+// LOG MODELS - Using auto-increment ID
+// ============================================================================
+
 model Message_Log {
+  id              Int       @id @default(autoincrement())
   timestamp       DateTime?
   phone_number    String?   @db.NVarChar(20)
   message_body    String?   @db.NVarChar(255)
   response_length String?   @db.NVarChar(255)
   status          String?   @db.NVarChar(255)
 
-  @@ignore
+  @@index([phone_number])
 }
 
-/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
 model Error_Log {
+  id            Int       @id @default(autoincrement())
   timestamp     DateTime?
   phone_number  String?   @db.NVarChar(20)
   message_body  String?   @db.NVarChar(255)
@@ -387,5 +372,5 @@ model Error_Log {
   error_details String?   @db.NVarChar(255)
   error_type    String?   @db.NVarChar(255)
 
-  @@ignore
+  @@index([phone_number])
 }
