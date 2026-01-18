@@ -17,6 +17,7 @@ import {
   Sparkles,
   PiggyBank,
   X,
+  AlertCircle,
 } from "lucide-react";
 
 // ============================================================================
@@ -131,6 +132,15 @@ function CategorySelector({
   selected: string | null;
   onSelect: (id: string) => void;
 }) {
+  if (categories.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center py-12 text-gray-500">
+        <AlertCircle className="w-8 h-8 mb-2" />
+        <p>No categories available</p>
+      </div>
+    );
+  }
+
   return (
     <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
       {categories.map((cat) => (
@@ -171,8 +181,19 @@ function ItemSelector({
     );
   }
 
+  // FIXED: Add empty state handling
+  if (!items || items.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center py-12 text-gray-500">
+        <AlertCircle className="w-8 h-8 mb-2" />
+        <p>No items found in this category</p>
+        <p className="text-sm mt-1">Try selecting a different category</p>
+      </div>
+    );
+  }
+
   return (
-    <div className="grid grid-cols-2 md:grid-cols-3 gap-2 max-h-60 overflow-y-auto">
+    <div className="grid grid-cols-2 md:grid-cols-3 gap-2 max-h-96 overflow-y-auto">
       {items.map((item) => (
         <button
           key={item.item_id}
@@ -186,7 +207,7 @@ function ItemSelector({
           `}
         >
           <span className="text-sm font-medium truncate block">{item.item_name}</span>
-          <span className="text-xs text-gray-500">{item.unit}</span>
+          <span className="text-xs text-gray-500">{item.unit || "unit"}</span>
         </button>
       ))}
     </div>
@@ -214,12 +235,22 @@ function MarketSelector({
     );
   }
 
+  // FIXED: Add empty state handling
+  if (!markets || markets.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center py-12 text-gray-500">
+        <AlertCircle className="w-8 h-8 mb-2" />
+        <p>No markets available</p>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-2">
       <p className="text-gray-500 text-sm">
         Select up to {maxMarkets} markets ({selected.length}/{maxMarkets} selected)
       </p>
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-2 max-h-60 overflow-y-auto">
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-2 max-h-96 overflow-y-auto">
         {markets.map((market) => {
           const isSelected = selected.includes(market.market_id);
           const isDisabled = !isSelected && selected.length >= maxMarkets;
@@ -427,7 +458,8 @@ export default function ComparePage() {
       try {
         const response = await fetch("/api/categories");
         const data = await response.json();
-        if (data.success) {
+        console.log("Categories API response:", data); // DEBUG
+        if (data.success && data.data) {
           setCategories(data.data);
         }
       } catch (err) {
@@ -446,15 +478,22 @@ export default function ComparePage() {
     
     const fetchItems = async () => {
       setLoadingItems(true);
+      setItems([]); // Clear previous items
       try {
         const response = await fetch(`/api/items?category=${selectedCategory}`);
         const data = await response.json();
-        if (data.success) {
+        console.log("Items API response:", data); // DEBUG
+        console.log("Items count:", data.data?.length || 0); // DEBUG
+        if (data.success && data.data) {
           setItems(data.data);
           setStep("item");
+        } else {
+          console.error("Items API failed or empty:", data);
+          setStep("item"); // Still move to item step to show empty state
         }
       } catch (err) {
         console.error("Failed to fetch items:", err);
+        setStep("item"); // Still move to item step to show error
       } finally {
         setLoadingItems(false);
       }
@@ -472,7 +511,8 @@ export default function ComparePage() {
       try {
         const response = await fetch("/api/markets");
         const data = await response.json();
-        if (data.success) {
+        console.log("Markets API response:", data); // DEBUG
+        if (data.success && data.data) {
           setMarkets(data.data);
           setStep("markets");
         }
@@ -608,12 +648,15 @@ export default function ComparePage() {
             <div className="flex items-center justify-between">
               <div>
                 <button 
-                  onClick={() => { setStep("category"); setSelectedCategory(null); }}
+                  onClick={() => { setStep("category"); setSelectedCategory(null); setItems([]); }}
                   className="text-gray-500 text-sm hover:text-white mb-1"
                 >
                   ← Back to categories
                 </button>
                 <h2 className="text-lg font-semibold">Select Item</h2>
+                <p className="text-gray-500 text-sm">
+                  {items.length} items in this category
+                </p>
               </div>
             </div>
             <ItemSelector
