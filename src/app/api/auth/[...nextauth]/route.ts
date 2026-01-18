@@ -1,6 +1,6 @@
 // src/app/api/auth/[...nextauth]/route.ts
 // NaijaMarket Intel - NextAuth Configuration with Phone OTP
-// FIXED v2: Now checks for verified=1 (OTP already verified by /api/auth/verify-otp)
+// FIXED v3: Now queries OTP_Codes table (not Consumer_OTP) with correct columns
 // Updated: 2026-01-18
 
 import NextAuth, { NextAuthOptions } from "next-auth";
@@ -24,43 +24,45 @@ const authOptions: NextAuthOptions = {
         const phone = normalizePhone(credentials.phone);
         const otp = credentials.otp;
 
-        console.log("[AUTH] Attempting login for phone:", phone);
+        console.log("[AUTH] Attempting login for phone:", phone, "OTP:", otp);
 
         try {
           // ============================================================
-          // FIX: Look for OTP that was ALREADY VERIFIED by verify-otp API
-          // The flow is: verify-otp sets verified=1, then NextAuth checks it
+          // FIXED: Query OTP_Codes table (not Consumer_OTP!)
+          // Columns: identifier, code, verified (not phone_number, otp_code)
           // ============================================================
           const otpRecords = await prisma.$queryRaw`
-            SELECT * FROM Consumer_OTP
-            WHERE phone_number = ${phone}
-            AND otp_code = ${otp}
+            SELECT * FROM OTP_Codes
+            WHERE identifier = ${phone}
+            AND code = ${otp}
             AND verified = 1
             AND expires_at > GETDATE()
             ORDER BY created_at DESC
           ` as any[];
 
+          console.log("[AUTH] OTP query result count:", otpRecords?.length || 0);
+
           if (!otpRecords || otpRecords.length === 0) {
-            console.log("[AUTH] No verified OTP found for:", phone);
+            console.log("[AUTH] No verified OTP found, checking for unverified...");
             
-            // Also check if there's an unverified one (user didn't go through verify-otp)
+            // Check if there's an unverified OTP we can verify now
             const unverifiedOtp = await prisma.$queryRaw`
-              SELECT * FROM Consumer_OTP
-              WHERE phone_number = ${phone}
-              AND otp_code = ${otp}
+              SELECT * FROM OTP_Codes
+              WHERE identifier = ${phone}
+              AND code = ${otp}
               AND verified = 0
               AND expires_at > GETDATE()
             ` as any[];
             
             if (unverifiedOtp && unverifiedOtp.length > 0) {
-              // OTP exists but wasn't verified through the API - let's verify it now
               console.log("[AUTH] Found unverified OTP, verifying now...");
               await prisma.$executeRaw`
-                UPDATE Consumer_OTP
-                SET verified = 1
-                WHERE phone_number = ${phone} AND otp_code = ${otp}
+                UPDATE OTP_Codes
+                SET verified = 1, verified_at = GETDATE()
+                WHERE identifier = ${phone} AND code = ${otp}
               `;
             } else {
+              console.log("[AUTH] No valid OTP found at all");
               throw new Error("Invalid or expired OTP");
             }
           }
@@ -83,11 +85,13 @@ const authOptions: NextAuthOptions = {
                OR phone_number LIKE ${'%' + phoneLastDigits}
           ` as any[];
 
+          console.log("[AUTH] Consumer query result count:", consumers?.length || 0);
+
           let consumer;
 
           if (consumers && consumers.length > 0) {
             consumer = consumers[0];
-            console.log("[AUTH] Found consumer:", consumer.consumer_id, "Tier:", consumer.subscription_tier);
+            console.log("[AUTH] Found consumer:", consumer.consumer_id, "Tier:", consumer.subscription_tier, "Name:", consumer.full_name);
 
             // Update last active
             await prisma.$executeRaw`
@@ -134,7 +138,7 @@ const authOptions: NextAuthOptions = {
             || `${consumer.first_name || ''} ${consumer.last_name || ''}`.trim() 
             || `User ${phone.slice(-4)}`;
 
-          console.log("[AUTH] Login successful - Name:", displayName, "Tier:", consumer.subscription_tier);
+          console.log("[AUTH] SUCCESS - Name:", displayName, "Tier:", consumer.subscription_tier);
 
           // Return user object for session
           return {
@@ -203,8 +207,6 @@ const authOptions: NextAuthOptions = {
             }
 
             console.log("[JWT] Refreshed - ID:", token.id, "Tier:", token.tier, "Name:", token.name);
-          } else {
-            console.log("[JWT] No consumer found for phone:", token.phone);
           }
         } catch (error) {
           console.error("[JWT] Error refreshing user data:", error);
