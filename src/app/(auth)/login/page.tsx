@@ -8,8 +8,6 @@ import { useRouter } from "next/navigation";
 import {
   Phone,
   Lock,
-  Eye,
-  EyeOff,
   ArrowRight,
   Loader2,
   AlertCircle,
@@ -29,7 +27,12 @@ const countryCodes = [
   { code: "+44", country: "UK", flag: "🇬🇧" },
   { code: "+1", country: "USA/Canada", flag: "🇺🇸" },
   { code: "+358", country: "Finland", flag: "🇫🇮" },
-  // Add more as needed...
+  { code: "+49", country: "Germany", flag: "🇩🇪" },
+  { code: "+33", country: "France", flag: "🇫🇷" },
+  { code: "+31", country: "Netherlands", flag: "🇳🇱" },
+  { code: "+27", country: "South Africa", flag: "🇿🇦" },
+  { code: "+254", country: "Kenya", flag: "🇰🇪" },
+  { code: "+971", country: "UAE", flag: "🇦🇪" },
 ];
 
 // ============================================================================
