@@ -1,7 +1,30 @@
+// src/app/api/auth/send-otp/route.ts
+// NaijaMarket Intel - Send OTP API
+// Supports: WhatsApp (Twilio) + Email (Gmail SMTP)
+// Updated: 2026-01-18
+
 import { NextRequest, NextResponse } from "next/server";
 import { PrismaClient } from "@prisma/client";
+import nodemailer from "nodemailer";
 
 const prisma = new PrismaClient();
+
+// ============================================================================
+// CONFIGURATION
+// ============================================================================
+
+// Twilio (WhatsApp)
+const twilioAccountSid = process.env.TWILIO_ACCOUNT_SID;
+const twilioAuthToken = process.env.TWILIO_AUTH_TOKEN;
+const twilioWhatsAppNumber = process.env.TWILIO_WHATSAPP_NUMBER || "whatsapp:+14155238886";
+
+// Gmail SMTP
+const gmailUser = process.env.GMAIL_USER;
+const gmailAppPassword = process.env.GMAIL_APP_PASSWORD;
+
+// ============================================================================
+// HELPERS
+// ============================================================================
 
 // Generate 6-digit OTP
 function generateOTP(): string {
@@ -10,25 +33,19 @@ function generateOTP(): string {
 
 // Format phone number for international use
 function formatPhoneNumber(phone: string, countryCode?: string): string {
-  // Remove all non-digit characters except leading +
   let cleaned = phone.replace(/[\s\-\(\)]/g, "");
   
-  // If phone already starts with +, just remove the + and return
   if (cleaned.startsWith("+")) {
     return cleaned.substring(1);
   }
   
-  // If country code is provided separately (from UI dropdown)
   if (countryCode) {
-    // Remove + from country code if present
     const cleanCountryCode = countryCode.replace("+", "");
     
-    // If phone starts with 0, remove it (local format)
     if (cleaned.startsWith("0")) {
       cleaned = cleaned.substring(1);
     }
     
-    // If phone already starts with country code, don't duplicate
     if (cleaned.startsWith(cleanCountryCode)) {
       return cleaned;
     }
@@ -36,24 +53,21 @@ function formatPhoneNumber(phone: string, countryCode?: string): string {
     return cleanCountryCode + cleaned;
   }
   
-  // If no country code and starts with 0, assume Nigerian
   if (cleaned.startsWith("0")) {
     return "234" + cleaned.substring(1);
   }
   
-  // Return as-is (already has country code without +)
   return cleaned;
 }
 
-// Send OTP via WhatsApp using Twilio
-async function sendWhatsAppOTP(phone: string, otp: string): Promise<boolean> {
-  const twilioAccountSid = process.env.TWILIO_ACCOUNT_SID;
-  const twilioAuthToken = process.env.TWILIO_AUTH_TOKEN;
-  const twilioWhatsAppNumber = process.env.TWILIO_WHATSAPP_NUMBER || "whatsapp:+14155238886";
+// ============================================================================
+// WHATSAPP OTP (TWILIO)
+// ============================================================================
 
+async function sendWhatsAppOTP(phone: string, otp: string): Promise<boolean> {
   if (!twilioAccountSid || !twilioAuthToken) {
-    console.log("⚠️ Twilio credentials not configured. OTP for testing:", otp);
-    return true; // Return true for development
+    console.log("⚠️ Twilio not configured. OTP for testing:", otp);
+    return true;
   }
 
   try {
@@ -93,56 +107,127 @@ async function sendWhatsAppOTP(phone: string, otp: string): Promise<boolean> {
   }
 }
 
-// Send OTP via Email using Resend
-async function sendEmailOTP(email: string, otp: string): Promise<boolean> {
-  const resendApiKey = process.env.RESEND_API_KEY;
+// ============================================================================
+// EMAIL OTP (GMAIL SMTP)
+// ============================================================================
 
-  if (!resendApiKey) {
-    console.log("⚠️ Resend API key not configured. OTP for testing:", otp);
-    return true; // Return true for development
+async function sendEmailOTP(email: string, otp: string): Promise<boolean> {
+  if (!gmailUser || !gmailAppPassword) {
+    console.log("⚠️ Gmail SMTP not configured. Email OTP for testing:", otp);
+    return true;
   }
 
   try {
     console.log(`📧 Sending Email OTP to: ${email}`);
 
-    const response = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${resendApiKey}`,
-        "Content-Type": "application/json",
+    // Create Gmail transporter
+    const transporter = nodemailer.createTransport({
+      service: "gmail",
+      auth: {
+        user: gmailUser,
+        pass: gmailAppPassword,
       },
-      body: JSON.stringify({
-        from: "NaijaMarket Intel <otp@foodprice-compare.com>",
-        to: [email],
-        subject: "Your NaijaMarket Intel Verification Code",
-        html: `
-          <div style="font-family: Arial, sans-serif; max-width: 500px; margin: 0 auto; padding: 20px; background: #1a1a2e; color: #fff; border-radius: 10px;">
-            <h1 style="color: #10b981; text-align: center;">NaijaMarket Intel</h1>
-            <p style="text-align: center; font-size: 16px;">Your verification code is:</p>
-            <div style="background: #16213e; padding: 20px; border-radius: 8px; text-align: center; margin: 20px 0;">
-              <span style="font-size: 36px; font-weight: bold; letter-spacing: 8px; color: #10b981;">${otp}</span>
-            </div>
-            <p style="text-align: center; color: #888; font-size: 14px;">This code expires in 10 minutes.</p>
-            <p style="text-align: center; color: #ef4444; font-size: 12px;">⚠️ Never share this code with anyone.</p>
-          </div>
-        `,
-        text: `Your NaijaMarket Intel verification code is: ${otp}. This code expires in 10 minutes. Never share this code with anyone.`,
-      }),
     });
 
-    if (!response.ok) {
-      const error = await response.json();
-      console.error("❌ Email send failed:", JSON.stringify(error));
-      return false;
-    }
+    // Email HTML template - Beautiful dark theme
+    const htmlContent = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      </head>
+      <body style="margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #0a0a0a;">
+        <div style="max-width: 500px; margin: 0 auto; padding: 40px 20px;">
+          <!-- Header -->
+          <div style="text-align: center; margin-bottom: 30px;">
+            <div style="display: inline-block; background: linear-gradient(135deg, #10b981, #f59e0b); padding: 12px 16px; border-radius: 12px;">
+              <span style="color: #000; font-weight: bold; font-size: 20px;">NM</span>
+            </div>
+            <h1 style="color: #ffffff; margin: 15px 0 5px 0; font-size: 24px;">
+              NaijaMarket<span style="color: #10b981;">Intel</span>
+            </h1>
+            <p style="color: #888888; margin: 0; font-size: 14px;">The Bloomberg of Nigerian Commodities</p>
+          </div>
+          
+          <!-- Main Content -->
+          <div style="background-color: #1a1a1a; border-radius: 16px; padding: 30px; border: 1px solid #2a2a2a;">
+            <h2 style="color: #ffffff; margin: 0 0 10px 0; font-size: 20px; text-align: center;">
+              Verify Your Email
+            </h2>
+            <p style="color: #888888; margin: 0 0 25px 0; text-align: center; font-size: 14px;">
+              Use the code below to complete your registration
+            </p>
+            
+            <!-- OTP Code -->
+            <div style="background-color: #0a0a0a; border-radius: 12px; padding: 25px; text-align: center; margin-bottom: 25px; border: 2px solid #10b981;">
+              <span style="font-size: 36px; font-weight: bold; letter-spacing: 8px; color: #10b981;">${otp}</span>
+            </div>
+            
+            <!-- Expiry Notice -->
+            <div style="background-color: rgba(16, 185, 129, 0.1); border-radius: 8px; padding: 12px; text-align: center; margin-bottom: 20px;">
+              <p style="color: #10b981; margin: 0; font-size: 13px;">
+                ⏱️ This code expires in <strong>10 minutes</strong>
+              </p>
+            </div>
+            
+            <!-- Security Warning -->
+            <div style="background-color: rgba(239, 68, 68, 0.1); border-radius: 8px; padding: 12px; text-align: center;">
+              <p style="color: #ef4444; margin: 0; font-size: 12px;">
+                ⚠️ Never share this code with anyone. NaijaMarket Intel staff will never ask for your code.
+              </p>
+            </div>
+          </div>
+          
+          <!-- Footer -->
+          <div style="text-align: center; margin-top: 30px;">
+            <p style="color: #666666; font-size: 12px; margin: 0;">
+              If you didn't request this code, you can safely ignore this email.
+            </p>
+            <p style="color: #444444; font-size: 11px; margin: 15px 0 0 0;">
+              © 2026 NaijaMarket Intel. All rights reserved.
+            </p>
+          </div>
+        </div>
+      </body>
+      </html>
+    `;
 
-    console.log("✅ Email OTP sent successfully");
+    // Plain text fallback
+    const textContent = `
+NaijaMarket Intel - Email Verification
+
+Your verification code is: ${otp}
+
+This code expires in 10 minutes.
+
+⚠️ Never share this code with anyone.
+
+If you didn't request this code, you can safely ignore this email.
+
+© 2026 NaijaMarket Intel
+    `;
+
+    // Send email
+    const info = await transporter.sendMail({
+      from: `"NaijaMarket Intel" <${gmailUser}>`,
+      to: email,
+      subject: "🔐 Your NaijaMarket Intel Verification Code",
+      text: textContent,
+      html: htmlContent,
+    });
+
+    console.log("✅ Email OTP sent successfully. Message ID:", info.messageId);
     return true;
   } catch (error) {
     console.error("❌ Email send error:", error);
     return false;
   }
 }
+
+// ============================================================================
+// API ROUTE
+// ============================================================================
 
 export async function POST(request: NextRequest) {
   try {
@@ -249,7 +334,7 @@ export async function POST(request: NextRequest) {
 
     if (!sent) {
       return NextResponse.json(
-        { error: "Failed to send verification code. Please try again." },
+        { error: `Failed to send verification code via ${type === "phone" ? "WhatsApp" : "email"}. Please try again.` },
         { status: 500 }
       );
     }
