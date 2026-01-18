@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { signOut, useSession } from "next-auth/react";
@@ -20,6 +20,126 @@ import {
   GitCompare,
   ArrowLeftRight,
 } from "lucide-react";
+
+// ============================================================================
+// TYPES
+// ============================================================================
+
+interface TickerItem {
+  symbol: string;
+  name: string;
+  price: number;
+  change: number;
+  trend: "up" | "down" | "stable";
+  unit: string;
+}
+
+// ============================================================================
+// DYNAMIC PRICE TICKER COMPONENT
+// ============================================================================
+
+function PriceTicker() {
+  const [tickerData, setTickerData] = useState<TickerItem[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  // Fetch ticker data on mount and refresh every 5 minutes
+  useEffect(() => {
+    const fetchTickerData = async () => {
+      try {
+        const response = await fetch("/api/ticker");
+        const data = await response.json();
+        if (data.success && data.data) {
+          setTickerData(data.data);
+        } else {
+          // Use fallback if API fails
+          setTickerData(getStaticFallback());
+        }
+      } catch (error) {
+        console.error("Failed to fetch ticker data:", error);
+        setTickerData(getStaticFallback());
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchTickerData();
+
+    // Refresh every 5 minutes
+    const interval = setInterval(fetchTickerData, 5 * 60 * 1000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Format price with Naira symbol
+  const formatPrice = (price: number): string => {
+    if (price >= 1000) {
+      return `₦${price.toLocaleString()}`;
+    }
+    return `₦${price.toFixed(1)}`;
+  };
+
+  // Format change percentage
+  const formatChange = (change: number): string => {
+    const sign = change >= 0 ? "+" : "";
+    return `${sign}${change.toFixed(2)}%`;
+  };
+
+  if (loading) {
+    return (
+      <div className="price-ticker overflow-hidden">
+        <div className="flex items-center gap-8 px-4 py-2">
+          {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
+            <div key={i} className="flex items-center gap-2 animate-pulse">
+              <div className="h-4 w-16 bg-gray-800 rounded"></div>
+              <div className="h-4 w-14 bg-gray-800 rounded"></div>
+              <div className="h-4 w-12 bg-gray-800 rounded"></div>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  // Double the items for seamless loop
+  const doubledData = [...tickerData, ...tickerData];
+
+  return (
+    <div className="price-ticker overflow-hidden">
+      <div className="flex items-center gap-8 animate-ticker">
+        {doubledData.map((item, index) => (
+          <div key={`${item.symbol}-${index}`} className="ticker-item">
+            <span className={`ticker-symbol ${
+              item.trend === "up" || item.change > 0 ? "text-emerald-400" : 
+              item.trend === "down" || item.change < 0 ? "text-red-400" : 
+              "text-gray-400"
+            }`}>
+              {item.symbol}
+            </span>
+            <span className="ticker-price">
+              {formatPrice(item.price)}
+            </span>
+            <span className={`ticker-change ${item.change >= 0 ? "up" : "down"}`}>
+              {formatChange(item.change)}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// Static fallback data when API fails
+function getStaticFallback(): TickerItem[] {
+  return [
+    { symbol: "RICE.NGN", name: "Rice (50kg)", price: 78500, change: 2.3, trend: "up", unit: "bag" },
+    { symbol: "BEANS.NGN", name: "Beans (100kg)", price: 62000, change: -1.2, trend: "down", unit: "bag" },
+    { symbol: "GARRI.NGN", name: "Garri (50kg)", price: 28000, change: 0.8, trend: "up", unit: "bag" },
+    { symbol: "TOMATO.NGN", name: "Tomatoes", price: 45000, change: -5.2, trend: "down", unit: "basket" },
+    { symbol: "ONION.NGN", name: "Onions", price: 38500, change: 3.1, trend: "up", unit: "bag" },
+    { symbol: "CEMENT.NGN", name: "Cement", price: 6500, change: -0.3, trend: "down", unit: "bag" },
+    { symbol: "PALM.NGN", name: "Palm Oil (25L)", price: 52000, change: 1.5, trend: "up", unit: "keg" },
+    { symbol: "NFPI.IDX", name: "Food Price Index", price: 127.4, change: 2.1, trend: "up", unit: "index" },
+  ];
+}
 
 // ============================================================================
 // DASHBOARD LAYOUT
@@ -167,30 +287,8 @@ export default function DashboardLayout({
             </div>
           </div>
 
-          {/* Price Ticker */}
-          <div className="price-ticker overflow-hidden">
-            <div className="flex items-center gap-8 animate-ticker">
-              {tickerData.map((item, index) => (
-                <div key={index} className="ticker-item">
-                  <span className="ticker-symbol">{item.symbol}</span>
-                  <span className="ticker-price">{item.price}</span>
-                  <span className={`ticker-change ${item.change >= 0 ? "up" : "down"}`}>
-                    {item.change >= 0 ? "+" : ""}{item.change.toFixed(2)}%
-                  </span>
-                </div>
-              ))}
-              {/* Duplicate for seamless loop */}
-              {tickerData.map((item, index) => (
-                <div key={`dup-${index}`} className="ticker-item">
-                  <span className="ticker-symbol">{item.symbol}</span>
-                  <span className="ticker-price">{item.price}</span>
-                  <span className={`ticker-change ${item.change >= 0 ? "up" : "down"}`}>
-                    {item.change >= 0 ? "+" : ""}{item.change.toFixed(2)}%
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
+          {/* Dynamic Price Ticker */}
+          <PriceTicker />
         </header>
 
         {/* Page Content */}
@@ -234,18 +332,3 @@ function NavLink({ href, icon: Icon, label, badge, currentPath }: NavLinkProps) 
     </Link>
   );
 }
-
-// ============================================================================
-// DATA
-// ============================================================================
-
-const tickerData = [
-  { symbol: "RICE.NGN", price: "₦78,500", change: 2.3 },
-  { symbol: "BEANS.NGN", price: "₦62,000", change: -1.2 },
-  { symbol: "TOMATO.NGN", price: "₦45,000", change: -5.2 },
-  { symbol: "ONION.NGN", price: "₦38,500", change: 3.1 },
-  { symbol: "GARRI.NGN", price: "₦28,000", change: 0.8 },
-  { symbol: "PALM.NGN", price: "₦52,000", change: 1.5 },
-  { symbol: "CEMENT.NGN", price: "₦6,500", change: -0.3 },
-  { symbol: "NFPI.IDX", price: "127.4", change: 2.1 },
-];
