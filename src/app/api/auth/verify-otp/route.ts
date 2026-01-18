@@ -59,8 +59,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Check attempt limit (max 5 attempts)
-    if (otpRecord.attempts >= 5) {
+    // Check attempt limit (max 5 attempts) - handle null with default 0
+    const currentAttempts = otpRecord.attempts ?? 0;
+    if (currentAttempts >= 5) {
       await prisma.oTP_Codes.delete({ where: { id: otpRecord.id } });
       return NextResponse.json(
         { error: "Too many failed attempts. Please request a new code." },
@@ -72,9 +73,9 @@ export async function POST(request: NextRequest) {
     if (otpRecord.code !== otp) {
       await prisma.oTP_Codes.update({
         where: { id: otpRecord.id },
-        data: { attempts: otpRecord.attempts + 1 },
+        data: { attempts: currentAttempts + 1 },
       });
-      const remainingAttempts = 5 - (otpRecord.attempts + 1);
+      const remainingAttempts = 5 - (currentAttempts + 1);
       return NextResponse.json(
         { error: `Invalid verification code. ${remainingAttempts} attempt${remainingAttempts !== 1 ? "s" : ""} remaining.` },
         { status: 400 }
