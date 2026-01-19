@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { signIn } from "next-auth/react";
@@ -36,10 +36,40 @@ const countryCodes = [
 ];
 
 // ============================================================================
-// LOGIN PAGE
+// LOADING FALLBACK COMPONENT
 // ============================================================================
 
-export default function LoginPage() {
+function LoginLoadingFallback() {
+  return (
+    <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center p-4">
+      <div className="w-full max-w-md">
+        {/* Logo */}
+        <div className="flex items-center justify-center gap-2 mb-8">
+          <div className="w-10 h-10 bg-gradient-to-br from-emerald-500 to-amber-500 rounded-lg flex items-center justify-center">
+            <span className="text-black font-bold">NM</span>
+          </div>
+          <span className="text-xl font-bold text-white">
+            NaijaMarket<span className="text-emerald-400">Intel</span>
+          </span>
+        </div>
+
+        {/* Loading Card */}
+        <div className="bg-[#1a1a1a] border border-[#2a2a2a] rounded-2xl p-8">
+          <div className="flex flex-col items-center justify-center py-8">
+            <Loader2 className="w-8 h-8 text-emerald-400 animate-spin mb-4" />
+            <p className="text-gray-400">Loading...</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// LOGIN CONTENT COMPONENT (Contains useSearchParams)
+// ============================================================================
+
+function LoginContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   
@@ -439,5 +469,17 @@ export default function LoginPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+// ============================================================================
+// MAIN EXPORT WITH SUSPENSE BOUNDARY
+// ============================================================================
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={<LoginLoadingFallback />}>
+      <LoginContent />
+    </Suspense>
   );
 }
