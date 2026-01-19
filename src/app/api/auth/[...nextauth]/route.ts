@@ -1,11 +1,49 @@
 // src/app/api/auth/[...nextauth]/route.ts
 // NaijaMarket Intel - NextAuth Configuration with Phone OTP
-// FIXED v3: Now queries OTP_Codes table (not Consumer_OTP) with correct columns
-// Updated: 2026-01-18
+// FIXED v4: Added countryCode to credentials, matching phone format with send-otp
+// Updated: 2026-01-19
 
 import NextAuth, { NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
 import { prisma } from "@/lib/prisma";
+
+// ============================================================================
+// PHONE FORMATTING - MUST MATCH send-otp/route.ts EXACTLY!
+// ============================================================================
+function formatPhoneNumber(phone: string, countryCode?: string): string {
+  let cleaned = phone.replace(/[\s\-\(\)]/g, "");
+  
+  // If phone already starts with +, just remove the + and return
+  if (cleaned.startsWith("+")) {
+    return cleaned.substring(1);
+  }
+  
+  // If country code is provided separately (from UI dropdown)
+  if (countryCode) {
+    // Remove + from country code if present
+    const cleanCountryCode = countryCode.replace("+", "");
+    
+    // If phone starts with 0, remove it (local format)
+    if (cleaned.startsWith("0")) {
+      cleaned = cleaned.substring(1);
+    }
+    
+    // If phone already starts with country code, don't duplicate
+    if (cleaned.startsWith(cleanCountryCode)) {
+      return cleaned;
+    }
+    
+    return cleanCountryCode + cleaned;
+  }
+  
+  // If no country code and starts with 0, assume Nigerian
+  if (cleaned.startsWith("0")) {
+    return "234" + cleaned.substring(1);
+  }
+  
+  // Return as-is (already has country code without +)
+  return cleaned;
+}
 
 const authOptions: NextAuthOptions = {
   providers: [
@@ -14,6 +52,7 @@ const authOptions: NextAuthOptions = {
       name: "Phone OTP",
       credentials: {
         phone: { label: "Phone Number", type: "text" },
+        countryCode: { label: "Country Code", type: "text" },  // ✅ ADDED!
         otp: { label: "OTP Code", type: "text" },
       },
       async authorize(credentials) {
@@ -21,15 +60,16 @@ const authOptions: NextAuthOptions = {
           throw new Error("Phone number and OTP are required");
         }
 
-        const phone = normalizePhone(credentials.phone);
+        // ✅ FIXED: Use same formatting function as send-otp
+        const phone = formatPhoneNumber(credentials.phone, credentials.countryCode);
         const otp = credentials.otp;
 
         console.log("[AUTH] Attempting login for phone:", phone, "OTP:", otp);
+        console.log("[AUTH] Country code received:", credentials.countryCode);
 
         try {
           // ============================================================
-          // FIXED: Query OTP_Codes table (not Consumer_OTP!)
-          // Columns: identifier, code, verified (not phone_number, otp_code)
+          // Check for verified OTP in OTP_Codes table
           // ============================================================
           const otpRecords = await prisma.$queryRaw`
             SELECT * FROM OTP_Codes
@@ -62,7 +102,17 @@ const authOptions: NextAuthOptions = {
                 WHERE identifier = ${phone} AND code = ${otp}
               `;
             } else {
-              console.log("[AUTH] No valid OTP found at all");
+              console.log("[AUTH] No valid OTP found at all for identifier:", phone);
+              
+              // Debug: Show what identifiers exist
+              const debugOtps = await prisma.$queryRaw`
+                SELECT TOP 5 identifier, code, verified, expires_at 
+                FROM OTP_Codes 
+                WHERE type = 'phone'
+                ORDER BY created_at DESC
+              ` as any[];
+              console.log("[AUTH] Recent OTPs in DB:", debugOtps);
+              
               throw new Error("Invalid or expired OTP");
             }
           }
@@ -238,34 +288,6 @@ const authOptions: NextAuthOptions = {
 
   debug: process.env.NODE_ENV === "development",
 };
-
-// Helper function to normalize phone numbers
-function normalizePhone(phone: string): string {
-  let cleaned = phone.replace(/\D/g, "");
-
-  // Convert 080... to 234... (Nigerian format)
-  if (cleaned.startsWith("0") && cleaned.length === 11) {
-    cleaned = "234" + cleaned.substring(1);
-  }
-
-  // Handle numbers with + prefix already removed
-  if (cleaned.startsWith("234") && cleaned.length === 13) {
-    return cleaned;
-  }
-
-  // Handle Finnish numbers for testing (+358)
-  if (cleaned.startsWith("358")) {
-    return cleaned;
-  }
-
-  // Handle Belgian numbers (+32)
-  if (cleaned.startsWith("32")) {
-    return cleaned;
-  }
-
-  // Handle other international formats - return as-is
-  return cleaned;
-}
 
 const handler = NextAuth(authOptions);
 export { handler as GET, handler as POST };

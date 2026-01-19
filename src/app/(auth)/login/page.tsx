@@ -43,7 +43,6 @@ function LoginLoadingFallback() {
   return (
     <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center p-4">
       <div className="w-full max-w-md">
-        {/* Logo */}
         <div className="flex items-center justify-center gap-2 mb-8">
           <div className="w-10 h-10 bg-gradient-to-br from-emerald-500 to-amber-500 rounded-lg flex items-center justify-center">
             <span className="text-black font-bold">NM</span>
@@ -52,8 +51,6 @@ function LoginLoadingFallback() {
             NaijaMarket<span className="text-emerald-400">Intel</span>
           </span>
         </div>
-
-        {/* Loading Card */}
         <div className="bg-[#1a1a1a] border border-[#2a2a2a] rounded-2xl p-8">
           <div className="flex flex-col items-center justify-center py-8">
             <Loader2 className="w-8 h-8 text-emerald-400 animate-spin mb-4" />
@@ -66,14 +63,13 @@ function LoginLoadingFallback() {
 }
 
 // ============================================================================
-// LOGIN CONTENT COMPONENT (Contains useSearchParams)
+// LOGIN CONTENT COMPONENT
 // ============================================================================
 
 function LoginContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   
-  // Check for special query params
   const wasTimeout = searchParams.get("timeout") === "true";
   const wasRegistered = searchParams.get("registered") === "true";
   
@@ -91,7 +87,6 @@ function LoginContent() {
   const [showTimeoutMessage, setShowTimeoutMessage] = useState(wasTimeout);
   const [showRegisteredMessage, setShowRegisteredMessage] = useState(wasRegistered);
 
-  // Auto-hide messages after 5 seconds
   useEffect(() => {
     if (showTimeoutMessage) {
       const timer = setTimeout(() => setShowTimeoutMessage(false), 5000);
@@ -196,7 +191,9 @@ function LoginContent() {
     }
   };
 
-  // Verify OTP and login
+  // ============================================================================
+  // FIXED: Verify OTP first, THEN signIn with correct provider ID
+  // ============================================================================
   const handleVerifyOtp = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
@@ -210,20 +207,49 @@ function LoginContent() {
     setLoading(true);
 
     try {
-      const result = await signIn("credentials", {
+      // Step 1: Verify OTP via our API first
+      console.log("[LOGIN] Step 1: Verifying OTP...");
+      const verifyResponse = await fetch("/api/auth/verify-otp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          type: "phone",
+          phone,
+          countryCode,
+          otp: otpCode,
+        }),
+      });
+
+      const verifyData = await verifyResponse.json();
+      console.log("[LOGIN] Verify OTP response:", verifyData);
+
+      if (!verifyResponse.ok) {
+        throw new Error(verifyData.error || "OTP verification failed");
+      }
+
+      // Step 2: Now sign in with NextAuth using "phone-otp" provider
+      console.log("[LOGIN] Step 2: Signing in with NextAuth...");
+      const result = await signIn("phone-otp", {
         phone,
         countryCode,
         otp: otpCode,
         redirect: false,
       });
 
+      console.log("[LOGIN] SignIn result:", result);
+
       if (result?.error) {
         throw new Error(result.error);
       }
 
-      // Success - redirect to dashboard
-      router.push("/dashboard");
+      if (result?.ok) {
+        console.log("[LOGIN] Success! Redirecting to dashboard...");
+        router.push("/dashboard");
+      } else {
+        throw new Error("Login failed. Please try again.");
+      }
     } catch (err) {
+      console.error("[LOGIN] Error:", err);
       setError(err instanceof Error ? err.message : "Login failed");
     } finally {
       setLoading(false);
