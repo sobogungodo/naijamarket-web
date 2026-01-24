@@ -19,7 +19,7 @@ const TWILIO_WHATSAPP_FROM = process.env.TWILIO_WHATSAPP_FROM || "whatsapp:+1415
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { phone, tier, action } = body;
+    const { phone, tier } = body;
 
     // Validate required fields
     if (!phone) {
