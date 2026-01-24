@@ -15,7 +15,6 @@ import {
   MoreHorizontal,
   BarChart3
 } from "lucide-react";
-import Link from "next/link";
 import PriceHistoryModal from "@/components/PriceHistoryModal";
 
 // ============================================================================
