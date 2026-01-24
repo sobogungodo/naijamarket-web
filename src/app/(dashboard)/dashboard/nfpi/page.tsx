@@ -11,10 +11,10 @@ import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   LineChart, Line
 } from "recharts";
-import { 
-  TrendingUp, TrendingDown, Lock, Download, Info, AlertCircle, 
-  RefreshCw, FileText, Calendar
-} from "lucide-react";
+import {
+  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+  LineChart, Line, Legend
+} from "recharts";
 
 // Theme colors
 const COLORS = {
