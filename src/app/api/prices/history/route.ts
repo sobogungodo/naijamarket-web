@@ -1,13 +1,8 @@
 // ============================================================================
 // src/app/api/prices/history/route.ts
 // NaijaMarket Intel - Price History API (HYBRID)
-// 
 // STRATEGY: MERGE Google Sheets (recent) + Azure SQL (historical)
-// - Google Sheets: Latest data (e.g., January 2026)
-// - Azure SQL: Historical backfill (e.g., Feb 2025 - Dec 2025)
-// - Deduplicate by date (Sheets wins on conflict)
-//
-// Version: 5.0.0 - Hybrid merge strategy
+// Version: 5.0.1 - Fixed TypeScript strict mode errors
 // ============================================================================
 
 import { NextRequest, NextResponse } from "next/server";
@@ -18,7 +13,6 @@ import { NextRequest, NextResponse } from "next/server";
 
 const GOOGLE_SHEET_ID = "1n-7MXdoqvIoSHteBJaUYBmIPLjJBNtrE_jVuUxO5kr8";
 
-// Sheet names in priority order for Google Sheets
 const SHEETS_PRIORITY = [
   "Daily_Prices",
   "Price_History_NBS",
@@ -89,6 +83,26 @@ function parseCSVLine(line: string): string[] {
   return result.map(v => v.replace(/^"|"$/g, "").trim());
 }
 
+// Safe string matching helper
+function flexibleMatch(source: string, target: string): boolean {
+  if (!source || !target) return false;
+  const sourceLower = source.toLowerCase();
+  const targetLower = target.toLowerCase();
+  
+  // Direct includes
+  if (sourceLower.includes(targetLower) || targetLower.includes(sourceLower)) {
+    return true;
+  }
+  
+  // Split and match first part (e.g., "Rice (50kg)" matches "Rice")
+  const sourceParts = sourceLower.split(/[\s(]/);
+  const targetParts = targetLower.split(/[\s(]/);
+  const sourceFirst = sourceParts[0] || sourceLower;
+  const targetFirst = targetParts[0] || targetLower;
+  
+  return sourceFirst.includes(targetFirst) || targetFirst.includes(sourceFirst);
+}
+
 // ============================================================================
 // FETCH SHEET AS CSV
 // ============================================================================
@@ -124,8 +138,6 @@ async function fetchFromGoogleSheets(
 ): Promise<PriceHistoryPoint[]> {
   const cutoffDate = new Date();
   cutoffDate.setDate(cutoffDate.getDate() - days);
-  const itemLower = item.toLowerCase();
-  const marketLower = market.toLowerCase();
 
   const allHistory: PriceHistoryPoint[] = [];
 
@@ -158,12 +170,12 @@ async function fetchFromGoogleSheets(
       const row = rows[i];
       if (!row) continue;
 
-      const rowItem = (row[itemIdx] || "").toLowerCase();
-      const rowMarket = marketIdx >= 0 ? (row[marketIdx] || "").toLowerCase() : "";
+      const rowItem = itemIdx >= 0 ? (row[itemIdx] || "") : "";
+      const rowMarket = marketIdx >= 0 ? (row[marketIdx] || "") : "";
 
-      // Flexible matching
-      const itemMatch = rowItem.includes(itemLower) || itemLower.includes(rowItem.split("(")[0].trim());
-      const marketMatch = marketIdx < 0 || rowMarket.includes(marketLower) || marketLower.includes(rowMarket.split(" ")[0]);
+      // Use safe flexible matching
+      const itemMatch = flexibleMatch(rowItem, item);
+      const marketMatch = marketIdx < 0 || flexibleMatch(rowMarket, market);
 
       if (!itemMatch || !marketMatch) continue;
 
@@ -175,10 +187,10 @@ async function fetchFromGoogleSheets(
         if (isNaN(rowDate.getTime())) continue;
         if (rowDate < cutoffDate) continue;
       } else {
-        continue; // Skip records without dates for history
+        continue;
       }
 
-      const priceStr = row[priceIdx];
+      const priceStr = priceIdx >= 0 ? row[priceIdx] : null;
       const price = parseFloat(priceStr || "0");
       if (isNaN(price) || price <= 0) continue;
 
@@ -201,7 +213,7 @@ async function fetchFromGoogleSheets(
 }
 
 // ============================================================================
-// FETCH HISTORY FROM AZURE SQL (HISTORICAL BACKFILL)
+// FETCH HISTORY FROM AZURE SQL
 // ============================================================================
 
 async function fetchFromAzureSQL(
@@ -216,7 +228,6 @@ async function fetchFromAzureSQL(
     const cutoffDate = new Date();
     cutoffDate.setDate(cutoffDate.getDate() - days);
 
-    // Try Daily_Prices first
     let results: Array<{ date: Date | string; price: number }> = [];
     
     try {
@@ -232,10 +243,9 @@ async function fetchFromAzureSQL(
         ORDER BY date ASC
       `;
     } catch (e) {
-      console.log("Daily_Prices query failed, trying alternatives...");
+      console.log("Daily_Prices query failed...");
     }
 
-    // If no daily prices, try Price_History_NBS
     if (results.length === 0) {
       try {
         results = await prisma.$queryRaw`
@@ -254,7 +264,6 @@ async function fetchFromAzureSQL(
       }
     }
 
-    // If still nothing, try Validated_Prices
     if (results.length === 0) {
       try {
         results = await prisma.$queryRaw`
@@ -296,7 +305,7 @@ async function fetchFromAzureSQL(
 }
 
 // ============================================================================
-// MOCK DATA GENERATOR (LAST RESORT)
+// MOCK DATA GENERATOR
 // ============================================================================
 
 function generateMockHistory(item: string, _market: string, days: number): PriceHistoryPoint[] {
@@ -344,28 +353,23 @@ function generateMockHistory(item: string, _market: string, days: number): Price
 }
 
 // ============================================================================
-// MERGE & DEDUPLICATE HISTORY
+// MERGE HISTORY
 // ============================================================================
 
 function mergeHistory(
   sheetsData: PriceHistoryPoint[],
   azureData: PriceHistoryPoint[]
 ): PriceHistoryPoint[] {
-  // Create a map with date as key
-  // Sheets data takes priority (added last, overwrites Azure)
   const dateMap = new Map<string, PriceHistoryPoint>();
 
-  // Add Azure data first (historical backfill)
   for (const point of azureData) {
     dateMap.set(point.date, point);
   }
 
-  // Add Sheets data second (overwrites Azure on same date)
   for (const point of sheetsData) {
     dateMap.set(point.date, point);
   }
 
-  // Convert back to array and sort by date
   const merged = Array.from(dateMap.values());
   merged.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
@@ -421,45 +425,26 @@ export async function GET(request: NextRequest) {
 
   const days = getDaysFromPeriod(period);
   
-  console.log(`\n📈 Price History Request: ${item} @ ${market} (${period})`);
-  console.log("─".repeat(50));
+  console.log(`\n📈 Price History: ${item} @ ${market} (${period})`);
 
-  // =========================================
-  // STEP 1: Fetch from Google Sheets (Recent Data)
-  // =========================================
   const sheetsData = await fetchFromGoogleSheets(item, market, days);
-
-  // =========================================
-  // STEP 2: Fetch from Azure SQL (Historical Backfill)
-  // =========================================
   const azureData = await fetchFromAzureSQL(item, market, days);
 
-  // =========================================
-  // STEP 3: Merge both sources
-  // =========================================
   let history: PriceHistoryPoint[] = [];
   let source = "unknown";
 
   if (sheetsData.length > 0 && azureData.length > 0) {
-    // HYBRID: Merge both sources
     history = mergeHistory(sheetsData, azureData);
     source = "hybrid:sheets+azure";
-    console.log(`✅ HYBRID: Merged ${sheetsData.length} Sheets + ${azureData.length} Azure = ${history.length} total`);
+    console.log(`✅ HYBRID: ${sheetsData.length} Sheets + ${azureData.length} Azure = ${history.length} total`);
   } else if (sheetsData.length > 0) {
-    // Sheets only
     history = sheetsData;
     source = "sheets";
-    console.log(`✅ SHEETS ONLY: ${history.length} points`);
   } else if (azureData.length > 0) {
-    // Azure only
     history = azureData;
     source = "azure";
-    console.log(`✅ AZURE ONLY: ${history.length} points`);
   }
 
-  // =========================================
-  // STEP 4: Fallback to Mock if both empty
-  // =========================================
   if (history.length === 0) {
     console.log("⚠️ No data found, using mock...");
     history = generateMockHistory(item, market, days);
@@ -468,15 +453,11 @@ export async function GET(request: NextRequest) {
 
   const statistics = calculateStatistics(history);
 
-  // Count sources in merged data
   const sourceBreakdown = {
     sheets: history.filter(h => h.source.includes("Sheets")).length,
     azure: history.filter(h => h.source.includes("Azure")).length,
     mock: history.filter(h => h.source.includes("Mock")).length,
   };
-
-  console.log(`📊 Final: ${history.length} points | Sheets: ${sourceBreakdown.sheets} | Azure: ${sourceBreakdown.azure}`);
-  console.log("─".repeat(50));
 
   return NextResponse.json({
     success: true,
