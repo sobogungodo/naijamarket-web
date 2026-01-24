@@ -7,10 +7,10 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useSession } from "next-auth/react";
-import {
-  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-  LineChart, Line, Legend
-} from "recharts";
+import { 
+  TrendingUp, TrendingDown, Lock, Download, Info, AlertCircle, 
+  RefreshCw, FileText, Calendar
+} from "lucide-react";
 
 // Theme colors
 const COLORS = {
