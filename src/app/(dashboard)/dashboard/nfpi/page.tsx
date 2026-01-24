@@ -9,7 +9,7 @@ import { useEffect, useState, useCallback } from "react";
 import { useSession } from "next-auth/react";
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-  BarChart, Bar, Cell, Legend, LineChart, Line
+  Bar, Cell, Legend, LineChart, Line
 } from "recharts";
 import { 
   TrendingUp, TrendingDown, Lock, Download, Info, AlertCircle, 
