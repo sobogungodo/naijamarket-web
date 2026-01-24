@@ -153,18 +153,27 @@ export async function GET(request: NextRequest) {
 
     // Format the data
     const history: PriceHistoryPoint[] = historyData.map((row: {
-      price_date: Date;
+      price_date: Date | string;
       price_naira: number;
       trend: string;
       source: string;
-    }) => ({
-      date: row.price_date instanceof Date 
-        ? row.price_date.toISOString().split("T")[0]
-        : String(row.price_date),
-      price: Number(row.price_naira),
-      trend: row.trend || "stable",
-      source: row.source || "daily"
-    }));
+    }) => {
+      let dateStr: string;
+      if (row.price_date instanceof Date) {
+        dateStr = row.price_date.toISOString().split("T")[0];
+      } else if (typeof row.price_date === "string") {
+        dateStr = row.price_date.split("T")[0];
+      } else {
+        dateStr = String(row.price_date);
+      }
+      
+      return {
+        date: dateStr,
+        price: Number(row.price_naira),
+        trend: row.trend || "stable",
+        source: row.source || "daily"
+      };
+    });
 
     // Calculate statistics
     const prices = history.map(h => h.price);
