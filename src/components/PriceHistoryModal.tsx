@@ -2,7 +2,7 @@
 // src/components/PriceHistoryModal.tsx
 // NaijaMarket Intel - Price History Chart Modal
 // Bloomberg Equivalent: HP <GO>
-// Version: 1.0.2 - Fixed TypeScript "Object is possibly undefined" error
+// Version: 1.0.3 - Fixed all TypeScript strict mode errors
 // ============================================================================
 
 "use client";
@@ -10,9 +10,6 @@
 import { useState, useEffect, useCallback } from "react";
 import {
   X,
-  TrendingUp,
-  TrendingDown,
-  Minus,
   Loader2,
   Calendar,
   BarChart3,
@@ -76,8 +73,6 @@ export default function PriceHistoryModal({
   market,
   state,
   category,
-  currentPrice,
-  currentChange,
 }: PriceHistoryModalProps) {
   const [period, setPeriod] = useState<"7d" | "30d" | "90d">("30d");
   const [data, setData] = useState<PriceHistoryPoint[]>([]);
@@ -165,7 +160,7 @@ export default function PriceHistoryModal({
     });
   };
 
-  // Custom tooltip component - FIX: Added explicit check for payload[0]
+  // Custom tooltip component
   const CustomTooltip = ({
     active,
     payload,
@@ -175,7 +170,6 @@ export default function PriceHistoryModal({
     payload?: Array<{ value: number }>;
     label?: string;
   }) => {
-    // FIX: Check payload[0] explicitly before accessing .value
     if (active && payload && payload.length > 0 && payload[0] && label) {
       const priceValue = payload[0].value;
       return (
@@ -207,10 +201,6 @@ export default function PriceHistoryModal({
   // Get chart color based on trend
   const chartColor =
     statistics && statistics.changePercent >= 0 ? "#ef4444" : "#10b981";
-  const chartColorLight =
-    statistics && statistics.changePercent >= 0
-      ? "rgba(239, 68, 68, 0.1)"
-      : "rgba(16, 185, 129, 0.1)";
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -370,7 +360,7 @@ export default function PriceHistoryModal({
                       {formatPrice(statistics.average)}
                     </p>
                     <p className="text-sm text-gray-500">
-                      {"σ"} {statistics.volatility.toFixed(1)}%
+                      {"\u03C3"} {statistics.volatility.toFixed(1)}%
                     </p>
                   </div>
                 </div>
