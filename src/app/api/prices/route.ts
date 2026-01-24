@@ -2,7 +2,7 @@
 // src/app/api/prices/route.ts
 // NaijaMarket Intel - Live Prices API
 // Data Source Priority: Google Sheets → Azure SQL → Mock Data
-// Version: 3.0.0 - Google Sheets Primary
+// Version: 3.0.1 - Fixed TypeScript strict mode errors
 // ============================================================================
 
 import { NextRequest, NextResponse } from "next/server";
@@ -12,8 +12,7 @@ import { NextRequest, NextResponse } from "next/server";
 // ============================================================================
 
 const GOOGLE_SHEET_ID = "1n-7MXdoqvIoSHteBJaUYBmIPLjJBNtrE_jVuUxO5kr8";
-const SHEET_NAME = "Approved_Prices"; // or "Validated_Prices"
-const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY || "";
+const SHEET_NAME = "Approved_Prices";
 
 // ============================================================================
 // TYPE DEFINITIONS
@@ -38,96 +37,35 @@ interface PriceRecord {
 }
 
 // ============================================================================
-// GOOGLE SHEETS FETCHER
+// CSV PARSER
 // ============================================================================
 
-async function fetchFromGoogleSheets(): Promise<PriceRecord[]> {
-  try {
-    // Using Google Sheets API v4 with API key (public read access)
-    const url = `https://sheets.googleapis.com/v4/spreadsheets/${GOOGLE_SHEET_ID}/values/${SHEET_NAME}?key=${GOOGLE_API_KEY}`;
-    
-    const response = await fetch(url, {
-      next: { revalidate: 60 }, // Cache for 60 seconds
-    });
+function parseCSVLine(line: string): string[] {
+  const result: string[] = [];
+  let current = "";
+  let inQuotes = false;
 
-    if (!response.ok) {
-      console.log("Google Sheets API failed, trying alternative method...");
-      return await fetchFromGoogleSheetsCSV();
+  for (let i = 0; i < line.length; i++) {
+    const char = line[i];
+    if (char === '"') {
+      inQuotes = !inQuotes;
+    } else if (char === "," && !inQuotes) {
+      result.push(current.trim());
+      current = "";
+    } else {
+      current += char;
     }
-
-    const data = await response.json();
-    const rows = data.values || [];
-
-    if (rows.length < 2) {
-      console.log("No data in Google Sheet");
-      return [];
-    }
-
-    // First row is headers
-    const headers = rows[0] as string[];
-    const dataRows = rows.slice(1);
-
-    // Map column indices
-    const colIndex = (name: string) => {
-      const variations = [name, name.toLowerCase(), name.replace(/_/g, " ")];
-      for (const v of variations) {
-        const idx = headers.findIndex(h => 
-          h && h.toString().toLowerCase().includes(v.toLowerCase())
-        );
-        if (idx >= 0) return idx;
-      }
-      return -1;
-    };
-
-    // Find column indices
-    const itemIdx = colIndex("item");
-    const marketIdx = colIndex("market");
-    const priceIdx = colIndex("price");
-    const categoryIdx = colIndex("category");
-    const stateIdx = colIndex("state");
-    const validatedAtIdx = colIndex("validated") >= 0 ? colIndex("validated") : colIndex("created");
-    const unitIdx = colIndex("unit");
-    const changeIdx = colIndex("change");
-
-    // Transform rows to PriceRecord
-    const prices: PriceRecord[] = dataRows
-      .filter((row: string[]) => row[itemIdx] && row[priceIdx])
-      .map((row: string[], index: number) => {
-        const price = parseFloat(row[priceIdx]) || 0;
-        const change = parseFloat(row[changeIdx]) || (Math.random() - 0.5) * 10;
-        
-        return {
-          id: `gsheet-${index + 1}`,
-          item_name: row[itemIdx] || "Unknown Item",
-          item_variant: row[unitIdx] || null,
-          category: row[categoryIdx] || "General",
-          market_name: row[marketIdx] || "Unknown Market",
-          state: row[stateIdx] || "Lagos",
-          price_naira: price,
-          change_percent: Number(change.toFixed(2)),
-          change_amount: Math.round(price * change / 100),
-          low_24h: Math.round(price * 0.95),
-          high_24h: Math.round(price * 1.05),
-          confidence: Math.floor(75 + Math.random() * 20),
-          validators: Math.floor(2 + Math.random() * 2),
-          updated_at: row[validatedAtIdx] || new Date().toISOString(),
-          source: "sheets",
-        };
-      });
-
-    console.log(`✅ Fetched ${prices.length} prices from Google Sheets`);
-    return prices;
-
-  } catch (error) {
-    console.error("Google Sheets fetch error:", error);
-    return [];
   }
+  result.push(current.trim());
+  return result.map(v => v.replace(/^"|"$/g, ""));
 }
 
-// Alternative: Fetch as CSV (works without API key for public sheets)
+// ============================================================================
+// GOOGLE SHEETS FETCHER (CSV Export - No API Key Needed)
+// ============================================================================
+
 async function fetchFromGoogleSheetsCSV(): Promise<PriceRecord[]> {
   try {
-    // Export as CSV (works for public sheets)
     const csvUrl = `https://docs.google.com/spreadsheets/d/${GOOGLE_SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(SHEET_NAME)}`;
     
     const response = await fetch(csvUrl, {
@@ -144,11 +82,14 @@ async function fetchFromGoogleSheetsCSV(): Promise<PriceRecord[]> {
     
     if (lines.length < 2) return [];
 
-    // Parse CSV headers
-    const headers = parseCSVLine(lines[0]);
+    // TypeScript fix: Get first line safely
+    const firstLine = lines[0];
+    if (typeof firstLine !== "string") return [];
     
-    // Find column indices (case-insensitive, flexible matching)
-    const findCol = (names: string[]) => {
+    const headers = parseCSVLine(firstLine);
+    
+    // Find column indices (case-insensitive)
+    const findCol = (names: string[]): number => {
       for (const name of names) {
         const idx = headers.findIndex(h => 
           h.toLowerCase().includes(name.toLowerCase())
@@ -158,34 +99,40 @@ async function fetchFromGoogleSheetsCSV(): Promise<PriceRecord[]> {
       return -1;
     };
 
-    const itemIdx = findCol(["item_name", "item", "commodity"]);
+    const itemIdx = findCol(["item_name", "item"]);
     const marketIdx = findCol(["market_name", "market"]);
     const priceIdx = findCol(["price_naira", "price", "validated_price"]);
     const categoryIdx = findCol(["category"]);
     const stateIdx = findCol(["state"]);
     const unitIdx = findCol(["unit", "variant", "item_variant"]);
     const dateIdx = findCol(["validated_at", "created_at", "timestamp"]);
+    const changeIdx = findCol(["change"]);
 
-    // Parse data rows
     const prices: PriceRecord[] = [];
     
     for (let i = 1; i < lines.length; i++) {
-      const row = parseCSVLine(lines[i]);
+      const currentLine = lines[i];
+      if (typeof currentLine !== "string") continue;
       
-      const itemName = row[itemIdx];
-      const priceValue = parseFloat(row[priceIdx]);
+      const row = parseCSVLine(currentLine);
+      
+      // Get values safely with defaults
+      const itemName = itemIdx >= 0 ? row[itemIdx] : undefined;
+      const priceStr = priceIdx >= 0 ? row[priceIdx] : undefined;
+      const priceValue = parseFloat(priceStr || "0");
       
       if (!itemName || isNaN(priceValue) || priceValue <= 0) continue;
 
-      const change = (Math.random() - 0.5) * 10;
+      const changeStr = changeIdx >= 0 ? row[changeIdx] : undefined;
+      const change = parseFloat(changeStr || "0") || (Math.random() - 0.5) * 10;
       
       prices.push({
         id: `csv-${i}`,
         item_name: itemName,
-        item_variant: row[unitIdx] || null,
-        category: row[categoryIdx] || "General",
-        market_name: row[marketIdx] || "Unknown",
-        state: row[stateIdx] || "Lagos",
+        item_variant: unitIdx >= 0 ? row[unitIdx] || null : null,
+        category: categoryIdx >= 0 ? row[categoryIdx] || "General" : "General",
+        market_name: marketIdx >= 0 ? row[marketIdx] || "Unknown" : "Unknown",
+        state: stateIdx >= 0 ? row[stateIdx] || "Lagos" : "Lagos",
         price_naira: priceValue,
         change_percent: Number(change.toFixed(2)),
         change_amount: Math.round(priceValue * change / 100),
@@ -193,12 +140,12 @@ async function fetchFromGoogleSheetsCSV(): Promise<PriceRecord[]> {
         high_24h: Math.round(priceValue * 1.05),
         confidence: Math.floor(75 + Math.random() * 20),
         validators: Math.floor(2 + Math.random() * 2),
-        updated_at: row[dateIdx] || new Date().toISOString(),
+        updated_at: dateIdx >= 0 ? row[dateIdx] || new Date().toISOString() : new Date().toISOString(),
         source: "sheets",
       });
     }
 
-    console.log(`✅ Fetched ${prices.length} prices from Google Sheets CSV`);
+    console.log(`Fetched ${prices.length} prices from Google Sheets`);
     return prices;
 
   } catch (error) {
@@ -207,36 +154,12 @@ async function fetchFromGoogleSheetsCSV(): Promise<PriceRecord[]> {
   }
 }
 
-// Helper: Parse CSV line handling quoted values
-function parseCSVLine(line: string): string[] {
-  const result: string[] = [];
-  let current = "";
-  let inQuotes = false;
-
-  for (let i = 0; i < line.length; i++) {
-    const char = line[i];
-    
-    if (char === '"') {
-      inQuotes = !inQuotes;
-    } else if (char === "," && !inQuotes) {
-      result.push(current.trim());
-      current = "";
-    } else {
-      current += char;
-    }
-  }
-  result.push(current.trim());
-  
-  return result.map(v => v.replace(/^"|"$/g, ""));
-}
-
 // ============================================================================
 // PRISMA DATABASE FETCHER (BACKUP)
 // ============================================================================
 
 async function fetchFromDatabase(): Promise<PriceRecord[]> {
   try {
-    // Dynamic import to avoid issues if Prisma is not configured
     const { PrismaClient } = await import("@prisma/client");
     const prisma = new PrismaClient();
 
@@ -249,13 +172,13 @@ async function fetchFromDatabase(): Promise<PriceRecord[]> {
 
     if (dbPrices.length === 0) return [];
 
-    return dbPrices.map((p: any, index: number) => ({
+    return dbPrices.map((p: Record<string, unknown>, index: number) => ({
       id: String(p.id || index),
-      item_name: p.item_name || p.item || "Unknown",
-      item_variant: p.unit || p.item_variant || null,
-      category: p.category || "General",
-      market_name: p.market_name || p.market || "Unknown",
-      state: p.state || "Lagos",
+      item_name: String(p.item_name || p.item || "Unknown"),
+      item_variant: p.unit ? String(p.unit) : p.item_variant ? String(p.item_variant) : null,
+      category: String(p.category || "General"),
+      market_name: String(p.market_name || p.market || "Unknown"),
+      state: String(p.state || "Lagos"),
       price_naira: Number(p.price_naira || p.price || 0),
       change_percent: Number(p.change_percent || 0),
       change_amount: Number(p.change_amount || 0),
@@ -263,7 +186,9 @@ async function fetchFromDatabase(): Promise<PriceRecord[]> {
       high_24h: Number(p.price_naira || 0) * 1.05,
       confidence: Number(p.confidence || 85),
       validators: Number(p.validators || 3),
-      updated_at: p.validated_at?.toISOString() || p.created_at?.toISOString() || new Date().toISOString(),
+      updated_at: p.validated_at instanceof Date ? p.validated_at.toISOString() : 
+                  p.created_at instanceof Date ? p.created_at.toISOString() : 
+                  new Date().toISOString(),
       source: "database",
     }));
 
@@ -349,7 +274,6 @@ function filterAndSort(
 ): PriceRecord[] {
   let filtered = [...prices];
 
-  // Search filter
   if (search) {
     const searchLower = search.toLowerCase();
     filtered = filtered.filter(p =>
@@ -360,35 +284,30 @@ function filterAndSort(
     );
   }
 
-  // Category filter
   if (category) {
     filtered = filtered.filter(p => 
       p.category.toLowerCase() === category.toLowerCase()
     );
   }
 
-  // State filter
   if (state) {
     filtered = filtered.filter(p => 
       p.state.toLowerCase() === state.toLowerCase()
     );
   }
 
-  // Market filter
   if (market) {
     filtered = filtered.filter(p => 
       p.market_name.toLowerCase().includes(market.toLowerCase())
     );
   }
 
-  // Trend filter
   if (trend === "up") {
     filtered = filtered.filter(p => p.change_percent > 0);
   } else if (trend === "down") {
     filtered = filtered.filter(p => p.change_percent < 0);
   }
 
-  // Sort
   switch (sort) {
     case "price":
       filtered.sort((a, b) => b.price_naira - a.price_naira);
@@ -416,7 +335,6 @@ function filterAndSort(
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
 
-  // Query parameters
   const search = searchParams.get("search") || "";
   const category = searchParams.get("category") || "";
   const state = searchParams.get("state") || "";
@@ -429,12 +347,12 @@ export async function GET(request: NextRequest) {
   let source = "unknown";
 
   // PRIORITY 1: Try Google Sheets
-  prices = await fetchFromGoogleSheets();
+  prices = await fetchFromGoogleSheetsCSV();
   if (prices.length > 0) {
     source = "sheets";
   }
 
-  // PRIORITY 2: Try Database (if Sheets failed or empty)
+  // PRIORITY 2: Try Database
   if (prices.length === 0) {
     prices = await fetchFromDatabase();
     if (prices.length > 0) {
@@ -442,16 +360,13 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  // PRIORITY 3: Use Mock Data (if all else fails)
+  // PRIORITY 3: Use Mock Data
   if (prices.length === 0) {
     prices = generateMockData();
     source = "mock";
   }
 
-  // Apply filters and sorting
   const filtered = filterAndSort(prices, search, category, state, market, trend, sort);
-
-  // Apply limit
   const limited = filtered.slice(0, limit);
 
   return NextResponse.json({
@@ -468,5 +383,4 @@ export async function GET(request: NextRequest) {
   });
 }
 
-// Force dynamic rendering
 export const dynamic = "force-dynamic";
