@@ -1,3 +1,6 @@
+"use client";
+
+import { useState } from "react";
 import { 
   Search, 
   Filter, 
@@ -9,15 +12,65 @@ import {
   Minus,
   Star,
   Bell,
-  MoreHorizontal
+  MoreHorizontal,
+  BarChart3
 } from "lucide-react";
 import Link from "next/link";
+import PriceHistoryModal from "@/components/PriceHistoryModal";
+
+// ============================================================================
+// TYPES
+// ============================================================================
+
+interface PriceItem {
+  id: string;
+  name: string;
+  unit: string;
+  category: string;
+  market: string;
+  state: string;
+  price: number;
+  change: number;
+  priceChange: number;
+  low: number;
+  high: number;
+  confidence: number;
+  validators: number;
+  updated: string;
+  source: string;
+}
+
+interface SelectedPrice {
+  item: string;
+  itemSubtitle?: string;
+  market: string;
+  state?: string;
+  category?: string;
+  currentPrice?: number;
+  currentChange?: number;
+}
 
 // ============================================================================
 // PRICES PAGE
 // ============================================================================
 
 export default function PricesPage() {
+  // State for the price history modal
+  const [selectedPrice, setSelectedPrice] = useState<SelectedPrice | null>(null);
+
+  // Handle row click to open modal
+  const handleRowClick = (item: PriceItem) => {
+    setSelectedPrice({
+      item: item.name,
+      itemSubtitle: item.unit,
+      market: item.market,
+      state: item.state,
+      category: item.category,
+      currentPrice: item.price,
+      currentChange: item.change,
+    });
+  };
+
   return (
     <div className="space-y-6">
       {/* Page Header */}
@@ -148,17 +201,31 @@ export default function PricesPage() {
             </thead>
             <tbody>
               {priceData.map((item, index) => (
-                <tr key={index} className="group">
+                <tr 
+                  key={index} 
+                  className="group cursor-pointer hover:bg-terminal-elevated/50 transition-colors"
+                  onClick={() => handleRowClick(item)}
+                >
                   <td>
-                    <button className="opacity-0 group-hover:opacity-100 text-gray-500 hover:text-naija-gold transition-all">
+                    <button 
+                      className="opacity-0 group-hover:opacity-100 text-gray-500 hover:text-naija-gold transition-all"
+                      onClick={(e) => e.stopPropagation()}
+                    >
                       <Star className="w-4 h-4" />
                     </button>
                   </td>
                   <td>
-                    <Link href={`/dashboard/prices/${item.id}`} className="hover:text-naija-green transition-colors">
-                      <div className="font-medium text-white">{item.name}</div>
-                      <div className="text-2xs text-gray-500">{item.unit}</div>
-                    </Link>
+                    <div className="flex items-center gap-2">
+                      <div className="p-1.5 bg-emerald-500/10 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity">
+                        <BarChart3 className="w-3.5 h-3.5 text-emerald-400" />
+                      </div>
+                      <div>
+                        <div className="font-medium text-white group-hover:text-naija-green transition-colors">
+                          {item.name}
+                        </div>
+                        <div className="text-2xs text-gray-500">{item.unit}</div>
+                      </div>
+                    </div>
                   </td>
                   <td>
                     <span className="px-2 py-0.5 bg-terminal-muted text-gray-400 text-2xs rounded">
@@ -213,10 +280,17 @@ export default function PricesPage() {
                   </td>
                   <td>
                     <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all">
-                      <button className="p-1 text-gray-500 hover:text-naija-green transition-colors" title="Set Alert">
+                      <button 
+                        className="p-1 text-gray-500 hover:text-naija-green transition-colors" 
+                        title="Set Alert"
+                        onClick={(e) => e.stopPropagation()}
+                      >
                         <Bell className="w-3.5 h-3.5" />
                       </button>
-                      <button className="p-1 text-gray-500 hover:text-white transition-colors">
+                      <button 
+                        className="p-1 text-gray-500 hover:text-white transition-colors"
+                        onClick={(e) => e.stopPropagation()}
+                      >
                         <MoreHorizontal className="w-3.5 h-3.5" />
                       </button>
                     </div>
@@ -255,6 +329,21 @@ export default function PricesPage() {
           </div>
         </div>
       </div>
+
+      {/* Price History Modal */}
+      {selectedPrice && (
+        <PriceHistoryModal
+          isOpen={!!selectedPrice}
+          onClose={() => setSelectedPrice(null)}
+          item={selectedPrice.item}
+          itemSubtitle={selectedPrice.itemSubtitle}
+          market={selectedPrice.market}
+          state={selectedPrice.state}
+          category={selectedPrice.category}
+          currentPrice={selectedPrice.currentPrice}
+          currentChange={selectedPrice.currentChange}
+        />
+      )}
     </div>
   );
 }
@@ -263,7 +352,7 @@ export default function PricesPage() {
 // MOCK DATA
 // ============================================================================
 
-const priceData = [
+const priceData: PriceItem[] = [
   { id: "rice-50kg", name: "Rice (50kg)", unit: "Foreign Parboiled", category: "Grains", market: "Mile 12", state: "Lagos", price: 78500, change: 2.3, priceChange: 1762, low: 75000, high: 82000, confidence: 92, validators: 3, updated: "2 min ago", source: "Verified" },
   { id: "beans-bag", name: "Beans (bag)", unit: "Brown/White", category: "Grains", market: "Mile 12", state: "Lagos", price: 62000, change: -1.2, priceChange: -753, low: 58000, high: 65000, confidence: 88, validators: 3, updated: "5 min ago", source: "Verified" },
   { id: "garri-bag", name: "Garri (bag)", unit: "White/Yellow", category: "Grains", market: "Iddo", state: "Lagos", price: 28000, change: 0.8, priceChange: 222, low: 26000, high: 30000, confidence: 85, validators: 3, updated: "3 min ago", source: "Verified" },
