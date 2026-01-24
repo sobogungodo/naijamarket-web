@@ -1,7 +1,7 @@
 // ============================================================================
 // src/app/api/subscribe/verify/route.ts
 // NaijaMarket Intel - Payment Verification API
-// Version: 2.0.0 - Production Ready (TypeScript Strict)
+// Version: 2.0.1 - Production Ready (TypeScript Strict) - FIXED
 // Date: 2026-01-24
 // ============================================================================
 
@@ -55,6 +55,15 @@ const dbConfig: sql.config = {
 const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY || "";
 const FLUTTERWAVE_SECRET_KEY = process.env.FLUTTERWAVE_SECRET_KEY || "";
 
+// Default tier config (fallback)
+const DEFAULT_TIER_CONFIG: TierConfig = {
+  tierName: "Free",
+  queryLimit: 3,
+  maxMarkets: 3,
+  duration: 0,
+  billingCycle: "forever",
+};
+
 // Subscription tier configurations
 const TIER_CONFIG: Record<string, TierConfig> = {
   FREE: { tierName: "Free", queryLimit: 3, maxMarkets: 3, duration: 0, billingCycle: "forever" },
@@ -70,6 +79,13 @@ const TIER_CONFIG: Record<string, TierConfig> = {
 // ============================================================================
 
 /**
+ * Get tier configuration with fallback
+ */
+function getTierConfig(tier: string): TierConfig {
+  return TIER_CONFIG[tier] || TIER_CONFIG.FREE || DEFAULT_TIER_CONFIG;
+}
+
+/**
  * Generate unique subscription ID
  * Format: SUB-TIMESTAMP-RANDOM
  */
@@ -83,16 +99,16 @@ function generateSubscriptionId(): string {
  * Calculate subscription end date based on tier
  */
 function calculateEndDate(tier: string): Date {
-  const config = TIER_CONFIG[tier] || TIER_CONFIG.FREE;
+  const config = getTierConfig(tier);
   const endDate = new Date();
-  
+
   if (config.duration > 0) {
     endDate.setDate(endDate.getDate() + config.duration);
   } else {
     // For FREE tier, set far future date
     endDate.setFullYear(endDate.getFullYear() + 100);
   }
-  
+
   return endDate;
 }
 
@@ -236,7 +252,7 @@ async function upgradeSubscription(
 
   try {
     pool = await sql.connect(dbConfig);
-    const config = TIER_CONFIG[tier] || TIER_CONFIG.FREE;
+    const config = getTierConfig(tier);
     const subscriptionId = generateSubscriptionId();
     const startDate = new Date();
     const endDate = calculateEndDate(tier);
@@ -426,7 +442,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Get tier config for response
-    const tierConfig = verificationResult.tier ? TIER_CONFIG[verificationResult.tier] : null;
+    const tierConfig = verificationResult.tier ? getTierConfig(verificationResult.tier) : null;
 
     return NextResponse.json({
       success: paymentStatus === "SUCCESS",
