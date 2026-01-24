@@ -2,7 +2,7 @@
 // src/components/PriceHistoryModal.tsx
 // NaijaMarket Intel - Price History Chart Modal
 // Bloomberg Equivalent: HP <GO>
-// Version: 1.0.0
+// Version: 1.0.1
 // ============================================================================
 
 "use client";
@@ -10,8 +10,6 @@
 import { useState, useEffect, useCallback } from "react";
 import {
   X,
-  TrendingUp,
-  TrendingDown,
   Minus,
   Loader2,
   Calendar,
@@ -92,9 +90,11 @@ export default function PriceHistoryModal({
     setError(null);
 
     try {
-      const response = await fetch(
-        \`/api/prices/history?item=\${encodeURIComponent(item)}&market=\${encodeURIComponent(market)}&period=\${period}\`
-      );
+      const encodedItem = encodeURIComponent(item);
+      const encodedMarket = encodeURIComponent(market);
+      const url = "/api/prices/history?item=" + encodedItem + "&market=" + encodedMarket + "&period=" + period;
+      
+      const response = await fetch(url);
 
       if (!response.ok) {
         throw new Error("Failed to fetch price history");
@@ -144,17 +144,17 @@ export default function PriceHistoryModal({
   // Format price
   const formatPrice = (value: number): string => {
     if (value >= 1000000) {
-      return \`₦\${(value / 1000000).toFixed(1)}M\`;
+      return "₦" + (value / 1000000).toFixed(1) + "M";
     }
     if (value >= 1000) {
-      return \`₦\${(value / 1000).toFixed(0)}K\`;
+      return "₦" + (value / 1000).toFixed(0) + "K";
     }
-    return \`₦\${value.toLocaleString()}\`;
+    return "₦" + value.toLocaleString();
   };
 
   // Format full price
   const formatFullPrice = (value: number): string => {
-    return \`₦\${value.toLocaleString()}\`;
+    return "₦" + value.toLocaleString();
   };
 
   // Format date for chart
@@ -201,6 +201,14 @@ export default function PriceHistoryModal({
 
   // Get chart color based on trend
   const chartColor = statistics && statistics.changePercent >= 0 ? "#ef4444" : "#10b981";
+
+  // Period button classes
+  const getPeriodButtonClass = (p: string): string => {
+    if (period === p) {
+      return "px-4 py-1.5 rounded-lg text-sm font-medium bg-emerald-500 text-white shadow-lg shadow-emerald-500/20 disabled:opacity-50";
+    }
+    return "px-4 py-1.5 rounded-lg text-sm font-medium bg-gray-800/50 text-gray-400 hover:bg-gray-700 hover:text-white disabled:opacity-50";
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -253,20 +261,27 @@ export default function PriceHistoryModal({
             <span>Historical Data</span>
           </div>
           <div className="flex gap-1.5">
-            {(["7d", "30d", "90d"] as const).map((p) => (
-              <button
-                key={p}
-                onClick={() => setPeriod(p)}
-                disabled={loading}
-                className={\`px-4 py-1.5 rounded-lg text-sm font-medium transition-all \${
-                  period === p
-                    ? "bg-emerald-500 text-white shadow-lg shadow-emerald-500/20"
-                    : "bg-gray-800/50 text-gray-400 hover:bg-gray-700 hover:text-white"
-                } disabled:opacity-50\`}
-              >
-                {p.toUpperCase()}
-              </button>
-            ))}
+            <button
+              onClick={() => setPeriod("7d")}
+              disabled={loading}
+              className={getPeriodButtonClass("7d")}
+            >
+              7D
+            </button>
+            <button
+              onClick={() => setPeriod("30d")}
+              disabled={loading}
+              className={getPeriodButtonClass("30d")}
+            >
+              30D
+            </button>
+            <button
+              onClick={() => setPeriod("90d")}
+              disabled={loading}
+              className={getPeriodButtonClass("90d")}
+            >
+              90D
+            </button>
           </div>
         </div>
 
@@ -301,7 +316,7 @@ export default function PriceHistoryModal({
                     <p className="text-2xl font-bold text-white">
                       {formatPrice(statistics.current)}
                     </p>
-                    <div className={\`flex items-center gap-1 mt-1 \${getTrendColor(statistics.changePercent)}\`}>
+                    <div className={"flex items-center gap-1 mt-1 " + getTrendColor(statistics.changePercent)}>
                       {statistics.changePercent > 0 ? (
                         <ArrowUpRight className="w-3.5 h-3.5" />
                       ) : statistics.changePercent < 0 ? (
