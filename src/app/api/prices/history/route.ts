@@ -1,27 +1,19 @@
 // ============================================================================
 // src/app/api/prices/history/route.ts
 // NaijaMarket Intel - Price History API
+// Data Source Priority: Google Sheets → Azure SQL → Mock Data
 // Bloomberg Equivalent: HP <GO>
-// Version: 1.0.1 - Fixed TypeScript unused parameter error
+// Version: 3.0.0 - Google Sheets Primary
 // ============================================================================
 
 import { NextRequest, NextResponse } from "next/server";
-import sql from "mssql";
 
 // ============================================================================
-// DATABASE CONFIGURATION
+// CONFIGURATION
 // ============================================================================
 
-const dbConfig: sql.config = {
-  server: process.env.DATABASE_SERVER || "naijafood.database.windows.net",
-  database: process.env.DATABASE_NAME || "naijafoodmarket",
-  user: process.env.DATABASE_USER || "",
-  password: process.env.DATABASE_PASSWORD || "",
-  options: {
-    encrypt: true,
-    trustServerCertificate: false,
-  },
-};
+const GOOGLE_SHEET_ID = "1n-7MXdoqvIoSHteBJaUYBmIPLjJBNtrE_jVuUxO5kr8";
+const HISTORY_SHEET = "Daily_Prices"; // or "Price_History_NBS"
 
 // ============================================================================
 // TYPE DEFINITIONS
@@ -51,14 +43,10 @@ interface PriceStatistics {
 
 function calculateVolatility(prices: number[]): number {
   if (prices.length < 2) return 0;
-  
   const mean = prices.reduce((a, b) => a + b, 0) / prices.length;
   const squaredDiffs = prices.map(price => Math.pow(price - mean, 2));
   const avgSquaredDiff = squaredDiffs.reduce((a, b) => a + b, 0) / prices.length;
-  const stdDev = Math.sqrt(avgSquaredDiff);
-  
-  // Return as percentage of mean
-  return Number(((stdDev / mean) * 100).toFixed(2));
+  return Number(((Math.sqrt(avgSquaredDiff) / mean) * 100).toFixed(2));
 }
 
 function getDaysFromPeriod(period: string): number {
@@ -71,213 +59,189 @@ function getDaysFromPeriod(period: string): number {
   }
 }
 
+function parseCSVLine(line: string): string[] {
+  const result: string[] = [];
+  let current = "";
+  let inQuotes = false;
+
+  for (let i = 0; i < line.length; i++) {
+    const char = line[i];
+    if (char === '"') {
+      inQuotes = !inQuotes;
+    } else if (char === "," && !inQuotes) {
+      result.push(current.trim());
+      current = "";
+    } else {
+      current += char;
+    }
+  }
+  result.push(current.trim());
+  return result.map(v => v.replace(/^"|"$/g, ""));
+}
+
 // ============================================================================
-// GET HANDLER
+// GOOGLE SHEETS FETCHER
 // ============================================================================
 
-export async function GET(request: NextRequest) {
-  const { searchParams } = new URL(request.url);
-  const item = searchParams.get("item") || "";
-  const market = searchParams.get("market") || "";
-  const period = searchParams.get("period") || "30d";
-  
-  const days = getDaysFromPeriod(period);
-  let pool: sql.ConnectionPool | null = null;
-
+async function fetchHistoryFromSheets(
+  item: string,
+  market: string,
+  days: number
+): Promise<PriceHistoryPoint[]> {
   try {
-    // Connect to database
-    pool = await sql.connect(dbConfig);
+    const csvUrl = `https://docs.google.com/spreadsheets/d/${GOOGLE_SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(HISTORY_SHEET)}`;
     
-    // Calculate date range
-    const endDate = new Date();
-    const startDate = new Date();
-    startDate.setDate(startDate.getDate() - days);
+    const response = await fetch(csvUrl, {
+      next: { revalidate: 300 }, // Cache for 5 minutes
+    });
 
-    // Query 1: Try Daily_Prices table first (aggregated daily data)
-    const dailyQuery = `
-      SELECT 
-        price_date,
-        price_naira,
-        trend,
-        'daily' as source
-      FROM Daily_Prices
-      WHERE item_name LIKE @item
-        AND market_name LIKE @market
-        AND price_date >= @startDate
-        AND price_date <= @endDate
-      ORDER BY price_date ASC
-    `;
-
-    const dailyResult = await pool.request()
-      .input("item", sql.NVarChar, `%${item}%`)
-      .input("market", sql.NVarChar, `%${market}%`)
-      .input("startDate", sql.Date, startDate)
-      .input("endDate", sql.Date, endDate)
-      .query(dailyQuery);
-
-    let data = dailyResult.recordset;
-
-    // Query 2: If no daily data, try Approved_Prices (real-time submissions)
-    if (data.length === 0) {
-      const approvedQuery = `
-        SELECT 
-          CAST(created_at AS DATE) as price_date,
-          AVG(price_naira) as price_naira,
-          'stable' as trend,
-          'validated' as source
-        FROM Approved_Prices
-        WHERE item_name LIKE @item
-          AND market_name LIKE @market
-          AND created_at >= @startDate
-          AND created_at <= @endDate
-        GROUP BY CAST(created_at AS DATE)
-        ORDER BY price_date ASC
-      `;
-
-      const approvedResult = await pool.request()
-        .input("item", sql.NVarChar, `%${item}%`)
-        .input("market", sql.NVarChar, `%${market}%`)
-        .input("startDate", sql.DateTime2, startDate)
-        .input("endDate", sql.DateTime2, endDate)
-        .query(approvedQuery);
-
-      data = approvedResult.recordset;
+    if (!response.ok) {
+      console.log("Google Sheets History fetch failed");
+      return [];
     }
 
-    // Query 3: If still no data, try Validated_Prices
-    if (data.length === 0) {
-      const validatedQuery = `
-        SELECT 
-          CAST(validated_at AS DATE) as price_date,
-          AVG(validated_price) as price_naira,
-          'stable' as trend,
-          'crowd' as source
-        FROM Validated_Prices
-        WHERE item_name LIKE @item
-          AND market_name LIKE @market
-          AND validated_at >= @startDate
-          AND validated_at <= @endDate
-        GROUP BY CAST(validated_at AS DATE)
-        ORDER BY price_date ASC
-      `;
+    const csvText = await response.text();
+    const lines = csvText.split("\n").filter(line => line.trim());
+    
+    if (lines.length < 2) return [];
 
-      const validatedResult = await pool.request()
-        .input("item", sql.NVarChar, `%${item}%`)
-        .input("market", sql.NVarChar, `%${market}%`)
-        .input("startDate", sql.DateTime2, startDate)
-        .input("endDate", sql.DateTime2, endDate)
-        .query(validatedQuery);
+    const headers = parseCSVLine(lines[0]);
+    
+    // Find column indices
+    const findCol = (names: string[]) => {
+      for (const name of names) {
+        const idx = headers.findIndex(h => 
+          h.toLowerCase().includes(name.toLowerCase())
+        );
+        if (idx >= 0) return idx;
+      }
+      return -1;
+    };
 
-      data = validatedResult.recordset;
-    }
+    const itemIdx = findCol(["item_name", "item"]);
+    const marketIdx = findCol(["market_name", "market"]);
+    const priceIdx = findCol(["price_naira", "price"]);
+    const dateIdx = findCol(["price_date", "date", "observation_date"]);
+    const trendIdx = findCol(["trend"]);
 
-    // If no data found in any table, return mock data for demo
-    if (data.length === 0) {
-      const mockResult = generateMockHistory(item, market, days);
-      return NextResponse.json({
-        success: true,
-        item,
-        market,
-        period,
-        data: mockResult.history,
-        statistics: mockResult.statistics,
-        source: "mock"
+    const itemLower = item.toLowerCase();
+    const marketLower = market.toLowerCase();
+    const cutoffDate = new Date();
+    cutoffDate.setDate(cutoffDate.getDate() - days);
+
+    const history: PriceHistoryPoint[] = [];
+
+    for (let i = 1; i < lines.length; i++) {
+      const row = parseCSVLine(lines[i]);
+      
+      // Match item and market
+      const rowItem = (row[itemIdx] || "").toLowerCase();
+      const rowMarket = (row[marketIdx] || "").toLowerCase();
+      
+      if (!rowItem.includes(itemLower) || !rowMarket.includes(marketLower)) {
+        continue;
+      }
+
+      // Parse date
+      const dateStr = row[dateIdx];
+      if (!dateStr) continue;
+      
+      const rowDate = new Date(dateStr);
+      if (isNaN(rowDate.getTime()) || rowDate < cutoffDate) continue;
+
+      // Parse price
+      const price = parseFloat(row[priceIdx]);
+      if (isNaN(price) || price <= 0) continue;
+
+      history.push({
+        date: rowDate.toISOString().substring(0, 10),
+        price: price,
+        trend: row[trendIdx] || "stable",
+        source: "sheets",
       });
     }
 
-    // Transform database results to response format
-    const history: PriceHistoryPoint[] = data.map((row: {
-      price_date: Date | string;
-      price_naira: number;
-      trend?: string;
-      source?: string;
-    }) => {
-      // Safely extract date string
-      let dateStr: string;
-      if (row.price_date instanceof Date) {
-        const isoStr = row.price_date.toISOString();
-        dateStr = isoStr.substring(0, 10);
-      } else if (typeof row.price_date === "string") {
-        dateStr = row.price_date.substring(0, 10);
-      } else {
-        // Fallback to current date if all else fails
-        dateStr = new Date().toISOString().substring(0, 10);
-      }
+    // Sort by date
+    history.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
-      return {
-        date: dateStr,
-        price: Number(row.price_naira),
-        trend: row.trend || "stable",
-        source: row.source || "daily"
-      };
-    });
-
-    // Calculate statistics
-    const prices = history.map(h => h.price);
-    const current = prices[prices.length - 1] || 0;
-    const first = prices[0] || current;
-    const high = Math.max(...prices);
-    const low = Math.min(...prices);
-    const average = prices.reduce((a, b) => a + b, 0) / prices.length;
-    const change = current - first;
-    const changePercent = first > 0 ? ((change / first) * 100) : 0;
-    const volatility = calculateVolatility(prices);
-
-    const statistics: PriceStatistics = {
-      current: Number(current.toFixed(2)),
-      high: Number(high.toFixed(2)),
-      low: Number(low.toFixed(2)),
-      average: Number(average.toFixed(2)),
-      change: Number(change.toFixed(2)),
-      changePercent: Number(changePercent.toFixed(2)),
-      volatility,
-      dataPoints: history.length
-    };
-
-    return NextResponse.json({
-      success: true,
-      item,
-      market,
-      period,
-      data: history,
-      statistics,
-      source: "database"
-    });
+    console.log(`✅ Found ${history.length} history points from Google Sheets`);
+    return history;
 
   } catch (error) {
-    console.error("Price history API error:", error);
-    return NextResponse.json(
-      { error: "Failed to fetch price history" },
-      { status: 500 }
-    );
-  } finally {
-    if (pool) {
-      await pool.close();
-    }
+    console.error("Google Sheets History error:", error);
+    return [];
   }
 }
 
 // ============================================================================
-// MOCK DATA GENERATOR (for demo when no historical data exists)
+// DATABASE FETCHER (BACKUP)
 // ============================================================================
-// FIX: Added underscore prefix to 'market' parameter to indicate it's 
-// intentionally unused (prevents TypeScript "declared but never read" error)
 
-function generateMockHistory(item: string, _market: string, days: number) {
-  const history: PriceHistoryPoint[] = [];
-  
-  // Base price based on item (realistic Nigerian prices)
+async function fetchHistoryFromDatabase(
+  item: string,
+  market: string,
+  days: number
+): Promise<PriceHistoryPoint[]> {
+  try {
+    const { PrismaClient } = await import("@prisma/client");
+    const prisma = new PrismaClient();
+
+    const cutoffDate = new Date();
+    cutoffDate.setDate(cutoffDate.getDate() - days);
+
+    // Try to fetch from a historical prices table
+    // This assumes you have a daily_prices or similar table
+    const results = await prisma.$queryRaw`
+      SELECT 
+        CAST(price_date AS DATE) as date,
+        AVG(price_naira) as price,
+        'database' as source
+      FROM Daily_Prices
+      WHERE item_name LIKE ${`%${item}%`}
+        AND market_name LIKE ${`%${market}%`}
+        AND price_date >= ${cutoffDate}
+      GROUP BY CAST(price_date AS DATE)
+      ORDER BY date ASC
+    ` as any[];
+
+    await prisma.$disconnect();
+
+    if (!results || results.length === 0) return [];
+
+    return results.map((r: any) => ({
+      date: r.date instanceof Date ? r.date.toISOString().substring(0, 10) : String(r.date).substring(0, 10),
+      price: Number(r.price),
+      trend: "stable",
+      source: "database",
+    }));
+
+  } catch (error) {
+    console.error("Database History error:", error);
+    return [];
+  }
+}
+
+// ============================================================================
+// MOCK DATA GENERATOR (FALLBACK)
+// ============================================================================
+
+function generateMockHistory(item: string, _market: string, days: number): PriceHistoryPoint[] {
   const basePrices: Record<string, number> = {
     "rice": 78000,
     "beans": 62000,
     "garri": 28000,
     "palm oil": 52000,
+    "palm": 52000,
     "tomatoes": 45000,
+    "tomato": 45000,
     "onions": 38500,
+    "onion": 38500,
     "cement": 6500,
     "yam": 35000,
     "pepper": 32000,
-    "groundnut": 48000
+    "groundnut": 48000,
+    "sugar": 85000,
+    "plantain": 4500,
   };
 
   const itemLower = item.toLowerCase();
@@ -290,48 +254,126 @@ function generateMockHistory(item: string, _market: string, days: number) {
     }
   }
 
-  // Generate price history with realistic fluctuations
+  const history: PriceHistoryPoint[] = [];
   const today = new Date();
-  let currentPrice = basePrice;
+  let currentPrice = basePrice * 0.92;
   
   for (let i = days; i >= 0; i--) {
     const date = new Date(today);
     date.setDate(date.getDate() - i);
     
-    // Random daily change between -3% and +3%
-    const changePercent = (Math.random() - 0.5) * 0.06;
+    // Realistic daily change
+    const changePercent = (Math.random() - 0.45) * 0.05;
     currentPrice = currentPrice * (1 + changePercent);
-    
-    // Keep price within reasonable bounds
     currentPrice = Math.max(basePrice * 0.7, Math.min(basePrice * 1.3, currentPrice));
     
-    const trend = changePercent > 0.01 ? "up" : changePercent < -0.01 ? "down" : "stable";
+    // Weekly seasonality
+    const dayOfWeek = date.getDay();
+    if (dayOfWeek === 1) currentPrice *= 1.01;
+    if (dayOfWeek === 5) currentPrice *= 0.99;
     
     history.push({
       date: date.toISOString().substring(0, 10),
       price: Math.round(currentPrice),
-      trend,
-      source: "simulated"
+      trend: changePercent > 0.01 ? "up" : changePercent < -0.01 ? "down" : "stable",
+      source: "mock",
     });
   }
 
-  // Calculate statistics
+  return history;
+}
+
+// ============================================================================
+// CALCULATE STATISTICS
+// ============================================================================
+
+function calculateStatistics(history: PriceHistoryPoint[]): PriceStatistics {
+  if (history.length === 0) {
+    return {
+      current: 0,
+      high: 0,
+      low: 0,
+      average: 0,
+      change: 0,
+      changePercent: 0,
+      volatility: 0,
+      dataPoints: 0,
+    };
+  }
+
   const prices = history.map(h => h.price);
-  const current = prices[prices.length - 1] || 0;
-  const first = prices[0] || current;
-  
-  const statistics: PriceStatistics = {
+  const current = prices[prices.length - 1];
+  const first = prices[0];
+  const change = current - first;
+  const changePercent = first > 0 ? (change / first) * 100 : 0;
+
+  return {
     current,
     high: Math.max(...prices),
     low: Math.min(...prices),
     average: Math.round(prices.reduce((a, b) => a + b, 0) / prices.length),
-    change: current - first,
-    changePercent: Number((((current - first) / first) * 100).toFixed(2)),
+    change: Math.round(change),
+    changePercent: Number(changePercent.toFixed(2)),
     volatility: calculateVolatility(prices),
-    dataPoints: history.length
+    dataPoints: history.length,
   };
+}
 
-  return { history, statistics };
+// ============================================================================
+// GET HANDLER
+// ============================================================================
+
+export async function GET(request: NextRequest) {
+  const { searchParams } = new URL(request.url);
+  const item = searchParams.get("item") || "";
+  const market = searchParams.get("market") || "";
+  const period = searchParams.get("period") || "30d";
+
+  if (!item || !market) {
+    return NextResponse.json(
+      { success: false, error: "Item and market are required" },
+      { status: 400 }
+    );
+  }
+
+  const days = getDaysFromPeriod(period);
+  let history: PriceHistoryPoint[] = [];
+  let source = "unknown";
+
+  // PRIORITY 1: Try Google Sheets
+  history = await fetchHistoryFromSheets(item, market, days);
+  if (history.length > 0) {
+    source = "sheets";
+  }
+
+  // PRIORITY 2: Try Database
+  if (history.length === 0) {
+    history = await fetchHistoryFromDatabase(item, market, days);
+    if (history.length > 0) {
+      source = "database";
+    }
+  }
+
+  // PRIORITY 3: Use Mock Data
+  if (history.length === 0) {
+    history = generateMockHistory(item, market, days);
+    source = "mock";
+  }
+
+  const statistics = calculateStatistics(history);
+
+  return NextResponse.json({
+    success: true,
+    item,
+    market,
+    period,
+    data: history,
+    statistics,
+    source,
+    note: source === "mock" 
+      ? "Showing simulated data for demonstration" 
+      : undefined,
+  });
 }
 
 // Force dynamic rendering
