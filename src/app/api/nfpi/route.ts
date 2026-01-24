@@ -1,7 +1,7 @@
 // src/app/api/nfpi/route.ts
 // NaijaMarket Intel - NFPI (NaijaFood Price Index) API
 // Tier-gated access to food price index data
-// Version: 1.1.0 - Fixed TypeScript null checks
+// Version: 1.2.0 - Fixed all TypeScript issues
 // Date: 2026-01-24
 
 import { NextRequest, NextResponse } from "next/server";
@@ -22,7 +22,7 @@ const dbConfig: sql.config = {
 };
 
 // =============================================================================
-// TIER ACCESS CONFIGURATION
+// TYPE DEFINITIONS
 // =============================================================================
 interface TierAccess {
   headline: boolean;
@@ -35,6 +35,44 @@ interface TierAccess {
   maxHistory: number;
 }
 
+interface NFPIRecord {
+  week_id: string;
+  week_start: string;
+  week_end: string;
+  national_index: number;
+  wow_change: number;
+  mom_change: number;
+  yoy_change: number;
+  grains_index: number;
+  proteins_index: number;
+  vegetables_index: number;
+  oils_index: number;
+  tubers_index: number;
+  nw_index: number;
+  ne_index: number;
+  nc_index: number;
+  sw_index: number;
+  se_index: number;
+  ss_index: number;
+  top_gainers: string;
+  top_losers: string;
+  insight: string;
+  basket_details: string | Record<string, unknown>;
+}
+
+interface TrendRecord {
+  week_id: string;
+  week_start?: string;
+  national_index: number;
+  grains_index?: number;
+  proteins_index?: number;
+  vegetables_index?: number;
+  oils_index?: number;
+}
+
+// =============================================================================
+// TIER ACCESS CONFIGURATION
+// =============================================================================
 const TIER_ACCESS: Record<string, TierAccess> = {
   FREE: {
     headline: true,
@@ -113,7 +151,7 @@ const DEFAULT_ACCESS: TierAccess = {
 // =============================================================================
 // MOCK DATA (Used when database is unavailable)
 // =============================================================================
-const MOCK_NFPI_DATA = {
+const MOCK_NFPI_DATA: NFPIRecord = {
   week_id: "2026-W04",
   week_start: "2026-01-20",
   week_end: "2026-01-26",
@@ -151,11 +189,11 @@ const MOCK_NFPI_DATA = {
   })
 };
 
-const MOCK_TREND_DATA = [
-  { week_id: "2026-W01", national_index: 149.2, grains: 155.1, proteins: 142.3, vegetables: 158.4, oils: 140.2 },
-  { week_id: "2026-W02", national_index: 151.8, grains: 157.8, proteins: 144.1, vegetables: 162.7, oils: 141.8 },
-  { week_id: "2026-W03", national_index: 153.4, grains: 159.6, proteins: 146.2, vegetables: 166.9, oils: 143.1 },
-  { week_id: "2026-W04", national_index: 156.8, grains: 162.4, proteins: 148.9, vegetables: 171.2, oils: 145.6 },
+const MOCK_TREND_DATA: TrendRecord[] = [
+  { week_id: "2026-W01", national_index: 149.2, grains_index: 155.1, proteins_index: 142.3, vegetables_index: 158.4, oils_index: 140.2 },
+  { week_id: "2026-W02", national_index: 151.8, grains_index: 157.8, proteins_index: 144.1, vegetables_index: 162.7, oils_index: 141.8 },
+  { week_id: "2026-W03", national_index: 153.4, grains_index: 159.6, proteins_index: 146.2, vegetables_index: 166.9, oils_index: 143.1 },
+  { week_id: "2026-W04", national_index: 156.8, grains_index: 162.4, proteins_index: 148.9, vegetables_index: 171.2, oils_index: 145.6 },
 ];
 
 // =============================================================================
@@ -221,8 +259,8 @@ export async function GET(request: NextRequest) {
     };
 
     // Try to fetch from database, fall back to mock data
-    let latestNFPI = MOCK_NFPI_DATA;
-    let trendData = MOCK_TREND_DATA;
+    let latestNFPI: NFPIRecord = MOCK_NFPI_DATA;
+    let trendData: TrendRecord[] = MOCK_TREND_DATA;
     let pool: sql.ConnectionPool | null = null;
 
     try {
@@ -235,7 +273,7 @@ export async function GET(request: NextRequest) {
       `);
       
       if (latestResult.recordset.length > 0) {
-        latestNFPI = latestResult.recordset[0];
+        latestNFPI = latestResult.recordset[0] as NFPIRecord;
       }
 
       // Fetch trend data if user has access
@@ -252,7 +290,7 @@ export async function GET(request: NextRequest) {
           `);
         
         if (trendResult.recordset.length > 0) {
-          trendData = trendResult.recordset.reverse();
+          trendData = (trendResult.recordset as TrendRecord[]).reverse();
         }
       }
     } catch (dbError) {
@@ -285,23 +323,23 @@ export async function GET(request: NextRequest) {
     // Category indices (GOLD+)
     if (access.regional || access.categories) {
       response.categories = {
-        grains: parseFloat(String(latestNFPI.grains_index)) || 100,
-        proteins: parseFloat(String(latestNFPI.proteins_index)) || 100,
-        vegetables: parseFloat(String(latestNFPI.vegetables_index)) || 100,
-        oils: parseFloat(String(latestNFPI.oils_index)) || 100,
-        tubers: parseFloat(String(latestNFPI.tubers_index)) || 100,
+        grains: latestNFPI.grains_index || 100,
+        proteins: latestNFPI.proteins_index || 100,
+        vegetables: latestNFPI.vegetables_index || 100,
+        oils: latestNFPI.oils_index || 100,
+        tubers: latestNFPI.tubers_index || 100,
       };
     }
 
     // Regional data (SILVER+)
     if (access.regional) {
       response.regional = {
-        nw: parseFloat(String(latestNFPI.nw_index)) || 100,
-        ne: parseFloat(String(latestNFPI.ne_index)) || 100,
-        nc: parseFloat(String(latestNFPI.nc_index)) || 100,
-        sw: parseFloat(String(latestNFPI.sw_index)) || 100,
-        se: parseFloat(String(latestNFPI.se_index)) || 100,
-        ss: parseFloat(String(latestNFPI.ss_index)) || 100,
+        nw: latestNFPI.nw_index || 100,
+        ne: latestNFPI.ne_index || 100,
+        nc: latestNFPI.nc_index || 100,
+        sw: latestNFPI.sw_index || 100,
+        se: latestNFPI.se_index || 100,
+        ss: latestNFPI.ss_index || 100,
       };
     }
 
@@ -310,10 +348,10 @@ export async function GET(request: NextRequest) {
       response.trend = trendData.map(week => ({
         week_id: week.week_id,
         national_index: week.national_index,
-        grains: week.grains || week.grains_index,
-        proteins: week.proteins || week.proteins_index,
-        vegetables: week.vegetables || week.vegetables_index,
-        oils: week.oils || week.oils_index,
+        grains: week.grains_index,
+        proteins: week.proteins_index,
+        vegetables: week.vegetables_index,
+        oils: week.oils_index,
       }));
     }
 
@@ -343,9 +381,9 @@ export async function GET(request: NextRequest) {
     // Handle CSV export format (CORPORATE+)
     if (format === "csv" && access.export) {
       const csvRows = [
-        "week_id,national_index,grains,proteins,vegetables,oils,tubers",
+        "week_id,national_index,grains,proteins,vegetables,oils",
         ...trendData.map(w => 
-          `${w.week_id},${w.national_index},${w.grains || ''},${w.proteins || ''},${w.vegetables || ''},${w.oils || ''},`
+          `${w.week_id},${w.national_index},${w.grains_index || ''},${w.proteins_index || ''},${w.vegetables_index || ''},${w.oils_index || ''}`
         )
       ];
       
