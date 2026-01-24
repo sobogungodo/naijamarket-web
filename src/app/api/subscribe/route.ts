@@ -319,7 +319,6 @@ export async function GET(request: NextRequest) {
     pool = await sql.connect(dbConfig);
 
     let query = "";
-    let params: any = {};
 
     if (reference) {
       query = `
