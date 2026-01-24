@@ -12,7 +12,7 @@ import {
 } from "recharts";
 import { 
   TrendingUp, TrendingDown, Lock, Download, Info, AlertCircle, 
-  RefreshCw, FileText, Share2, Calendar
+  RefreshCw, FileText, Calendar
 } from "lucide-react";
 
 // Theme colors
