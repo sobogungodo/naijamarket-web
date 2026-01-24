@@ -52,6 +52,7 @@
     "lightweight-charts": "^4.2.2",
     "lodash": "^4.17.21",
     "lucide-react": "^0.469.0",
+    "mssql": "^12.2.0",
     "nanoid": "^5.0.9",
     "next": "^14.2.35",
     "next-auth": "^4.24.13",
