@@ -2,7 +2,7 @@
 // src/components/PriceHistoryModal.tsx
 // NaijaMarket Intel - Price History Chart Modal
 // Bloomberg Equivalent: HP <GO>
-// Version: 1.0.1
+// Version: 1.0.2 - Fixed TypeScript "Object is possibly undefined" error
 // ============================================================================
 
 "use client";
@@ -10,6 +10,8 @@
 import { useState, useEffect, useCallback } from "react";
 import {
   X,
+  TrendingUp,
+  TrendingDown,
   Minus,
   Loader2,
   Calendar,
@@ -74,44 +76,41 @@ export default function PriceHistoryModal({
   market,
   state,
   category,
+  currentPrice,
+  currentChange,
 }: PriceHistoryModalProps) {
   const [period, setPeriod] = useState<"7d" | "30d" | "90d">("30d");
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<PriceHistoryPoint[]>([]);
   const [statistics, setStatistics] = useState<PriceStatistics | null>(null);
-  const [source, setSource] = useState<string>("database");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  // Fetch price history
+  // Fetch price history data
   const fetchHistory = useCallback(async () => {
     if (!isOpen || !item || !market) return;
-    
+
     setLoading(true);
     setError(null);
 
     try {
-      const encodedItem = encodeURIComponent(item);
-      const encodedMarket = encodeURIComponent(market);
-      const url = "/api/prices/history?item=" + encodedItem + "&market=" + encodedMarket + "&period=" + period;
-      
-      const response = await fetch(url);
+      const params = new URLSearchParams({
+        item: item,
+        market: market,
+        period: period,
+      });
 
-      if (!response.ok) {
-        throw new Error("Failed to fetch price history");
-      }
-
+      const response = await fetch("/api/prices/history?" + params.toString());
       const result = await response.json();
 
-      if (result.success) {
-        setData(result.data || []);
+      if (result.success && result.data) {
+        setData(result.data);
         setStatistics(result.statistics);
-        setSource(result.source || "database");
       } else {
-        setError(result.error || "Unknown error");
+        setError(result.error || "Failed to load price history");
       }
     } catch (err) {
       console.error("Error fetching price history:", err);
-      setError("Failed to load price history. Please try again.");
+      setError("Failed to load data. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -126,12 +125,12 @@ export default function PriceHistoryModal({
     const handleEscape = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
     };
-    
+
     if (isOpen) {
       document.addEventListener("keydown", handleEscape);
       document.body.style.overflow = "hidden";
     }
-    
+
     return () => {
       document.removeEventListener("keydown", handleEscape);
       document.body.style.overflow = "";
@@ -141,20 +140,20 @@ export default function PriceHistoryModal({
   // Don't render if not open
   if (!isOpen) return null;
 
-  // Format price
+  // Format price for axis
   const formatPrice = (value: number): string => {
     if (value >= 1000000) {
-      return "₦" + (value / 1000000).toFixed(1) + "M";
+      return "\u20A6" + (value / 1000000).toFixed(1) + "M";
     }
     if (value >= 1000) {
-      return "₦" + (value / 1000).toFixed(0) + "K";
+      return "\u20A6" + (value / 1000).toFixed(0) + "K";
     }
-    return "₦" + value.toLocaleString();
+    return "\u20A6" + value.toLocaleString();
   };
 
   // Format full price
   const formatFullPrice = (value: number): string => {
-    return "₦" + value.toLocaleString();
+    return "\u20A6" + value.toLocaleString();
   };
 
   // Format date for chart
@@ -166,13 +165,19 @@ export default function PriceHistoryModal({
     });
   };
 
-  // Custom tooltip component
-  const CustomTooltip = ({ active, payload, label }: {
+  // Custom tooltip component - FIX: Added explicit check for payload[0]
+  const CustomTooltip = ({
+    active,
+    payload,
+    label,
+  }: {
     active?: boolean;
     payload?: Array<{ value: number }>;
     label?: string;
   }) => {
-    if (active && payload && payload.length && label) {
+    // FIX: Check payload[0] explicitly before accessing .value
+    if (active && payload && payload.length > 0 && payload[0] && label) {
+      const priceValue = payload[0].value;
       return (
         <div className="bg-[#1a1a1a] border border-gray-700 rounded-lg p-3 shadow-xl">
           <p className="text-gray-400 text-xs mb-1">
@@ -184,7 +189,7 @@ export default function PriceHistoryModal({
             })}
           </p>
           <p className="text-white font-bold text-lg">
-            {formatFullPrice(payload[0].value)}
+            {formatFullPrice(priceValue)}
           </p>
         </div>
       );
@@ -200,15 +205,12 @@ export default function PriceHistoryModal({
   };
 
   // Get chart color based on trend
-  const chartColor = statistics && statistics.changePercent >= 0 ? "#ef4444" : "#10b981";
-
-  // Period button classes
-  const getPeriodButtonClass = (p: string): string => {
-    if (period === p) {
-      return "px-4 py-1.5 rounded-lg text-sm font-medium bg-emerald-500 text-white shadow-lg shadow-emerald-500/20 disabled:opacity-50";
-    }
-    return "px-4 py-1.5 rounded-lg text-sm font-medium bg-gray-800/50 text-gray-400 hover:bg-gray-700 hover:text-white disabled:opacity-50";
-  };
+  const chartColor =
+    statistics && statistics.changePercent >= 0 ? "#ef4444" : "#10b981";
+  const chartColorLight =
+    statistics && statistics.changePercent >= 0
+      ? "rgba(239, 68, 68, 0.1)"
+      : "rgba(16, 185, 129, 0.1)";
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -219,224 +221,234 @@ export default function PriceHistoryModal({
       />
 
       {/* Modal */}
-      <div className="relative bg-[#0f0f0f] border border-gray-800 rounded-2xl w-full max-w-3xl max-h-[90vh] overflow-hidden shadow-2xl">
+      <div className="relative bg-[#0a0a0a] border border-gray-800 rounded-2xl w-full max-w-3xl max-h-[90vh] overflow-hidden shadow-2xl">
         {/* Header */}
-        <div className="flex items-start justify-between p-5 border-b border-gray-800">
-          <div className="flex items-start gap-4">
-            <div className="p-2.5 bg-emerald-500/10 rounded-xl">
-              <BarChart3 className="w-6 h-6 text-emerald-400" />
-            </div>
-            <div>
-              <h2 className="text-xl font-bold text-white">{item}</h2>
-              {itemSubtitle && (
-                <p className="text-sm text-gray-500">{itemSubtitle}</p>
-              )}
-              <div className="flex items-center gap-3 mt-1.5 text-sm text-gray-400">
-                <span className="flex items-center gap-1">
-                  📍 {market}
-                </span>
-                {state && <span className="text-gray-600">•</span>}
-                {state && <span>{state}</span>}
-                {category && (
-                  <span className="px-2 py-0.5 bg-gray-800 rounded-full text-xs text-gray-300">
-                    {category}
-                  </span>
+        <div className="flex items-start justify-between p-6 border-b border-gray-800">
+          <div>
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-lg bg-emerald-500/20 flex items-center justify-center">
+                <BarChart3 className="w-5 h-5 text-emerald-400" />
+              </div>
+              <div>
+                <h2 className="text-xl font-bold text-white">{item}</h2>
+                {itemSubtitle && (
+                  <p className="text-sm text-gray-400">{itemSubtitle}</p>
                 )}
               </div>
             </div>
+            <div className="flex items-center gap-2 mt-2 text-sm text-gray-500">
+              <span className="flex items-center gap-1">
+                <Calendar className="w-4 h-4" />
+                {market}
+              </span>
+              {state && (
+                <>
+                  <span>•</span>
+                  <span>{state}</span>
+                </>
+              )}
+              {category && (
+                <>
+                  <span>•</span>
+                  <span>{category}</span>
+                </>
+              )}
+            </div>
           </div>
+
           <button
             onClick={onClose}
-            className="p-2 hover:bg-gray-800 rounded-lg transition-colors"
-            aria-label="Close modal"
+            className="p-2 text-gray-400 hover:text-white hover:bg-gray-800 rounded-lg transition-colors"
           >
-            <X className="w-5 h-5 text-gray-400" />
+            <X className="w-5 h-5" />
           </button>
         </div>
 
-        {/* Period Selector */}
-        <div className="px-5 py-3 border-b border-gray-800/50 flex items-center justify-between bg-[#0a0a0a]">
-          <div className="flex items-center gap-2 text-sm text-gray-500">
-            <Calendar className="w-4 h-4" />
-            <span>Historical Data</span>
-          </div>
-          <div className="flex gap-1.5">
-            <button
-              onClick={() => setPeriod("7d")}
-              disabled={loading}
-              className={getPeriodButtonClass("7d")}
-            >
-              7D
-            </button>
-            <button
-              onClick={() => setPeriod("30d")}
-              disabled={loading}
-              className={getPeriodButtonClass("30d")}
-            >
-              30D
-            </button>
-            <button
-              onClick={() => setPeriod("90d")}
-              disabled={loading}
-              className={getPeriodButtonClass("90d")}
-            >
-              90D
-            </button>
-          </div>
-        </div>
-
         {/* Content */}
-        <div className="p-5 overflow-y-auto max-h-[calc(90vh-180px)]">
-          {loading ? (
-            <div className="flex flex-col items-center justify-center h-72 gap-3">
-              <Loader2 className="w-10 h-10 text-emerald-400 animate-spin" />
-              <p className="text-gray-500 text-sm">Loading price history...</p>
+        <div className="p-6 overflow-y-auto max-h-[calc(90vh-100px)]">
+          {/* Period Selector */}
+          <div className="flex items-center justify-between mb-6">
+            <h3 className="text-sm font-medium text-gray-400">
+              Historical Price Data
+            </h3>
+            <div className="flex gap-1 bg-gray-800/50 rounded-lg p-1">
+              {(["7d", "30d", "90d"] as const).map((p) => (
+                <button
+                  key={p}
+                  onClick={() => setPeriod(p)}
+                  className={
+                    "px-3 py-1.5 text-sm font-medium rounded-md transition-colors " +
+                    (period === p
+                      ? "bg-emerald-500/20 text-emerald-400"
+                      : "text-gray-400 hover:text-white")
+                  }
+                >
+                  {p.toUpperCase()}
+                </button>
+              ))}
             </div>
-          ) : error ? (
-            <div className="flex flex-col items-center justify-center h-72 gap-3">
-              <AlertCircle className="w-10 h-10 text-red-400" />
-              <p className="text-red-400">{error}</p>
+          </div>
+
+          {/* Loading State */}
+          {loading && (
+            <div className="flex flex-col items-center justify-center py-20">
+              <Loader2 className="w-10 h-10 text-emerald-400 animate-spin mb-4" />
+              <p className="text-gray-400">Loading price history...</p>
+            </div>
+          )}
+
+          {/* Error State */}
+          {error && !loading && (
+            <div className="flex flex-col items-center justify-center py-20">
+              <AlertCircle className="w-10 h-10 text-red-400 mb-4" />
+              <p className="text-gray-400 mb-4">{error}</p>
               <button
                 onClick={fetchHistory}
-                className="px-4 py-2 bg-gray-800 hover:bg-gray-700 rounded-lg text-sm text-white transition-colors"
+                className="px-4 py-2 bg-emerald-500/20 text-emerald-400 rounded-lg hover:bg-emerald-500/30 transition-colors"
               >
                 Try Again
               </button>
             </div>
-          ) : (
+          )}
+
+          {/* Data Display */}
+          {!loading && !error && data.length > 0 && (
             <>
               {/* Statistics Cards */}
               {statistics && (
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
                   {/* Current Price */}
-                  <div className="bg-gradient-to-br from-gray-800/80 to-gray-900/80 rounded-xl p-4 border border-gray-700/50">
-                    <p className="text-[10px] uppercase tracking-wider text-gray-500 mb-1">
-                      Current
-                    </p>
-                    <p className="text-2xl font-bold text-white">
+                  <div className="bg-gray-800/30 rounded-xl p-4">
+                    <p className="text-xs text-gray-500 mb-1">CURRENT</p>
+                    <p className="text-xl font-bold text-white">
                       {formatPrice(statistics.current)}
                     </p>
-                    <div className={"flex items-center gap-1 mt-1 " + getTrendColor(statistics.changePercent)}>
-                      {statistics.changePercent > 0 ? (
-                        <ArrowUpRight className="w-3.5 h-3.5" />
-                      ) : statistics.changePercent < 0 ? (
-                        <ArrowDownRight className="w-3.5 h-3.5" />
+                    <div
+                      className={
+                        "flex items-center gap-1 text-sm " +
+                        getTrendColor(statistics.changePercent)
+                      }
+                    >
+                      {statistics.changePercent >= 0 ? (
+                        <ArrowUpRight className="w-4 h-4" />
                       ) : (
-                        <Minus className="w-3.5 h-3.5" />
+                        <ArrowDownRight className="w-4 h-4" />
                       )}
-                      <span className="text-sm font-semibold">
-                        {statistics.changePercent > 0 ? "+" : ""}
+                      <span>
+                        {statistics.changePercent >= 0 ? "+" : ""}
                         {statistics.changePercent.toFixed(1)}%
                       </span>
                     </div>
                   </div>
 
                   {/* High */}
-                  <div className="bg-gray-800/40 rounded-xl p-4 border border-gray-800/50">
-                    <p className="text-[10px] uppercase tracking-wider text-gray-500 mb-1">
-                      {period.toUpperCase()} High
+                  <div className="bg-gray-800/30 rounded-xl p-4">
+                    <p className="text-xs text-gray-500 mb-1">
+                      {period.toUpperCase()} HIGH
                     </p>
-                    <p className="text-xl font-semibold text-red-400">
+                    <p className="text-xl font-bold text-white">
                       {formatPrice(statistics.high)}
                     </p>
-                    <p className="text-xs text-gray-600 mt-1">Peak price</p>
+                    <p className="text-sm text-gray-500">Peak</p>
                   </div>
 
                   {/* Low */}
-                  <div className="bg-gray-800/40 rounded-xl p-4 border border-gray-800/50">
-                    <p className="text-[10px] uppercase tracking-wider text-gray-500 mb-1">
-                      {period.toUpperCase()} Low
+                  <div className="bg-gray-800/30 rounded-xl p-4">
+                    <p className="text-xs text-gray-500 mb-1">
+                      {period.toUpperCase()} LOW
                     </p>
-                    <p className="text-xl font-semibold text-emerald-400">
+                    <p className="text-xl font-bold text-white">
                       {formatPrice(statistics.low)}
                     </p>
-                    <p className="text-xs text-gray-600 mt-1">Lowest price</p>
+                    <p className="text-sm text-gray-500">Lowest</p>
                   </div>
 
                   {/* Average */}
-                  <div className="bg-gray-800/40 rounded-xl p-4 border border-gray-800/50">
-                    <p className="text-[10px] uppercase tracking-wider text-gray-500 mb-1">
-                      Average
-                    </p>
-                    <p className="text-xl font-semibold text-blue-400">
+                  <div className="bg-gray-800/30 rounded-xl p-4">
+                    <p className="text-xs text-gray-500 mb-1">AVERAGE</p>
+                    <p className="text-xl font-bold text-white">
                       {formatPrice(statistics.average)}
                     </p>
-                    <p className="text-xs text-gray-600 mt-1">
-                      σ {statistics.volatility}%
+                    <p className="text-sm text-gray-500">
+                      {"σ"} {statistics.volatility.toFixed(1)}%
                     </p>
                   </div>
                 </div>
               )}
 
               {/* Chart */}
-              <div className="bg-gray-900/50 rounded-xl p-4 border border-gray-800/50">
-                {data.length > 0 ? (
-                  <ResponsiveContainer width="100%" height={280}>
-                    <AreaChart
-                      data={data}
-                      margin={{ top: 10, right: 10, left: -10, bottom: 0 }}
-                    >
-                      <defs>
-                        <linearGradient id="priceGradient" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor={chartColor} stopOpacity={0.3} />
-                          <stop offset="95%" stopColor={chartColor} stopOpacity={0} />
-                        </linearGradient>
-                      </defs>
-                      <CartesianGrid
-                        strokeDasharray="3 3"
-                        stroke="#222"
-                        vertical={false}
-                      />
-                      <XAxis
-                        dataKey="date"
-                        tickFormatter={formatChartDate}
-                        stroke="#444"
-                        tick={{ fill: "#666", fontSize: 11 }}
-                        axisLine={{ stroke: "#333" }}
-                        tickLine={false}
-                        interval="preserveStartEnd"
-                        minTickGap={30}
-                      />
-                      <YAxis
-                        tickFormatter={(value) => formatPrice(value)}
-                        stroke="#444"
-                        tick={{ fill: "#666", fontSize: 11 }}
-                        axisLine={false}
-                        tickLine={false}
-                        width={65}
-                      />
-                      <Tooltip content={<CustomTooltip />} />
-                      <Area
-                        type="monotone"
-                        dataKey="price"
-                        stroke={chartColor}
-                        strokeWidth={2}
-                        fill="url(#priceGradient)"
-                        dot={false}
-                        activeDot={{
-                          r: 6,
-                          fill: chartColor,
-                          stroke: "#fff",
-                          strokeWidth: 2,
-                        }}
-                      />
-                    </AreaChart>
-                  </ResponsiveContainer>
-                ) : (
-                  <div className="flex items-center justify-center h-64 text-gray-500">
-                    No chart data available
-                  </div>
-                )}
+              <div className="bg-gray-800/30 rounded-xl p-4">
+                <ResponsiveContainer width="100%" height={280}>
+                  <AreaChart
+                    data={data}
+                    margin={{ top: 10, right: 10, left: 0, bottom: 0 }}
+                  >
+                    <defs>
+                      <linearGradient
+                        id="priceGradient"
+                        x1="0"
+                        y1="0"
+                        x2="0"
+                        y2="1"
+                      >
+                        <stop
+                          offset="5%"
+                          stopColor={chartColor}
+                          stopOpacity={0.3}
+                        />
+                        <stop
+                          offset="95%"
+                          stopColor={chartColor}
+                          stopOpacity={0}
+                        />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid
+                      strokeDasharray="3 3"
+                      stroke="#333"
+                      vertical={false}
+                    />
+                    <XAxis
+                      dataKey="date"
+                      tickFormatter={formatChartDate}
+                      stroke="#666"
+                      tick={{ fill: "#888", fontSize: 12 }}
+                      axisLine={{ stroke: "#333" }}
+                      tickLine={{ stroke: "#333" }}
+                    />
+                    <YAxis
+                      tickFormatter={formatPrice}
+                      stroke="#666"
+                      tick={{ fill: "#888", fontSize: 12 }}
+                      axisLine={{ stroke: "#333" }}
+                      tickLine={{ stroke: "#333" }}
+                      width={70}
+                    />
+                    <Tooltip content={<CustomTooltip />} />
+                    <Area
+                      type="monotone"
+                      dataKey="price"
+                      stroke={chartColor}
+                      strokeWidth={2}
+                      fill="url(#priceGradient)"
+                      dot={false}
+                      activeDot={{
+                        r: 6,
+                        fill: chartColor,
+                        stroke: "#fff",
+                        strokeWidth: 2,
+                      }}
+                    />
+                  </AreaChart>
+                </ResponsiveContainer>
               </div>
 
               {/* Footer Info */}
-              <div className="mt-4 flex items-center justify-between text-xs text-gray-600">
+              <div className="mt-4 flex items-center justify-between text-xs text-gray-500">
                 <span>
-                  {statistics?.dataPoints || 0} data points • {source === "mock" ? "Simulated data" : "Historical data"}
+                  {statistics?.dataPoints || data.length} data points
                 </span>
-                <span className="font-mono">
-                  Bloomberg: HP &lt;GO&gt;
-                </span>
+                <span className="font-mono">Bloomberg: HP &lt;GO&gt;</span>
               </div>
             </>
           )}
