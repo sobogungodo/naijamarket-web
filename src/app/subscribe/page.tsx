@@ -39,12 +39,6 @@ interface TierData {
   maxMarkets: number;
 }
 
-interface UserSubscription {
-  tier: string;
-  tierName: string;
-  status: string;
-}
-
 // ============================================================================
 // TIER FEATURES
 // ============================================================================
