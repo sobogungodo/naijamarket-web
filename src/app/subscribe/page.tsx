@@ -101,6 +101,8 @@ const TIER_ICONS: Record<string, React.ReactNode> = {
   ENTERPRISE: <Rocket className="w-6 h-6" />,
 };
 
+const DEFAULT_COLORS = { bg: "bg-gray-500/10", border: "border-gray-500/30", text: "text-gray-400" };
+
 const TIER_COLORS: Record<string, { bg: string; border: string; text: string }> = {
   FREE: { bg: "bg-gray-500/10", border: "border-gray-500/30", text: "text-gray-400" },
   SILVER: { bg: "bg-gray-400/10", border: "border-gray-400/30", text: "text-gray-300" },
@@ -273,7 +275,7 @@ export default function SubscribePage() {
         {/* Tier Cards Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
           {tiers.map((tier) => {
-            const colors = TIER_COLORS[tier.code] || TIER_COLORS.FREE;
+            const colors: { bg: string; border: string; text: string } = TIER_COLORS[tier.code] ?? DEFAULT_COLORS;
             const isCurrent = tier.code === currentTier;
             const canUpgrade = isUpgradeable(tier.code);
             const isSelected = selectedTier === tier.code;
