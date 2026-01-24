@@ -143,7 +143,7 @@ export async function GET(request: NextRequest) {
     };
 
     // Top movers (FREE+)
-    if (access.topMovers) {
+    if (access?.topMovers) {
       response.latest.top_gainers = latestNFPI.top_gainers;
       response.latest.top_losers = latestNFPI.top_losers;
       response.latest.insight = latestNFPI.insight;
