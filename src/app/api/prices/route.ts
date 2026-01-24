@@ -2,7 +2,7 @@
 // src/app/api/prices/route.ts
 // NaijaMarket Intel - Live Prices API
 // Data Source Priority: Google Sheets → Azure SQL → Mock Data
-// Version: 3.0.1 - Fixed TypeScript strict mode errors
+// Version: 3.0.2 - Fixed Prisma orderBy error
 // ============================================================================
 
 import { NextRequest, NextResponse } from "next/server";
@@ -82,13 +82,11 @@ async function fetchFromGoogleSheetsCSV(): Promise<PriceRecord[]> {
     
     if (lines.length < 2) return [];
 
-    // TypeScript fix: Get first line safely
     const firstLine = lines[0];
     if (typeof firstLine !== "string") return [];
     
     const headers = parseCSVLine(firstLine);
     
-    // Find column indices (case-insensitive)
     const findCol = (names: string[]): number => {
       for (const name of names) {
         const idx = headers.findIndex(h => 
@@ -116,7 +114,6 @@ async function fetchFromGoogleSheetsCSV(): Promise<PriceRecord[]> {
       
       const row = parseCSVLine(currentLine);
       
-      // Get values safely with defaults
       const itemName = itemIdx >= 0 ? row[itemIdx] : undefined;
       const priceStr = priceIdx >= 0 ? row[priceIdx] : undefined;
       const priceValue = parseFloat(priceStr || "0");
@@ -163,9 +160,9 @@ async function fetchFromDatabase(): Promise<PriceRecord[]> {
     const { PrismaClient } = await import("@prisma/client");
     const prisma = new PrismaClient();
 
+    // FIX: Removed orderBy to avoid schema mismatch
     const dbPrices = await prisma.approved_Prices.findMany({
       take: 100,
-      orderBy: { created_at: "desc" },
     });
 
     await prisma.$disconnect();
@@ -187,7 +184,7 @@ async function fetchFromDatabase(): Promise<PriceRecord[]> {
       confidence: Number(p.confidence || 85),
       validators: Number(p.validators || 3),
       updated_at: p.validated_at instanceof Date ? p.validated_at.toISOString() : 
-                  p.created_at instanceof Date ? p.created_at.toISOString() : 
+                  p.created_at instanceof Date ? (p.created_at as Date).toISOString() : 
                   new Date().toISOString(),
       source: "database",
     }));
