@@ -3,7 +3,7 @@
 // NaijaMarket Intel - Price History API
 // Data Source Priority: Google Sheets → Azure SQL → Mock Data
 // Bloomberg Equivalent: HP <GO>
-// Version: 3.0.0 - Google Sheets Primary
+// Version: 3.0.1 - Fixed TypeScript strict mode errors
 // ============================================================================
 
 import { NextRequest, NextResponse } from "next/server";
@@ -89,10 +89,10 @@ async function fetchHistoryFromSheets(
   days: number
 ): Promise<PriceHistoryPoint[]> {
   try {
-    const csvUrl = `https://docs.google.com/spreadsheets/d/${GOOGLE_SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(HISTORY_SHEET)}`;
+    const csvUrl = `https://docs.googleapis.com/spreadsheets/d/${GOOGLE_SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(HISTORY_SHEET)}`;
     
     const response = await fetch(csvUrl, {
-      next: { revalidate: 300 }, // Cache for 5 minutes
+      next: { revalidate: 300 },
     });
 
     if (!response.ok) {
@@ -105,10 +105,14 @@ async function fetchHistoryFromSheets(
     
     if (lines.length < 2) return [];
 
-    const headers = parseCSVLine(lines[0]);
+    // TypeScript fix: Ensure first line exists with type guard
+    const firstLine = lines[0];
+    if (typeof firstLine !== "string") return [];
+    
+    const headers = parseCSVLine(firstLine);
     
     // Find column indices
-    const findCol = (names: string[]) => {
+    const findCol = (names: string[]): number => {
       for (const name of names) {
         const idx = headers.findIndex(h => 
           h.toLowerCase().includes(name.toLowerCase())
@@ -132,7 +136,10 @@ async function fetchHistoryFromSheets(
     const history: PriceHistoryPoint[] = [];
 
     for (let i = 1; i < lines.length; i++) {
-      const row = parseCSVLine(lines[i]);
+      const currentLine = lines[i];
+      if (typeof currentLine !== "string") continue;
+      
+      const row = parseCSVLine(currentLine);
       
       // Match item and market
       const rowItem = (row[itemIdx] || "").toLowerCase();
@@ -150,13 +157,15 @@ async function fetchHistoryFromSheets(
       if (isNaN(rowDate.getTime()) || rowDate < cutoffDate) continue;
 
       // Parse price
-      const price = parseFloat(row[priceIdx]);
+      const priceStr = row[priceIdx];
+      const price = parseFloat(priceStr || "0");
       if (isNaN(price) || price <= 0) continue;
 
+      const trendVal = row[trendIdx];
       history.push({
         date: rowDate.toISOString().substring(0, 10),
         price: price,
-        trend: row[trendIdx] || "stable",
+        trend: trendVal || "stable",
         source: "sheets",
       });
     }
@@ -164,7 +173,7 @@ async function fetchHistoryFromSheets(
     // Sort by date
     history.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
-    console.log(`✅ Found ${history.length} history points from Google Sheets`);
+    console.log(`Found ${history.length} history points from Google Sheets`);
     return history;
 
   } catch (error) {
@@ -189,8 +198,6 @@ async function fetchHistoryFromDatabase(
     const cutoffDate = new Date();
     cutoffDate.setDate(cutoffDate.getDate() - days);
 
-    // Try to fetch from a historical prices table
-    // This assumes you have a daily_prices or similar table
     const results = await prisma.$queryRaw`
       SELECT 
         CAST(price_date AS DATE) as date,
@@ -202,13 +209,13 @@ async function fetchHistoryFromDatabase(
         AND price_date >= ${cutoffDate}
       GROUP BY CAST(price_date AS DATE)
       ORDER BY date ASC
-    ` as any[];
+    ` as Array<{ date: Date | string; price: number; source: string }>;
 
     await prisma.$disconnect();
 
     if (!results || results.length === 0) return [];
 
-    return results.map((r: any) => ({
+    return results.map((r) => ({
       date: r.date instanceof Date ? r.date.toISOString().substring(0, 10) : String(r.date).substring(0, 10),
       price: Number(r.price),
       trend: "stable",
@@ -262,12 +269,10 @@ function generateMockHistory(item: string, _market: string, days: number): Price
     const date = new Date(today);
     date.setDate(date.getDate() - i);
     
-    // Realistic daily change
     const changePercent = (Math.random() - 0.45) * 0.05;
     currentPrice = currentPrice * (1 + changePercent);
     currentPrice = Math.max(basePrice * 0.7, Math.min(basePrice * 1.3, currentPrice));
     
-    // Weekly seasonality
     const dayOfWeek = date.getDay();
     if (dayOfWeek === 1) currentPrice *= 1.01;
     if (dayOfWeek === 5) currentPrice *= 0.99;
@@ -302,8 +307,8 @@ function calculateStatistics(history: PriceHistoryPoint[]): PriceStatistics {
   }
 
   const prices = history.map(h => h.price);
-  const current = prices[prices.length - 1];
-  const first = prices[0];
+  const current = prices[prices.length - 1] || 0;
+  const first = prices[0] || 0;
   const change = current - first;
   const changePercent = first > 0 ? (change / first) * 100 : 0;
 
