@@ -1,5 +1,43 @@
+// ============================================================================
+// src/app/api/subscribe/route.ts
+// NaijaMarket Intel - Subscription Payment API
+// Version: 2.0.0 - Production Ready (TypeScript Strict)
+// Date: 2026-01-24
+// ============================================================================
+
 import { NextRequest, NextResponse } from "next/server";
 import sql from "mssql";
+
+// ============================================================================
+// TYPE DEFINITIONS
+// ============================================================================
+
+interface TierInfo {
+  price: number;
+  tierName: string;
+  duration: number;
+  durationUnit: string;
+  billingCycle: string;
+  queryLimit: number | null;
+  maxMarkets: number;
+}
+
+interface PaymentInitResult {
+  success: boolean;
+  paymentUrl?: string;
+  error?: string;
+}
+
+interface SubscriptionStatus {
+  phone: string;
+  tier: string;
+  tierName: string;
+  status: string;
+  startDate: string | null;
+  endDate: string | null;
+  queriesUsedToday: number;
+  maxMarkets: number;
+}
 
 // ============================================================================
 // CONFIGURATION
@@ -17,18 +55,70 @@ const dbConfig: sql.config = {
   },
 };
 
-// Subscription tier prices (in Naira)
-const TIER_PRICES: Record<string, { price: number; duration: number; durationUnit: string }> = {
-  SILVER: { price: 500, duration: 7, durationUnit: "days" },
-  GOLD: { price: 2000, duration: 30, durationUnit: "days" },
-  BUSINESS: { price: 15000, duration: 30, durationUnit: "days" },
-  CORPORATE: { price: 50000, duration: 30, durationUnit: "days" },
-  ENTERPRISE: { price: 150000, duration: 30, durationUnit: "days" },
-};
+// Payment provider API keys
+const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY || "";
+const FLUTTERWAVE_SECRET_KEY = process.env.FLUTTERWAVE_SECRET_KEY || "";
 
-// Payment provider configurations
-const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY || "sk_test_placeholder";
-const FLUTTERWAVE_SECRET_KEY = process.env.FLUTTERWAVE_SECRET_KEY || "FLWSECK_TEST-placeholder";
+// Base URL for callbacks
+const BASE_URL = process.env.NEXTAUTH_URL || "https://naijamarket-web.vercel.app";
+
+// Subscription tier prices and configurations
+const TIER_PRICES: Record<string, TierInfo> = {
+  FREE: {
+    price: 0,
+    tierName: "Free",
+    duration: 0,
+    durationUnit: "forever",
+    billingCycle: "forever",
+    queryLimit: 3,
+    maxMarkets: 3,
+  },
+  SILVER: {
+    price: 500,
+    tierName: "Silver",
+    duration: 7,
+    durationUnit: "days",
+    billingCycle: "weekly",
+    queryLimit: 5,
+    maxMarkets: 3,
+  },
+  GOLD: {
+    price: 2000,
+    tierName: "Gold",
+    duration: 30,
+    durationUnit: "days",
+    billingCycle: "monthly",
+    queryLimit: 15,
+    maxMarkets: 3,
+  },
+  BUSINESS: {
+    price: 15000,
+    tierName: "Business",
+    duration: 30,
+    durationUnit: "days",
+    billingCycle: "monthly",
+    queryLimit: 30,
+    maxMarkets: 5,
+  },
+  CORPORATE: {
+    price: 50000,
+    tierName: "Corporate",
+    duration: 30,
+    durationUnit: "days",
+    billingCycle: "monthly",
+    queryLimit: null, // Unlimited
+    maxMarkets: 6,
+  },
+  ENTERPRISE: {
+    price: 150000,
+    tierName: "Enterprise",
+    duration: 30,
+    durationUnit: "days",
+    billingCycle: "monthly",
+    queryLimit: null, // Unlimited
+    maxMarkets: 226,
+  },
+};
 
 // ============================================================================
 // HELPER FUNCTIONS
@@ -36,22 +126,38 @@ const FLUTTERWAVE_SECRET_KEY = process.env.FLUTTERWAVE_SECRET_KEY || "FLWSECK_TE
 
 /**
  * Generate unique payment reference
+ * Format: PAY-YYYYMMDDHHMMSS-XXXXXX
  */
 function generatePaymentReference(): string {
-  const timestamp = new Date().toISOString().replace(/[-:T.Z]/g, "").slice(0, 14);
+  const now = new Date();
+  const timestamp = now.toISOString().replace(/[-:T.Z]/g, "").slice(0, 14);
   const random = Math.random().toString(36).substring(2, 8).toUpperCase();
   return `PAY-${timestamp}-${random}`;
 }
 
 /**
- * Initialize Paystack payment
+ * Generate unique payment ID
+ * Format: PMNT-TIMESTAMP-RANDOM
+ */
+function generatePaymentId(): string {
+  const timestamp = Date.now().toString(36).toUpperCase();
+  const random = Math.random().toString(36).substring(2, 6).toUpperCase();
+  return `PMNT-${timestamp}-${random}`;
+}
+
+/**
+ * Initialize payment with Paystack
  */
 async function initializePaystackPayment(
   email: string,
   amount: number,
   reference: string,
-  metadata: any
-): Promise<{ success: boolean; paymentUrl?: string; error?: string }> {
+  metadata: Record<string, unknown>
+): Promise<PaymentInitResult> {
+  if (!PAYSTACK_SECRET_KEY) {
+    return { success: false, error: "Paystack is not configured" };
+  }
+
   try {
     const response = await fetch("https://api.paystack.co/transaction/initialize", {
       method: "POST",
@@ -60,25 +166,18 @@ async function initializePaystackPayment(
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        email: email || "customer@naijamarket.ng",
-        amount: amount * 100, // Paystack uses kobo
+        email,
+        amount: amount * 100, // Paystack uses kobo (1 Naira = 100 kobo)
         reference,
-        callback_url: `${process.env.NEXTAUTH_URL || "https://naijamarket-web.vercel.app"}/subscribe/callback?provider=paystack`,
+        callback_url: `${BASE_URL}/subscribe/callback?provider=paystack&ref=${reference}`,
         metadata: {
           ...metadata,
           custom_fields: [
-            {
-              display_name: "Subscription Tier",
-              variable_name: "tier",
-              value: metadata.tier,
-            },
-            {
-              display_name: "Phone Number",
-              variable_name: "phone",
-              value: metadata.phone,
-            },
+            { display_name: "Tier", variable_name: "tier", value: metadata.tier },
+            { display_name: "Phone", variable_name: "phone", value: metadata.phone },
           ],
         },
+        channels: ["card", "bank", "ussd", "bank_transfer"],
       }),
     });
 
@@ -89,23 +188,27 @@ async function initializePaystackPayment(
     }
 
     return { success: false, error: data.message || "Failed to initialize Paystack payment" };
-  } catch (error: any) {
+  } catch (error) {
     console.error("Paystack initialization error:", error);
-    return { success: false, error: error.message || "Paystack connection failed" };
+    return { success: false, error: "Paystack connection failed" };
   }
 }
 
 /**
- * Initialize Flutterwave payment
+ * Initialize payment with Flutterwave
  */
 async function initializeFlutterwavePayment(
   email: string,
   amount: number,
   reference: string,
-  metadata: any,
+  phone: string,
   name: string,
-  phone: string
-): Promise<{ success: boolean; paymentUrl?: string; error?: string }> {
+  metadata: Record<string, unknown>
+): Promise<PaymentInitResult> {
+  if (!FLUTTERWAVE_SECRET_KEY) {
+    return { success: false, error: "Flutterwave is not configured" };
+  }
+
   try {
     const response = await fetch("https://api.flutterwave.com/v3/payments", {
       method: "POST",
@@ -115,20 +218,21 @@ async function initializeFlutterwavePayment(
       },
       body: JSON.stringify({
         tx_ref: reference,
-        amount: amount,
+        amount,
         currency: "NGN",
-        redirect_url: `${process.env.NEXTAUTH_URL || "https://naijamarket-web.vercel.app"}/subscribe/callback?provider=flutterwave`,
+        redirect_url: `${BASE_URL}/subscribe/callback?provider=flutterwave&ref=${reference}`,
         customer: {
-          email: email || "customer@naijamarket.ng",
+          email,
           name: name || "NaijaMarket Customer",
           phonenumber: phone,
         },
         meta: metadata,
         customizations: {
           title: "NaijaMarket Intel",
-          description: `Subscription Upgrade to ${metadata.tier}`,
-          logo: "https://naijamarket-web.vercel.app/logo.png",
+          description: `Subscription Upgrade to ${metadata.tierName || metadata.tier}`,
+          logo: `${BASE_URL}/logo.png`,
         },
+        payment_options: "card, banktransfer, ussd",
       }),
     });
 
@@ -139,47 +243,50 @@ async function initializeFlutterwavePayment(
     }
 
     return { success: false, error: data.message || "Failed to initialize Flutterwave payment" };
-  } catch (error: any) {
+  } catch (error) {
     console.error("Flutterwave initialization error:", error);
-    return { success: false, error: error.message || "Flutterwave connection failed" };
+    return { success: false, error: "Flutterwave connection failed" };
   }
 }
 
 /**
- * Save payment record to database
+ * Record payment in database
  */
-async function savePaymentRecord(
-  phone: string,
+async function recordPayment(
+  paymentId: string,
   reference: string,
+  phone: string,
+  consumerId: string,
   tier: string,
   amount: number,
-  provider: string,
-  consumerId?: string
+  provider: string
 ): Promise<boolean> {
   let pool: sql.ConnectionPool | null = null;
-  
+
   try {
     pool = await sql.connect(dbConfig);
-    
+
     await pool.request()
-      .input("phone", sql.NVarChar(20), phone)
+      .input("payment_id", sql.NVarChar(50), paymentId)
       .input("reference", sql.NVarChar(50), reference)
+      .input("phone", sql.NVarChar(20), phone)
+      .input("consumer_id", sql.NVarChar(50), consumerId)
       .input("tier", sql.NVarChar(20), tier)
       .input("amount", sql.Decimal(18, 2), amount)
-      .input("provider", sql.NVarChar(20), provider.toUpperCase())
-      .input("status", sql.NVarChar(20), "PENDING")
-      .input("consumer_id", sql.NVarChar(50), consumerId || null)
-      .input("created_at", sql.DateTime2, new Date())
+      .input("provider", sql.NVarChar(20), provider)
       .query(`
-        INSERT INTO Consumer_Payments 
-        (phone, reference, tier, amount, provider, status, consumer_id, created_at, updated_at)
-        VALUES 
-        (@phone, @reference, @tier, @amount, @provider, @status, @consumer_id, @created_at, @created_at)
+        INSERT INTO Consumer_Payments (
+          payment_id, reference, phone, consumer_id, tier, 
+          amount, currency, provider, status, created_at
+        ) VALUES (
+          @payment_id, @reference, @phone, @consumer_id, @tier,
+          @amount, 'NGN', @provider, 'PENDING', GETDATE()
+        )
       `);
-    
+
     return true;
-  } catch (error: any) {
-    console.error("Database error saving payment:", error);
+  } catch (error) {
+    console.error("Error recording payment:", error);
     return false;
   } finally {
     if (pool) {
@@ -188,15 +295,65 @@ async function savePaymentRecord(
   }
 }
 
+/**
+ * Get consumer subscription status
+ */
+async function getSubscriptionStatus(phone: string): Promise<SubscriptionStatus | null> {
+  let pool: sql.ConnectionPool | null = null;
+
+  try {
+    pool = await sql.connect(dbConfig);
+
+    const result = await pool.request()
+      .input("phone", sql.NVarChar(20), phone)
+      .query(`
+        SELECT TOP 1
+          phone_number,
+          tier_code,
+          tier_name,
+          status,
+          start_date,
+          end_date,
+          ISNULL(CAST(queries_used_today AS INT), 0) as queries_used_today,
+          ISNULL(max_markets, 3) as max_markets
+        FROM Consumer_Active_Subscriptions
+        WHERE phone_number = @phone
+        ORDER BY created_at DESC
+      `);
+
+    if (result.recordset.length === 0) {
+      return null;
+    }
+
+    const row = result.recordset[0];
+    return {
+      phone: row.phone_number,
+      tier: row.tier_code || "FREE",
+      tierName: row.tier_name || "Free",
+      status: row.status || "ACTIVE",
+      startDate: row.start_date ? row.start_date.toISOString().split("T")[0] : null,
+      endDate: row.end_date ? row.end_date.toISOString().split("T")[0] : null,
+      queriesUsedToday: row.queries_used_today || 0,
+      maxMarkets: row.max_markets || 3,
+    };
+  } catch (error) {
+    console.error("Error getting subscription status:", error);
+    return null;
+  } finally {
+    if (pool) {
+      await pool.close();
+    }
+  }
+}
+
 // ============================================================================
-// API HANDLER
+// POST - Initialize Payment
 // ============================================================================
 
 export async function POST(request: NextRequest) {
   try {
-    // Parse request body
     const body = await request.json();
-    const { tier, provider, phone, email, name } = body;
+    const { tier, provider, phone, email, name, consumerId } = body;
 
     // Validate required fields
     if (!tier || !provider) {
@@ -207,171 +364,188 @@ export async function POST(request: NextRequest) {
     }
 
     // Validate tier
-    if (!TIER_PRICES[tier]) {
+    const tierKey = tier.toUpperCase();
+    const tierInfo = TIER_PRICES[tierKey];
+    if (!tierInfo) {
       return NextResponse.json(
         { error: `Invalid subscription tier: ${tier}` },
         { status: 400 }
       );
     }
 
-    // Validate provider
-    if (!["paystack", "flutterwave"].includes(provider.toLowerCase())) {
+    // Cannot pay for FREE tier
+    if (tierInfo.price === 0) {
       return NextResponse.json(
-        { error: `Invalid payment provider: ${provider}` },
+        { error: "Cannot process payment for FREE tier" },
         { status: 400 }
       );
     }
 
-    // Get tier price
-    const tierInfo = TIER_PRICES[tier];
-    const amount = tierInfo.price;
+    // Validate provider
+    const providerLower = provider.toLowerCase();
+    if (!["paystack", "flutterwave"].includes(providerLower)) {
+      return NextResponse.json(
+        { error: `Invalid payment provider: ${provider}. Use 'paystack' or 'flutterwave'` },
+        { status: 400 }
+      );
+    }
 
     // Generate payment reference
     const reference = generatePaymentReference();
+    const paymentId = generatePaymentId();
+    const amount = tierInfo.price;
 
-    // Prepare metadata
+    // Create customer email if not provided
+    const customerEmail = email || (phone ? `${phone.replace(/\+/g, "")}@naijamarket.ng` : "customer@naijamarket.ng");
+    const customerName = name || "NaijaMarket Customer";
+    const customerPhone = phone || "";
+
+    // Metadata for payment provider
     const metadata = {
-      tier,
-      phone: phone || "",
+      tier: tierKey,
+      tierName: tierInfo.tierName,
+      phone: customerPhone,
+      consumerId: consumerId || "",
+      billingCycle: tierInfo.billingCycle,
       duration: tierInfo.duration,
       durationUnit: tierInfo.durationUnit,
     };
 
     // Initialize payment with selected provider
-    let paymentResult;
-    
-    if (provider.toLowerCase() === "paystack") {
-      paymentResult = await initializePaystackPayment(
-        email || `${phone}@naijamarket.ng`,
-        amount,
-        reference,
-        metadata
-      );
+    let initResult: PaymentInitResult;
+
+    if (providerLower === "paystack") {
+      initResult = await initializePaystackPayment(customerEmail, amount, reference, metadata);
     } else {
-      paymentResult = await initializeFlutterwavePayment(
-        email || `${phone}@naijamarket.ng`,
+      initResult = await initializeFlutterwavePayment(
+        customerEmail,
         amount,
         reference,
-        metadata,
-        name || "NaijaMarket Customer",
-        phone || ""
+        customerPhone,
+        customerName,
+        metadata
       );
     }
 
-    if (!paymentResult.success) {
+    if (!initResult.success) {
       return NextResponse.json(
-        { error: paymentResult.error || "Failed to initialize payment" },
+        { error: initResult.error || "Payment initialization failed" },
         { status: 500 }
       );
     }
 
-    // Save payment record to database
-    const saved = await savePaymentRecord(
-      phone || "",
-      reference,
-      tier,
-      amount,
-      provider
-    );
-
-    if (!saved) {
-      console.warn("Failed to save payment record, but continuing with payment");
+    // Record payment in database (non-blocking, don't fail if this fails)
+    if (customerPhone && consumerId) {
+      recordPayment(
+        paymentId,
+        reference,
+        customerPhone,
+        consumerId,
+        tierKey,
+        amount,
+        providerLower
+      ).catch((err) => console.error("Failed to record payment:", err));
     }
 
-    // Return payment URL
+    // Return success with payment URL
     return NextResponse.json({
       success: true,
+      paymentUrl: initResult.paymentUrl,
       reference,
-      paymentUrl: paymentResult.paymentUrl,
-      tier,
+      tier: tierKey,
+      tierName: tierInfo.tierName,
       amount,
-      provider: provider.toUpperCase(),
+      provider: providerLower,
     });
-
-  } catch (error: any) {
-    console.error("Subscription API error:", error);
+  } catch (error) {
+    console.error("Payment initialization error:", error);
     return NextResponse.json(
-      { error: error.message || "Internal server error" },
+      { error: "Internal server error" },
       { status: 500 }
     );
   }
 }
 
 // ============================================================================
-// GET - Check subscription status
+// GET - Get Subscription Status or Tiers
 // ============================================================================
 
 export async function GET(request: NextRequest) {
-  const searchParams = request.nextUrl.searchParams;
-  const phone = searchParams.get("phone");
-  const reference = searchParams.get("reference");
-
-  if (!phone && !reference) {
-    return NextResponse.json(
-      { error: "Missing required parameter: phone or reference" },
-      { status: 400 }
-    );
-  }
-
-  let pool: sql.ConnectionPool | null = null;
-
   try {
-    pool = await sql.connect(dbConfig);
+    const { searchParams } = new URL(request.url);
+    const phone = searchParams.get("phone");
+    const action = searchParams.get("action");
 
-    let query = "";
+    // If action=tiers, return all available tiers
+    if (action === "tiers") {
+      const tiers = Object.entries(TIER_PRICES).map(([code, info]) => ({
+        code,
+        name: info.tierName,
+        price: info.price,
+        priceFormatted: info.price === 0 ? "Free" : `₦${info.price.toLocaleString()}`,
+        billing: `${info.billingCycle === "forever" ? "Forever" : `Per ${info.billingCycle === "weekly" ? "week" : "month"}`}`,
+        duration: info.duration,
+        durationUnit: info.durationUnit,
+        billingCycle: info.billingCycle,
+        queryLimit: info.queryLimit,
+        maxMarkets: info.maxMarkets,
+      }));
 
-    if (reference) {
-      query = `
-        SELECT TOP 1 
-          cp.reference, cp.tier, cp.amount, cp.provider, cp.status, 
-          cp.created_at, cp.updated_at,
-          c.full_name, c.subscription_tier as current_tier
-        FROM Consumer_Payments cp
-        LEFT JOIN Consumers c ON cp.phone = c.phone
-        WHERE cp.reference = @reference
-      `;
-      params = { reference };
-    } else {
-      query = `
-        SELECT TOP 5 
-          cp.reference, cp.tier, cp.amount, cp.provider, cp.status, 
-          cp.created_at, cp.updated_at,
-          c.full_name, c.subscription_tier as current_tier
-        FROM Consumer_Payments cp
-        LEFT JOIN Consumers c ON cp.phone = c.phone
-        WHERE cp.phone = @phone
-        ORDER BY cp.created_at DESC
-      `;
-      params = { phone };
-    }
-
-    const result = await pool.request()
-      .input(reference ? "reference" : "phone", sql.NVarChar(50), reference || phone)
-      .query(query);
-
-    if (result.recordset.length === 0) {
       return NextResponse.json({
         success: true,
-        payments: [],
-        message: "No payment records found",
+        tiers,
       });
     }
 
+    // If phone provided, get subscription status
+    if (phone) {
+      const status = await getSubscriptionStatus(phone);
+
+      if (!status) {
+        // Return default FREE tier status
+        return NextResponse.json({
+          success: true,
+          subscription: {
+            phone,
+            tier: "FREE",
+            tierName: "Free",
+            status: "ACTIVE",
+            startDate: null,
+            endDate: null,
+            queriesUsedToday: 0,
+            maxMarkets: 3,
+          },
+        });
+      }
+
+      return NextResponse.json({
+        success: true,
+        subscription: status,
+      });
+    }
+
+    // No phone or action provided - return tiers by default
+    const tiers = Object.entries(TIER_PRICES).map(([code, info]) => ({
+      code,
+      name: info.tierName,
+      price: info.price,
+      priceFormatted: info.price === 0 ? "Free" : `₦${info.price.toLocaleString()}`,
+      billing: `${info.billingCycle === "forever" ? "Forever" : `Per ${info.billingCycle === "weekly" ? "week" : "month"}`}`,
+      duration: info.duration,
+      durationUnit: info.durationUnit,
+      billingCycle: info.billingCycle,
+    }));
+
     return NextResponse.json({
       success: true,
-      payments: result.recordset,
+      tiers,
     });
-
-  } catch (error: any) {
-    console.error("Database error:", error);
+  } catch (error) {
+    console.error("Error in GET /api/subscribe:", error);
     return NextResponse.json(
-      { error: "Failed to fetch payment status" },
+      { error: "Internal server error" },
       { status: 500 }
     );
-  } finally {
-    if (pool) {
-      await pool.close();
-    }
   }
 }
 
