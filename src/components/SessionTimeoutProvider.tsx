@@ -2,6 +2,7 @@
 
 import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from "react";
 import { signOut, useSession } from "next-auth/react";
+import { useRouter } from "next/navigation";
 import { AlertTriangle, Clock, LogOut, RefreshCw } from "lucide-react";
 
 // ============================================================================
@@ -39,11 +40,64 @@ interface SessionTimeoutProviderProps {
 
 export function SessionTimeoutProvider({ children }: SessionTimeoutProviderProps) {
   const { status } = useSession();
+  const router = useRouter();
   const [timeRemaining, setTimeRemaining] = useState(SESSION_TIMEOUT_MS);
   const [isWarningVisible, setIsWarningVisible] = useState(false);
   const [lastActivity, setLastActivity] = useState(Date.now());
   
   const timerRef = useRef<NodeJS.Timeout | null>(null);
+
+  // ============================================================================
+  // BACK-BUTTON PROTECTION (NEW)
+  // ============================================================================
+  useEffect(() => {
+    // Check session when page becomes visible (user returns via back button or tab switch)
+    const handleVisibilityChange = async () => {
+      if (document.visibilityState === "visible" && status === "unauthenticated") {
+        // Session expired while away, redirect to login
+        router.replace("/login?sessionExpired=true");
+      }
+    };
+
+    // Handle page restored from bfcache (back-forward cache)
+    const handlePageShow = (event: PageTransitionEvent) => {
+      if (event.persisted) {
+        // Page was restored from cache, verify session
+        checkSession();
+      }
+    };
+
+    // Verify session is still valid
+    const checkSession = async () => {
+      try {
+        const response = await fetch("/api/auth/session", {
+          cache: "no-store",
+          headers: { "Cache-Control": "no-cache" },
+        });
+        const data = await response.json();
+        
+        if (!data || !data.user) {
+          // Session invalid, redirect to login
+          window.location.href = "/login?sessionExpired=true";
+        }
+      } catch {
+        // On error, redirect to be safe
+        window.location.href = "/login?sessionExpired=true";
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    window.addEventListener("pageshow", handlePageShow);
+
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener("pageshow", handlePageShow);
+    };
+  }, [status, router]);
+
+  // ============================================================================
+  // EXISTING CODE BELOW (UNCHANGED)
+  // ============================================================================
 
   // Reset timer on user activity
   const resetTimer = useCallback(() => {
@@ -64,6 +118,9 @@ export function SessionTimeoutProvider({ children }: SessionTimeoutProviderProps
   const handleLogout = useCallback(async () => {
     // Clear timers
     if (timerRef.current) clearInterval(timerRef.current);
+    
+    // Clear session storage
+    sessionStorage.clear();
     
     // Sign out and redirect to login
     await signOut({ callbackUrl: "/login?timeout=true" });
@@ -151,7 +208,7 @@ export function SessionTimeoutProvider({ children }: SessionTimeoutProviderProps
 }
 
 // ============================================================================
-// WARNING MODAL COMPONENT
+// WARNING MODAL COMPONENT (UNCHANGED)
 // ============================================================================
 
 interface SessionTimeoutModalProps {
