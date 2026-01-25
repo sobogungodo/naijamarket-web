@@ -410,6 +410,14 @@ export async function PUT(request: NextRequest): Promise<NextResponse> {
     }
 
     const schedule = userSchedules[scheduleIndex];
+    
+    // TypeScript guard - should never happen after index check
+    if (!schedule) {
+      return NextResponse.json({
+        success: false,
+        error: "Schedule not found",
+      }, { status: 404 });
+    }
 
     // Update fields
     if (body.isActive !== undefined) schedule.isActive = body.isActive;
@@ -494,12 +502,21 @@ export async function DELETE(request: NextRequest): Promise<NextResponse> {
   }
 
   const deletedSchedule = userSchedules[scheduleIndex];
+  
+  // TypeScript guard - should never happen after index check
+  if (!deletedSchedule) {
+    return NextResponse.json({
+      success: false,
+      error: "Schedule not found",
+    }, { status: 404 });
+  }
+  
   userSchedules.splice(scheduleIndex, 1);
   scheduledReportsStore.set(userId, userSchedules);
 
   return NextResponse.json({
     success: true,
-    message: `Scheduled ${REPORT_TYPE_NAMES[deletedSchedule.reportType]} deleted`,
+    message: `Scheduled ${REPORT_TYPE_NAMES[deletedSchedule.reportType] || deletedSchedule.reportType} deleted`,
     deletedId: scheduleId,
   });
 }
