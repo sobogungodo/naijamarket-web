@@ -310,12 +310,9 @@ export async function PUT(request: NextRequest): Promise<NextResponse> {
     const body = await request.json();
     const { section, data } = body;
 
-    // Get existing settings
-    let settings = userSettingsStore.get(userId);
-    
-    if (!settings) {
-      settings = { ...DEFAULT_SETTINGS };
-    }
+    // Get existing settings or create defaults - always returns UserSettings
+    const existingSettings = userSettingsStore.get(userId);
+    let settings: UserSettings = existingSettings ? { ...existingSettings } : { ...DEFAULT_SETTINGS };
 
     // Update specific section
     if (section && data) {
