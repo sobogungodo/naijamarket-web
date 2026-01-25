@@ -331,15 +331,6 @@ function generateReportId(): string {
   return `RPT-${timestamp}-${random}`.toUpperCase();
 }
 
-function formatCurrency(amount: number): string {
-  return `₦${amount.toLocaleString("en-NG")}`;
-}
-
-function formatPercent(value: number): string {
-  const sign = value >= 0 ? "+" : "";
-  return `${sign}${value.toFixed(1)}%`;
-}
-
 function getDateRange(reportType: string): { startDate: Date; endDate: Date } {
   const endDate = new Date();
   let startDate = new Date();
