@@ -220,7 +220,7 @@ export default function ForecastPage() {
   
   // Handle export
   const handleExport = () => {
-    if (!forecastData?.tierLimits.canExport) {
+    if (!forecastData?.tierLimits?.canExport) {
       alert("Export is available for GOLD tier and above. Please upgrade your subscription.");
       return;
     }
@@ -368,12 +368,12 @@ export default function ForecastPage() {
             <button
               onClick={handleExport}
               className={`flex items-center gap-2 px-4 py-2 rounded-lg ${
-                forecastData?.tierLimits.canExport
+                forecastData?.tierLimits?.canExport
                   ? "bg-emerald-600 hover:bg-emerald-700"
                   : "bg-gray-700 cursor-not-allowed"
               }`}
             >
-              {forecastData?.tierLimits.canExport ? (
+              {forecastData?.tierLimits?.canExport ? (
                 <Download className="w-4 h-4" />
               ) : (
                 <Lock className="w-4 h-4" />
@@ -384,13 +384,13 @@ export default function ForecastPage() {
         </div>
         
         {/* Tier Banner */}
-        {forecastData?.tierLimits.tier && ["FREE", "SILVER"].includes(forecastData.tierLimits.tier) && (
+        {forecastData?.tierLimits?.tier && ["FREE", "SILVER"].includes(forecastData.tierLimits.tier as string) && (
           <div className="mt-4 bg-gradient-to-r from-amber-900/30 to-amber-800/20 border border-amber-700/50 rounded-lg p-4 flex items-center justify-between">
             <div className="flex items-center gap-3">
               <Lock className="w-5 h-5 text-amber-400" />
               <div>
                 <p className="text-amber-200 font-medium">
-                  Limited Forecast ({forecastData.tierLimits.predictionMonths} month{forecastData.tierLimits.predictionMonths > 1 ? "s" : ""} ahead)
+                  Limited Forecast ({forecastData.tierLimits?.predictionMonths ?? 0} month{(forecastData.tierLimits?.predictionMonths ?? 0) > 1 ? "s" : ""} ahead)
                 </p>
                 <p className="text-amber-400/70 text-sm">
                   Upgrade to GOLD for 3-month forecasts with confidence intervals
@@ -579,7 +579,7 @@ export default function ForecastPage() {
                   formatter={(value: number) => [formatPrice(value), ""]}
                 />
                 <Legend />
-                {forecastData?.tierLimits.showConfidence && (
+                {forecastData?.tierLimits?.showConfidence && (
                   <>
                     <Area
                       type="monotone"
@@ -742,7 +742,7 @@ export default function ForecastPage() {
                         ({idx + 1} month{idx > 0 ? "s" : ""} ahead)
                       </span>
                     </div>
-                    {forecastData?.tierLimits.showConfidence && pred.confidence > 0 && (
+                    {forecastData?.tierLimits?.showConfidence && pred.confidence > 0 && (
                       <span
                         className={`text-xs px-2 py-1 rounded ${
                           pred.confidence >= 80
@@ -760,7 +760,7 @@ export default function ForecastPage() {
                     <p className="text-2xl font-bold text-emerald-400">
                       {formatPrice(pred.predictedPrice)}
                     </p>
-                    {forecastData?.tierLimits.showConfidence && pred.confidenceLow > 0 && (
+                    {forecastData?.tierLimits?.showConfidence && pred.confidenceLow > 0 && (
                       <p className="text-sm text-gray-400">
                         Range: {formatPrice(pred.confidenceLow)} - {formatPrice(pred.confidenceHigh)}
                       </p>
@@ -773,7 +773,7 @@ export default function ForecastPage() {
               ))}
               
               {/* Show upgrade prompt if limited */}
-              {forecastData?.tierLimits.predictionMonths < 6 && (
+              {(forecastData?.tierLimits?.predictionMonths ?? 0) < 6 && (
                 <div className="mt-4 p-4 bg-gradient-to-r from-indigo-900/30 to-purple-900/30 border border-indigo-700/50 rounded-lg">
                   <div className="flex items-center gap-2 mb-2">
                     <Info className="w-4 h-4 text-indigo-400" />
