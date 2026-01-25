@@ -237,16 +237,25 @@ export async function GET(): Promise<NextResponse> {
   try {
     const session = await getServerSession();
     
-    // Use email from session or a default demo user
-    const userId = session?.user?.email || "demo-user";
-    const user = session?.user as SessionUser | undefined;
+    // If no session, return default settings
+    if (!session?.user?.email) {
+      return NextResponse.json({
+        success: true,
+        data: DEFAULT_SETTINGS,
+        timestamp: new Date().toISOString(),
+        source: "defaults",
+      });
+    }
+
+    const userId = session.user.email;
+    const user = session.user as SessionUser;
     
     // Get stored settings or create defaults
     let settings = userSettingsStore.get(userId);
     
     if (!settings) {
       // Extract user tier safely
-      const userTier = (user?.tier || "FREE").toUpperCase();
+      const userTier = (user.tier || "FREE").toUpperCase();
       const tierFeatures = getTierFeatures(userTier);
       
       // Create default settings with user info from session
@@ -254,11 +263,11 @@ export async function GET(): Promise<NextResponse> {
         ...DEFAULT_SETTINGS,
         profile: {
           ...DEFAULT_SETTINGS.profile,
-          firstName: user?.name?.split(" ")[0] || "",
-          lastName: user?.name?.split(" ").slice(1).join(" ") || "",
-          email: user?.email || "",
-          phone: user?.phone || "",
-          avatar: user?.image || null,
+          firstName: user.name?.split(" ")[0] || "",
+          lastName: user.name?.split(" ").slice(1).join(" ") || "",
+          email: user.email || "",
+          phone: user.phone || "",
+          avatar: user.image || null,
         },
         subscription: {
           ...DEFAULT_SETTINGS.subscription,
@@ -274,7 +283,7 @@ export async function GET(): Promise<NextResponse> {
       success: true,
       data: settings,
       timestamp: new Date().toISOString(),
-      source: session?.user?.email ? "database" : "demo",
+      source: "database",
     });
 
   } catch (error) {
@@ -297,9 +306,14 @@ export async function PUT(request: NextRequest): Promise<NextResponse> {
   try {
     const session = await getServerSession();
     
-    // Use email from session or a default demo user
-    const userId = session?.user?.email || "demo-user";
-    
+    if (!session?.user?.email) {
+      return NextResponse.json(
+        { success: false, error: "Unauthorized" },
+        { status: 401 }
+      );
+    }
+
+    const userId = session.user.email;
     const body = await request.json();
     const { section, data } = body;
 
@@ -364,9 +378,14 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   try {
     const session = await getServerSession();
     
-    // Use email from session or a default demo user
-    const userId = session?.user?.email || "demo-user";
-    
+    if (!session?.user?.email) {
+      return NextResponse.json(
+        { success: false, error: "Unauthorized" },
+        { status: 401 }
+      );
+    }
+
+    const userId = session.user.email;
     const body = await request.json();
     const { action, data } = body;
 
