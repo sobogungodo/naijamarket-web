@@ -31,9 +31,7 @@ import {
   Sun,
 } from "lucide-react";
 import {
-  LineChart,
   Line,
-  AreaChart,
   Area,
   BarChart,
   Bar,
@@ -45,6 +43,7 @@ import {
   ResponsiveContainer,
   ReferenceLine,
   ComposedChart,
+  AreaChart,
 } from "recharts";
 
 // ============================================================================
