@@ -22,6 +22,7 @@ import {
   Sparkles,
   Activity,
   Globe2,
+  ShoppingCart,
 } from "lucide-react";
 
 // ============================================================================
@@ -207,6 +208,7 @@ export default function DashboardLayout({
             <NavLink href="/dashboard/markets" icon={MapPin} label="Markets" currentPath={pathname} />
             <NavLink href="/dashboard/compare" icon={GitCompare} label="Compare" currentPath={pathname} />
             <NavLink href="/dashboard/arbitrage" icon={ArrowLeftRight} label="Arbitrage" badge="PRO" currentPath={pathname} />
+            <NavLink href="/dashboard/bulk-buyer" icon={ShoppingCart} label="Bulk Buyer" badge="NEW" currentPath={pathname} />
             <NavLink href="/dashboard/watchlist" icon={Star} label="Watchlist" currentPath={pathname} />
             <NavLink href="/dashboard/alerts" icon={Bell} label="Price Alerts" currentPath={pathname} />
             <NavLink href="/dashboard/analytics" icon={BarChart3} label="Analytics" currentPath={pathname} />
