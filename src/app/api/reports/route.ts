@@ -509,7 +509,7 @@ async function fetchFromDatabase(
 
     // NBS comparison
     const currentMonth = new Date().toISOString().slice(0, 7);
-    const nbsRate = NBS_OFFICIAL_RATES[currentMonth] || NBS_OFFICIAL_RATES["2026-01"];
+    const nbsRate = NBS_OFFICIAL_RATES[currentMonth] ?? NBS_OFFICIAL_RATES["2026-01"] ?? { headline: 35.50, food: 40.50 };
     const naijaMarketInflation = parseFloat(
       (prices.reduce((sum: number, p: { price_change_pct: number }) => 
         sum + (p.price_change_pct || 0), 0) / prices.length).toFixed(2)
