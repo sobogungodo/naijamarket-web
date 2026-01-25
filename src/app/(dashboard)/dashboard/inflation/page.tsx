@@ -32,10 +32,7 @@ import {
   Snowflake,
 } from "lucide-react";
 import {
-  LineChart,
   Line,
-  BarChart,
-  Bar,
   XAxis,
   YAxis,
   CartesianGrid,
