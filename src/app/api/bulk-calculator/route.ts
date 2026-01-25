@@ -283,21 +283,123 @@ function generateMockPriceData(items: string[]): PriceRecord[] {
   const today = new Date().toISOString().split("T")[0] ?? "";
   
   const basePrices: Record<string, { price: number; unit: string }> = {
+    // GRAINS & CEREALS
     "Rice": { price: 78500, unit: "50kg bag" },
+    "Maize": { price: 35000, unit: "bag" },
+    "Millet": { price: 32000, unit: "bag" },
+    "Sorghum": { price: 28000, unit: "bag" },
+    "Wheat": { price: 45000, unit: "bag" },
+    "Acha": { price: 38000, unit: "bag" },
+    "Ofada Rice": { price: 95000, unit: "50kg bag" },
+    
+    // LEGUMES
+    "Beans": { price: 62000, unit: "bag" },
+    "Groundnut": { price: 48000, unit: "bag" },
+    "Soybeans": { price: 42000, unit: "bag" },
+    "Cowpea": { price: 55000, unit: "bag" },
+    "Bambara Nut": { price: 45000, unit: "bag" },
+    
+    // TUBERS
+    "Yam": { price: 2800, unit: "tuber" },
+    "Cassava": { price: 15000, unit: "bag" },
+    "Potato": { price: 25000, unit: "bag" },
+    "Sweet Potato": { price: 18000, unit: "bag" },
+    "Cocoyam": { price: 12000, unit: "bag" },
+    
+    // VEGETABLES
     "Tomatoes": { price: 45000, unit: "basket" },
     "Onions": { price: 38500, unit: "bag" },
-    "Beans": { price: 62000, unit: "bag" },
-    "Garri": { price: 28000, unit: "bag" },
-    "Palm Oil": { price: 52000, unit: "25L" },
-    "Yam": { price: 2800, unit: "tuber" },
     "Pepper": { price: 32000, unit: "basket" },
-    "Plantain": { price: 4500, unit: "bunch" },
+    "Okra": { price: 8500, unit: "basket" },
+    "Spinach": { price: 2500, unit: "bundle" },
+    "Ugwu": { price: 3000, unit: "bundle" },
+    "Bitter Leaf": { price: 2000, unit: "bundle" },
+    "Waterleaf": { price: 1500, unit: "bundle" },
+    "Cabbage": { price: 3500, unit: "head" },
+    "Carrot": { price: 8000, unit: "bag" },
+    "Cucumber": { price: 5000, unit: "bag" },
+    "Garden Egg": { price: 6000, unit: "basket" },
+    "Green Beans": { price: 4500, unit: "bag" },
+    
+    // OILS
+    "Palm Oil": { price: 52000, unit: "25L" },
     "Groundnut Oil": { price: 58000, unit: "25L" },
-    "Cement": { price: 6500, unit: "bag" },
-    "Sugar": { price: 85000, unit: "50kg" },
-    "Flour": { price: 42000, unit: "50kg" },
+    "Vegetable Oil": { price: 48000, unit: "25L" },
+    "Coconut Oil": { price: 35000, unit: "5L" },
+    "Olive Oil": { price: 18000, unit: "1L" },
+    
+    // PROCESSED FOODS
+    "Garri": { price: 28000, unit: "bag" },
     "Semovita": { price: 18000, unit: "10kg" },
+    "Flour": { price: 42000, unit: "50kg" },
+    "Sugar": { price: 85000, unit: "50kg" },
+    "Salt": { price: 3500, unit: "bag" },
     "Spaghetti": { price: 12000, unit: "carton" },
+    "Macaroni": { price: 10000, unit: "carton" },
+    "Noodles": { price: 8500, unit: "carton" },
+    "Bread": { price: 1500, unit: "loaf" },
+    "Cornflakes": { price: 4500, unit: "pack" },
+    "Custard": { price: 3800, unit: "tin" },
+    "Milk": { price: 6500, unit: "tin" },
+    "Milo": { price: 8500, unit: "tin" },
+    "Bournvita": { price: 7500, unit: "tin" },
+    
+    // PROTEINS
+    "Chicken": { price: 4500, unit: "kg" },
+    "Turkey": { price: 6500, unit: "kg" },
+    "Beef": { price: 4000, unit: "kg" },
+    "Goat Meat": { price: 5500, unit: "kg" },
+    "Fish (Catfish)": { price: 3500, unit: "kg" },
+    "Fish (Tilapia)": { price: 2800, unit: "kg" },
+    "Stockfish": { price: 8500, unit: "kg" },
+    "Crayfish": { price: 12000, unit: "kg" },
+    "Eggs": { price: 3800, unit: "crate" },
+    "Prawns": { price: 15000, unit: "kg" },
+    
+    // FRUITS
+    "Plantain": { price: 4500, unit: "bunch" },
+    "Banana": { price: 2500, unit: "bunch" },
+    "Orange": { price: 8000, unit: "bag" },
+    "Mango": { price: 5000, unit: "bag" },
+    "Pineapple": { price: 2000, unit: "piece" },
+    "Watermelon": { price: 3500, unit: "piece" },
+    "Pawpaw": { price: 1500, unit: "piece" },
+    "Apple": { price: 8000, unit: "bag" },
+    "Grape": { price: 12000, unit: "pack" },
+    
+    // SPICES & SEASONINGS
+    "Ginger": { price: 8000, unit: "bag" },
+    "Garlic": { price: 6500, unit: "bag" },
+    "Turmeric": { price: 5000, unit: "bag" },
+    "Curry": { price: 2500, unit: "pack" },
+    "Thyme": { price: 1500, unit: "pack" },
+    "Nutmeg": { price: 3500, unit: "pack" },
+    "Maggi": { price: 3200, unit: "carton" },
+    "Knorr": { price: 3500, unit: "carton" },
+    "Locust Beans": { price: 4500, unit: "pack" },
+    "Ogiri": { price: 2500, unit: "pack" },
+    
+    // BUILDING MATERIALS
+    "Cement": { price: 6500, unit: "bag" },
+    "Iron Rod 12mm": { price: 8500, unit: "length" },
+    "Iron Rod 16mm": { price: 12000, unit: "length" },
+    "Zinc": { price: 5500, unit: "sheet" },
+    "Plywood": { price: 8500, unit: "sheet" },
+    "Block": { price: 450, unit: "piece" },
+    "Sand": { price: 45000, unit: "trip" },
+    "Granite": { price: 85000, unit: "trip" },
+    "Tiles": { price: 8500, unit: "carton" },
+    "Paint": { price: 35000, unit: "bucket" },
+    "POP": { price: 4500, unit: "bag" },
+    "Nails": { price: 2500, unit: "pack" },
+    
+    // BEVERAGES
+    "Water (Sachet)": { price: 250, unit: "bag" },
+    "Water (Bottle)": { price: 180, unit: "bottle" },
+    "Soft Drink": { price: 250, unit: "bottle" },
+    "Malt": { price: 350, unit: "bottle" },
+    "Zobo": { price: 500, unit: "bottle" },
+    "Palm Wine": { price: 1500, unit: "bottle" },
   };
   
   const markets = [
@@ -309,6 +411,10 @@ function generateMockPriceData(items: string[]): PriceRecord[] {
     { name: "Kano Main Market", id: "MKT0006", state: "Kano" },
     { name: "Jos Main Market", id: "MKT0007", state: "Plateau" },
     { name: "Port Harcourt Market", id: "MKT0008", state: "Rivers" },
+    { name: "Bodija Market", id: "MKT0009", state: "Oyo" },
+    { name: "New Benin Market", id: "MKT0010", state: "Edo" },
+    { name: "Ogbete Market", id: "MKT0011", state: "Enugu" },
+    { name: "Sabo Market", id: "MKT0012", state: "Kaduna" },
   ];
   
   let idx = 0;
@@ -554,23 +660,103 @@ export async function GET(request: NextRequest) {
     const defaultLimits = { maxItems: 3, showSavings: false, showOptimal: false, canExport: false };
     const limits = TIER_LIMITS[tier] ?? defaultLimits;
     
-    // Return available items for the calculator
+    // Return available items for the calculator (50+ items across 12 categories)
     const availableItems = [
+      // GRAINS & CEREALS
       { id: "rice", name: "Rice (50kg)", category: "Grains", unit: "bag" },
+      { id: "ofada-rice", name: "Ofada Rice (50kg)", category: "Grains", unit: "bag" },
+      { id: "maize", name: "Maize (bag)", category: "Grains", unit: "bag" },
+      { id: "millet", name: "Millet (bag)", category: "Grains", unit: "bag" },
+      { id: "sorghum", name: "Sorghum (bag)", category: "Grains", unit: "bag" },
+      { id: "wheat", name: "Wheat (bag)", category: "Grains", unit: "bag" },
+      { id: "acha", name: "Acha (bag)", category: "Grains", unit: "bag" },
+      
+      // LEGUMES
       { id: "beans", name: "Beans (bag)", category: "Legumes", unit: "bag" },
-      { id: "garri", name: "Garri (bag)", category: "Processed", unit: "bag" },
+      { id: "groundnut", name: "Groundnut (bag)", category: "Legumes", unit: "bag" },
+      { id: "soybeans", name: "Soybeans (bag)", category: "Legumes", unit: "bag" },
+      { id: "cowpea", name: "Cowpea (bag)", category: "Legumes", unit: "bag" },
+      { id: "bambara-nut", name: "Bambara Nut (bag)", category: "Legumes", unit: "bag" },
+      
+      // TUBERS
+      { id: "yam", name: "Yam (tuber)", category: "Tubers", unit: "tuber" },
+      { id: "cassava", name: "Cassava (bag)", category: "Tubers", unit: "bag" },
+      { id: "potato", name: "Potato (bag)", category: "Tubers", unit: "bag" },
+      { id: "sweet-potato", name: "Sweet Potato (bag)", category: "Tubers", unit: "bag" },
+      { id: "cocoyam", name: "Cocoyam (bag)", category: "Tubers", unit: "bag" },
+      
+      // VEGETABLES
       { id: "tomatoes", name: "Tomatoes (basket)", category: "Vegetables", unit: "basket" },
       { id: "onions", name: "Onions (bag)", category: "Vegetables", unit: "bag" },
       { id: "pepper", name: "Pepper (basket)", category: "Vegetables", unit: "basket" },
+      { id: "okra", name: "Okra (basket)", category: "Vegetables", unit: "basket" },
+      { id: "spinach", name: "Spinach (bundle)", category: "Vegetables", unit: "bundle" },
+      { id: "ugwu", name: "Ugwu (bundle)", category: "Vegetables", unit: "bundle" },
+      { id: "bitter-leaf", name: "Bitter Leaf (bundle)", category: "Vegetables", unit: "bundle" },
+      { id: "cabbage", name: "Cabbage (head)", category: "Vegetables", unit: "head" },
+      { id: "carrot", name: "Carrot (bag)", category: "Vegetables", unit: "bag" },
+      { id: "garden-egg", name: "Garden Egg (basket)", category: "Vegetables", unit: "basket" },
+      
+      // OILS
       { id: "palm-oil", name: "Palm Oil (25L)", category: "Oils", unit: "25L" },
       { id: "groundnut-oil", name: "Groundnut Oil (25L)", category: "Oils", unit: "25L" },
-      { id: "yam", name: "Yam (tuber)", category: "Tubers", unit: "tuber" },
-      { id: "plantain", name: "Plantain (bunch)", category: "Fruits", unit: "bunch" },
-      { id: "cement", name: "Cement (bag)", category: "Building", unit: "bag" },
-      { id: "sugar", name: "Sugar (50kg)", category: "Sweeteners", unit: "bag" },
-      { id: "flour", name: "Flour (50kg)", category: "Grains", unit: "bag" },
+      { id: "vegetable-oil", name: "Vegetable Oil (25L)", category: "Oils", unit: "25L" },
+      { id: "coconut-oil", name: "Coconut Oil (5L)", category: "Oils", unit: "5L" },
+      
+      // PROCESSED FOODS
+      { id: "garri", name: "Garri (bag)", category: "Processed", unit: "bag" },
       { id: "semovita", name: "Semovita (10kg)", category: "Processed", unit: "pack" },
-      { id: "spaghetti", name: "Spaghetti (carton)", category: "Pasta", unit: "carton" },
+      { id: "flour", name: "Flour (50kg)", category: "Processed", unit: "bag" },
+      { id: "sugar", name: "Sugar (50kg)", category: "Processed", unit: "bag" },
+      { id: "salt", name: "Salt (bag)", category: "Processed", unit: "bag" },
+      { id: "spaghetti", name: "Spaghetti (carton)", category: "Processed", unit: "carton" },
+      { id: "macaroni", name: "Macaroni (carton)", category: "Processed", unit: "carton" },
+      { id: "noodles", name: "Noodles (carton)", category: "Processed", unit: "carton" },
+      { id: "custard", name: "Custard (tin)", category: "Processed", unit: "tin" },
+      { id: "milk", name: "Milk (tin)", category: "Processed", unit: "tin" },
+      
+      // PROTEINS
+      { id: "chicken", name: "Chicken (kg)", category: "Proteins", unit: "kg" },
+      { id: "turkey", name: "Turkey (kg)", category: "Proteins", unit: "kg" },
+      { id: "beef", name: "Beef (kg)", category: "Proteins", unit: "kg" },
+      { id: "goat-meat", name: "Goat Meat (kg)", category: "Proteins", unit: "kg" },
+      { id: "catfish", name: "Fish (Catfish) (kg)", category: "Proteins", unit: "kg" },
+      { id: "tilapia", name: "Fish (Tilapia) (kg)", category: "Proteins", unit: "kg" },
+      { id: "stockfish", name: "Stockfish (kg)", category: "Proteins", unit: "kg" },
+      { id: "crayfish", name: "Crayfish (kg)", category: "Proteins", unit: "kg" },
+      { id: "eggs", name: "Eggs (crate)", category: "Proteins", unit: "crate" },
+      
+      // FRUITS
+      { id: "plantain", name: "Plantain (bunch)", category: "Fruits", unit: "bunch" },
+      { id: "banana", name: "Banana (bunch)", category: "Fruits", unit: "bunch" },
+      { id: "orange", name: "Orange (bag)", category: "Fruits", unit: "bag" },
+      { id: "mango", name: "Mango (bag)", category: "Fruits", unit: "bag" },
+      { id: "pineapple", name: "Pineapple (piece)", category: "Fruits", unit: "piece" },
+      { id: "watermelon", name: "Watermelon (piece)", category: "Fruits", unit: "piece" },
+      
+      // SPICES & SEASONINGS
+      { id: "ginger", name: "Ginger (bag)", category: "Spices", unit: "bag" },
+      { id: "garlic", name: "Garlic (bag)", category: "Spices", unit: "bag" },
+      { id: "turmeric", name: "Turmeric (bag)", category: "Spices", unit: "bag" },
+      { id: "maggi", name: "Maggi (carton)", category: "Spices", unit: "carton" },
+      { id: "locust-beans", name: "Locust Beans (pack)", category: "Spices", unit: "pack" },
+      
+      // BUILDING MATERIALS
+      { id: "cement", name: "Cement (bag)", category: "Building", unit: "bag" },
+      { id: "iron-rod-12mm", name: "Iron Rod 12mm (length)", category: "Building", unit: "length" },
+      { id: "iron-rod-16mm", name: "Iron Rod 16mm (length)", category: "Building", unit: "length" },
+      { id: "zinc", name: "Zinc (sheet)", category: "Building", unit: "sheet" },
+      { id: "plywood", name: "Plywood (sheet)", category: "Building", unit: "sheet" },
+      { id: "block", name: "Block (piece)", category: "Building", unit: "piece" },
+      { id: "sand", name: "Sand (trip)", category: "Building", unit: "trip" },
+      { id: "granite", name: "Granite (trip)", category: "Building", unit: "trip" },
+      { id: "tiles", name: "Tiles (carton)", category: "Building", unit: "carton" },
+      { id: "paint", name: "Paint (bucket)", category: "Building", unit: "bucket" },
+      
+      // BEVERAGES
+      { id: "water-sachet", name: "Water (Sachet) (bag)", category: "Beverages", unit: "bag" },
+      { id: "soft-drink", name: "Soft Drink (crate)", category: "Beverages", unit: "crate" },
+      { id: "malt", name: "Malt (crate)", category: "Beverages", unit: "crate" },
     ];
     
     return NextResponse.json({
