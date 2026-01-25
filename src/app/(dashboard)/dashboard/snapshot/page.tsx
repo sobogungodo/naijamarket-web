@@ -4,7 +4,7 @@
 // src/app/(dashboard)/dashboard/snapshot/page.tsx
 // NaijaMarket Intel - Market Snapshot Page
 // Bloomberg Equivalent: TOP <GO> (Market Overview)
-// Version: 1.0.0
+// Version: 2.0.0 - With Time Period Tabs (24h, 7d, 30d)
 // Date: 2026-01-25
 // ============================================================================
 
@@ -29,6 +29,7 @@ import {
   BarChart3,
   Radio,
   Eye,
+  Calendar,
 } from "lucide-react";
 
 // ============================================================================
@@ -36,7 +37,7 @@ import {
 // ============================================================================
 
 interface MarketSummary {
-  marketId: string;
+  marketId: number;
   marketName: string;
   state: string;
   region: string;
@@ -62,14 +63,18 @@ interface TopMover {
   market: string;
   state: string;
   price: number;
+  previousPrice: number;
   change: number;
   changePercent: number;
   trend: "up" | "down";
+  unit: string;
 }
 
 interface SnapshotData {
   success: boolean;
   timestamp: string;
+  period: string;
+  periodLabel: string;
   summary: {
     totalMarkets: number;
     activeMarkets: number;
@@ -96,6 +101,13 @@ interface SnapshotData {
   recordCount: number;
 }
 
+// Time period options
+const TIME_PERIODS = [
+  { value: "24h", label: "24H", fullLabel: "24 Hours" },
+  { value: "7d", label: "7D", fullLabel: "7 Days" },
+  { value: "30d", label: "30D", fullLabel: "30 Days" },
+];
+
 // ============================================================================
 // COMPONENT
 // ============================================================================
@@ -108,6 +120,7 @@ export default function SnapshotPage() {
   const [error, setError] = useState<string | null>(null);
   const [snapshotData, setSnapshotData] = useState<SnapshotData | null>(null);
   const [selectedRegion, setSelectedRegion] = useState("ALL");
+  const [selectedPeriod, setSelectedPeriod] = useState("24h");
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [lastUpdate, setLastUpdate] = useState<Date>(new Date());
   
@@ -122,7 +135,7 @@ export default function SnapshotPage() {
     setError(null);
     
     try {
-      const response = await fetch(`/api/snapshot?region=${selectedRegion}`);
+      const response = await fetch(`/api/snapshot?region=${selectedRegion}&period=${selectedPeriod}`);
       const data = await response.json();
       
       if (data.success) {
@@ -137,7 +150,7 @@ export default function SnapshotPage() {
     } finally {
       setLoading(false);
     }
-  }, [selectedRegion]);
+  }, [selectedRegion, selectedPeriod]);
   
   useEffect(() => {
     if (status === "authenticated") {
@@ -164,6 +177,11 @@ export default function SnapshotPage() {
   const formatPercent = (value: number, showSign: boolean = true): string => {
     const sign = showSign && value > 0 ? "+" : "";
     return `${sign}${value.toFixed(1)}%`;
+  };
+  
+  const formatChange = (change: number): string => {
+    const sign = change > 0 ? "+" : "";
+    return `${sign}${new Intl.NumberFormat("en-NG").format(change)}`;
   };
   
   if (status === "loading" || (loading && !snapshotData)) {
@@ -193,6 +211,7 @@ export default function SnapshotPage() {
   
   const summary = snapshotData?.summary;
   const nfpi = snapshotData?.nfpiIndex;
+  const currentPeriod = TIME_PERIODS.find(p => p.value === selectedPeriod);
   
   return (
     <div className="min-h-screen bg-[#0a0a0a] text-white p-4 md:p-6">
@@ -210,11 +229,29 @@ export default function SnapshotPage() {
               </div>
             </div>
             <p className="text-gray-400 text-sm">
-              Real-time overview • {snapshotData?.dataSource} • Updated {lastUpdate.toLocaleTimeString()}
+              {currentPeriod?.fullLabel} overview • {snapshotData?.dataSource} • Updated {lastUpdate.toLocaleTimeString()}
             </p>
           </div>
           
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 flex-wrap">
+            {/* Time Period Tabs */}
+            <div className="flex bg-[#1a1a1a] border border-gray-700 rounded-lg p-1">
+              {TIME_PERIODS.map((period) => (
+                <button
+                  key={period.value}
+                  onClick={() => setSelectedPeriod(period.value)}
+                  className={`px-3 py-1.5 text-sm font-medium rounded-md transition-all ${
+                    selectedPeriod === period.value
+                      ? "bg-emerald-600 text-white"
+                      : "text-gray-400 hover:text-white hover:bg-gray-800"
+                  }`}
+                >
+                  {period.label}
+                </button>
+              ))}
+            </div>
+            
+            {/* Region Filter */}
             <select
               value={selectedRegion}
               onChange={(e) => setSelectedRegion(e.target.value)}
@@ -229,6 +266,7 @@ export default function SnapshotPage() {
               <option value="SS">South South</option>
             </select>
             
+            {/* Auto-refresh Toggle */}
             <label className="flex items-center gap-2 text-sm text-gray-400">
               <input
                 type="checkbox"
@@ -239,6 +277,7 @@ export default function SnapshotPage() {
               Auto
             </label>
             
+            {/* Refresh Button */}
             <button
               onClick={fetchSnapshot}
               disabled={loading}
@@ -254,7 +293,13 @@ export default function SnapshotPage() {
       <div className="bg-gradient-to-br from-blue-900/30 to-indigo-900/20 border border-blue-700/50 rounded-xl p-6 mb-6">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div>
-            <p className="text-gray-400 text-sm mb-1">NaijaFood Price Index (NFPI)</p>
+            <div className="flex items-center gap-2 mb-1">
+              <p className="text-gray-400 text-sm">NaijaFood Price Index (NFPI)</p>
+              <span className="px-2 py-0.5 bg-amber-500/20 text-amber-400 text-xs rounded-full flex items-center gap-1">
+                <Calendar className="w-3 h-3" />
+                {currentPeriod?.fullLabel}
+              </span>
+            </div>
             <div className="flex items-baseline gap-3">
               <span className="text-5xl md:text-6xl font-bold text-white">{nfpi?.value ?? 100}</span>
               <div className={`flex items-center gap-1 text-xl font-medium ${
@@ -289,7 +334,7 @@ export default function SnapshotPage() {
               }`}>
                 {formatPercent(summary?.avgInflation ?? 0)}
               </p>
-              <p className="text-xs text-gray-500">Avg Change</p>
+              <p className="text-xs text-gray-500">Avg Change ({currentPeriod?.label})</p>
             </div>
           </div>
         </div>
@@ -320,7 +365,7 @@ export default function SnapshotPage() {
             <BarChart3 className="w-5 h-5 text-amber-400" />
             <span className="text-xs text-gray-500">Updates</span>
           </div>
-          <p className="text-2xl font-bold">{snapshotData?.recordCount ?? 0}</p>
+          <p className="text-2xl font-bold">{(snapshotData?.recordCount ?? 0).toLocaleString()}</p>
           <p className="text-xs text-gray-500">price records</p>
         </div>
         
@@ -334,85 +379,121 @@ export default function SnapshotPage() {
         </div>
       </div>
       
-      {/* Main Grid */}
+      {/* Main Grid - Top Movers */}
       <div className="grid lg:grid-cols-3 gap-6 mb-6">
         {/* Top Gainers */}
         <div className="bg-[#1a1a1a] border border-gray-800 rounded-xl p-4">
-          <div className="flex items-center gap-2 mb-4">
-            <TrendingUp className="w-5 h-5 text-emerald-400" />
-            <h3 className="font-semibold">Top Gainers</h3>
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <TrendingUp className="w-5 h-5 text-emerald-400" />
+              <h3 className="font-semibold">Top Gainers</h3>
+            </div>
+            <span className="text-xs text-gray-500">{currentPeriod?.fullLabel}</span>
           </div>
           <div className="space-y-2">
-            {(snapshotData?.topGainers ?? []).map((item) => (
-              <div key={`${item.item}-${item.market}`} className="flex items-center justify-between p-2 bg-[#252525] rounded-lg hover:bg-[#2a2a2a] cursor-pointer"
-                   onClick={() => router.push(`/dashboard/prices?item=${encodeURIComponent(item.item)}`)}>
-                <div>
-                  <p className="font-medium text-sm">{item.item}</p>
-                  <p className="text-xs text-gray-500">{item.market}</p>
+            {(snapshotData?.topGainers ?? []).slice(0, 5).map((item) => (
+              <div 
+                key={`${item.item}-${item.market}`} 
+                className="flex items-center justify-between p-2 bg-[#252525] rounded-lg hover:bg-[#2a2a2a] cursor-pointer transition-colors"
+                onClick={() => router.push(`/dashboard/prices?item=${encodeURIComponent(item.item)}`)}
+              >
+                <div className="flex-1 min-w-0">
+                  <p className="font-medium text-sm truncate">{item.item}</p>
+                  <p className="text-xs text-gray-500 truncate">{item.market}</p>
                 </div>
-                <div className="text-right">
-                  <p className="font-medium">{formatPrice(item.price)}</p>
-                  <p className="text-xs text-emerald-400 flex items-center justify-end gap-1">
-                    <ArrowUp className="w-3 h-3" />
-                    {formatPercent(item.changePercent)}
-                  </p>
+                <div className="text-right ml-2">
+                  <p className="font-medium text-sm">{formatPrice(item.price)}</p>
+                  <div className="flex items-center justify-end gap-1">
+                    <span className="text-xs text-gray-500">{formatChange(item.change)}</span>
+                    <span className="text-xs text-emerald-400 flex items-center gap-0.5">
+                      <ArrowUp className="w-3 h-3" />
+                      {formatPercent(item.changePercent)}
+                    </span>
+                  </div>
                 </div>
               </div>
             ))}
+            {(snapshotData?.topGainers ?? []).length === 0 && (
+              <p className="text-gray-500 text-sm text-center py-4">No gainers in this period</p>
+            )}
           </div>
         </div>
         
         {/* Top Losers */}
         <div className="bg-[#1a1a1a] border border-gray-800 rounded-xl p-4">
-          <div className="flex items-center gap-2 mb-4">
-            <TrendingDown className="w-5 h-5 text-red-400" />
-            <h3 className="font-semibold">Top Losers</h3>
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <TrendingDown className="w-5 h-5 text-red-400" />
+              <h3 className="font-semibold">Top Losers</h3>
+            </div>
+            <span className="text-xs text-gray-500">{currentPeriod?.fullLabel}</span>
           </div>
           <div className="space-y-2">
-            {(snapshotData?.topLosers ?? []).map((item) => (
-              <div key={`${item.item}-${item.market}`} className="flex items-center justify-between p-2 bg-[#252525] rounded-lg hover:bg-[#2a2a2a] cursor-pointer"
-                   onClick={() => router.push(`/dashboard/prices?item=${encodeURIComponent(item.item)}`)}>
-                <div>
-                  <p className="font-medium text-sm">{item.item}</p>
-                  <p className="text-xs text-gray-500">{item.market}</p>
+            {(snapshotData?.topLosers ?? []).slice(0, 5).map((item) => (
+              <div 
+                key={`${item.item}-${item.market}`} 
+                className="flex items-center justify-between p-2 bg-[#252525] rounded-lg hover:bg-[#2a2a2a] cursor-pointer transition-colors"
+                onClick={() => router.push(`/dashboard/prices?item=${encodeURIComponent(item.item)}`)}
+              >
+                <div className="flex-1 min-w-0">
+                  <p className="font-medium text-sm truncate">{item.item}</p>
+                  <p className="text-xs text-gray-500 truncate">{item.market}</p>
                 </div>
-                <div className="text-right">
-                  <p className="font-medium">{formatPrice(item.price)}</p>
-                  <p className="text-xs text-red-400 flex items-center justify-end gap-1">
-                    <ArrowDown className="w-3 h-3" />
-                    {formatPercent(item.changePercent)}
-                  </p>
+                <div className="text-right ml-2">
+                  <p className="font-medium text-sm">{formatPrice(item.price)}</p>
+                  <div className="flex items-center justify-end gap-1">
+                    <span className="text-xs text-gray-500">{formatChange(item.change)}</span>
+                    <span className="text-xs text-red-400 flex items-center gap-0.5">
+                      <ArrowDown className="w-3 h-3" />
+                      {formatPercent(item.changePercent)}
+                    </span>
+                  </div>
                 </div>
               </div>
             ))}
+            {(snapshotData?.topLosers ?? []).length === 0 && (
+              <p className="text-gray-500 text-sm text-center py-4">No losers in this period</p>
+            )}
           </div>
         </div>
         
         {/* Most Volatile */}
         <div className="bg-[#1a1a1a] border border-gray-800 rounded-xl p-4">
-          <div className="flex items-center gap-2 mb-4">
-            <Zap className="w-5 h-5 text-amber-400" />
-            <h3 className="font-semibold">Most Volatile</h3>
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <Zap className="w-5 h-5 text-amber-400" />
+              <h3 className="font-semibold">Most Volatile</h3>
+            </div>
+            <span className="text-xs text-gray-500">{currentPeriod?.fullLabel}</span>
           </div>
           <div className="space-y-2">
-            {(snapshotData?.mostVolatile ?? []).map((item) => (
-              <div key={`${item.item}-${item.market}`} className="flex items-center justify-between p-2 bg-[#252525] rounded-lg hover:bg-[#2a2a2a] cursor-pointer"
-                   onClick={() => router.push(`/dashboard/prices?item=${encodeURIComponent(item.item)}`)}>
-                <div>
-                  <p className="font-medium text-sm">{item.item}</p>
-                  <p className="text-xs text-gray-500">{item.market}</p>
+            {(snapshotData?.mostVolatile ?? []).slice(0, 5).map((item) => (
+              <div 
+                key={`${item.item}-${item.market}`} 
+                className="flex items-center justify-between p-2 bg-[#252525] rounded-lg hover:bg-[#2a2a2a] cursor-pointer transition-colors"
+                onClick={() => router.push(`/dashboard/prices?item=${encodeURIComponent(item.item)}`)}
+              >
+                <div className="flex-1 min-w-0">
+                  <p className="font-medium text-sm truncate">{item.item}</p>
+                  <p className="text-xs text-gray-500 truncate">{item.market}</p>
                 </div>
-                <div className="text-right">
-                  <p className="font-medium">{formatPrice(item.price)}</p>
-                  <p className={`text-xs flex items-center justify-end gap-1 ${
-                    item.changePercent > 0 ? "text-emerald-400" : "text-red-400"
-                  }`}>
-                    {item.changePercent > 0 ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />}
-                    {formatPercent(Math.abs(item.changePercent), false)}
-                  </p>
+                <div className="text-right ml-2">
+                  <p className="font-medium text-sm">{formatPrice(item.price)}</p>
+                  <div className="flex items-center justify-end gap-1">
+                    <span className="text-xs text-gray-500">{formatChange(item.change)}</span>
+                    <span className={`text-xs flex items-center gap-0.5 ${
+                      item.changePercent > 0 ? "text-emerald-400" : "text-red-400"
+                    }`}>
+                      {item.changePercent > 0 ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />}
+                      {formatPercent(Math.abs(item.changePercent), false)}
+                    </span>
+                  </div>
                 </div>
               </div>
             ))}
+            {(snapshotData?.mostVolatile ?? []).length === 0 && (
+              <p className="text-gray-500 text-sm text-center py-4">No volatile items in this period</p>
+            )}
           </div>
         </div>
       </div>
@@ -421,13 +502,20 @@ export default function SnapshotPage() {
       <div className="grid lg:grid-cols-2 gap-6 mb-6">
         {/* Regional Breakdown */}
         <div className="bg-[#1a1a1a] border border-gray-800 rounded-xl p-4">
-          <div className="flex items-center gap-2 mb-4">
-            <Activity className="w-5 h-5 text-blue-400" />
-            <h3 className="font-semibold">Regional Breakdown</h3>
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <Activity className="w-5 h-5 text-blue-400" />
+              <h3 className="font-semibold">Regional Breakdown</h3>
+            </div>
+            <span className="text-xs text-gray-500">{currentPeriod?.fullLabel} change</span>
           </div>
           <div className="space-y-3">
             {(snapshotData?.regionBreakdown ?? []).map((region) => (
-              <div key={region.region} className="flex items-center justify-between p-3 bg-[#252525] rounded-lg">
+              <div 
+                key={region.region} 
+                className="flex items-center justify-between p-3 bg-[#252525] rounded-lg hover:bg-[#2a2a2a] cursor-pointer transition-colors"
+                onClick={() => setSelectedRegion(region.region)}
+              >
                 <div className="flex items-center gap-3">
                   <div className={`w-10 h-10 rounded-lg flex items-center justify-center text-sm font-bold ${
                     region.avgInflation > 2 ? "bg-red-900/50 text-red-400" :
@@ -452,6 +540,9 @@ export default function SnapshotPage() {
                 </div>
               </div>
             ))}
+            {(snapshotData?.regionBreakdown ?? []).length === 0 && (
+              <p className="text-gray-500 text-sm text-center py-4">No regional data available</p>
+            )}
           </div>
         </div>
         
@@ -462,14 +553,20 @@ export default function SnapshotPage() {
               <Building2 className="w-5 h-5 text-purple-400" />
               <h3 className="font-semibold">Top Markets</h3>
             </div>
-            <button onClick={() => router.push("/dashboard/markets")} className="text-xs text-emerald-400 hover:text-emerald-300">
+            <button 
+              onClick={() => router.push("/dashboard/markets")} 
+              className="text-xs text-emerald-400 hover:text-emerald-300"
+            >
               View All
             </button>
           </div>
           <div className="space-y-2">
             {(snapshotData?.marketSummaries ?? []).slice(0, 6).map((market) => (
-              <div key={market.marketId} className="flex items-center justify-between p-3 bg-[#252525] rounded-lg hover:bg-[#2a2a2a] cursor-pointer"
-                   onClick={() => router.push(`/dashboard/markets?market=${encodeURIComponent(market.marketName)}`)}>
+              <div 
+                key={market.marketId} 
+                className="flex items-center justify-between p-3 bg-[#252525] rounded-lg hover:bg-[#2a2a2a] cursor-pointer transition-colors"
+                onClick={() => router.push(`/dashboard/markets?market=${encodeURIComponent(market.marketName)}`)}
+              >
                 <div className="flex items-center gap-3">
                   <div className={`w-2 h-2 rounded-full ${
                     market.status === "active" ? "bg-emerald-400" :
@@ -482,14 +579,17 @@ export default function SnapshotPage() {
                 </div>
                 <div className="text-right">
                   <p className={`font-medium text-sm ${
-                    market.avgChange > 0 ? "text-red-400" : "text-emerald-400"
+                    market.avgChange > 0 ? "text-red-400" : market.avgChange < 0 ? "text-emerald-400" : "text-gray-400"
                   }`}>
                     {formatPercent(market.avgChange)}
                   </p>
-                  <p className="text-xs text-gray-500">avg change</p>
+                  <p className="text-xs text-gray-500">{currentPeriod?.label} change</p>
                 </div>
               </div>
             ))}
+            {(snapshotData?.marketSummaries ?? []).length === 0 && (
+              <p className="text-gray-500 text-sm text-center py-4">No market data available</p>
+            )}
           </div>
         </div>
       </div>
@@ -503,8 +603,14 @@ export default function SnapshotPage() {
         <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-3">
           {(snapshotData?.recentActivity ?? []).map((activity, idx) => (
             <div key={idx} className="p-3 bg-[#252525] rounded-lg">
+              <div className="flex items-center gap-2 mb-1">
+                {activity.type === "price_update" && <BarChart3 className="w-4 h-4 text-blue-400" />}
+                {activity.type === "top_gainer" && <TrendingUp className="w-4 h-4 text-emerald-400" />}
+                {activity.type === "top_loser" && <TrendingDown className="w-4 h-4 text-red-400" />}
+                {activity.type === "alert" && <Zap className="w-4 h-4 text-amber-400" />}
+                <span className="text-xs text-gray-500">{activity.time}</span>
+              </div>
               <p className="text-sm text-white">{activity.description}</p>
-              <p className="text-xs text-gray-500 mt-1">{activity.time}</p>
             </div>
           ))}
         </div>
@@ -512,8 +618,11 @@ export default function SnapshotPage() {
       
       {/* Footer */}
       <div className="mt-6 text-center text-sm text-gray-500">
-        <p>Data Source: {snapshotData?.dataSource} • {snapshotData?.recordCount ?? 0} records</p>
-        <p className="mt-1">Auto-refresh: {autoRefresh ? "Every 60 seconds" : "Disabled"}</p>
+        <p>Data Source: {snapshotData?.dataSource} • {(snapshotData?.recordCount ?? 0).toLocaleString()} records</p>
+        <p className="mt-1">
+          Period: {currentPeriod?.fullLabel} • 
+          Auto-refresh: {autoRefresh ? "Every 60 seconds" : "Disabled"}
+        </p>
       </div>
     </div>
   );

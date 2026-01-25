@@ -2,7 +2,7 @@
 // src/app/api/snapshot/route.ts
 // NaijaMarket Intel - Market Snapshot API
 // Bloomberg Equivalent: TOP <GO> (Top News/Overview)
-// Version: 1.0.0 - Hybrid Data (Azure SQL → Google Sheets → Mock)
+// Version: 2.0.0 - Hybrid Data with Time Period Support
 // Date: 2026-01-25
 // ============================================================================
 
@@ -29,6 +29,13 @@ const SQL_CONFIG: sql.config = {
   requestTimeout: 30000,
 };
 
+// Time period configurations
+const TIME_PERIODS: Record<string, { days: number; label: string }> = {
+  "24h": { days: 1, label: "24 Hours" },
+  "7d": { days: 7, label: "7 Days" },
+  "30d": { days: 30, label: "30 Days" },
+};
+
 const REGIONS: Record<string, { name: string; states: string[] }> = {
   "SW": { name: "South West", states: ["Lagos", "Ogun", "Oyo", "Osun", "Ondo", "Ekiti"] },
   "SE": { name: "South East", states: ["Anambra", "Enugu", "Imo", "Abia", "Ebonyi"] },
@@ -44,21 +51,25 @@ const REGIONS: Record<string, { name: string; states: string[] }> = {
 
 interface PriceRecord {
   item: string;
-  itemId: string;
+  itemId: number;
   market: string;
-  marketId: string;
+  marketId: number;
   state: string;
   region: string;
+  category: string;
+  unit: string;
   price: number;
   previousPrice: number;
   change: number;
   changePercent: number;
   trend: "up" | "down" | "stable";
   date: string;
+  timeSlot: string;
+  confidenceScore: number;
 }
 
 interface MarketSummary {
-  marketId: string;
+  marketId: number;
   marketName: string;
   state: string;
   region: string;
@@ -84,14 +95,18 @@ interface TopMover {
   market: string;
   state: string;
   price: number;
+  previousPrice: number;
   change: number;
   changePercent: number;
   trend: "up" | "down";
+  unit: string;
 }
 
 interface SnapshotResponse {
   success: boolean;
   timestamp: string;
+  period: string;
+  periodLabel: string;
   summary: {
     totalMarkets: number;
     activeMarkets: number;
@@ -122,62 +137,235 @@ interface SnapshotResponse {
 // DATA FETCHING FUNCTIONS
 // ============================================================================
 
-async function fetchFromAzureSQL(): Promise<{ data: PriceRecord[]; success: boolean }> {
+async function fetchFromDailyPrices(periodDays: number): Promise<{ data: PriceRecord[]; success: boolean }> {
   if (!SQL_CONFIG.user || !SQL_CONFIG.password) {
-    console.log("Azure SQL credentials not configured, skipping...");
+    console.log("Azure SQL credentials not configured, skipping Daily_Prices...");
     return { data: [], success: false };
   }
 
   let pool: sql.ConnectionPool | null = null;
   
   try {
-    console.log("Connecting to Azure SQL for snapshot...");
+    console.log(`Connecting to Azure SQL for Daily_Prices (${periodDays} days)...`);
     pool = await sql.connect(SQL_CONFIG);
     
-    const result = await pool.request().query(`
-      WITH LatestPrices AS (
+    // Query to get latest prices and compare with prices from X days ago
+    const result = await pool.request()
+      .input('periodDays', sql.Int, periodDays)
+      .query(`
+        -- Get the most recent date in the data
+        DECLARE @LatestDate DATE = (SELECT MAX(price_date) FROM dbo.Daily_Prices WHERE price_naira > 0);
+        DECLARE @CompareDate DATE = DATEADD(day, -@periodDays, @LatestDate);
+
+        -- Get current prices (latest date)
+        WITH CurrentPrices AS (
+          SELECT 
+            item_id, item_name, market_id, market_name, state, category_id, unit,
+            price_naira, previous_price, price_change_pct, trend, confidence_score,
+            price_date, time_slot, time_slot_name,
+            ROW_NUMBER() OVER (PARTITION BY item_id, market_id ORDER BY price_date DESC, time_slot DESC) as rn
+          FROM dbo.Daily_Prices
+          WHERE price_date = @LatestDate AND price_naira > 0
+        ),
+        -- Get historical prices for comparison
+        HistoricalPrices AS (
+          SELECT 
+            item_id, market_id, price_naira as historical_price,
+            ROW_NUMBER() OVER (PARTITION BY item_id, market_id ORDER BY ABS(DATEDIFF(day, price_date, @CompareDate)), time_slot DESC) as rn
+          FROM dbo.Daily_Prices
+          WHERE price_date BETWEEN DATEADD(day, -2, @CompareDate) AND DATEADD(day, 2, @CompareDate)
+            AND price_naira > 0
+        )
         SELECT 
-          item_name, item_id, market_name, market_id, state,
-          price_naira, previous_price, price_change_pct, trend, price_date,
-          ROW_NUMBER() OVER (PARTITION BY item_id, market_id ORDER BY price_date DESC, generated_at DESC) as rn
-        FROM dbo.Daily_Prices
-        WHERE price_date >= DATEADD(day, -7, GETDATE()) AND price_naira > 0
-      )
-      SELECT item_name, item_id, market_name, market_id, state,
-             price_naira, ISNULL(previous_price, price_naira) as previous_price,
-             ISNULL(price_change_pct, 0) as price_change_pct,
-             ISNULL(trend, '→') as trend, price_date
-      FROM LatestPrices WHERE rn = 1
-      ORDER BY market_name, item_name
-    `);
+          c.item_id, c.item_name, c.market_id, c.market_name, c.state, 
+          c.category_id, c.unit, c.price_naira as current_price,
+          COALESCE(h.historical_price, c.previous_price, c.price_naira) as compare_price,
+          c.price_change_pct, c.trend, c.confidence_score,
+          c.price_date, c.time_slot, c.time_slot_name,
+          CASE 
+            WHEN COALESCE(h.historical_price, c.previous_price, c.price_naira) > 0 
+            THEN ((c.price_naira - COALESCE(h.historical_price, c.previous_price, c.price_naira)) / 
+                  COALESCE(h.historical_price, c.previous_price, c.price_naira)) * 100
+            ELSE 0 
+          END as calculated_change_pct
+        FROM CurrentPrices c
+        LEFT JOIN HistoricalPrices h ON c.item_id = h.item_id AND c.market_id = h.market_id AND h.rn = 1
+        WHERE c.rn = 1
+        ORDER BY c.market_name, c.item_name
+      `);
     
-    console.log(`Azure SQL returned ${result.recordset.length} snapshot records`);
+    console.log(`Daily_Prices returned ${result.recordset.length} records`);
     
     const data: PriceRecord[] = result.recordset.map((row: {
-      item_name: string; item_id: string; market_name: string; market_id: string;
-      state: string; price_naira: number; previous_price: number;
-      price_change_pct: number; trend: string; price_date: Date;
+      item_id: number;
+      item_name: string;
+      market_id: number;
+      market_name: string;
+      state: string;
+      category_id: number;
+      unit: string;
+      current_price: number;
+      compare_price: number;
+      price_change_pct: number;
+      trend: string;
+      confidence_score: number;
+      price_date: Date;
+      time_slot: string;
+      time_slot_name: string;
+      calculated_change_pct: number;
     }) => {
-      const change = row.price_naira - row.previous_price;
-      const changePercent = row.previous_price > 0 ? ((change / row.previous_price) * 100) : 0;
+      const change = row.current_price - row.compare_price;
+      const changePercent = row.calculated_change_pct || 0;
+      
+      let trendValue: "up" | "down" | "stable" = "stable";
+      if (row.trend === "↑" || row.trend === "up" || changePercent > 1) {
+        trendValue = "up";
+      } else if (row.trend === "↓" || row.trend === "down" || changePercent < -1) {
+        trendValue = "down";
+      }
+      
+      const dateStr = row.price_date instanceof Date 
+        ? row.price_date.toISOString().split("T")[0] ?? "" 
+        : String(row.price_date);
       
       return {
-        item: row.item_name, itemId: row.item_id, market: row.market_name,
-        marketId: row.market_id, state: row.state,
-        region: getRegionFromState(row.state), price: row.price_naira,
-        previousPrice: row.previous_price, change, changePercent,
-        trend: row.trend === "↑" || row.trend === "up" ? "up" : 
-               row.trend === "↓" || row.trend === "down" ? "down" : "stable",
-        date: row.price_date instanceof Date ? row.price_date.toISOString().split("T")[0] ?? "" : String(row.price_date),
+        item: row.item_name || "",
+        itemId: row.item_id || 0,
+        market: row.market_name || "",
+        marketId: row.market_id || 0,
+        state: row.state || "",
+        region: getRegionFromState(row.state || ""),
+        category: String(row.category_id || ""),
+        unit: row.unit || "",
+        price: row.current_price || 0,
+        previousPrice: row.compare_price || 0,
+        change: change,
+        changePercent: changePercent,
+        trend: trendValue,
+        date: dateStr,
+        timeSlot: row.time_slot_name || row.time_slot || "",
+        confidenceScore: row.confidence_score || 0,
       };
     });
     
     return { data, success: data.length >= 10 };
   } catch (error) {
-    console.error("Azure SQL error:", error);
+    console.error("Daily_Prices query error:", error);
     return { data: [], success: false };
   } finally {
-    if (pool) await pool.close();
+    if (pool) {
+      try {
+        await pool.close();
+      } catch (closeError) {
+        console.error("Error closing pool:", closeError);
+      }
+    }
+  }
+}
+
+async function fetchFromValidatedPrices(periodDays: number): Promise<{ data: PriceRecord[]; success: boolean }> {
+  if (!SQL_CONFIG.user || !SQL_CONFIG.password) {
+    console.log("Azure SQL credentials not configured, skipping Validated_Prices...");
+    return { data: [], success: false };
+  }
+
+  let pool: sql.ConnectionPool | null = null;
+  
+  try {
+    console.log(`Connecting to Azure SQL for Validated_Prices (${periodDays} days)...`);
+    pool = await sql.connect(SQL_CONFIG);
+    
+    const result = await pool.request()
+      .input('periodDays', sql.Int, periodDays)
+      .query(`
+        DECLARE @LatestDate DATETIME2 = (SELECT MAX(validated_at) FROM dbo.Validated_Prices);
+        DECLARE @StartDate DATETIME2 = DATEADD(day, -@periodDays, @LatestDate);
+
+        WITH CurrentPrices AS (
+          SELECT 
+            item_id, item_name, market_id, market_name, state,
+            price_naira, unit,
+            validated_at,
+            ROW_NUMBER() OVER (PARTITION BY item_id, market_id ORDER BY validated_at DESC) as rn
+          FROM dbo.Validated_Prices
+          WHERE validation_status = 'APPROVED' AND price_naira > 0
+        ),
+        HistoricalPrices AS (
+          SELECT 
+            item_id, market_id, price_naira as historical_price,
+            ROW_NUMBER() OVER (PARTITION BY item_id, market_id ORDER BY validated_at) as rn
+          FROM dbo.Validated_Prices
+          WHERE validated_at <= @StartDate AND validation_status = 'APPROVED' AND price_naira > 0
+        )
+        SELECT 
+          c.item_id, c.item_name, c.market_id, c.market_name, c.state,
+          c.price_naira as current_price, c.unit, c.validated_at,
+          COALESCE(h.historical_price, c.price_naira) as compare_price,
+          CASE 
+            WHEN COALESCE(h.historical_price, c.price_naira) > 0 
+            THEN ((c.price_naira - COALESCE(h.historical_price, c.price_naira)) / 
+                  COALESCE(h.historical_price, c.price_naira)) * 100
+            ELSE 0 
+          END as calculated_change_pct
+        FROM CurrentPrices c
+        LEFT JOIN HistoricalPrices h ON c.item_id = h.item_id AND c.market_id = h.market_id AND h.rn = 1
+        WHERE c.rn = 1
+        ORDER BY c.market_name, c.item_name
+      `);
+    
+    console.log(`Validated_Prices returned ${result.recordset.length} records`);
+    
+    const data: PriceRecord[] = result.recordset.map((row: {
+      item_id: number;
+      item_name: string;
+      market_id: number;
+      market_name: string;
+      state: string;
+      current_price: number;
+      compare_price: number;
+      unit: string;
+      validated_at: Date;
+      calculated_change_pct: number;
+    }) => {
+      const change = row.current_price - row.compare_price;
+      const changePercent = row.calculated_change_pct || 0;
+      
+      const dateStr = row.validated_at instanceof Date 
+        ? row.validated_at.toISOString().split("T")[0] ?? "" 
+        : String(row.validated_at);
+      
+      return {
+        item: row.item_name || "",
+        itemId: row.item_id || 0,
+        market: row.market_name || "",
+        marketId: row.market_id || 0,
+        state: row.state || "",
+        region: getRegionFromState(row.state || ""),
+        category: "",
+        unit: row.unit || "",
+        price: row.current_price || 0,
+        previousPrice: row.compare_price || 0,
+        change: change,
+        changePercent: changePercent,
+        trend: changePercent > 1 ? "up" : changePercent < -1 ? "down" : "stable",
+        date: dateStr,
+        timeSlot: "",
+        confidenceScore: 100,
+      };
+    });
+    
+    return { data, success: data.length >= 10 };
+  } catch (error) {
+    console.error("Validated_Prices query error:", error);
+    return { data: [], success: false };
+  } finally {
+    if (pool) {
+      try {
+        await pool.close();
+      } catch (closeError) {
+        console.error("Error closing pool:", closeError);
+      }
+    }
   }
 }
 
@@ -208,29 +396,42 @@ async function fetchFromGoogleSheets(): Promise<{ data: PriceRecord[]; success: 
     const marketIdx = headers.findIndex((h: string) => h?.toLowerCase().includes("market"));
     const stateIdx = headers.findIndex((h: string) => h?.toLowerCase().includes("state"));
     const dateIdx = headers.findIndex((h: string) => h?.toLowerCase().includes("date"));
+    const unitIdx = headers.findIndex((h: string) => h?.toLowerCase().includes("unit"));
     
     const data: PriceRecord[] = [];
     
-    for (let i = 1; i < Math.min(rows.length, 500); i++) {
+    for (let i = 1; i < Math.min(rows.length, 1000); i++) {
       const row = rows[i] ?? [];
       const item = row[itemIdx] ?? "";
       const price = parseFloat(row[priceIdx] ?? "0") || 0;
       const market = row[marketIdx] ?? "";
       const state = row[stateIdx] ?? "";
       const dateStr = row[dateIdx] ?? "";
+      const unit = row[unitIdx] ?? "";
       
       if (item && price > 0 && market) {
+        // Simulate previous price for change calculation
         const previousPrice = price * (1 - (Math.random() * 0.1 - 0.05));
         const change = price - previousPrice;
         const changePercent = (change / previousPrice) * 100;
         
         data.push({
-          item, itemId: `ITM${String(i).padStart(5, "0")}`,
-          market, marketId: `MKT${String(i % 20).padStart(4, "0")}`,
-          state, region: getRegionFromState(state),
-          price, previousPrice, change, changePercent,
+          item,
+          itemId: i,
+          market,
+          marketId: i % 50,
+          state,
+          region: getRegionFromState(state),
+          category: "",
+          unit,
+          price,
+          previousPrice,
+          change,
+          changePercent,
           trend: changePercent > 1 ? "up" : changePercent < -1 ? "down" : "stable",
           date: dateStr,
+          timeSlot: "",
+          confidenceScore: 80,
         });
       }
     }
@@ -243,54 +444,73 @@ async function fetchFromGoogleSheets(): Promise<{ data: PriceRecord[]; success: 
   }
 }
 
-function generateMockSnapshotData(): PriceRecord[] {
-  console.log("Generating synthetic snapshot data...");
+function generateMockSnapshotData(periodDays: number): PriceRecord[] {
+  console.log(`Generating synthetic snapshot data for ${periodDays} days period...`);
   const data: PriceRecord[] = [];
-  const today = new Date().toISOString().split("T")[0] ?? "";
+  const now = new Date();
+  const today = now.toISOString().split("T")[0] ?? "";
+  
+  // More volatility for shorter periods
+  const volatilityFactor = periodDays === 1 ? 0.5 : periodDays === 7 ? 1.0 : 1.5;
   
   const items = [
-    { name: "Rice (50kg)", basePrice: 78500 },
-    { name: "Tomatoes (basket)", basePrice: 45000 },
-    { name: "Onions (bag)", basePrice: 38500 },
-    { name: "Beans (bag)", basePrice: 62000 },
-    { name: "Garri (bag)", basePrice: 28000 },
-    { name: "Palm Oil (25L)", basePrice: 52000 },
-    { name: "Yam (tuber)", basePrice: 2800 },
-    { name: "Pepper (basket)", basePrice: 32000 },
-    { name: "Plantain (bunch)", basePrice: 4500 },
-    { name: "Groundnut Oil (25L)", basePrice: 58000 },
-    { name: "Cement (bag)", basePrice: 6500 },
-    { name: "Sugar (50kg)", basePrice: 85000 },
+    { id: 1, name: "Rice (50kg) - Foreign (Royal Stallion)", basePrice: 78500, unit: "Per Bag (50kg)" },
+    { id: 2, name: "Tomatoes (basket)", basePrice: 45000, unit: "Per Basket" },
+    { id: 3, name: "Onions (bag)", basePrice: 38500, unit: "Per Bag" },
+    { id: 4, name: "Beans (bag)", basePrice: 62000, unit: "Per Bag" },
+    { id: 5, name: "Garri (bag)", basePrice: 28000, unit: "Per Bag" },
+    { id: 6, name: "Palm Oil (25L)", basePrice: 52000, unit: "Per 25L" },
+    { id: 7, name: "Yam (tuber)", basePrice: 2800, unit: "Per Tuber" },
+    { id: 8, name: "Pepper (basket)", basePrice: 32000, unit: "Per Basket" },
+    { id: 9, name: "Plantain (bunch)", basePrice: 4500, unit: "Per Bunch" },
+    { id: 10, name: "Groundnut Oil (25L)", basePrice: 58000, unit: "Per 25L" },
+    { id: 11, name: "Cement (bag)", basePrice: 6500, unit: "Per Bag" },
+    { id: 12, name: "Sugar (50kg)", basePrice: 85000, unit: "Per Bag (50kg)" },
+    { id: 13, name: "Eggs (crate)", basePrice: 3200, unit: "Per Crate" },
+    { id: 14, name: "Bread (loaf)", basePrice: 1800, unit: "Per Loaf" },
+    { id: 15, name: "Vegetable Oil (5L)", basePrice: 12500, unit: "Per 5L" },
   ];
   
   const markets = [
-    { name: "Mile 12 Market", id: "MKT0001", state: "Lagos" },
-    { name: "Alaba International", id: "MKT0002", state: "Lagos" },
-    { name: "Onitsha Main Market", id: "MKT0003", state: "Anambra" },
-    { name: "Ariaria Market", id: "MKT0004", state: "Abia" },
-    { name: "Wuse Market", id: "MKT0005", state: "FCT" },
-    { name: "Kano Main Market", id: "MKT0006", state: "Kano" },
-    { name: "Jos Main Market", id: "MKT0007", state: "Plateau" },
-    { name: "Port Harcourt Market", id: "MKT0008", state: "Rivers" },
+    { id: 1, name: "Mile 12 Market", state: "Lagos" },
+    { id: 2, name: "Alaba International Market", state: "Lagos" },
+    { id: 3, name: "Onitsha Main Market", state: "Anambra" },
+    { id: 4, name: "Ariaria Market", state: "Abia" },
+    { id: 5, name: "Wuse Market", state: "FCT" },
+    { id: 6, name: "Kano Main Market", state: "Kano" },
+    { id: 7, name: "Jos Main Market", state: "Plateau" },
+    { id: 8, name: "Port Harcourt Main Market", state: "Rivers" },
+    { id: 9, name: "Bodija Market", state: "Oyo" },
+    { id: 10, name: "New Benin Market", state: "Edo" },
+    { id: 11, name: "Ogbete Main Market", state: "Enugu" },
+    { id: 12, name: "Sabon Gari Market", state: "Kaduna" },
   ];
   
-  let idx = 0;
   for (const market of markets) {
     for (const item of items) {
-      idx++;
       const variation = 0.85 + Math.random() * 0.3;
       const price = Math.round(item.basePrice * variation);
-      const changePercent = (Math.random() - 0.45) * 15;
+      const changePercent = (Math.random() - 0.45) * 15 * volatilityFactor;
       const previousPrice = Math.round(price / (1 + changePercent / 100));
       const change = price - previousPrice;
       
       data.push({
-        item: item.name, itemId: `ITM${String(idx).padStart(5, "0")}`,
-        market: market.name, marketId: market.id,
-        state: market.state, region: getRegionFromState(market.state),
-        price, previousPrice, change, changePercent,
+        item: item.name,
+        itemId: item.id,
+        market: market.name,
+        marketId: market.id,
+        state: market.state,
+        region: getRegionFromState(market.state),
+        category: "",
+        unit: item.unit,
+        price,
+        previousPrice,
+        change,
+        changePercent,
         trend: changePercent > 1 ? "up" : changePercent < -1 ? "down" : "stable",
         date: today,
+        timeSlot: "1PM",
+        confidenceScore: 75,
       });
     }
   }
@@ -300,6 +520,7 @@ function generateMockSnapshotData(): PriceRecord[] {
 }
 
 function getRegionFromState(state: string): string {
+  if (!state) return "SW";
   const stateLower = state.toLowerCase();
   for (const [code, info] of Object.entries(REGIONS)) {
     if (info.states.some(s => stateLower.includes(s.toLowerCase()))) return code;
@@ -309,16 +530,17 @@ function getRegionFromState(state: string): string {
 
 function calculateNFPI(priceData: PriceRecord[]): { value: number; change: number; changePercent: number; trend: "up" | "down" | "stable" } {
   const basketWeights: Record<string, number> = {
-    "Rice": 20, "Beans": 10, "Garri": 15, "Palm Oil": 12,
-    "Tomatoes": 10, "Onions": 8, "Pepper": 8, "Yam": 7,
-    "Plantain": 5, "Groundnut": 5,
+    "rice": 20, "beans": 10, "garri": 15, "palm oil": 12,
+    "tomatoes": 10, "onions": 8, "pepper": 8, "yam": 7,
+    "plantain": 5, "groundnut": 5,
   };
   
   let weightedCurrent = 0, weightedPrevious = 0, totalWeight = 0;
   
   for (const record of priceData) {
+    const itemLower = record.item.toLowerCase();
     for (const [keyword, weight] of Object.entries(basketWeights)) {
-      if (record.item.toLowerCase().includes(keyword.toLowerCase())) {
+      if (itemLower.includes(keyword)) {
         weightedCurrent += record.price * weight;
         weightedPrevious += record.previousPrice * weight;
         totalWeight += weight;
@@ -350,32 +572,61 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const region = searchParams.get("region") || "ALL";
+    const period = searchParams.get("period") || "24h";
+    
+    // Validate period
+    const periodConfig = TIME_PERIODS[period] || TIME_PERIODS["24h"];
+    const periodDays = periodConfig?.days ?? 1;
+    const periodLabel = periodConfig?.label ?? "24 Hours";
     
     let priceData: PriceRecord[] = [];
     let dataSource = "Unknown";
     
-    const sqlResult = await fetchFromAzureSQL();
-    if (sqlResult.success) {
-      priceData = sqlResult.data;
-      dataSource = "Azure SQL (Daily_Prices)";
+    // HYBRID DATA APPROACH: Daily_Prices → Validated_Prices → Google Sheets → Mock
+    console.log(`Fetching snapshot data for period: ${period} (${periodDays} days)`);
+    
+    // Step 1: Try Daily_Prices (Primary)
+    const dailyResult = await fetchFromDailyPrices(periodDays);
+    if (dailyResult.success) {
+      priceData = dailyResult.data;
+      dataSource = `Azure SQL (Daily_Prices - ${periodLabel})`;
+      console.log(`Using Daily_Prices: ${priceData.length} records`);
     } else {
-      const sheetsResult = await fetchFromGoogleSheets();
-      if (sheetsResult.success) {
-        priceData = sheetsResult.data;
-        dataSource = "Google Sheets (Validated_Prices)";
+      // Step 2: Try Validated_Prices (Backup)
+      const validatedResult = await fetchFromValidatedPrices(periodDays);
+      if (validatedResult.success) {
+        priceData = validatedResult.data;
+        dataSource = `Azure SQL (Validated_Prices - ${periodLabel})`;
+        console.log(`Using Validated_Prices: ${priceData.length} records`);
       } else {
-        priceData = generateMockSnapshotData();
-        dataSource = "Synthetic Model (Demo)";
+        // Step 3: Try Google Sheets
+        const sheetsResult = await fetchFromGoogleSheets();
+        if (sheetsResult.success) {
+          priceData = sheetsResult.data;
+          dataSource = `Google Sheets (Validated_Prices - ${periodLabel})`;
+          console.log(`Using Google Sheets: ${priceData.length} records`);
+        } else {
+          // Step 4: Use Mock Data
+          priceData = generateMockSnapshotData(periodDays);
+          dataSource = `Synthetic Model (Demo - ${periodLabel})`;
+          console.log(`Using Mock Data: ${priceData.length} records`);
+        }
       }
     }
     
-    if (region !== "ALL") priceData = priceData.filter(p => p.region === region);
+    // Filter by region if specified
+    if (region !== "ALL") {
+      priceData = priceData.filter(p => p.region === region);
+    }
     
+    // Calculate metrics
     const uniqueMarkets = [...new Set(priceData.map(p => p.marketId))];
     const uniqueItems = [...new Set(priceData.map(p => p.item))];
     const now = new Date();
     const nfpi = calculateNFPI(priceData);
-    const avgInflation = priceData.length > 0 ? priceData.reduce((sum, p) => sum + p.changePercent, 0) / priceData.length : 0;
+    const avgInflation = priceData.length > 0 
+      ? priceData.reduce((sum, p) => sum + p.changePercent, 0) / priceData.length 
+      : 0;
     
     // Region Breakdown
     const regionBreakdown: RegionSummary[] = [];
@@ -385,34 +636,69 @@ export async function GET(request: NextRequest) {
       const regionMarkets = [...new Set(regionData.map(p => p.marketId))];
       const regionAvgChange = regionData.reduce((sum, p) => sum + p.changePercent, 0) / regionData.length;
       regionBreakdown.push({
-        region: code, regionName: info.name, marketCount: regionMarkets.length,
+        region: code,
+        regionName: info.name,
+        marketCount: regionMarkets.length,
         avgInflation: Math.round(regionAvgChange * 10) / 10,
         trend: regionAvgChange > 1 ? "up" : regionAvgChange < -1 ? "down" : "stable",
       });
     }
     regionBreakdown.sort((a, b) => b.avgInflation - a.avgInflation);
     
-    // Top Movers
+    // Top Movers (Gainers, Losers, Volatile)
     const sortedByChange = [...priceData].sort((a, b) => b.changePercent - a.changePercent);
     
-    const topGainers: TopMover[] = sortedByChange.filter(p => p.changePercent > 0).slice(0, 5).map((p, idx) => ({
-      rank: idx + 1, item: p.item, market: p.market, state: p.state, price: p.price,
-      change: Math.round(p.change), changePercent: Math.round(p.changePercent * 10) / 10, trend: "up" as const,
-    }));
+    const topGainers: TopMover[] = sortedByChange
+      .filter(p => p.changePercent > 0)
+      .slice(0, 10)
+      .map((p, idx) => ({
+        rank: idx + 1,
+        item: p.item,
+        market: p.market,
+        state: p.state,
+        price: p.price,
+        previousPrice: p.previousPrice,
+        change: Math.round(p.change),
+        changePercent: Math.round(p.changePercent * 10) / 10,
+        trend: "up" as const,
+        unit: p.unit,
+      }));
     
-    const topLosers: TopMover[] = sortedByChange.filter(p => p.changePercent < 0).slice(-5).reverse().map((p, idx) => ({
-      rank: idx + 1, item: p.item, market: p.market, state: p.state, price: p.price,
-      change: Math.round(p.change), changePercent: Math.round(p.changePercent * 10) / 10, trend: "down" as const,
-    }));
+    const topLosers: TopMover[] = sortedByChange
+      .filter(p => p.changePercent < 0)
+      .slice(-10)
+      .reverse()
+      .map((p, idx) => ({
+        rank: idx + 1,
+        item: p.item,
+        market: p.market,
+        state: p.state,
+        price: p.price,
+        previousPrice: p.previousPrice,
+        change: Math.round(p.change),
+        changePercent: Math.round(p.changePercent * 10) / 10,
+        trend: "down" as const,
+        unit: p.unit,
+      }));
     
-    const mostVolatile: TopMover[] = [...priceData].sort((a, b) => Math.abs(b.changePercent) - Math.abs(a.changePercent)).slice(0, 5).map((p, idx) => ({
-      rank: idx + 1, item: p.item, market: p.market, state: p.state, price: p.price,
-      change: Math.round(p.change), changePercent: Math.round(p.changePercent * 10) / 10,
-      trend: p.changePercent > 0 ? "up" as const : "down" as const,
-    }));
+    const mostVolatile: TopMover[] = [...priceData]
+      .sort((a, b) => Math.abs(b.changePercent) - Math.abs(a.changePercent))
+      .slice(0, 10)
+      .map((p, idx) => ({
+        rank: idx + 1,
+        item: p.item,
+        market: p.market,
+        state: p.state,
+        price: p.price,
+        previousPrice: p.previousPrice,
+        change: Math.round(p.change),
+        changePercent: Math.round(p.changePercent * 10) / 10,
+        trend: p.changePercent > 0 ? "up" as const : "down" as const,
+        unit: p.unit,
+      }));
     
     // Market Summaries
-    const marketGroups = new Map<string, PriceRecord[]>();
+    const marketGroups = new Map<number, PriceRecord[]>();
     for (const record of priceData) {
       const existing = marketGroups.get(record.marketId) || [];
       existing.push(record);
@@ -430,39 +716,83 @@ export async function GET(request: NextRequest) {
       const topLoser = sortedRecords[sortedRecords.length - 1];
       
       marketSummaries.push({
-        marketId, marketName: firstRecord.market, state: firstRecord.state, region: firstRecord.region,
-        itemCount: records.length, avgPrice: Math.round(avgPrice), avgChange: Math.round(avgChange * 10) / 10,
-        topGainer: topGainer && topGainer.changePercent > 0 ? { item: topGainer.item, change: Math.round(topGainer.changePercent * 10) / 10 } : null,
-        topLoser: topLoser && topLoser.changePercent < 0 ? { item: topLoser.item, change: Math.round(topLoser.changePercent * 10) / 10 } : null,
-        status: records.length >= 5 ? "active" : records.length >= 2 ? "limited" : "offline",
+        marketId,
+        marketName: firstRecord.market,
+        state: firstRecord.state,
+        region: firstRecord.region,
+        itemCount: records.length,
+        avgPrice: Math.round(avgPrice),
+        avgChange: Math.round(avgChange * 10) / 10,
+        topGainer: topGainer && topGainer.changePercent > 0 
+          ? { item: topGainer.item, change: Math.round(topGainer.changePercent * 10) / 10 } 
+          : null,
+        topLoser: topLoser && topLoser.changePercent < 0 
+          ? { item: topLoser.item, change: Math.round(topLoser.changePercent * 10) / 10 } 
+          : null,
+        status: records.length >= 10 ? "active" : records.length >= 5 ? "limited" : "offline",
       });
     }
     marketSummaries.sort((a, b) => b.itemCount - a.itemCount);
     
+    // Recent Activity
+    const topGainerItem = topGainers[0];
+    const topLoserItem = topLosers[0];
     const recentActivity = [
-      { type: "price_update", description: `${priceData.length} prices tracked across ${uniqueMarkets.length} markets`, time: "Just now" },
-      { type: "top_gainer", description: `${topGainers[0]?.item ?? "N/A"} up ${topGainers[0]?.changePercent ?? 0}% at ${topGainers[0]?.market ?? "N/A"}`, time: "Recent" },
-      { type: "top_loser", description: `${topLosers[0]?.item ?? "N/A"} down ${Math.abs(topLosers[0]?.changePercent ?? 0)}% at ${topLosers[0]?.market ?? "N/A"}`, time: "Recent" },
-      { type: "alert", description: "Price alerts system active", time: "Ongoing" },
+      { 
+        type: "price_update", 
+        description: `${priceData.length} prices tracked across ${uniqueMarkets.length} markets (${periodLabel})`, 
+        time: "Just now" 
+      },
+      { 
+        type: "top_gainer", 
+        description: topGainerItem 
+          ? `${topGainerItem.item} up ${topGainerItem.changePercent}% at ${topGainerItem.market}` 
+          : "No gainers", 
+        time: "Recent" 
+      },
+      { 
+        type: "top_loser", 
+        description: topLoserItem 
+          ? `${topLoserItem.item} down ${Math.abs(topLoserItem.changePercent)}% at ${topLoserItem.market}` 
+          : "No losers", 
+        time: "Recent" 
+      },
+      { 
+        type: "alert", 
+        description: `Price volatility: ${mostVolatile.length > 0 ? mostVolatile[0]?.item : "None"} most volatile`, 
+        time: "Ongoing" 
+      },
     ];
+    
+    // Get last update time from data
+    const sortedByDate = [...priceData].sort((a, b) => 
+      new Date(b.date).getTime() - new Date(a.date).getTime()
+    );
+    const lastUpdateTime = sortedByDate[0]?.date ?? now.toISOString().split("T")[0] ?? "";
     
     const response: SnapshotResponse = {
       success: true,
       timestamp: now.toISOString(),
+      period: period,
+      periodLabel: periodLabel,
       summary: {
         totalMarkets: uniqueMarkets.length,
         activeMarkets: marketSummaries.filter(m => m.status === "active").length,
         totalItems: uniqueItems.length,
         totalPricePoints: priceData.length,
         avgInflation: Math.round(avgInflation * 10) / 10,
-        lastUpdateTime: priceData[0]?.date ?? now.toISOString().split("T")[0] ?? "",
+        lastUpdateTime: lastUpdateTime,
       },
-      nfpiIndex: { ...nfpi, baseline: 100, asOf: "Jan 2026" },
+      nfpiIndex: {
+        ...nfpi,
+        baseline: 100,
+        asOf: "Jan 2026",
+      },
       regionBreakdown,
       topGainers,
       topLosers,
       mostVolatile,
-      marketSummaries: marketSummaries.slice(0, 10),
+      marketSummaries: marketSummaries.slice(0, 15),
       recentActivity,
       dataSource,
       recordCount: priceData.length,
@@ -471,6 +801,13 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(response);
   } catch (error) {
     console.error("Snapshot API error:", error);
-    return NextResponse.json({ success: false, error: "Failed to generate snapshot", message: error instanceof Error ? error.message : "Unknown error" }, { status: 500 });
+    return NextResponse.json(
+      { 
+        success: false, 
+        error: "Failed to generate snapshot", 
+        message: error instanceof Error ? error.message : "Unknown error" 
+      }, 
+      { status: 500 }
+    );
   }
 }
