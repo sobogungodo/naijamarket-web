@@ -565,7 +565,7 @@ function calculateMonthlyInflation(data: PriceRecord[], months: number): Monthly
   return result;
 }
 
-function calculateRegionalInflation(data: PriceRecord[], months: number): RegionalInflation[] {
+function calculateRegionalInflation(data: PriceRecord[]): RegionalInflation[] {
   const result: RegionalInflation[] = [];
   
   // Get current and previous month data
@@ -849,7 +849,7 @@ export async function GET(request: NextRequest) {
     
     // Calculate all inflation metrics
     const monthlyTrend = calculateMonthlyInflation(priceData, periodMonths);
-    const regionalBreakdown = calculateRegionalInflation(priceData, periodMonths);
+    const regionalBreakdown = calculateRegionalInflation(priceData);
     const { inflators, deflators } = calculateItemInflation(priceData);
     const basketComposition = calculateBasketComposition(priceData);
     const categoryBreakdown = calculateCategoryBreakdown(basketComposition);
