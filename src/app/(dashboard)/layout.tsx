@@ -21,6 +21,7 @@ import {
   ArrowLeftRight,
   Sparkles,
   Activity,
+  Globe2,
 } from "lucide-react";
 
 // ============================================================================
@@ -201,6 +202,7 @@ export default function DashboardLayout({
         <nav className="sidebar-nav custom-scrollbar">
           <div className="space-y-1">
             <NavLink href="/dashboard" icon={LayoutDashboard} label="Dashboard" currentPath={pathname} />
+            <NavLink href="/dashboard/snapshot" icon={Globe2} label="Snapshot" badge="NEW" currentPath={pathname} />
             <NavLink href="/dashboard/prices" icon={TrendingUp} label="Prices" currentPath={pathname} />
             <NavLink href="/dashboard/markets" icon={MapPin} label="Markets" currentPath={pathname} />
             <NavLink href="/dashboard/compare" icon={GitCompare} label="Compare" currentPath={pathname} />
