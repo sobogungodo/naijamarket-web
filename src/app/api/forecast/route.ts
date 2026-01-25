@@ -2,11 +2,12 @@
 // src/app/api/forecast/route.ts
 // NaijaMarket Intel - Seasonal Forecast API
 // Bloomberg Equivalent: ECFC <GO> (Economic Forecasts)
-// Version: 1.0.1 - Clean Build
+// Version: 2.0.0 - Hybrid Data (Azure SQL → Google Sheets → Mock)
 // Date: 2026-01-25
 // ============================================================================
 
 import { NextRequest, NextResponse } from "next/server";
+import sql from "mssql";
 
 // ============================================================================
 // CONFIGURATION
@@ -14,6 +15,20 @@ import { NextRequest, NextResponse } from "next/server";
 
 const GOOGLE_SHEETS_ID = "1n-7MXdoqvIoSHteBJaUYBmIPLjJBNtrE_jVuUxO5kr8";
 const GOOGLE_API_KEY = process.env.GOOGLE_SHEETS_API_KEY || "";
+
+// Azure SQL Configuration
+const SQL_CONFIG: sql.config = {
+  server: process.env.AZURE_SQL_SERVER || "naijafood.database.windows.net",
+  database: process.env.AZURE_SQL_DATABASE || "NaijaMarketIntel",
+  user: process.env.AZURE_SQL_USER || "",
+  password: process.env.AZURE_SQL_PASSWORD || "",
+  options: {
+    encrypt: true,
+    trustServerCertificate: false,
+  },
+  connectionTimeout: 30000,
+  requestTimeout: 30000,
+};
 
 // Tier-based access limits
 const TIER_LIMITS: Record<string, { 
@@ -30,7 +45,6 @@ const TIER_LIMITS: Record<string, {
   ENTERPRISE: { monthsBack: 120, predictionMonths: 12, canExport: true, showConfidence: true },
 };
 
-// Month names
 const MONTHS = [
   "January", "February", "March", "April", "May", "June",
   "July", "August", "September", "October", "November", "December"
@@ -102,6 +116,216 @@ interface ForecastResponse {
   };
   dataSource: string;
   yearsOfData: number;
+  recordCount: number;
+}
+
+// ============================================================================
+// DATA FETCHING FUNCTIONS
+// ============================================================================
+
+/**
+ * 1️⃣ PRIMARY: Fetch from Azure SQL Daily_Prices table
+ */
+async function fetchFromAzureSQL(item: string, yearsBack: number): Promise<{ data: HistoricalPrice[]; success: boolean }> {
+  if (!SQL_CONFIG.user || !SQL_CONFIG.password) {
+    console.log("Azure SQL credentials not configured, skipping...");
+    return { data: [], success: false };
+  }
+
+  let pool: sql.ConnectionPool | null = null;
+  
+  try {
+    console.log(`Connecting to Azure SQL for ${item}...`);
+    pool = await sql.connect(SQL_CONFIG);
+    
+    const cutoffDate = new Date();
+    cutoffDate.setFullYear(cutoffDate.getFullYear() - yearsBack);
+    const cutoffStr = cutoffDate.toISOString().split("T")[0];
+    
+    // Extract first word of item for flexible matching
+    const itemKeyword = item.split(" ")[0] ?? item;
+    
+    const result = await pool.request()
+      .input("cutoffDate", sql.Date, cutoffStr)
+      .input("itemKeyword", sql.NVarChar, `%${itemKeyword}%`)
+      .query(`
+        SELECT 
+          item_name AS item,
+          price_naira AS price,
+          price_date AS date,
+          YEAR(price_date) AS year,
+          MONTH(price_date) AS month
+        FROM dbo.Daily_Prices
+        WHERE price_date >= @cutoffDate
+          AND price_naira > 0
+          AND item_name LIKE @itemKeyword
+        ORDER BY price_date ASC
+      `);
+    
+    console.log(`Azure SQL returned ${result.recordset.length} records for ${item}`);
+    
+    const data: HistoricalPrice[] = result.recordset.map((row: {
+      item: string;
+      price: number;
+      date: Date;
+      year: number;
+      month: number;
+    }) => ({
+      item: row.item,
+      price: row.price,
+      date: row.date instanceof Date ? row.date.toISOString().split("T")[0] ?? "" : String(row.date),
+      year: row.year,
+      month: row.month,
+    }));
+    
+    return { data, success: data.length >= 12 };
+    
+  } catch (error) {
+    console.error("Azure SQL error:", error);
+    return { data: [], success: false };
+  } finally {
+    if (pool) {
+      await pool.close();
+    }
+  }
+}
+
+/**
+ * 2️⃣ FALLBACK: Fetch from Google Sheets
+ */
+async function fetchFromGoogleSheets(item: string): Promise<{ data: HistoricalPrice[]; success: boolean }> {
+  if (!GOOGLE_API_KEY) {
+    console.log("Google Sheets API key not configured, skipping...");
+    return { data: [], success: false };
+  }
+
+  try {
+    console.log("Fetching from Google Sheets (Price_History_NBS)...");
+    const url = `https://sheets.googleapis.com/v4/spreadsheets/${GOOGLE_SHEETS_ID}/values/Price_History_NBS?key=${GOOGLE_API_KEY}`;
+    const response = await fetch(url, { next: { revalidate: 3600 } });
+    
+    if (!response.ok) {
+      console.error(`Google Sheets API error: ${response.status}`);
+      return { data: [], success: false };
+    }
+    
+    const result = await response.json();
+    const rows: string[][] = result.values || [];
+    
+    if (rows.length < 2) {
+      return { data: [], success: false };
+    }
+    
+    const headers = rows[0] ?? [];
+    const itemIdx = headers.findIndex((h: string) => h?.toLowerCase().includes("item") || h?.toLowerCase().includes("commodity"));
+    const priceIdx = headers.findIndex((h: string) => h?.toLowerCase().includes("price"));
+    const yearIdx = headers.findIndex((h: string) => h?.toLowerCase().includes("year"));
+    const monthIdx = headers.findIndex((h: string) => h?.toLowerCase().includes("month"));
+    
+    const itemKeyword = (item.split(" ")[0] ?? item).toLowerCase();
+    const data: HistoricalPrice[] = [];
+    
+    for (let i = 1; i < rows.length; i++) {
+      const row = rows[i] ?? [];
+      const rowItem = row[itemIdx] ?? "";
+      
+      if (rowItem.toLowerCase().includes(itemKeyword)) {
+        const price = parseFloat(row[priceIdx] ?? "0") || 0;
+        const year = parseInt(row[yearIdx] ?? "0") || new Date().getFullYear();
+        const month = parseInt(row[monthIdx] ?? "0") || 1;
+        
+        if (price > 0) {
+          data.push({
+            date: `${year}-${String(month).padStart(2, "0")}-15`,
+            year,
+            month,
+            price,
+            item: rowItem,
+          });
+        }
+      }
+    }
+    
+    console.log(`Google Sheets returned ${data.length} records for ${item}`);
+    return { data, success: data.length >= 12 };
+    
+  } catch (error) {
+    console.error("Google Sheets error:", error);
+    return { data: [], success: false };
+  }
+}
+
+/**
+ * 3️⃣ FINAL FALLBACK: Generate synthetic historical data
+ */
+function generateMockHistoricalData(item: string, years: number = 9): HistoricalPrice[] {
+  console.log(`Generating synthetic data for ${item}...`);
+  const data: HistoricalPrice[] = [];
+  const currentYear = new Date().getFullYear();
+  const startYear = currentYear - years;
+  
+  const basePrices: Record<string, number> = {
+    "Rice (50kg)": 18000,
+    "Tomatoes (basket)": 8000,
+    "Onions (bag)": 15000,
+    "Beans (bag)": 22000,
+    "Garri (bag)": 12000,
+    "Palm Oil (25L)": 18000,
+    "Groundnut Oil (25L)": 22000,
+    "Yam (tuber)": 800,
+    "Plantain (bunch)": 1500,
+    "Pepper (basket)": 12000,
+    "Cement (bag)": 2500,
+    "Maize (bag)": 15000,
+  };
+  
+  // Nigerian seasonal factors (agriculture-based)
+  const seasonalFactors = [
+    0.95,  // Jan - Post-harvest, prices moderate
+    1.08,  // Feb - Dry season starts, prices rise
+    1.15,  // Mar - Peak dry season, scarcity
+    1.12,  // Apr - Pre-planting, still scarce
+    1.02,  // May - Early rains, hope for harvest
+    0.95,  // Jun - Planting season
+    0.92,  // Jul - Growing season
+    1.05,  // Aug - Pre-harvest, some flooding
+    1.10,  // Sep - Flooding impacts supply
+    0.88,  // Oct - Harvest begins, prices drop
+    0.85,  // Nov - Peak harvest, lowest prices
+    0.93,  // Dec - Post-harvest, festive demand
+  ];
+  
+  // Nigerian food inflation by year
+  const yearlyInflation: Record<number, number> = {
+    2016: 1.00, 2017: 1.16, 2018: 1.28, 2019: 1.42,
+    2020: 1.65, 2021: 1.95, 2022: 2.35, 2023: 2.85,
+    2024: 3.20, 2025: 3.55, 2026: 3.90,
+  };
+  
+  const basePrice: number = basePrices[item] ?? 15000;
+  
+  for (let year = startYear; year <= currentYear; year++) {
+    const inflation = yearlyInflation[year] ?? 1;
+    
+    for (let month = 1; month <= 12; month++) {
+      if (year === currentYear && month > new Date().getMonth() + 1) continue;
+      
+      const seasonal = seasonalFactors[month - 1] ?? 1;
+      const randomVariance = 0.95 + Math.random() * 0.10;
+      const price = Math.round(basePrice * inflation * seasonal * randomVariance);
+      
+      data.push({
+        date: `${year}-${String(month).padStart(2, "0")}-15`,
+        year,
+        month,
+        price,
+        item,
+      });
+    }
+  }
+  
+  console.log(`Generated ${data.length} synthetic records`);
+  return data;
 }
 
 // ============================================================================
@@ -130,80 +354,6 @@ function calculateTrend(values: number[]): number {
   return (n * sumXY - sumX * sumY) / (n * sumX2 - sumX * sumX);
 }
 
-async function fetchGoogleSheetsData(sheetName: string): Promise<string[][]> {
-  try {
-    const url = `https://sheets.googleapis.com/v4/spreadsheets/${GOOGLE_SHEETS_ID}/values/${encodeURIComponent(sheetName)}?key=${GOOGLE_API_KEY}`;
-    const response = await fetch(url, { next: { revalidate: 3600 } });
-    
-    if (!response.ok) {
-      console.error(`Google Sheets API error: ${response.status}`);
-      return [];
-    }
-    
-    const data = await response.json();
-    return data.values || [];
-  } catch (error) {
-    console.error("Error fetching Google Sheets:", error);
-    return [];
-  }
-}
-
-function generateMockHistoricalData(item: string, years: number = 9): HistoricalPrice[] {
-  const data: HistoricalPrice[] = [];
-  const currentYear = new Date().getFullYear();
-  const startYear = currentYear - years;
-  
-  const basePrices: Record<string, number> = {
-    "Rice (50kg)": 18000,
-    "Tomatoes (basket)": 8000,
-    "Onions (bag)": 15000,
-    "Beans (bag)": 22000,
-    "Garri (bag)": 12000,
-    "Palm Oil (25L)": 18000,
-    "Groundnut Oil (25L)": 22000,
-    "Yam (tuber)": 800,
-    "Plantain (bunch)": 1500,
-    "Pepper (basket)": 12000,
-    "Cement (bag)": 2500,
-    "default": 15000,
-  };
-  
-  const seasonalFactors = [
-    0.95, 1.08, 1.15, 1.12, 1.02, 0.95,
-    0.92, 1.05, 1.10, 0.88, 0.85, 0.93,
-  ];
-  
-  const yearlyInflation: Record<number, number> = {
-    2016: 1.00, 2017: 1.16, 2018: 1.28, 2019: 1.42,
-    2020: 1.65, 2021: 1.95, 2022: 2.35, 2023: 2.85,
-    2024: 3.20, 2025: 3.55, 2026: 3.90,
-  };
-  
-  const basePrice: number = basePrices[item] ?? basePrices["default"] ?? 15000;
-  
-  for (let year = startYear; year <= currentYear; year++) {
-    const inflation = yearlyInflation[year] ?? 1;
-    
-    for (let month = 1; month <= 12; month++) {
-      if (year === currentYear && month > new Date().getMonth() + 1) continue;
-      
-      const seasonal = seasonalFactors[month - 1] ?? 1;
-      const randomVariance = 0.95 + Math.random() * 0.10;
-      const price = Math.round(basePrice * inflation * seasonal * randomVariance);
-      
-      data.push({
-        date: `${year}-${String(month).padStart(2, "0")}-15`,
-        year,
-        month,
-        price,
-        item,
-      });
-    }
-  }
-  
-  return data;
-}
-
 function calculateSeasonalPatterns(historicalData: HistoricalPrice[]): SeasonalPattern[] {
   const patterns: SeasonalPattern[] = [];
   const monthlyData: Map<number, number[]> = new Map();
@@ -223,7 +373,9 @@ function calculateSeasonalPatterns(historicalData: HistoricalPrice[]): SeasonalP
   });
   
   const allPrices = historicalData.map(d => d.price);
-  const annualAverage = allPrices.reduce((a, b) => a + b, 0) / allPrices.length;
+  const annualAverage = allPrices.length > 0 
+    ? allPrices.reduce((a, b) => a + b, 0) / allPrices.length 
+    : 1;
   
   for (let month = 1; month <= 12; month++) {
     const prices = monthlyData.get(month) || [];
@@ -279,7 +431,9 @@ function generatePredictions(
   let currentYear = now.getFullYear();
   
   const recentPrices = patterns.map(p => p.avgPrice);
-  const trendFactor = calculateTrend(recentPrices) / (recentPrices.reduce((a, b) => a + b, 0) / recentPrices.length);
+  const trendFactor = recentPrices.length > 0
+    ? calculateTrend(recentPrices) / (recentPrices.reduce((a, b) => a + b, 0) / recentPrices.length)
+    : 0;
   const monthlyInflation = 1.02;
   
   for (let i = 1; i <= months; i++) {
@@ -404,53 +558,38 @@ export async function GET(request: NextRequest) {
     const limits = TIER_LIMITS[tier] ?? defaultLimits;
     const yearsOfData = Math.ceil(limits.monthsBack / 12);
     
+    // ========================================================================
+    // HYBRID DATA FETCHING: Azure SQL → Google Sheets → Mock
+    // ========================================================================
     let historicalData: HistoricalPrice[] = [];
-    let dataSource = "Google Sheets + Azure SQL";
+    let dataSource = "Unknown";
     
-    const nbsData = await fetchGoogleSheetsData("Price_History_NBS");
-    
-    if (nbsData.length > 1) {
-      const headers = nbsData[0] ?? [];
-      const itemIndex = headers.findIndex(h => h.toLowerCase().includes("item") || h.toLowerCase().includes("commodity"));
-      const priceIndex = headers.findIndex(h => h.toLowerCase().includes("price"));
-      const yearIndex = headers.findIndex(h => h.toLowerCase().includes("year"));
-      const monthIndex = headers.findIndex(h => h.toLowerCase().includes("month"));
-      
-      for (let i = 1; i < nbsData.length; i++) {
-        const row = nbsData[i] ?? [];
-        const rowItem = row[itemIndex] ?? "";
-        const itemFirstWord = item.toLowerCase().split(" ")[0] ?? "";
-        
-        if (rowItem.toLowerCase().includes(itemFirstWord)) {
-          const price = parseFloat(row[priceIndex] ?? "0") || 0;
-          const year = parseInt(row[yearIndex] ?? "0") || new Date().getFullYear();
-          const month = parseInt(row[monthIndex] ?? "0") || 1;
-          
-          if (price > 0) {
-            historicalData.push({
-              date: `${year}-${String(month).padStart(2, "0")}-15`,
-              year,
-              month,
-              price,
-              item: rowItem,
-            });
-          }
-        }
+    // 1️⃣ Try Azure SQL first
+    const sqlResult = await fetchFromAzureSQL(item, yearsOfData);
+    if (sqlResult.success) {
+      historicalData = sqlResult.data;
+      dataSource = "Azure SQL (Daily_Prices - 10yr)";
+    } else {
+      // 2️⃣ Try Google Sheets
+      const sheetsResult = await fetchFromGoogleSheets(item);
+      if (sheetsResult.success) {
+        historicalData = sheetsResult.data;
+        dataSource = "Google Sheets (Price_History_NBS)";
+      } else {
+        // 3️⃣ Use synthetic data
+        historicalData = generateMockHistoricalData(item, yearsOfData);
+        dataSource = "Synthetic Historical Model (Demo)";
       }
-      
-      dataSource = "NBS Historical Data (Google Sheets)";
     }
     
-    if (historicalData.length < 12) {
-      historicalData = generateMockHistoricalData(item, yearsOfData);
-      dataSource = "Synthetic Historical Model (Demo)";
-    }
-    
+    // Filter by time limit
     const cutoffYear = new Date().getFullYear() - yearsOfData;
     historicalData = historicalData.filter(d => d.year >= cutoffYear);
     
+    // Calculate seasonal patterns
     const seasonalPatterns = calculateSeasonalPatterns(historicalData);
     
+    // Get current price
     const sortedByDate = [...historicalData].sort((a, b) => 
       new Date(b.date).getTime() - new Date(a.date).getTime()
     );
@@ -459,12 +598,14 @@ export async function GET(request: NextRequest) {
     const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
     const lastUpdated: string = sortedByDate[0]?.date ?? todayStr;
     
+    // Generate predictions
     const predictions = generatePredictions(
       seasonalPatterns, 
       currentPrice, 
       limits.predictionMonths
     );
     
+    // Hide confidence if tier doesn't allow
     if (!limits.showConfidence) {
       predictions.forEach(p => {
         p.confidenceLow = 0;
@@ -473,8 +614,10 @@ export async function GET(request: NextRequest) {
       });
     }
     
+    // Generate insights
     const insights = generateInsights(seasonalPatterns, currentPrice);
     
+    // Historical accuracy
     const lastYearMonth = new Date().getMonth() + 1;
     const lastYearPattern = seasonalPatterns.find(p => p.month === lastYearMonth);
     const historicalAccuracy = {
@@ -501,6 +644,7 @@ export async function GET(request: NextRequest) {
       },
       dataSource,
       yearsOfData,
+      recordCount: historicalData.length,
     };
     
     return NextResponse.json(response);
