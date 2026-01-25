@@ -1,316 +1,795 @@
 // ============================================================================
-// src/app/api/inflation/export/route.ts
-// NaijaMarket Intel - Inflation Tracker PDF/CSV Export API
-// Version: 1.0.0
+// src/app/api/inflation/route.ts
+// NaijaMarket Intel - Inflation Tracker API
+// Bloomberg Equivalent: ECST <GO> (Economic Statistics)
+// Version: 2.0.0 - Hybrid Data (Daily_Prices → Validated_Prices → Mock)
 // Date: 2026-01-25
 // ============================================================================
 
 import { NextRequest, NextResponse } from "next/server";
+import sql from "mssql";
+
+// ============================================================================
+// CONFIGURATION
+// ============================================================================
+
+const GOOGLE_SHEETS_ID = "1n-7MXdoqvIoSHteBJaUYBmIPLjJBNtrE_jVuUxO5kr8";
+const GOOGLE_API_KEY = process.env.GOOGLE_SHEETS_API_KEY || "";
+
+const SQL_CONFIG: sql.config = {
+  server: process.env.AZURE_SQL_SERVER || "naijafood.database.windows.net",
+  database: process.env.AZURE_SQL_DATABASE || "NaijaMarketIntel",
+  user: process.env.AZURE_SQL_USER || "",
+  password: process.env.AZURE_SQL_PASSWORD || "",
+  options: {
+    encrypt: true,
+    trustServerCertificate: false,
+  },
+  connectionTimeout: 30000,
+  requestTimeout: 30000,
+};
+
+// Time period configurations
+const TIME_PERIODS: Record<string, { months: number; label: string }> = {
+  "1m": { months: 1, label: "1 Month" },
+  "3m": { months: 3, label: "3 Months" },
+  "6m": { months: 6, label: "6 Months" },
+  "12m": { months: 12, label: "12 Months" },
+};
+
+// NBS Official Food Inflation Data (Monthly YoY %)
+const NBS_OFFICIAL_INFLATION: Record<string, number> = {
+  "2024-01": 29.5, "2024-02": 30.1, "2024-03": 30.8, "2024-04": 31.2,
+  "2024-05": 31.8, "2024-06": 32.4, "2024-07": 32.8, "2024-08": 33.1,
+  "2024-09": 33.4, "2024-10": 33.6, "2024-11": 33.5, "2024-12": 33.6,
+  "2025-01": 33.7, "2025-02": 34.2, "2025-03": 33.9, "2025-04": 33.5,
+  "2025-05": 33.1, "2025-06": 32.8, "2025-07": 32.5, "2025-08": 32.2,
+  "2025-09": 31.9, "2025-10": 31.5, "2025-11": 31.2, "2025-12": 30.8,
+  "2026-01": 30.5,
+};
+
+// NFPI Basket weights (must sum to 100)
+const BASKET_WEIGHTS: Record<string, { weight: number; category: string }> = {
+  "rice": { weight: 18, category: "Grains & Cereals" },
+  "beans": { weight: 8, category: "Grains & Cereals" },
+  "garri": { weight: 12, category: "Grains & Cereals" },
+  "yam": { weight: 6, category: "Tubers" },
+  "tomatoes": { weight: 10, category: "Vegetables" },
+  "onions": { weight: 7, category: "Vegetables" },
+  "pepper": { weight: 8, category: "Vegetables" },
+  "palm oil": { weight: 10, category: "Oils & Fats" },
+  "groundnut oil": { weight: 5, category: "Oils & Fats" },
+  "plantain": { weight: 4, category: "Fruits" },
+  "eggs": { weight: 5, category: "Protein" },
+  "fish": { weight: 4, category: "Protein" },
+  "beef": { weight: 3, category: "Protein" },
+};
+
+const REGIONS: Record<string, { name: string; states: string[] }> = {
+  "SW": { name: "South West", states: ["Lagos", "Ogun", "Oyo", "Osun", "Ondo", "Ekiti"] },
+  "SE": { name: "South East", states: ["Anambra", "Enugu", "Imo", "Abia", "Ebonyi"] },
+  "NC": { name: "North Central", states: ["FCT", "Abuja", "Benue", "Kogi", "Kwara", "Nasarawa", "Niger", "Plateau"] },
+  "NW": { name: "North West", states: ["Kano", "Kaduna", "Katsina", "Kebbi", "Sokoto", "Zamfara", "Jigawa"] },
+  "NE": { name: "North East", states: ["Borno", "Yobe", "Adamawa", "Bauchi", "Gombe", "Taraba"] },
+  "SS": { name: "South South", states: ["Rivers", "Delta", "Bayelsa", "Akwa Ibom", "Cross River", "Edo"] },
+};
 
 // ============================================================================
 // TYPE DEFINITIONS
 // ============================================================================
 
-interface InflationDataPoint {
-  month: string;
+interface PriceRecord {
+  itemId: number;
+  itemName: string;
+  marketId: number;
+  marketName: string;
+  state: string;
+  region: string;
+  category: string;
+  price: number;
+  date: string;
   year: number;
-  monthNum: number;
-  rate: number;
-  index: number;
-  foodRate: number;
-  coreRate: number;
+  month: number;
 }
 
-interface CategoryInflation {
-  category: string;
-  rate: number;
-  contribution: number;
-  trend: "up" | "down" | "stable";
+interface MonthlyInflation {
+  month: string;
+  monthName: string;
+  year: number;
+  naijaMarketRate: number;
+  nbsRate: number | null;
+  difference: number | null;
+  avgPrice: number;
+  prevAvgPrice: number;
+  priceChange: number;
 }
 
 interface RegionalInflation {
   region: string;
-  rate: number;
-  rank: number;
+  regionName: string;
+  inflationRate: number;
+  monthOverMonth: number;
+  trend: "up" | "down" | "stable";
+  marketCount: number;
+  topInflator: string | null;
+}
+
+interface ItemInflation {
+  item: string;
+  category: string;
+  currentPrice: number;
+  previousPrice: number;
+  priceChange: number;
+  inflationRate: number;
+  contribution: number;
+  trend: "up" | "down" | "stable";
+}
+
+interface BasketItem {
+  item: string;
+  category: string;
+  weight: number;
+  currentPrice: number;
+  previousPrice: number;
+  inflationRate: number;
+  contribution: number;
+}
+
+interface InflationResponse {
+  success: boolean;
+  timestamp: string;
+  period: string;
+  periodLabel: string;
+  currentInflation: {
+    rate: number;
+    monthOverMonth: number;
+    yearOverYear: number;
+    trend: "up" | "down" | "stable";
+    asOf: string;
+  };
+  monthlyTrend: MonthlyInflation[];
+  regionalBreakdown: RegionalInflation[];
+  nbsComparison: {
+    naijaMarket: number;
+    nbs: number;
+    difference: number;
+    interpretation: string;
+  };
+  topInflators: ItemInflation[];
+  topDeflators: ItemInflation[];
+  basketComposition: BasketItem[];
+  categoryBreakdown: {
+    category: string;
+    weight: number;
+    inflationRate: number;
+    contribution: number;
+  }[];
+  dataSource: string;
+  recordCount: number;
 }
 
 // ============================================================================
-// MOCK DATA GENERATOR (Same as main inflation API)
+// HELPER FUNCTIONS
 // ============================================================================
 
-function generateInflationData(months: number): InflationDataPoint[] {
-  const data: InflationDataPoint[] = [];
-  const now = new Date();
+function getRegionFromState(state: string): string {
+  if (!state) return "SW";
+  const stateLower = state.toLowerCase();
+  for (const [code, info] of Object.entries(REGIONS)) {
+    if (info.states.some(s => stateLower.includes(s.toLowerCase()))) return code;
+  }
+  return "SW";
+}
+
+function getMonthName(month: number): string {
+  const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  return months[month - 1] || "Unknown";
+}
+
+function getBasketKeyword(itemName: string): string | null {
+  const itemLower = itemName.toLowerCase();
+  for (const keyword of Object.keys(BASKET_WEIGHTS)) {
+    if (itemLower.includes(keyword)) return keyword;
+  }
+  return null;
+}
+
+// ============================================================================
+// DATA FETCHING FUNCTIONS
+// ============================================================================
+
+async function fetchFromDailyPrices(months: number): Promise<{ data: PriceRecord[]; success: boolean }> {
+  if (!SQL_CONFIG.user || !SQL_CONFIG.password) {
+    console.log("Azure SQL credentials not configured, skipping Daily_Prices...");
+    return { data: [], success: false };
+  }
+
+  let pool: sql.ConnectionPool | null = null;
   
-  const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-  
-  // Nigerian inflation has been high (20-35% range)
-  let baseRate = 28.5;
-  let baseIndex = 100;
-  
-  for (let i = months - 1; i >= 0; i--) {
-    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-    const monthIdx = d.getMonth();
-    const year = d.getFullYear();
+  try {
+    console.log(`Connecting to Azure SQL for inflation data (${months} months)...`);
+    pool = await sql.connect(SQL_CONFIG);
     
-    // Seasonal variation and trend
-    const seasonalFactor = [0.98, 1.02, 1.05, 1.03, 0.99, 0.97, 0.96, 1.01, 1.04, 1.02, 0.98, 1.00][monthIdx] ?? 1.0;
-    const trendFactor = 1 + (Math.random() - 0.45) * 0.03;
+    const result = await pool.request()
+      .input('months', sql.Int, months)
+      .query(`
+        DECLARE @EndDate DATE = (SELECT MAX(price_date) FROM dbo.Daily_Prices WHERE price_naira > 0);
+        DECLARE @StartDate DATE = DATEADD(month, -@months - 12, @EndDate);
+
+        SELECT 
+          item_id, item_name, market_id, market_name, state, category_id,
+          price_naira, price_date,
+          YEAR(price_date) as price_year,
+          MONTH(price_date) as price_month
+        FROM dbo.Daily_Prices
+        WHERE price_date >= @StartDate 
+          AND price_date <= @EndDate
+          AND price_naira > 0
+          AND time_slot = 2  -- Use midday prices for consistency
+        ORDER BY price_date, item_name, market_name
+      `);
     
-    baseRate = baseRate * seasonalFactor * trendFactor;
-    baseRate = Math.max(18, Math.min(38, baseRate)); // Keep in realistic range
+    console.log(`Daily_Prices returned ${result.recordset.length} records for inflation`);
     
-    baseIndex = baseIndex * (1 + baseRate / 1200);
-    
-    const foodRate = baseRate * (1.1 + Math.random() * 0.1); // Food inflation typically higher
-    const coreRate = baseRate * (0.85 + Math.random() * 0.1);
-    
-    data.push({
-      month: monthNames[monthIdx] ?? "",
-      year,
-      monthNum: monthIdx + 1,
-      rate: Math.round(baseRate * 100) / 100,
-      index: Math.round(baseIndex * 100) / 100,
-      foodRate: Math.round(foodRate * 100) / 100,
-      coreRate: Math.round(coreRate * 100) / 100,
+    const data: PriceRecord[] = result.recordset.map((row: {
+      item_id: number;
+      item_name: string;
+      market_id: number;
+      market_name: string;
+      state: string;
+      category_id: number;
+      price_naira: number;
+      price_date: Date;
+      price_year: number;
+      price_month: number;
+    }) => {
+      const dateStr = row.price_date instanceof Date 
+        ? row.price_date.toISOString().split("T")[0] ?? "" 
+        : String(row.price_date);
+      
+      return {
+        itemId: row.item_id || 0,
+        itemName: row.item_name || "",
+        marketId: row.market_id || 0,
+        marketName: row.market_name || "",
+        state: row.state || "",
+        region: getRegionFromState(row.state || ""),
+        category: String(row.category_id || ""),
+        price: row.price_naira || 0,
+        date: dateStr,
+        year: row.price_year || 0,
+        month: row.price_month || 0,
+      };
     });
+    
+    return { data, success: data.length >= 100 };
+  } catch (error) {
+    console.error("Daily_Prices inflation query error:", error);
+    return { data: [], success: false };
+  } finally {
+    if (pool) {
+      try {
+        await pool.close();
+      } catch (closeError) {
+        console.error("Error closing pool:", closeError);
+      }
+    }
+  }
+}
+
+async function fetchFromValidatedPrices(months: number): Promise<{ data: PriceRecord[]; success: boolean }> {
+  if (!SQL_CONFIG.user || !SQL_CONFIG.password) {
+    console.log("Azure SQL credentials not configured, skipping Validated_Prices...");
+    return { data: [], success: false };
+  }
+
+  let pool: sql.ConnectionPool | null = null;
+  
+  try {
+    console.log(`Fetching Validated_Prices for inflation (${months} months)...`);
+    pool = await sql.connect(SQL_CONFIG);
+    
+    const result = await pool.request()
+      .input('months', sql.Int, months)
+      .query(`
+        DECLARE @EndDate DATETIME2 = (SELECT MAX(validated_at) FROM dbo.Validated_Prices WHERE validation_status = 'APPROVED');
+        DECLARE @StartDate DATETIME2 = DATEADD(month, -@months - 12, @EndDate);
+
+        SELECT 
+          item_id, item_name, market_id, market_name, state,
+          price_naira, validated_at,
+          YEAR(validated_at) as price_year,
+          MONTH(validated_at) as price_month
+        FROM dbo.Validated_Prices
+        WHERE validated_at >= @StartDate 
+          AND validated_at <= @EndDate
+          AND validation_status = 'APPROVED'
+          AND price_naira > 0
+        ORDER BY validated_at, item_name, market_name
+      `);
+    
+    console.log(`Validated_Prices returned ${result.recordset.length} records for inflation`);
+    
+    const data: PriceRecord[] = result.recordset.map((row: {
+      item_id: number;
+      item_name: string;
+      market_id: number;
+      market_name: string;
+      state: string;
+      price_naira: number;
+      validated_at: Date;
+      price_year: number;
+      price_month: number;
+    }) => {
+      const dateStr = row.validated_at instanceof Date 
+        ? row.validated_at.toISOString().split("T")[0] ?? "" 
+        : String(row.validated_at);
+      
+      return {
+        itemId: row.item_id || 0,
+        itemName: row.item_name || "",
+        marketId: row.market_id || 0,
+        marketName: row.market_name || "",
+        state: row.state || "",
+        region: getRegionFromState(row.state || ""),
+        category: "",
+        price: row.price_naira || 0,
+        date: dateStr,
+        year: row.price_year || 0,
+        month: row.price_month || 0,
+      };
+    });
+    
+    return { data, success: data.length >= 100 };
+  } catch (error) {
+    console.error("Validated_Prices inflation query error:", error);
+    return { data: [], success: false };
+  } finally {
+    if (pool) {
+      try {
+        await pool.close();
+      } catch (closeError) {
+        console.error("Error closing pool:", closeError);
+      }
+    }
+  }
+}
+
+async function fetchFromGoogleSheets(): Promise<{ data: PriceRecord[]; success: boolean }> {
+  if (!GOOGLE_API_KEY) {
+    console.log("Google Sheets API key not configured, skipping...");
+    return { data: [], success: false };
+  }
+
+  try {
+    console.log("Fetching from Google Sheets for inflation...");
+    const url = `https://sheets.googleapis.com/v4/spreadsheets/${GOOGLE_SHEETS_ID}/values/Validated_Prices?key=${GOOGLE_API_KEY}`;
+    const response = await fetch(url, { next: { revalidate: 300 } });
+    
+    if (!response.ok) {
+      console.error(`Google Sheets API error: ${response.status}`);
+      return { data: [], success: false };
+    }
+    
+    const result = await response.json();
+    const rows: string[][] = result.values || [];
+    
+    if (rows.length < 2) return { data: [], success: false };
+    
+    const headers = rows[0] ?? [];
+    const itemIdx = headers.findIndex((h: string) => h?.toLowerCase().includes("item"));
+    const priceIdx = headers.findIndex((h: string) => h?.toLowerCase().includes("price"));
+    const marketIdx = headers.findIndex((h: string) => h?.toLowerCase().includes("market"));
+    const stateIdx = headers.findIndex((h: string) => h?.toLowerCase().includes("state"));
+    const dateIdx = headers.findIndex((h: string) => h?.toLowerCase().includes("date"));
+    
+    const data: PriceRecord[] = [];
+    
+    for (let i = 1; i < rows.length; i++) {
+      const row = rows[i] ?? [];
+      const item = row[itemIdx] ?? "";
+      const price = parseFloat(row[priceIdx] ?? "0") || 0;
+      const market = row[marketIdx] ?? "";
+      const state = row[stateIdx] ?? "";
+      const dateStr = row[dateIdx] ?? "";
+      
+      if (item && price > 0 && market && dateStr) {
+        const dateParts = dateStr.split(/[-/]/);
+        const year = parseInt(dateParts[0] || "2026");
+        const month = parseInt(dateParts[1] || "1");
+        
+        data.push({
+          itemId: i,
+          itemName: item,
+          marketId: i % 50,
+          marketName: market,
+          state,
+          region: getRegionFromState(state),
+          category: "",
+          price,
+          date: dateStr,
+          year,
+          month,
+        });
+      }
+    }
+    
+    console.log(`Google Sheets returned ${data.length} records for inflation`);
+    return { data, success: data.length >= 100 };
+  } catch (error) {
+    console.error("Google Sheets inflation error:", error);
+    return { data: [], success: false };
+  }
+}
+
+function generateMockInflationData(months: number): PriceRecord[] {
+  console.log(`Generating synthetic inflation data for ${months} months...`);
+  const data: PriceRecord[] = [];
+  
+  const items = [
+    { id: 1, name: "Rice (50kg) - Foreign", basePrice: 65000 },
+    { id: 2, name: "Beans (bag)", basePrice: 55000 },
+    { id: 3, name: "Garri (bag)", basePrice: 22000 },
+    { id: 4, name: "Yam (tuber)", basePrice: 2200 },
+    { id: 5, name: "Tomatoes (basket)", basePrice: 35000 },
+    { id: 6, name: "Onions (bag)", basePrice: 30000 },
+    { id: 7, name: "Pepper (basket)", basePrice: 25000 },
+    { id: 8, name: "Palm Oil (25L)", basePrice: 42000 },
+    { id: 9, name: "Groundnut Oil (25L)", basePrice: 48000 },
+    { id: 10, name: "Plantain (bunch)", basePrice: 3500 },
+    { id: 11, name: "Eggs (crate)", basePrice: 2800 },
+    { id: 12, name: "Fish (kg)", basePrice: 4500 },
+    { id: 13, name: "Beef (kg)", basePrice: 5500 },
+  ];
+  
+  const markets = [
+    { id: 1, name: "Mile 12 Market", state: "Lagos" },
+    { id: 2, name: "Onitsha Main Market", state: "Anambra" },
+    { id: 3, name: "Wuse Market", state: "FCT" },
+    { id: 4, name: "Kano Main Market", state: "Kano" },
+    { id: 5, name: "Port Harcourt Main Market", state: "Rivers" },
+    { id: 6, name: "Bodija Market", state: "Oyo" },
+  ];
+  
+  const now = new Date();
+  const totalMonths = months + 12; // Need extra 12 months for YoY comparison
+  
+  for (let m = 0; m < totalMonths; m++) {
+    const date = new Date(now);
+    date.setMonth(date.getMonth() - m);
+    const year = date.getFullYear();
+    const month = date.getMonth() + 1;
+    const dateStr = `${year}-${String(month).padStart(2, "0")}-15`;
+    
+    // Inflation factor: prices increase over time
+    const monthsAgo = m;
+    const inflationFactor = Math.pow(1.025, monthsAgo); // ~30% annual inflation
+    
+    for (const market of markets) {
+      for (const item of items) {
+        // Add some randomness and seasonal variation
+        const seasonalFactor = 1 + 0.1 * Math.sin((month - 1) * Math.PI / 6);
+        const randomFactor = 0.95 + Math.random() * 0.1;
+        const price = Math.round(item.basePrice * inflationFactor * seasonalFactor * randomFactor);
+        
+        data.push({
+          itemId: item.id,
+          itemName: item.name,
+          marketId: market.id,
+          marketName: market.name,
+          state: market.state,
+          region: getRegionFromState(market.state),
+          category: "",
+          price,
+          date: dateStr,
+          year,
+          month,
+        });
+      }
+    }
   }
   
+  console.log(`Generated ${data.length} synthetic inflation records`);
   return data;
 }
 
-function getCategoryInflation(): CategoryInflation[] {
-  return [
-    { category: "Food & Beverages", rate: 32.5, contribution: 45.2, trend: "up" },
-    { category: "Housing & Utilities", rate: 24.8, contribution: 18.5, trend: "up" },
-    { category: "Transportation", rate: 28.2, contribution: 12.3, trend: "stable" },
-    { category: "Health", rate: 22.5, contribution: 8.2, trend: "up" },
-    { category: "Education", rate: 18.9, contribution: 6.8, trend: "stable" },
-    { category: "Clothing & Footwear", rate: 21.3, contribution: 5.2, trend: "down" },
-    { category: "Communication", rate: 15.2, contribution: 2.1, trend: "stable" },
-    { category: "Recreation", rate: 16.8, contribution: 1.7, trend: "down" },
-  ];
+// ============================================================================
+// CALCULATION FUNCTIONS
+// ============================================================================
+
+function calculateMonthlyInflation(data: PriceRecord[], months: number): MonthlyInflation[] {
+  // Group by year-month
+  const monthlyData = new Map<string, PriceRecord[]>();
+  
+  for (const record of data) {
+    const key = `${record.year}-${String(record.month).padStart(2, "0")}`;
+    const existing = monthlyData.get(key) || [];
+    existing.push(record);
+    monthlyData.set(key, existing);
+  }
+  
+  // Sort keys and get last N months
+  const sortedKeys = [...monthlyData.keys()].sort().slice(-months);
+  
+  const result: MonthlyInflation[] = [];
+  let prevAvgPrice = 0;
+  
+  for (const key of sortedKeys) {
+    const records = monthlyData.get(key) || [];
+    const [yearStr, monthStr] = key.split("-");
+    const year = parseInt(yearStr || "2026");
+    const month = parseInt(monthStr || "1");
+    
+    // Calculate average price for basket items
+    let totalWeightedPrice = 0;
+    let totalWeight = 0;
+    
+    for (const record of records) {
+      const keyword = getBasketKeyword(record.itemName);
+      if (keyword && BASKET_WEIGHTS[keyword]) {
+        const weight = BASKET_WEIGHTS[keyword]?.weight ?? 0;
+        totalWeightedPrice += record.price * weight;
+        totalWeight += weight;
+      }
+    }
+    
+    const avgPrice = totalWeight > 0 ? totalWeightedPrice / totalWeight : 0;
+    
+    // Calculate MoM inflation
+    let momInflation = 0;
+    if (prevAvgPrice > 0) {
+      momInflation = ((avgPrice - prevAvgPrice) / prevAvgPrice) * 100;
+    }
+    
+    // Get NBS rate for this month
+    const nbsRate = NBS_OFFICIAL_INFLATION[key] ?? null;
+    
+    // Annualize monthly rate for comparison
+    const annualizedRate = momInflation * 12;
+    
+    result.push({
+      month: key,
+      monthName: `${getMonthName(month)} ${year}`,
+      year,
+      naijaMarketRate: Math.round(annualizedRate * 10) / 10,
+      nbsRate,
+      difference: nbsRate !== null ? Math.round((annualizedRate - nbsRate) * 10) / 10 : null,
+      avgPrice: Math.round(avgPrice),
+      prevAvgPrice: Math.round(prevAvgPrice),
+      priceChange: Math.round(avgPrice - prevAvgPrice),
+    });
+    
+    prevAvgPrice = avgPrice;
+  }
+  
+  return result;
 }
 
-function getRegionalInflation(): RegionalInflation[] {
-  return [
-    { region: "South West", rate: 30.2, rank: 1 },
-    { region: "South East", rate: 29.5, rank: 2 },
-    { region: "South South", rate: 28.8, rank: 3 },
-    { region: "North Central", rate: 27.5, rank: 4 },
-    { region: "North East", rate: 26.2, rank: 5 },
-    { region: "North West", rate: 25.8, rank: 6 },
-  ];
+function calculateRegionalInflation(data: PriceRecord[], months: number): RegionalInflation[] {
+  const result: RegionalInflation[] = [];
+  
+  // Get current and previous month data
+  const now = new Date();
+  const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  const prevDate = new Date(now);
+  prevDate.setMonth(prevDate.getMonth() - 1);
+  const prevMonth = `${prevDate.getFullYear()}-${String(prevDate.getMonth() + 1).padStart(2, "0")}`;
+  const yearAgoDate = new Date(now);
+  yearAgoDate.setFullYear(yearAgoDate.getFullYear() - 1);
+  const yearAgoMonth = `${yearAgoDate.getFullYear()}-${String(yearAgoDate.getMonth() + 1).padStart(2, "0")}`;
+  
+  for (const [regionCode, regionInfo] of Object.entries(REGIONS)) {
+    const regionData = data.filter(d => d.region === regionCode);
+    
+    // Current month prices
+    const currentData = regionData.filter(d => 
+      `${d.year}-${String(d.month).padStart(2, "0")}` === currentMonth ||
+      `${d.year}-${String(d.month).padStart(2, "0")}` >= currentMonth.slice(0, 7)
+    );
+    
+    // Year ago prices
+    const yearAgoData = regionData.filter(d => 
+      `${d.year}-${String(d.month).padStart(2, "0")}` === yearAgoMonth ||
+      `${d.year}-${String(d.month).padStart(2, "0")}`.startsWith(yearAgoMonth.slice(0, 7))
+    );
+    
+    // Previous month prices
+    const prevData = regionData.filter(d => 
+      `${d.year}-${String(d.month).padStart(2, "0")}` === prevMonth ||
+      `${d.year}-${String(d.month).padStart(2, "0")}`.startsWith(prevMonth.slice(0, 7))
+    );
+    
+    // Calculate average prices
+    const avgCurrent = currentData.length > 0 
+      ? currentData.reduce((sum, d) => sum + d.price, 0) / currentData.length 
+      : 0;
+    const avgYearAgo = yearAgoData.length > 0 
+      ? yearAgoData.reduce((sum, d) => sum + d.price, 0) / yearAgoData.length 
+      : avgCurrent;
+    const avgPrev = prevData.length > 0 
+      ? prevData.reduce((sum, d) => sum + d.price, 0) / prevData.length 
+      : avgCurrent;
+    
+    // YoY inflation
+    const yoyInflation = avgYearAgo > 0 ? ((avgCurrent - avgYearAgo) / avgYearAgo) * 100 : 0;
+    // MoM change
+    const momChange = avgPrev > 0 ? ((avgCurrent - avgPrev) / avgPrev) * 100 : 0;
+    
+    // Find top inflator in region
+    const itemChanges = new Map<string, { current: number; prev: number; count: number }>();
+    for (const d of currentData) {
+      const existing = itemChanges.get(d.itemName) || { current: 0, prev: 0, count: 0 };
+      existing.current += d.price;
+      existing.count++;
+      itemChanges.set(d.itemName, existing);
+    }
+    for (const d of yearAgoData) {
+      const existing = itemChanges.get(d.itemName);
+      if (existing) existing.prev += d.price;
+    }
+    
+    let topInflator: string | null = null;
+    let maxInflation = 0;
+    for (const [item, data] of itemChanges) {
+      if (data.prev > 0 && data.count > 0) {
+        const inflation = ((data.current / data.count) - (data.prev / data.count)) / (data.prev / data.count) * 100;
+        if (inflation > maxInflation) {
+          maxInflation = inflation;
+          topInflator = item;
+        }
+      }
+    }
+    
+    const uniqueMarkets = [...new Set(regionData.map(d => d.marketId))];
+    
+    result.push({
+      region: regionCode,
+      regionName: regionInfo.name,
+      inflationRate: Math.round(yoyInflation * 10) / 10,
+      monthOverMonth: Math.round(momChange * 10) / 10,
+      trend: momChange > 0.5 ? "up" : momChange < -0.5 ? "down" : "stable",
+      marketCount: uniqueMarkets.length,
+      topInflator,
+    });
+  }
+  
+  return result.sort((a, b) => b.inflationRate - a.inflationRate);
 }
 
-// ============================================================================
-// CSV EXPORT
-// ============================================================================
-
-function generateCSV(data: InflationDataPoint[], categories: CategoryInflation[], regions: RegionalInflation[]): string {
-  let csv = "INFLATION TRACKER REPORT - NAIJAMARKET INTEL\n";
-  csv += `Generated: ${new Date().toLocaleString()}\n`;
-  csv += `Data Source: NBS (National Bureau of Statistics)\n\n`;
+function calculateItemInflation(data: PriceRecord[]): { inflators: ItemInflation[]; deflators: ItemInflation[] } {
+  const now = new Date();
+  const currentKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  const yearAgo = new Date(now);
+  yearAgo.setFullYear(yearAgo.getFullYear() - 1);
+  const yearAgoKey = `${yearAgo.getFullYear()}-${String(yearAgo.getMonth() + 1).padStart(2, "0")}`;
   
-  // Summary
-  const latest = data[data.length - 1];
-  const previous = data[data.length - 2];
-  csv += "CURRENT SUMMARY\n";
-  csv += `Current Rate,${latest?.rate ?? 0}%\n`;
-  csv += `Previous Month,${previous?.rate ?? 0}%\n`;
-  csv += `Food Inflation,${latest?.foodRate ?? 0}%\n`;
-  csv += `Core Inflation,${latest?.coreRate ?? 0}%\n`;
-  csv += `CPI Index,${latest?.index ?? 0}\n\n`;
+  // Group by item
+  const itemData = new Map<string, { current: number[]; yearAgo: number[]; category: string }>();
   
-  // Monthly data
-  csv += "MONTHLY INFLATION DATA\n";
-  csv += "Month,Year,Headline Rate,Food Rate,Core Rate,CPI Index\n";
-  data.forEach(d => {
-    csv += `${d.month},${d.year},${d.rate},${d.foodRate},${d.coreRate},${d.index}\n`;
-  });
-  csv += "\n";
+  for (const record of data) {
+    const monthKey = `${record.year}-${String(record.month).padStart(2, "0")}`;
+    const existing = itemData.get(record.itemName) || { current: [], yearAgo: [], category: "" };
+    
+    if (monthKey >= currentKey.slice(0, 7)) {
+      existing.current.push(record.price);
+    } else if (monthKey.startsWith(yearAgoKey.slice(0, 7)) || monthKey === yearAgoKey) {
+      existing.yearAgo.push(record.price);
+    }
+    
+    const keyword = getBasketKeyword(record.itemName);
+    if (keyword && BASKET_WEIGHTS[keyword]) {
+      existing.category = BASKET_WEIGHTS[keyword]?.category ?? "";
+    }
+    
+    itemData.set(record.itemName, existing);
+  }
   
-  // Category breakdown
-  csv += "CATEGORY BREAKDOWN\n";
-  csv += "Category,Rate %,Contribution %,Trend\n";
-  categories.forEach(c => {
-    csv += `${c.category},${c.rate},${c.contribution},${c.trend}\n`;
-  });
-  csv += "\n";
+  const items: ItemInflation[] = [];
   
-  // Regional breakdown
-  csv += "REGIONAL BREAKDOWN\n";
-  csv += "Region,Rate %,Rank\n";
-  regions.forEach(r => {
-    csv += `${r.region},${r.rate},${r.rank}\n`;
-  });
+  for (const [item, data] of itemData) {
+    if (data.current.length === 0) continue;
+    
+    const currentPrice = data.current.reduce((a, b) => a + b, 0) / data.current.length;
+    const prevPrice = data.yearAgo.length > 0 
+      ? data.yearAgo.reduce((a, b) => a + b, 0) / data.yearAgo.length 
+      : currentPrice;
+    
+    const priceChange = currentPrice - prevPrice;
+    const inflationRate = prevPrice > 0 ? (priceChange / prevPrice) * 100 : 0;
+    
+    // Calculate contribution to overall inflation
+    const keyword = getBasketKeyword(item);
+    const weight = keyword && BASKET_WEIGHTS[keyword] ? BASKET_WEIGHTS[keyword]?.weight ?? 0 : 0;
+    const contribution = (inflationRate * weight) / 100;
+    
+    items.push({
+      item,
+      category: data.category || "Other",
+      currentPrice: Math.round(currentPrice),
+      previousPrice: Math.round(prevPrice),
+      priceChange: Math.round(priceChange),
+      inflationRate: Math.round(inflationRate * 10) / 10,
+      contribution: Math.round(contribution * 10) / 10,
+      trend: inflationRate > 2 ? "up" : inflationRate < -2 ? "down" : "stable",
+    });
+  }
   
-  return csv;
+  items.sort((a, b) => b.inflationRate - a.inflationRate);
+  
+  return {
+    inflators: items.filter(i => i.inflationRate > 0).slice(0, 10),
+    deflators: items.filter(i => i.inflationRate < 0).slice(0, 10).reverse(),
+  };
 }
 
-// ============================================================================
-// HTML FOR PDF (Browser-based PDF generation)
-// ============================================================================
+function calculateBasketComposition(data: PriceRecord[]): BasketItem[] {
+  const now = new Date();
+  const currentKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  const yearAgo = new Date(now);
+  yearAgo.setFullYear(yearAgo.getFullYear() - 1);
+  const yearAgoKey = `${yearAgo.getFullYear()}-${String(yearAgo.getMonth() + 1).padStart(2, "0")}`;
+  
+  const basket: BasketItem[] = [];
+  
+  for (const [keyword, config] of Object.entries(BASKET_WEIGHTS)) {
+    const itemRecords = data.filter(d => d.itemName.toLowerCase().includes(keyword));
+    
+    const currentRecords = itemRecords.filter(d => 
+      `${d.year}-${String(d.month).padStart(2, "0")}` >= currentKey.slice(0, 7)
+    );
+    const yearAgoRecords = itemRecords.filter(d => 
+      `${d.year}-${String(d.month).padStart(2, "0")}`.startsWith(yearAgoKey.slice(0, 7))
+    );
+    
+    const currentPrice = currentRecords.length > 0 
+      ? currentRecords.reduce((sum, d) => sum + d.price, 0) / currentRecords.length 
+      : 0;
+    const prevPrice = yearAgoRecords.length > 0 
+      ? yearAgoRecords.reduce((sum, d) => sum + d.price, 0) / yearAgoRecords.length 
+      : currentPrice;
+    
+    const inflationRate = prevPrice > 0 ? ((currentPrice - prevPrice) / prevPrice) * 100 : 0;
+    const contribution = (inflationRate * config.weight) / 100;
+    
+    basket.push({
+      item: keyword.charAt(0).toUpperCase() + keyword.slice(1),
+      category: config.category,
+      weight: config.weight,
+      currentPrice: Math.round(currentPrice),
+      previousPrice: Math.round(prevPrice),
+      inflationRate: Math.round(inflationRate * 10) / 10,
+      contribution: Math.round(contribution * 10) / 10,
+    });
+  }
+  
+  return basket.sort((a, b) => b.contribution - a.contribution);
+}
 
-function generatePDFHTML(data: InflationDataPoint[], categories: CategoryInflation[], regions: RegionalInflation[]): string {
-  const latest = data[data.length - 1];
-  const previous = data[data.length - 2];
-  const monthChange = latest && previous ? (latest.rate - previous.rate) : 0;
+function calculateCategoryBreakdown(basket: BasketItem[]): { category: string; weight: number; inflationRate: number; contribution: number }[] {
+  const categories = new Map<string, { weight: number; weightedInflation: number }>();
   
-  return `
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="UTF-8">
-  <title>Inflation Report - NaijaMarket Intel</title>
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { font-family: 'Segoe UI', Arial, sans-serif; background: #fff; color: #1a1a1a; padding: 40px; }
-    .header { text-align: center; margin-bottom: 30px; border-bottom: 3px solid #10b981; padding-bottom: 20px; }
-    .header h1 { color: #10b981; font-size: 28px; margin-bottom: 5px; }
-    .header p { color: #666; font-size: 14px; }
-    .summary-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; margin-bottom: 30px; }
-    .summary-card { background: #f8f9fa; border-radius: 8px; padding: 15px; text-align: center; }
-    .summary-card .label { color: #666; font-size: 12px; margin-bottom: 5px; }
-    .summary-card .value { font-size: 24px; font-weight: bold; color: #1a1a1a; }
-    .summary-card .change { font-size: 12px; margin-top: 5px; }
-    .change.up { color: #ef4444; }
-    .change.down { color: #10b981; }
-    .section { margin-bottom: 30px; }
-    .section h2 { font-size: 18px; color: #1a1a1a; margin-bottom: 15px; padding-bottom: 8px; border-bottom: 1px solid #e5e5e5; }
-    table { width: 100%; border-collapse: collapse; font-size: 13px; }
-    th, td { padding: 10px; text-align: left; border-bottom: 1px solid #e5e5e5; }
-    th { background: #f8f9fa; font-weight: 600; color: #666; }
-    tr:hover { background: #f8f9fa; }
-    .rate { font-weight: 600; }
-    .rate.high { color: #ef4444; }
-    .rate.medium { color: #f59e0b; }
-    .rate.low { color: #10b981; }
-    .trend { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; }
-    .trend.up { background: #fef2f2; color: #ef4444; }
-    .trend.down { background: #f0fdf4; color: #10b981; }
-    .trend.stable { background: #f5f5f5; color: #666; }
-    .footer { margin-top: 40px; padding-top: 20px; border-top: 1px solid #e5e5e5; text-align: center; color: #999; font-size: 11px; }
-    .chart-placeholder { background: #f8f9fa; border-radius: 8px; padding: 30px; text-align: center; color: #666; margin-bottom: 15px; }
-    @media print { body { padding: 20px; } .summary-grid { grid-template-columns: repeat(2, 1fr); } }
-  </style>
-</head>
-<body>
-  <div class="header">
-    <h1>📊 Inflation Tracker Report</h1>
-    <p>NaijaMarket Intel • Generated ${new Date().toLocaleDateString('en-NG', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
-  </div>
+  for (const item of basket) {
+    const existing = categories.get(item.category) || { weight: 0, weightedInflation: 0 };
+    existing.weight += item.weight;
+    existing.weightedInflation += item.inflationRate * item.weight;
+    categories.set(item.category, existing);
+  }
   
-  <div class="summary-grid">
-    <div class="summary-card">
-      <div class="label">Current Inflation</div>
-      <div class="value">${latest?.rate ?? 0}%</div>
-      <div class="change ${monthChange >= 0 ? 'up' : 'down'}">${monthChange >= 0 ? '↑' : '↓'} ${Math.abs(monthChange).toFixed(1)}% from last month</div>
-    </div>
-    <div class="summary-card">
-      <div class="label">Food Inflation</div>
-      <div class="value">${latest?.foodRate ?? 0}%</div>
-      <div class="change up">Highest contributor</div>
-    </div>
-    <div class="summary-card">
-      <div class="label">Core Inflation</div>
-      <div class="value">${latest?.coreRate ?? 0}%</div>
-      <div class="change">Excluding food & energy</div>
-    </div>
-    <div class="summary-card">
-      <div class="label">CPI Index</div>
-      <div class="value">${latest?.index?.toFixed(1) ?? 0}</div>
-      <div class="change">Base: 100 (2009)</div>
-    </div>
-  </div>
+  const result: { category: string; weight: number; inflationRate: number; contribution: number }[] = [];
   
-  <div class="section">
-    <h2>📈 Monthly Inflation Trend</h2>
-    <table>
-      <thead>
-        <tr>
-          <th>Month</th>
-          <th>Year</th>
-          <th>Headline Rate</th>
-          <th>Food Rate</th>
-          <th>Core Rate</th>
-          <th>CPI Index</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${data.slice(-12).map(d => `
-          <tr>
-            <td>${d.month}</td>
-            <td>${d.year}</td>
-            <td class="rate ${d.rate > 30 ? 'high' : d.rate > 25 ? 'medium' : 'low'}">${d.rate}%</td>
-            <td class="rate high">${d.foodRate}%</td>
-            <td class="rate">${d.coreRate}%</td>
-            <td>${d.index.toFixed(1)}</td>
-          </tr>
-        `).join('')}
-      </tbody>
-    </table>
-  </div>
+  for (const [category, data] of categories) {
+    const avgInflation = data.weight > 0 ? data.weightedInflation / data.weight : 0;
+    const contribution = (avgInflation * data.weight) / 100;
+    
+    result.push({
+      category,
+      weight: data.weight,
+      inflationRate: Math.round(avgInflation * 10) / 10,
+      contribution: Math.round(contribution * 10) / 10,
+    });
+  }
   
-  <div class="section">
-    <h2>🏷️ Category Breakdown</h2>
-    <table>
-      <thead>
-        <tr>
-          <th>Category</th>
-          <th>Inflation Rate</th>
-          <th>Contribution to CPI</th>
-          <th>Trend</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${categories.map(c => `
-          <tr>
-            <td>${c.category}</td>
-            <td class="rate ${c.rate > 28 ? 'high' : c.rate > 22 ? 'medium' : 'low'}">${c.rate}%</td>
-            <td>${c.contribution}%</td>
-            <td><span class="trend ${c.trend}">${c.trend === 'up' ? '↑ Rising' : c.trend === 'down' ? '↓ Falling' : '→ Stable'}</span></td>
-          </tr>
-        `).join('')}
-      </tbody>
-    </table>
-  </div>
-  
-  <div class="section">
-    <h2>🗺️ Regional Breakdown</h2>
-    <table>
-      <thead>
-        <tr>
-          <th>Rank</th>
-          <th>Region</th>
-          <th>Inflation Rate</th>
-          <th>vs National Avg</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${regions.map(r => {
-          const nationalAvg = latest?.rate ?? 28;
-          const diff = r.rate - nationalAvg;
-          return `
-            <tr>
-              <td>#${r.rank}</td>
-              <td>${r.region}</td>
-              <td class="rate ${r.rate > 28 ? 'high' : r.rate > 25 ? 'medium' : 'low'}">${r.rate}%</td>
-              <td class="${diff >= 0 ? 'up' : 'down'}">${diff >= 0 ? '+' : ''}${diff.toFixed(1)}%</td>
-            </tr>
-          `;
-        }).join('')}
-      </tbody>
-    </table>
-  </div>
-  
-  <div class="footer">
-    <p>Data Source: National Bureau of Statistics (NBS) • This report is for informational purposes only</p>
-    <p>© ${new Date().getFullYear()} NaijaMarket Intel - The Bloomberg of Nigerian Commodities</p>
-  </div>
-</body>
-</html>
-  `;
+  return result.sort((a, b) => b.contribution - a.contribution);
 }
 
 // ============================================================================
@@ -320,62 +799,123 @@ function generatePDFHTML(data: InflationDataPoint[], categories: CategoryInflati
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
-    const format = searchParams.get("format") || "csv";
-    const months = parseInt(searchParams.get("months") || "24");
-    const tier = (searchParams.get("tier") || "FREE").toUpperCase();
+    const period = searchParams.get("period") || "12m";
+    const region = searchParams.get("region") || "ALL";
     
-    // Check tier access
-    const canExport = ["GOLD", "BUSINESS", "CORPORATE", "ENTERPRISE"].includes(tier);
-    if (!canExport) {
-      return NextResponse.json(
-        { success: false, error: "Export requires GOLD tier or above" },
-        { status: 403 }
-      );
+    // Validate period
+    const periodConfig = TIME_PERIODS[period] || TIME_PERIODS["12m"];
+    const periodMonths = periodConfig?.months ?? 12;
+    const periodLabel = periodConfig?.label ?? "12 Months";
+    
+    let priceData: PriceRecord[] = [];
+    let dataSource = "Unknown";
+    
+    // HYBRID DATA APPROACH
+    console.log(`Fetching inflation data for period: ${period} (${periodMonths} months)`);
+    
+    // Step 1: Try Daily_Prices (Primary)
+    const dailyResult = await fetchFromDailyPrices(periodMonths);
+    if (dailyResult.success) {
+      priceData = dailyResult.data;
+      dataSource = `Azure SQL (Daily_Prices - ${periodLabel})`;
+      console.log(`Using Daily_Prices: ${priceData.length} records`);
+    } else {
+      // Step 2: Try Validated_Prices (Backup)
+      const validatedResult = await fetchFromValidatedPrices(periodMonths);
+      if (validatedResult.success) {
+        priceData = validatedResult.data;
+        dataSource = `Azure SQL (Validated_Prices - ${periodLabel})`;
+        console.log(`Using Validated_Prices: ${priceData.length} records`);
+      } else {
+        // Step 3: Try Google Sheets
+        const sheetsResult = await fetchFromGoogleSheets();
+        if (sheetsResult.success) {
+          priceData = sheetsResult.data;
+          dataSource = `Google Sheets (${periodLabel})`;
+          console.log(`Using Google Sheets: ${priceData.length} records`);
+        } else {
+          // Step 4: Use Mock Data
+          priceData = generateMockInflationData(periodMonths);
+          dataSource = `Synthetic Model (Demo - ${periodLabel})`;
+          console.log(`Using Mock Data: ${priceData.length} records`);
+        }
+      }
     }
     
-    // Generate data
-    const data = generateInflationData(months);
-    const categories = getCategoryInflation();
-    const regions = getRegionalInflation();
-    
-    if (format === "csv") {
-      const csv = generateCSV(data, categories, regions);
-      
-      return new NextResponse(csv, {
-        headers: {
-          "Content-Type": "text/csv",
-          "Content-Disposition": `attachment; filename="inflation_report_${new Date().toISOString().split('T')[0]}.csv"`,
-        },
-      });
+    // Filter by region if specified
+    if (region !== "ALL") {
+      priceData = priceData.filter(p => p.region === region);
     }
     
-    if (format === "pdf" || format === "html") {
-      const html = generatePDFHTML(data, categories, regions);
-      
-      return new NextResponse(html, {
-        headers: {
-          "Content-Type": "text/html",
-          "Content-Disposition": format === "pdf" 
-            ? `attachment; filename="inflation_report_${new Date().toISOString().split('T')[0]}.html"`
-            : "inline",
-        },
-      });
+    // Calculate all inflation metrics
+    const monthlyTrend = calculateMonthlyInflation(priceData, periodMonths);
+    const regionalBreakdown = calculateRegionalInflation(priceData, periodMonths);
+    const { inflators, deflators } = calculateItemInflation(priceData);
+    const basketComposition = calculateBasketComposition(priceData);
+    const categoryBreakdown = calculateCategoryBreakdown(basketComposition);
+    
+    // Current inflation (latest month)
+    const latestMonth = monthlyTrend[monthlyTrend.length - 1];
+    const prevMonth = monthlyTrend[monthlyTrend.length - 2];
+    
+    const currentRate = latestMonth?.naijaMarketRate ?? 0;
+    const momChange = latestMonth && prevMonth 
+      ? latestMonth.naijaMarketRate - prevMonth.naijaMarketRate 
+      : 0;
+    
+    // Get latest NBS rate for comparison
+    const now = new Date();
+    const currentMonthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+    const latestNBS = NBS_OFFICIAL_INFLATION[currentMonthKey] ?? 
+                      NBS_OFFICIAL_INFLATION[`${now.getFullYear()}-${String(now.getMonth()).padStart(2, "0")}`] ?? 
+                      30.5;
+    
+    const nbsDifference = currentRate - latestNBS;
+    let interpretation = "NaijaMarket data aligns with official statistics";
+    if (nbsDifference > 3) {
+      interpretation = "NaijaMarket shows higher inflation than official NBS data - real-time market prices may be rising faster";
+    } else if (nbsDifference < -3) {
+      interpretation = "NaijaMarket shows lower inflation than official NBS data - market prices may be stabilizing";
     }
     
-    if (format === "json") {
-      return NextResponse.json({
-        success: true,
-        generated: new Date().toISOString(),
-        data,
-        categories,
-        regions,
-      });
-    }
+    const response: InflationResponse = {
+      success: true,
+      timestamp: now.toISOString(),
+      period,
+      periodLabel,
+      currentInflation: {
+        rate: Math.round(currentRate * 10) / 10,
+        monthOverMonth: Math.round(momChange * 10) / 10,
+        yearOverYear: Math.round(currentRate * 10) / 10,
+        trend: momChange > 0.5 ? "up" : momChange < -0.5 ? "down" : "stable",
+        asOf: latestMonth?.monthName ?? `${getMonthName(now.getMonth() + 1)} ${now.getFullYear()}`,
+      },
+      monthlyTrend,
+      regionalBreakdown,
+      nbsComparison: {
+        naijaMarket: Math.round(currentRate * 10) / 10,
+        nbs: latestNBS,
+        difference: Math.round(nbsDifference * 10) / 10,
+        interpretation,
+      },
+      topInflators: inflators,
+      topDeflators: deflators,
+      basketComposition,
+      categoryBreakdown,
+      dataSource,
+      recordCount: priceData.length,
+    };
     
-    return NextResponse.json({ success: false, error: "Invalid format" }, { status: 400 });
-    
+    return NextResponse.json(response);
   } catch (error) {
-    console.error("Export API error:", error);
-    return NextResponse.json({ success: false, error: "Export failed" }, { status: 500 });
+    console.error("Inflation API error:", error);
+    return NextResponse.json(
+      {
+        success: false,
+        error: "Failed to calculate inflation",
+        message: error instanceof Error ? error.message : "Unknown error",
+      },
+      { status: 500 }
+    );
   }
 }
