@@ -19,6 +19,7 @@ import {
   Download,
   GitCompare,
   ArrowLeftRight,
+  Sparkles,
 } from "lucide-react";
 
 // ============================================================================
@@ -206,6 +207,7 @@ export default function DashboardLayout({
             <NavLink href="/dashboard/watchlist" icon={Star} label="Watchlist" currentPath={pathname} />
             <NavLink href="/dashboard/alerts" icon={Bell} label="Price Alerts" currentPath={pathname} />
             <NavLink href="/dashboard/analytics" icon={BarChart3} label="Analytics" currentPath={pathname} />
+            <NavLink href="/dashboard/forecast" icon={Sparkles} label="Forecast" badge="NEW" currentPath={pathname} />
           </div>
 
           <div className="mt-8 pt-8 border-t border-terminal-border">
