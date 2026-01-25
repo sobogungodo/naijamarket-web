@@ -454,8 +454,10 @@ export async function GET(request: NextRequest) {
     const sortedByDate = [...historicalData].sort((a, b) => 
       new Date(b.date).getTime() - new Date(a.date).getTime()
     );
-    const currentPrice = sortedByDate[0]?.price || 50000;
-    const lastUpdated = sortedByDate[0]?.date || new Date().toISOString().split("T")[0];
+    const currentPrice = sortedByDate[0]?.price ?? 50000;
+    const today = new Date();
+    const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+    const lastUpdated: string = sortedByDate[0]?.date ?? todayStr;
     
     const predictions = generatePredictions(
       seasonalPatterns, 
