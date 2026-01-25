@@ -556,7 +556,7 @@ export default function ScreenerPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-800">
-                {data.results.map((result, idx) => (
+                {data.results.map((result) => (
                   <tr
                     key={result.itemId}
                     className="hover:bg-[#252525] cursor-pointer transition-colors"
