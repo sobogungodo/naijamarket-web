@@ -532,10 +532,11 @@ export default function InflationPage() {
                     border: "1px solid #333",
                     borderRadius: "8px",
                   }}
-                  formatter={(value: number, name: string, props: { payload: { fullName: string } }) => [
-                    `${value}%`,
-                    props.payload.fullName
-                  ]}
+                  formatter={(value: number) => [`${value}%`, "Inflation Rate"]}
+                  labelFormatter={(label) => {
+                    const region = getRegionalChartData().find(r => r.name === label);
+                    return region?.fullName ?? label;
+                  }}
                 />
                 <Bar dataKey="rate" name="Inflation Rate" radius={[0, 4, 4, 0]}>
                   {getRegionalChartData().map((entry, index) => (
