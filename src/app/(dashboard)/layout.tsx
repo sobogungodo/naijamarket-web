@@ -23,6 +23,8 @@ import {
   Activity,
   Globe2,
   ShoppingCart,
+  Filter,
+  Map,
 } from "lucide-react";
 
 // ============================================================================
@@ -212,6 +214,8 @@ export default function DashboardLayout({
             <NavLink href="/dashboard/watchlist" icon={Star} label="Watchlist" currentPath={pathname} />
             <NavLink href="/dashboard/alerts" icon={Bell} label="Price Alerts" currentPath={pathname} />
             <NavLink href="/dashboard/analytics" icon={BarChart3} label="Analytics" currentPath={pathname} />
+            <NavLink href="/dashboard/screener" icon={Filter} label="Screener" badge="NEW" currentPath={pathname} />
+            <NavLink href="/dashboard/heatmap" icon={Map} label="Heatmap" badge="NEW" currentPath={pathname} />
             <NavLink href="/dashboard/forecast" icon={Sparkles} label="Forecast" badge="NEW" currentPath={pathname} />
             <NavLink href="/dashboard/inflation" icon={Activity} label="Inflation" badge="NEW" currentPath={pathname} />
           </div>
