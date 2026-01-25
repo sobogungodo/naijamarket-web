@@ -3,7 +3,7 @@
 // ============================================================================
 // src/app/(dashboard)/dashboard/settings/page.tsx
 // NaijaMarket Intel - User Settings Page
-// Version: 1.0.0
+// Version: 1.1.0 - Fixed all TypeScript errors
 // Date: 2026-01-25
 // ============================================================================
 
@@ -153,7 +153,47 @@ const TIER_PRICES: Record<string, string> = {
 };
 
 // ============================================================================
-// COMPONENT
+// TOGGLE SWITCH COMPONENT
+// ============================================================================
+
+interface ToggleSwitchProps {
+  label: string;
+  description: string;
+  icon: React.ReactNode;
+  checked: boolean;
+  onChange: (value: boolean) => void;
+  disabled?: boolean;
+}
+
+function ToggleSwitch({ label, description, icon, checked, onChange, disabled }: ToggleSwitchProps) {
+  return (
+    <div className={`flex items-center justify-between p-4 bg-[#252525] rounded-lg ${disabled ? "opacity-50" : ""}`}>
+      <div className="flex items-center gap-4">
+        <div className={`p-2 rounded-lg ${checked ? "bg-emerald-900/50 text-emerald-400" : "bg-gray-800 text-gray-500"}`}>
+          {icon}
+        </div>
+        <div>
+          <p className="font-medium">{label}</p>
+          <p className="text-sm text-gray-500">{description}</p>
+        </div>
+      </div>
+      <button
+        onClick={() => !disabled && onChange(!checked)}
+        disabled={disabled}
+        className={`w-14 h-8 rounded-full transition-colors relative ${
+          checked ? "bg-emerald-600" : "bg-gray-700"
+        } ${disabled ? "cursor-not-allowed" : "cursor-pointer"}`}
+      >
+        <div className={`absolute top-1 w-6 h-6 rounded-full bg-white transition-transform ${
+          checked ? "translate-x-7" : "translate-x-1"
+        }`} />
+      </button>
+    </div>
+  );
+}
+
+// ============================================================================
+// MAIN COMPONENT
 // ============================================================================
 
 export default function SettingsPage() {
@@ -184,11 +224,17 @@ export default function SettingsPage() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteConfirmText, setDeleteConfirmText] = useState("");
 
-  // Get user tier
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const userTier = ((session?.user as any)?.tier || 
-                   (session?.user as any)?.subscriptionTier || 
-                   "FREE").toString().toUpperCase();
+  // Get user tier - handle multiple possible field names
+  interface SessionUserWithTier {
+    tier?: string;
+    subscriptionTier?: string;
+  }
+  
+  const userTier = (
+    (session?.user as SessionUserWithTier)?.tier || 
+    (session?.user as SessionUserWithTier)?.subscriptionTier || 
+    "FREE"
+  ).toString().toUpperCase();
 
   useEffect(() => {
     if (status === "unauthenticated") {
@@ -221,7 +267,9 @@ export default function SettingsPage() {
   }, [status, fetchSettings]);
 
   // Save settings
-  const saveSettings = async (section?: SettingsSection, data?: Partial<UserSettings[keyof UserSettings]>) => {
+  const saveSettings = async (section?: SettingsSection) => {
+    if (!settings) return;
+    
     try {
       setSaving(true);
       setMessage(null);
@@ -229,7 +277,10 @@ export default function SettingsPage() {
       const response = await fetch("/api/settings", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ section, data: data || settings?.[section || "profile"] }),
+        body: JSON.stringify({ 
+          section, 
+          data: section ? settings[section] : settings 
+        }),
       });
 
       const result = await response.json();
@@ -250,18 +301,18 @@ export default function SettingsPage() {
     }
   };
 
-  // Handle setting change
-  const updateSetting = <T extends keyof UserSettings>(
-    section: T,
-    key: keyof UserSettings[T],
-    value: UserSettings[T][keyof UserSettings[T]]
+  // Handle setting change - using generic approach
+  const updateSetting = (
+    section: keyof UserSettings,
+    key: string,
+    value: string | number | boolean
   ) => {
     if (!settings) return;
     
     setSettings({
       ...settings,
       [section]: {
-        ...settings[section],
+        ...(settings[section] as Record<string, unknown>),
         [key]: value,
       },
     });
@@ -304,7 +355,7 @@ export default function SettingsPage() {
       } else {
         setMessage({ type: "error", text: result.error || "Failed to change password" });
       }
-    } catch (error) {
+    } catch {
       setMessage({ type: "error", text: "Failed to change password" });
     } finally {
       setSaving(false);
@@ -331,7 +382,7 @@ export default function SettingsPage() {
       } else {
         setMessage({ type: "error", text: result.error });
       }
-    } catch (error) {
+    } catch {
       setMessage({ type: "error", text: "Failed to update 2FA settings" });
     } finally {
       setSaving(false);
@@ -356,7 +407,7 @@ export default function SettingsPage() {
       if (result.success) {
         setMessage({ type: "success", text: "Data export ready! Check your email." });
       }
-    } catch (error) {
+    } catch {
       setMessage({ type: "error", text: "Failed to export data" });
     }
   };
@@ -387,7 +438,7 @@ export default function SettingsPage() {
       } else {
         setMessage({ type: "error", text: result.error });
       }
-    } catch (error) {
+    } catch {
       setMessage({ type: "error", text: "Failed to delete account" });
     } finally {
       setSaving(false);
@@ -409,7 +460,7 @@ export default function SettingsPage() {
         setMessage({ type: "success", text: result.message });
         fetchSettings();
       }
-    } catch (error) {
+    } catch {
       setMessage({ type: "error", text: "Failed to logout sessions" });
     }
   };
@@ -540,7 +591,7 @@ export default function SettingsPage() {
                       {settings.profile.firstName} {settings.profile.lastName}
                     </h3>
                     <p className="text-gray-400">{settings.profile.email}</p>
-                    <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs mt-2 ${TIER_COLORS[userTier]}`}>
+                    <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs mt-2 ${TIER_COLORS[userTier] || TIER_COLORS.FREE}`}>
                       <Crown className="w-3 h-3" />
                       {userTier}
                     </span>
@@ -667,7 +718,7 @@ export default function SettingsPage() {
                           }`} />
                           <span className="text-2xl font-bold">{userTier}</span>
                         </div>
-                        <p className="text-gray-400 mt-1">{TIER_PRICES[userTier]}</p>
+                        <p className="text-gray-400 mt-1">{TIER_PRICES[userTier] || TIER_PRICES.FREE}</p>
                       </div>
                       <div className="text-right">
                         <span className={`px-3 py-1 rounded-full text-sm ${
@@ -1103,7 +1154,7 @@ export default function SettingsPage() {
                   <div className="flex items-center gap-4">
                     <select
                       value={settings.dataPrivacy.exportFormat}
-                      onChange={(e) => updateSetting("dataPrivacy", "exportFormat", e.target.value as "csv" | "xlsx" | "json")}
+                      onChange={(e) => updateSetting("dataPrivacy", "exportFormat", e.target.value)}
                       className="px-4 py-2 bg-[#252525] border border-gray-700 rounded-lg focus:outline-none focus:border-emerald-500"
                     >
                       <option value="csv">CSV</option>
@@ -1358,46 +1409,6 @@ export default function SettingsPage() {
           </div>
         </div>
       </div>
-    </div>
-  );
-}
-
-// ============================================================================
-// TOGGLE SWITCH COMPONENT
-// ============================================================================
-
-interface ToggleSwitchProps {
-  label: string;
-  description: string;
-  icon: React.ReactNode;
-  checked: boolean;
-  onChange: (value: boolean) => void;
-  disabled?: boolean;
-}
-
-function ToggleSwitch({ label, description, icon, checked, onChange, disabled }: ToggleSwitchProps) {
-  return (
-    <div className={`flex items-center justify-between p-4 bg-[#252525] rounded-lg ${disabled ? "opacity-50" : ""}`}>
-      <div className="flex items-center gap-4">
-        <div className={`p-2 rounded-lg ${checked ? "bg-emerald-900/50 text-emerald-400" : "bg-gray-800 text-gray-500"}`}>
-          {icon}
-        </div>
-        <div>
-          <p className="font-medium">{label}</p>
-          <p className="text-sm text-gray-500">{description}</p>
-        </div>
-      </div>
-      <button
-        onClick={() => !disabled && onChange(!checked)}
-        disabled={disabled}
-        className={`w-14 h-8 rounded-full transition-colors relative ${
-          checked ? "bg-emerald-600" : "bg-gray-700"
-        } ${disabled ? "cursor-not-allowed" : "cursor-pointer"}`}
-      >
-        <div className={`absolute top-1 w-6 h-6 rounded-full bg-white transition-transform ${
-          checked ? "translate-x-7" : "translate-x-1"
-        }`} />
-      </button>
     </div>
   );
 }

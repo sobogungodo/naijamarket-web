@@ -1,7 +1,7 @@
 // ============================================================================
 // src/app/api/settings/route.ts
 // NaijaMarket Intel - User Settings API
-// Version: 1.0.0
+// Version: 1.1.0 - Fixed all TypeScript errors
 // Date: 2026-01-25
 // ============================================================================
 
@@ -12,131 +12,82 @@ import { getServerSession } from "next-auth";
 // TYPE DEFINITIONS
 // ============================================================================
 
-interface UserSettings {
-  // Profile
-  profile: {
-    firstName: string;
-    lastName: string;
-    email: string;
-    phone: string;
-    company: string;
-    role: string;
-    avatar: string | null;
-  };
-  // Subscription
-  subscription: {
-    tier: string;
-    status: string;
-    expiresAt: string | null;
-    features: string[];
-  };
-  // Notifications
-  notifications: {
-    emailAlerts: boolean;
-    smsAlerts: boolean;
-    whatsappAlerts: boolean;
-    priceDropAlerts: boolean;
-    priceRiseAlerts: boolean;
-    weeklyDigest: boolean;
-    monthlyReport: boolean;
-    marketNews: boolean;
-    systemUpdates: boolean;
-  };
-  // Price Alerts
-  priceAlerts: {
-    enabled: boolean;
-    threshold: number; // percentage change to trigger alert
-    frequency: "instant" | "hourly" | "daily";
-    quietHoursStart: string; // "22:00"
-    quietHoursEnd: string; // "07:00"
-    maxAlertsPerDay: number;
-  };
-  // Preferences
-  preferences: {
-    theme: "dark" | "light" | "system";
-    language: string;
-    currency: string;
-    timezone: string;
-    dateFormat: string;
-    numberFormat: string;
-    defaultMarket: string | null;
-    defaultCategory: string | null;
-    defaultState: string | null;
-  };
-  // Data & Privacy
-  dataPrivacy: {
-    shareAnonymousData: boolean;
-    allowMarketingEmails: boolean;
-    showProfilePublicly: boolean;
-    exportFormat: "csv" | "xlsx" | "json";
-  };
-  // Security
-  security: {
-    twoFactorEnabled: boolean;
-    lastPasswordChange: string | null;
-    activeSessions: number;
-  };
+interface UserProfile {
+  firstName: string;
+  lastName: string;
+  email: string;
+  phone: string;
+  company: string;
+  role: string;
+  avatar: string | null;
 }
 
-// Default settings for new users
-const DEFAULT_SETTINGS: UserSettings = {
-  profile: {
-    firstName: "",
-    lastName: "",
-    email: "",
-    phone: "",
-    company: "",
-    role: "",
-    avatar: null,
-  },
-  subscription: {
-    tier: "FREE",
-    status: "active",
-    expiresAt: null,
-    features: ["Basic price access", "3 markets", "Limited history"],
-  },
-  notifications: {
-    emailAlerts: true,
-    smsAlerts: false,
-    whatsappAlerts: true,
-    priceDropAlerts: true,
-    priceRiseAlerts: true,
-    weeklyDigest: true,
-    monthlyReport: false,
-    marketNews: false,
-    systemUpdates: true,
-  },
-  priceAlerts: {
-    enabled: true,
-    threshold: 5,
-    frequency: "daily",
-    quietHoursStart: "22:00",
-    quietHoursEnd: "07:00",
-    maxAlertsPerDay: 10,
-  },
-  preferences: {
-    theme: "dark",
-    language: "en",
-    currency: "NGN",
-    timezone: "Africa/Lagos",
-    dateFormat: "DD/MM/YYYY",
-    numberFormat: "en-NG",
-    defaultMarket: null,
-    defaultCategory: null,
-    defaultState: null,
-  },
-  dataPrivacy: {
-    shareAnonymousData: true,
-    allowMarketingEmails: false,
-    showProfilePublicly: false,
-    exportFormat: "csv",
-  },
-  security: {
-    twoFactorEnabled: false,
-    lastPasswordChange: null,
-    activeSessions: 1,
-  },
-};
+interface UserSubscription {
+  tier: string;
+  status: string;
+  expiresAt: string | null;
+  features: string[];
+}
+
+interface UserNotifications {
+  emailAlerts: boolean;
+  smsAlerts: boolean;
+  whatsappAlerts: boolean;
+  priceDropAlerts: boolean;
+  priceRiseAlerts: boolean;
+  weeklyDigest: boolean;
+  monthlyReport: boolean;
+  marketNews: boolean;
+  systemUpdates: boolean;
+}
+
+interface UserPriceAlerts {
+  enabled: boolean;
+  threshold: number;
+  frequency: "instant" | "hourly" | "daily";
+  quietHoursStart: string;
+  quietHoursEnd: string;
+  maxAlertsPerDay: number;
+}
+
+interface UserPreferences {
+  theme: "dark" | "light" | "system";
+  language: string;
+  currency: string;
+  timezone: string;
+  dateFormat: string;
+  numberFormat: string;
+  defaultMarket: string | null;
+  defaultCategory: string | null;
+  defaultState: string | null;
+}
+
+interface UserDataPrivacy {
+  shareAnonymousData: boolean;
+  allowMarketingEmails: boolean;
+  showProfilePublicly: boolean;
+  exportFormat: "csv" | "xlsx" | "json";
+}
+
+interface UserSecurity {
+  twoFactorEnabled: boolean;
+  lastPasswordChange: string | null;
+  activeSessions: number;
+}
+
+interface UserSettings {
+  profile: UserProfile;
+  subscription: UserSubscription;
+  notifications: UserNotifications;
+  priceAlerts: UserPriceAlerts;
+  preferences: UserPreferences;
+  dataPrivacy: UserDataPrivacy;
+  security: UserSecurity;
+}
+
+// ============================================================================
+// CONSTANTS
+// ============================================================================
 
 // Tier features mapping
 const TIER_FEATURES: Record<string, string[]> = {
@@ -190,14 +141,99 @@ const TIER_FEATURES: Record<string, string[]> = {
   ],
 };
 
+// Default features fallback
+const DEFAULT_FEATURES: string[] = [
+  "Basic price access",
+  "3 markets", 
+  "1 month history",
+  "5 price alerts",
+];
+
+// Default settings for new users
+const DEFAULT_SETTINGS: UserSettings = {
+  profile: {
+    firstName: "",
+    lastName: "",
+    email: "",
+    phone: "",
+    company: "",
+    role: "",
+    avatar: null,
+  },
+  subscription: {
+    tier: "FREE",
+    status: "active",
+    expiresAt: null,
+    features: DEFAULT_FEATURES,
+  },
+  notifications: {
+    emailAlerts: true,
+    smsAlerts: false,
+    whatsappAlerts: true,
+    priceDropAlerts: true,
+    priceRiseAlerts: true,
+    weeklyDigest: true,
+    monthlyReport: false,
+    marketNews: false,
+    systemUpdates: true,
+  },
+  priceAlerts: {
+    enabled: true,
+    threshold: 5,
+    frequency: "daily",
+    quietHoursStart: "22:00",
+    quietHoursEnd: "07:00",
+    maxAlertsPerDay: 10,
+  },
+  preferences: {
+    theme: "dark",
+    language: "en",
+    currency: "NGN",
+    timezone: "Africa/Lagos",
+    dateFormat: "DD/MM/YYYY",
+    numberFormat: "en-NG",
+    defaultMarket: null,
+    defaultCategory: null,
+    defaultState: null,
+  },
+  dataPrivacy: {
+    shareAnonymousData: true,
+    allowMarketingEmails: false,
+    showProfilePublicly: false,
+    exportFormat: "csv",
+  },
+  security: {
+    twoFactorEnabled: false,
+    lastPasswordChange: null,
+    activeSessions: 1,
+  },
+};
+
 // In-memory storage (replace with database in production)
 const userSettingsStore = new Map<string, UserSettings>();
+
+// ============================================================================
+// HELPER FUNCTIONS
+// ============================================================================
+
+function getTierFeatures(tier: string): string[] {
+  const normalizedTier = tier.toUpperCase();
+  return TIER_FEATURES[normalizedTier] || DEFAULT_FEATURES;
+}
+
+interface SessionUser {
+  email?: string | null;
+  name?: string | null;
+  image?: string | null;
+  tier?: string;
+  phone?: string;
+}
 
 // ============================================================================
 // GET - Fetch user settings
 // ============================================================================
 
-export async function GET(_request: NextRequest) {
+export async function GET(): Promise<NextResponse> {
   try {
     const session = await getServerSession();
     
@@ -209,24 +245,26 @@ export async function GET(_request: NextRequest) {
     }
 
     const userId = session.user.email;
+    const user = session.user as SessionUser;
     
     // Get stored settings or create defaults
     let settings = userSettingsStore.get(userId);
     
     if (!settings) {
-      // Create default settings with user info from session
-      const userTier = ((session.user as { tier?: string })?.tier || "FREE").toUpperCase();
-      const tierFeatures = TIER_FEATURES[userTier as keyof typeof TIER_FEATURES] || TIER_FEATURES.FREE;
+      // Extract user tier safely
+      const userTier = (user.tier || "FREE").toUpperCase();
+      const tierFeatures = getTierFeatures(userTier);
       
+      // Create default settings with user info from session
       settings = {
         ...DEFAULT_SETTINGS,
         profile: {
           ...DEFAULT_SETTINGS.profile,
-          firstName: session.user.name?.split(" ")[0] || "",
-          lastName: session.user.name?.split(" ").slice(1).join(" ") || "",
-          email: session.user.email || "",
-          phone: (session.user as { phone?: string })?.phone || "",
-          avatar: session.user.image || null,
+          firstName: user.name?.split(" ")[0] || "",
+          lastName: user.name?.split(" ").slice(1).join(" ") || "",
+          email: user.email || "",
+          phone: user.phone || "",
+          avatar: user.image || null,
         },
         subscription: {
           ...DEFAULT_SETTINGS.subscription,
@@ -257,7 +295,7 @@ export async function GET(_request: NextRequest) {
 // PUT - Update user settings
 // ============================================================================
 
-export async function PUT(request: NextRequest) {
+export async function PUT(request: NextRequest): Promise<NextResponse> {
   try {
     const session = await getServerSession();
     
@@ -332,7 +370,7 @@ export async function PUT(request: NextRequest) {
 // POST - Special actions (password change, delete account, etc.)
 // ============================================================================
 
-export async function POST(request: NextRequest) {
+export async function POST(request: NextRequest): Promise<NextResponse> {
   try {
     const session = await getServerSession();
     
@@ -350,7 +388,7 @@ export async function POST(request: NextRequest) {
     switch (action) {
       case "changePassword": {
         // Validate password requirements
-        const { currentPassword, newPassword, confirmPassword } = data;
+        const { currentPassword, newPassword, confirmPassword } = data || {};
         
         if (!currentPassword || !newPassword || !confirmPassword) {
           return NextResponse.json(
@@ -418,15 +456,16 @@ export async function POST(request: NextRequest) {
 
       case "exportData": {
         // In production, generate and return user data export
+        const format = data?.format || "csv";
         return NextResponse.json({
           success: true,
           message: "Data export initiated",
-          downloadUrl: `/api/settings/export?format=${data?.format || "csv"}`,
+          downloadUrl: `/api/settings/export?format=${format}`,
         });
       }
 
       case "deleteAccount": {
-        const { confirmation } = data;
+        const { confirmation } = data || {};
         
         if (confirmation !== "DELETE MY ACCOUNT") {
           return NextResponse.json(
