@@ -121,9 +121,10 @@ function calculateTrend(values: number[]): number {
   const n = values.length;
   let sumX = 0, sumY = 0, sumXY = 0, sumX2 = 0;
   for (let i = 0; i < n; i++) {
+    const val = values[i] ?? 0;
     sumX += i;
-    sumY += values[i];
-    sumXY += i * values[i];
+    sumY += val;
+    sumXY += i * val;
     sumX2 += i * i;
   }
   return (n * sumXY - sumX * sumY) / (n * sumX2 - sumX * sumX);
