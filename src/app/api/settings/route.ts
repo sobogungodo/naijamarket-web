@@ -215,6 +215,9 @@ export async function GET(_request: NextRequest) {
     
     if (!settings) {
       // Create default settings with user info from session
+      const userTier = ((session.user as { tier?: string })?.tier || "FREE").toUpperCase();
+      const tierFeatures = TIER_FEATURES[userTier as keyof typeof TIER_FEATURES] || TIER_FEATURES.FREE;
+      
       settings = {
         ...DEFAULT_SETTINGS,
         profile: {
@@ -227,8 +230,8 @@ export async function GET(_request: NextRequest) {
         },
         subscription: {
           ...DEFAULT_SETTINGS.subscription,
-          tier: ((session.user as { tier?: string })?.tier || "FREE").toUpperCase(),
-          features: TIER_FEATURES[((session.user as { tier?: string })?.tier || "FREE").toUpperCase()] || TIER_FEATURES.FREE,
+          tier: userTier,
+          features: tierFeatures,
         },
       };
       
