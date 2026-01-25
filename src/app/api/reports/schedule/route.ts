@@ -105,7 +105,9 @@ function calculateNextDelivery(
   deliveryDay?: number
 ): Date {
   const now = new Date();
-  const [hours, minutes] = deliveryTime.split(":").map(Number);
+  const timeParts = deliveryTime.split(":").map(Number);
+  const hours = timeParts[0] ?? 9;
+  const minutes = timeParts[1] ?? 0;
 
   const next = new Date();
   next.setHours(hours, minutes, 0, 0);
