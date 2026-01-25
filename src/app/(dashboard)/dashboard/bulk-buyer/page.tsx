@@ -17,7 +17,6 @@ import {
   Minus,
   Trash2,
   Calculator,
-  TrendingDown,
   MapPin,
   Package,
   AlertTriangle,
@@ -26,11 +25,9 @@ import {
   Lock,
   Lightbulb,
   CheckCircle,
-  ArrowRight,
   Sparkles,
   Target,
   Building2,
-  Truck,
 } from "lucide-react";
 
 // ============================================================================
