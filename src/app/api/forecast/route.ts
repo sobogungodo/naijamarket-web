@@ -400,7 +400,8 @@ export async function GET(request: NextRequest) {
     const market = searchParams.get("market") || "All Markets";
     const tier = (searchParams.get("tier") || "FREE").toUpperCase();
     
-    const limits = TIER_LIMITS[tier] || TIER_LIMITS.FREE;
+    const defaultLimits = { monthsBack: 12, predictionMonths: 1, canExport: false, showConfidence: false };
+    const limits = TIER_LIMITS[tier] ?? defaultLimits;
     const yearsOfData = Math.ceil(limits.monthsBack / 12);
     
     let historicalData: HistoricalPrice[] = [];
