@@ -28,7 +28,6 @@ import {
   Download,
   Scale,
   ShoppingBasket,
-  Building2,
   Flame,
   Snowflake,
 } from "lucide-react";
