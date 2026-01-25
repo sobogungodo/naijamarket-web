@@ -25,6 +25,7 @@ import {
   ShoppingCart,
   Filter,
   Map,
+  FileText,
 } from "lucide-react";
 
 // ============================================================================
@@ -218,6 +219,7 @@ export default function DashboardLayout({
             <NavLink href="/dashboard/heatmap" icon={Map} label="Heatmap" badge="NEW" currentPath={pathname} />
             <NavLink href="/dashboard/forecast" icon={Sparkles} label="Forecast" badge="NEW" currentPath={pathname} />
             <NavLink href="/dashboard/inflation" icon={Activity} label="Inflation" badge="NEW" currentPath={pathname} />
+            <NavLink href="/dashboard/reports" icon={FileText} label="Reports" badge="NEW" currentPath={pathname} />
           </div>
 
           <div className="mt-8 pt-8 border-t border-terminal-border">
