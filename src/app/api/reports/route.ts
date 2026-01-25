@@ -560,8 +560,9 @@ function calculateNFPI(prices: Array<{
   let currentValue = 1000; // Base index value
 
   const basketItems = NFPI_BASKET.map(basketItem => {
+    const searchTerm = basketItem.item.toLowerCase().split(" ")[0] || "";
     const matchingPrices = prices.filter(p =>
-      p.item_name?.toLowerCase().includes(basketItem.item.toLowerCase().split(" ")[0])
+      p.item_name?.toLowerCase().includes(searchTerm)
     );
 
     const avgPrice = matchingPrices.length > 0
