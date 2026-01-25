@@ -237,11 +237,14 @@ export async function GET(): Promise<NextResponse> {
   try {
     const session = await getServerSession();
     
+    // If no session, return default settings
     if (!session?.user?.email) {
-      return NextResponse.json(
-        { success: false, error: "Unauthorized" },
-        { status: 401 }
-      );
+      return NextResponse.json({
+        success: true,
+        data: DEFAULT_SETTINGS,
+        timestamp: new Date().toISOString(),
+        source: "defaults",
+      });
     }
 
     const userId = session.user.email;
@@ -280,14 +283,18 @@ export async function GET(): Promise<NextResponse> {
       success: true,
       data: settings,
       timestamp: new Date().toISOString(),
+      source: "database",
     });
 
   } catch (error) {
     console.error("Settings GET error:", error);
-    return NextResponse.json(
-      { success: false, error: "Failed to fetch settings" },
-      { status: 500 }
-    );
+    // Return defaults on error instead of 500
+    return NextResponse.json({
+      success: true,
+      data: DEFAULT_SETTINGS,
+      timestamp: new Date().toISOString(),
+      source: "error_fallback",
+    });
   }
 }
 

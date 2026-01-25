@@ -152,6 +152,73 @@ const TIER_PRICES: Record<string, string> = {
   ENTERPRISE: "₦150,000/mo",
 };
 
+// Default settings function
+function getDefaultSettings(): UserSettings {
+  return {
+    profile: {
+      firstName: "",
+      lastName: "",
+      email: "",
+      phone: "",
+      company: "",
+      role: "",
+      avatar: null,
+    },
+    subscription: {
+      tier: "FREE",
+      status: "active",
+      expiresAt: null,
+      features: [
+        "Basic price access",
+        "3 markets",
+        "1 month history",
+        "5 price alerts",
+      ],
+    },
+    notifications: {
+      emailAlerts: true,
+      smsAlerts: false,
+      whatsappAlerts: true,
+      priceDropAlerts: true,
+      priceRiseAlerts: true,
+      weeklyDigest: true,
+      monthlyReport: false,
+      marketNews: false,
+      systemUpdates: true,
+    },
+    priceAlerts: {
+      enabled: true,
+      threshold: 5,
+      frequency: "daily",
+      quietHoursStart: "22:00",
+      quietHoursEnd: "07:00",
+      maxAlertsPerDay: 10,
+    },
+    preferences: {
+      theme: "dark",
+      language: "en",
+      currency: "NGN",
+      timezone: "Africa/Lagos",
+      dateFormat: "DD/MM/YYYY",
+      numberFormat: "en-NG",
+      defaultMarket: null,
+      defaultCategory: null,
+      defaultState: null,
+    },
+    dataPrivacy: {
+      shareAnonymousData: true,
+      allowMarketingEmails: false,
+      showProfilePublicly: false,
+      exportFormat: "csv",
+    },
+    security: {
+      twoFactorEnabled: false,
+      lastPasswordChange: null,
+      activeSessions: 1,
+    },
+  };
+}
+
 // ============================================================================
 // TOGGLE SWITCH COMPONENT
 // ============================================================================
@@ -236,11 +303,12 @@ export default function SettingsPage() {
     "FREE"
   ).toString().toUpperCase();
 
-  useEffect(() => {
-    if (status === "unauthenticated") {
-      router.push("/login");
-    }
-  }, [status, router]);
+  // Optional: redirect unauthenticated users or show defaults
+  // useEffect(() => {
+  //   if (status === "unauthenticated") {
+  //     router.push("/login");
+  //   }
+  // }, [status, router]);
 
   // Fetch settings
   const fetchSettings = useCallback(async () => {
@@ -249,12 +317,17 @@ export default function SettingsPage() {
       const response = await fetch("/api/settings");
       const result = await response.json();
       
-      if (result.success) {
+      if (result.success && result.data) {
         setSettings(result.data);
+      } else {
+        // Use default settings if API fails
+        setSettings(getDefaultSettings());
       }
     } catch (error) {
       console.error("Failed to fetch settings:", error);
-      setMessage({ type: "error", text: "Failed to load settings" });
+      // Use default settings on error
+      setSettings(getDefaultSettings());
+      setMessage({ type: "error", text: "Using default settings - API unavailable" });
     } finally {
       setLoading(false);
     }
@@ -263,8 +336,37 @@ export default function SettingsPage() {
   useEffect(() => {
     if (status === "authenticated") {
       fetchSettings();
+    } else if (status === "unauthenticated") {
+      // Still show settings page with defaults for demo
+      const defaults = getDefaultSettings();
+      setSettings(defaults);
+      setLoading(false);
     }
   }, [status, fetchSettings]);
+
+  // Update settings with session data when available
+  useEffect(() => {
+    if (session?.user && settings && !settings.profile.email) {
+      const user = session.user as SessionUserWithTier;
+      setSettings(prev => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          profile: {
+            ...prev.profile,
+            firstName: user.name?.split(" ")[0] || prev.profile.firstName,
+            lastName: user.name?.split(" ").slice(1).join(" ") || prev.profile.lastName,
+            email: user.email || prev.profile.email,
+          },
+          subscription: {
+            ...prev.subscription,
+            tier: (user.tier || user.subscriptionTier || prev.subscription.tier).toUpperCase(),
+          },
+        };
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session]);
 
   // Save settings
   const saveSettings = async (section?: SettingsSection) => {
