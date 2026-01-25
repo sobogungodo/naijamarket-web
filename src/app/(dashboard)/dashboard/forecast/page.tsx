@@ -4,7 +4,7 @@
 // src/app/(dashboard)/dashboard/forecast/page.tsx
 // NaijaMarket Intel - Seasonal Forecast Page
 // Bloomberg Equivalent: ECFC <GO> (Economic Forecasts)
-// Version: 1.0.0
+// Version: 1.0.1 - Clean Build
 // Date: 2026-01-25
 // ============================================================================
 
@@ -74,6 +74,14 @@ interface Prediction {
   basis: string;
 }
 
+interface TierLimits {
+  tier: string;
+  monthsBack: number;
+  predictionMonths: number;
+  canExport: boolean;
+  showConfidence: boolean;
+}
+
 interface ForecastData {
   success: boolean;
   item: string;
@@ -95,13 +103,7 @@ interface ForecastData {
     actualPrice: number;
     accuracy: number;
   };
-  tierLimits: {
-    tier: string;
-    monthsBack: number;
-    predictionMonths: number;
-    canExport: boolean;
-    showConfidence: boolean;
-  };
+  tierLimits: TierLimits;
   dataSource: string;
   yearsOfData: number;
 }
@@ -119,9 +121,7 @@ interface CommodityItem {
 
 const MONTH_SHORT = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
-// Season icons for Nigerian climate
 const getSeasonIcon = (month: number) => {
-  // Nigeria has Dry (Nov-Mar) and Wet (Apr-Oct) seasons
   if (month >= 4 && month <= 10) {
     return <CloudRain className="w-4 h-4 text-blue-400" />;
   }
@@ -136,7 +136,6 @@ export default function ForecastPage() {
   const { data: session, status } = useSession();
   const router = useRouter();
   
-  // State
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [forecastData, setForecastData] = useState<ForecastData | null>(null);
@@ -144,17 +143,14 @@ export default function ForecastPage() {
   const [selectedItem, setSelectedItem] = useState("Rice (50kg)");
   const [activeChart, setActiveChart] = useState<"seasonal" | "prediction" | "yearly">("seasonal");
   
-  // Get user tier
   const userTier = (session?.user as { tier?: string })?.tier || "FREE";
   
-  // Redirect if not authenticated
   useEffect(() => {
     if (status === "unauthenticated") {
       router.push("/login");
     }
   }, [status, router]);
   
-  // Fetch available items
   useEffect(() => {
     const fetchItems = async () => {
       try {
@@ -174,7 +170,6 @@ export default function ForecastPage() {
     fetchItems();
   }, []);
   
-  // Fetch forecast data
   const fetchForecast = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -208,7 +203,6 @@ export default function ForecastPage() {
     }
   }, [status, fetchForecast]);
   
-  // Format currency
   const formatPrice = (price: number) => {
     return new Intl.NumberFormat("en-NG", {
       style: "currency",
@@ -218,14 +212,12 @@ export default function ForecastPage() {
     }).format(price);
   };
   
-  // Handle export
   const handleExport = () => {
     if (!forecastData?.tierLimits?.canExport) {
       alert("Export is available for GOLD tier and above. Please upgrade your subscription.");
       return;
     }
     
-    // Create CSV content
     let csv = "Month,Average Price,Min Price,Max Price,Price Index,Trend,Volatility\n";
     forecastData.seasonalPatterns.forEach(p => {
       csv += `${p.monthName},${p.avgPrice},${p.minPrice},${p.maxPrice},${p.priceIndex},${p.trend},${p.volatility}\n`;
@@ -236,7 +228,6 @@ export default function ForecastPage() {
       csv += `${p.monthName},${p.year},${p.predictedPrice},${p.confidenceLow},${p.confidenceHigh},${p.confidence}%\n`;
     });
     
-    // Download
     const blob = new Blob([csv], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -246,7 +237,6 @@ export default function ForecastPage() {
     URL.revokeObjectURL(url);
   };
   
-  // Prepare chart data
   const getSeasonalChartData = () => {
     if (!forecastData) return [];
     
@@ -267,7 +257,6 @@ export default function ForecastPage() {
   const getPredictionChartData = () => {
     if (!forecastData) return [];
     
-    // Add current month as starting point
     const currentMonth = new Date().getMonth();
     const data = [{
       name: MONTH_SHORT[currentMonth],
@@ -277,7 +266,6 @@ export default function ForecastPage() {
       isActual: true,
     }];
     
-    // Add predictions
     forecastData.predictions.forEach(p => {
       data.push({
         name: `${MONTH_SHORT[p.month - 1]} '${String(p.year).slice(2)}`,
@@ -291,7 +279,6 @@ export default function ForecastPage() {
     return data;
   };
   
-  // Loading state
   if (status === "loading" || (loading && !forecastData)) {
     return (
       <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center">
@@ -303,7 +290,6 @@ export default function ForecastPage() {
     );
   }
   
-  // Error state
   if (error && !forecastData) {
     return (
       <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center">
@@ -322,6 +308,11 @@ export default function ForecastPage() {
   }
   
   const currentMonth = new Date().getMonth() + 1;
+  const tierLimits = forecastData?.tierLimits;
+  const canExport = tierLimits?.canExport ?? false;
+  const showConfidence = tierLimits?.showConfidence ?? false;
+  const predictionMonths = tierLimits?.predictionMonths ?? 0;
+  const tierName = tierLimits?.tier ?? "FREE";
   
   return (
     <div className="min-h-screen bg-[#0a0a0a] text-white p-4 md:p-6">
@@ -342,7 +333,6 @@ export default function ForecastPage() {
           </div>
           
           <div className="flex items-center gap-3">
-            {/* Item Selector */}
             <select
               value={selectedItem}
               onChange={(e) => setSelectedItem(e.target.value)}
@@ -355,7 +345,6 @@ export default function ForecastPage() {
               ))}
             </select>
             
-            {/* Refresh */}
             <button
               onClick={fetchForecast}
               disabled={loading}
@@ -364,16 +353,15 @@ export default function ForecastPage() {
               <RefreshCw className={`w-5 h-5 ${loading ? "animate-spin" : ""}`} />
             </button>
             
-            {/* Export */}
             <button
               onClick={handleExport}
               className={`flex items-center gap-2 px-4 py-2 rounded-lg ${
-                forecastData?.tierLimits?.canExport
+                canExport
                   ? "bg-emerald-600 hover:bg-emerald-700"
                   : "bg-gray-700 cursor-not-allowed"
               }`}
             >
-              {forecastData?.tierLimits?.canExport ? (
+              {canExport ? (
                 <Download className="w-4 h-4" />
               ) : (
                 <Lock className="w-4 h-4" />
@@ -384,13 +372,13 @@ export default function ForecastPage() {
         </div>
         
         {/* Tier Banner */}
-        {forecastData?.tierLimits?.tier && ["FREE", "SILVER"].includes(forecastData.tierLimits.tier as string) && (
+        {tierName && ["FREE", "SILVER"].includes(tierName) && (
           <div className="mt-4 bg-gradient-to-r from-amber-900/30 to-amber-800/20 border border-amber-700/50 rounded-lg p-4 flex items-center justify-between">
             <div className="flex items-center gap-3">
               <Lock className="w-5 h-5 text-amber-400" />
               <div>
                 <p className="text-amber-200 font-medium">
-                  Limited Forecast ({forecastData.tierLimits?.predictionMonths ?? 0} month{(forecastData.tierLimits?.predictionMonths ?? 0) > 1 ? "s" : ""} ahead)
+                  Limited Forecast ({predictionMonths} month{predictionMonths > 1 ? "s" : ""} ahead)
                 </p>
                 <p className="text-amber-400/70 text-sm">
                   Upgrade to GOLD for 3-month forecasts with confidence intervals
@@ -409,7 +397,6 @@ export default function ForecastPage() {
       
       {/* Key Metrics Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-        {/* Current Price */}
         <div className="bg-[#1a1a1a] border border-gray-800 rounded-xl p-4">
           <div className="flex items-center justify-between mb-2">
             <span className="text-gray-400 text-sm">Current Price</span>
@@ -423,7 +410,6 @@ export default function ForecastPage() {
           </p>
         </div>
         
-        {/* Best Month to Buy */}
         <div className="bg-gradient-to-br from-emerald-900/30 to-emerald-800/20 border border-emerald-700/50 rounded-xl p-4">
           <div className="flex items-center justify-between mb-2">
             <span className="text-emerald-400 text-sm">Best Month to Buy</span>
@@ -437,7 +423,6 @@ export default function ForecastPage() {
           </p>
         </div>
         
-        {/* Worst Month to Buy */}
         <div className="bg-gradient-to-br from-red-900/30 to-red-800/20 border border-red-700/50 rounded-xl p-4">
           <div className="flex items-center justify-between mb-2">
             <span className="text-red-400 text-sm">Worst Month to Buy</span>
@@ -451,7 +436,6 @@ export default function ForecastPage() {
           </p>
         </div>
         
-        {/* Forecast Accuracy */}
         <div className="bg-[#1a1a1a] border border-gray-800 rounded-xl p-4">
           <div className="flex items-center justify-between mb-2">
             <span className="text-gray-400 text-sm">Model Accuracy</span>
@@ -468,7 +452,6 @@ export default function ForecastPage() {
       
       {/* Chart Section */}
       <div className="bg-[#1a1a1a] border border-gray-800 rounded-xl p-4 md:p-6 mb-6">
-        {/* Chart Tabs */}
         <div className="flex items-center gap-2 mb-6 overflow-x-auto pb-2">
           <button
             onClick={() => setActiveChart("seasonal")}
@@ -505,7 +488,6 @@ export default function ForecastPage() {
           </button>
         </div>
         
-        {/* Charts */}
         <div className="h-[400px]">
           {activeChart === "seasonal" && (
             <ResponsiveContainer width="100%" height="100%">
@@ -579,7 +561,7 @@ export default function ForecastPage() {
                   formatter={(value: number) => [formatPrice(value), ""]}
                 />
                 <Legend />
-                {forecastData?.tierLimits?.showConfidence && (
+                {showConfidence && (
                   <>
                     <Area
                       type="monotone"
@@ -632,7 +614,6 @@ export default function ForecastPage() {
           )}
         </div>
         
-        {/* Chart Legend/Info */}
         <div className="mt-4 flex flex-wrap items-center gap-4 text-sm text-gray-400">
           <div className="flex items-center gap-2">
             <div className="w-3 h-3 rounded-full bg-emerald-500" />
@@ -714,7 +695,7 @@ export default function ForecastPage() {
             Price Predictions
           </h3>
           
-          {forecastData?.predictions.length === 0 ? (
+          {(forecastData?.predictions?.length ?? 0) === 0 ? (
             <div className="text-center py-8">
               <Lock className="w-12 h-12 text-gray-600 mx-auto mb-3" />
               <p className="text-gray-400">No predictions available for your tier</p>
@@ -742,7 +723,7 @@ export default function ForecastPage() {
                         ({idx + 1} month{idx > 0 ? "s" : ""} ahead)
                       </span>
                     </div>
-                    {forecastData?.tierLimits?.showConfidence && pred.confidence > 0 && (
+                    {showConfidence && pred.confidence > 0 && (
                       <span
                         className={`text-xs px-2 py-1 rounded ${
                           pred.confidence >= 80
@@ -760,7 +741,7 @@ export default function ForecastPage() {
                     <p className="text-2xl font-bold text-emerald-400">
                       {formatPrice(pred.predictedPrice)}
                     </p>
-                    {forecastData?.tierLimits?.showConfidence && pred.confidenceLow > 0 && (
+                    {showConfidence && pred.confidenceLow > 0 && (
                       <p className="text-sm text-gray-400">
                         Range: {formatPrice(pred.confidenceLow)} - {formatPrice(pred.confidenceHigh)}
                       </p>
@@ -772,8 +753,7 @@ export default function ForecastPage() {
                 </div>
               ))}
               
-              {/* Show upgrade prompt if limited */}
-              {(forecastData?.tierLimits?.predictionMonths ?? 0) < 6 && (
+              {predictionMonths < 6 && (
                 <div className="mt-4 p-4 bg-gradient-to-r from-indigo-900/30 to-purple-900/30 border border-indigo-700/50 rounded-lg">
                   <div className="flex items-center gap-2 mb-2">
                     <Info className="w-4 h-4 text-indigo-400" />
@@ -803,7 +783,6 @@ export default function ForecastPage() {
         </h3>
         
         <div className="grid md:grid-cols-3 gap-6">
-          {/* Current Position */}
           <div>
             <h4 className="text-sm text-gray-400 mb-2">Current Seasonal Position</h4>
             <div className="flex items-center gap-2">
@@ -821,7 +800,6 @@ export default function ForecastPage() {
             </p>
           </div>
           
-          {/* Volatility */}
           <div>
             <h4 className="text-sm text-gray-400 mb-2">Price Volatility</h4>
             <div className="flex items-center gap-2">
@@ -842,7 +820,6 @@ export default function ForecastPage() {
             </p>
           </div>
           
-          {/* Expected Range */}
           <div>
             <h4 className="text-sm text-gray-400 mb-2">Expected Annual Range</h4>
             <div className="flex items-center gap-2">
