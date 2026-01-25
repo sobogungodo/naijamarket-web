@@ -197,7 +197,7 @@ const userSettingsStore = new Map<string, UserSettings>();
 // GET - Fetch user settings
 // ============================================================================
 
-export async function GET(request: NextRequest) {
+export async function GET(_request: NextRequest) {
   try {
     const session = await getServerSession();
     
