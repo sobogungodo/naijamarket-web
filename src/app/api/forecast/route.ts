@@ -179,15 +179,15 @@ function generateMockHistoricalData(item: string, years: number = 9): Historical
     2024: 3.20, 2025: 3.55, 2026: 3.90,
   };
   
-  const basePrice = basePrices[item] || basePrices["default"];
+  const basePrice: number = basePrices[item] ?? basePrices["default"] ?? 15000;
   
   for (let year = startYear; year <= currentYear; year++) {
-    const inflation = yearlyInflation[year] || 1;
+    const inflation = yearlyInflation[year] ?? 1;
     
     for (let month = 1; month <= 12; month++) {
       if (year === currentYear && month > new Date().getMonth() + 1) continue;
       
-      const seasonal = seasonalFactors[month - 1];
+      const seasonal = seasonalFactors[month - 1] ?? 1;
       const randomVariance = 0.95 + Math.random() * 0.10;
       const price = Math.round(basePrice * inflation * seasonal * randomVariance);
       
@@ -253,7 +253,7 @@ function calculateSeasonalPatterns(historicalData: HistoricalPrice[]): SeasonalP
     
     patterns.push({
       month,
-      monthName: MONTHS[month - 1],
+      monthName: MONTHS[month - 1] ?? "Unknown",
       avgPrice: Math.round(avgPrice),
       minPrice: Math.round(minPrice),
       maxPrice: Math.round(maxPrice),
@@ -304,7 +304,7 @@ function generatePredictions(
     
     predictions.push({
       month: currentMonth,
-      monthName: MONTHS[currentMonth - 1],
+      monthName: MONTHS[currentMonth - 1] ?? "Unknown",
       year: currentYear,
       predictedPrice,
       confidenceLow: Math.round(predictedPrice - stdDev * 1.5),
@@ -322,8 +322,8 @@ function generateInsights(
   currentPrice: number
 ): ForecastResponse["insights"] {
   const sorted = [...patterns].sort((a, b) => a.priceIndex - b.priceIndex);
-  const bestMonth = sorted[0];
-  const worstMonth = sorted[sorted.length - 1];
+  const bestMonth = sorted[0] ?? { monthName: "Unknown", priceIndex: 100 };
+  const worstMonth = sorted[sorted.length - 1] ?? { monthName: "Unknown", priceIndex: 100 };
   
   const currentMonth = new Date().getMonth() + 1;
   const currentPattern = patterns.find(p => p.month === currentMonth);
@@ -344,21 +344,26 @@ function generateInsights(
   
   let priceDirection: "increasing" | "decreasing" | "stable" = "stable";
   if (nextMonths.length >= 2) {
-    const trend = nextMonths[nextMonths.length - 1] - nextMonths[0];
+    const lastVal = nextMonths[nextMonths.length - 1] ?? 0;
+    const firstVal = nextMonths[0] ?? 0;
+    const trend = lastVal - firstVal;
     if (trend > 5) priceDirection = "increasing";
     else if (trend < -5) priceDirection = "decreasing";
   }
   
-  const avgVolatility = patterns.reduce((acc, p) => {
-    return acc + (p.volatility === "high" ? 3 : p.volatility === "medium" ? 2 : 1);
-  }, 0) / patterns.length;
+  const avgVolatility = patterns.length > 0 
+    ? patterns.reduce((acc, p) => {
+        return acc + (p.volatility === "high" ? 3 : p.volatility === "medium" ? 2 : 1);
+      }, 0) / patterns.length
+    : 2;
   
   let volatilityRating: "low" | "medium" | "high" = "medium";
   if (avgVolatility < 1.5) volatilityRating = "low";
   else if (avgVolatility > 2.5) volatilityRating = "high";
   
-  const minIndex = Math.min(...patterns.map(p => p.priceIndex));
-  const maxIndex = Math.max(...patterns.map(p => p.priceIndex));
+  const priceIndexes = patterns.map(p => p.priceIndex);
+  const minIndex = priceIndexes.length > 0 ? Math.min(...priceIndexes) : 100;
+  const maxIndex = priceIndexes.length > 0 ? Math.max(...priceIndexes) : 100;
   const spread = maxIndex - minIndex;
   
   return {
@@ -404,20 +409,21 @@ export async function GET(request: NextRequest) {
     const nbsData = await fetchGoogleSheetsData("Price_History_NBS");
     
     if (nbsData.length > 1) {
-      const headers = nbsData[0];
+      const headers = nbsData[0] ?? [];
       const itemIndex = headers.findIndex(h => h.toLowerCase().includes("item") || h.toLowerCase().includes("commodity"));
       const priceIndex = headers.findIndex(h => h.toLowerCase().includes("price"));
       const yearIndex = headers.findIndex(h => h.toLowerCase().includes("year"));
       const monthIndex = headers.findIndex(h => h.toLowerCase().includes("month"));
       
       for (let i = 1; i < nbsData.length; i++) {
-        const row = nbsData[i];
-        const rowItem = row[itemIndex] || "";
+        const row = nbsData[i] ?? [];
+        const rowItem = row[itemIndex] ?? "";
+        const itemFirstWord = item.toLowerCase().split(" ")[0] ?? "";
         
-        if (rowItem.toLowerCase().includes(item.toLowerCase().split(" ")[0])) {
-          const price = parseFloat(row[priceIndex]) || 0;
-          const year = parseInt(row[yearIndex]) || new Date().getFullYear();
-          const month = parseInt(row[monthIndex]) || 1;
+        if (rowItem.toLowerCase().includes(itemFirstWord)) {
+          const price = parseFloat(row[priceIndex] ?? "0") || 0;
+          const year = parseInt(row[yearIndex] ?? "0") || new Date().getFullYear();
+          const month = parseInt(row[monthIndex] ?? "0") || 1;
           
           if (price > 0) {
             historicalData.push({
