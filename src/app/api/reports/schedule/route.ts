@@ -102,8 +102,7 @@ function generateScheduleId(): string {
 function calculateNextDelivery(
   frequency: string,
   deliveryTime: string,
-  deliveryDay?: number,
-  timezone: string = "Africa/Lagos"
+  deliveryDay?: number
 ): Date {
   const now = new Date();
   const [hours, minutes] = deliveryTime.split(":").map(Number);
@@ -321,7 +320,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     }
 
     // Calculate next delivery
-    const nextDeliveryDate = calculateNextDelivery(frequency, deliveryTime, deliveryDay, timezone);
+    const nextDeliveryDate = calculateNextDelivery(frequency, deliveryTime, deliveryDay);
 
     // Create schedule
     const schedule: ScheduledReport = {
@@ -425,8 +424,7 @@ export async function PUT(request: NextRequest): Promise<NextResponse> {
       const nextDeliveryDate = calculateNextDelivery(
         schedule.frequency,
         schedule.deliveryTime,
-        schedule.deliveryDay,
-        schedule.timezone
+        schedule.deliveryDay
       );
       schedule.nextDelivery = nextDeliveryDate.toISOString();
     }
