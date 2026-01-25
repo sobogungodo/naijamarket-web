@@ -293,6 +293,9 @@ export default function SettingsPage() {
 
   // Get user tier - handle multiple possible field names
   interface SessionUserWithTier {
+    name?: string | null;
+    email?: string | null;
+    image?: string | null;
     tier?: string;
     subscriptionTier?: string;
   }
