@@ -417,10 +417,6 @@ export default function ReportsPage() {
   };
 
   // Format helpers
-  const formatCurrency = (amount: number): string => {
-    return `₦${amount.toLocaleString("en-NG")}`;
-  };
-
   const formatPercent = (value: number): string => {
     const sign = value >= 0 ? "+" : "";
     return `${sign}${value.toFixed(1)}%`;
