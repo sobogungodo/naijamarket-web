@@ -49,8 +49,6 @@ import {
   Lock,
   Unlock,
   Activity,
-  Volume2,
-  VolumeX,
   Database,
   UserX,
   CheckCircle2,
@@ -58,7 +56,6 @@ import {
   Loader2,
   Camera,
   Edit3,
-  ExternalLink,
 } from "lucide-react";
 
 // ============================================================================
