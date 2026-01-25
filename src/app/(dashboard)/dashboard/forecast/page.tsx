@@ -17,7 +17,6 @@ import {
   Calendar,
   Target,
   AlertTriangle,
-  CheckCircle2,
   Clock,
   BarChart3,
   ArrowUp,
@@ -28,10 +27,8 @@ import {
   Lock,
   Info,
   Sparkles,
-  ThermometerSun,
   CloudRain,
   Sun,
-  Leaf,
 } from "lucide-react";
 import {
   LineChart,
