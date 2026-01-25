@@ -1,8 +1,9 @@
 // ============================================================================
 // src/app/api/prices/history/route.ts
 // NaijaMarket Intel - Price History API (HYBRID)
-// STRATEGY: MERGE Google Sheets (recent) + Azure SQL (historical)
-// Version: 5.0.1 - Fixed TypeScript strict mode errors
+// PRIMARY: Azure SQL Database | SECONDARY: Google Sheets | FALLBACK: Mock
+// Merges both sources for complete historical coverage
+// Version: 6.0.0 - Database as primary, hybrid merge
 // ============================================================================
 
 import { NextRequest, NextResponse } from "next/server";
@@ -12,12 +13,6 @@ import { NextRequest, NextResponse } from "next/server";
 // ============================================================================
 
 const GOOGLE_SHEET_ID = "1n-7MXdoqvIoSHteBJaUYBmIPLjJBNtrE_jVuUxO5kr8";
-
-const SHEETS_PRIORITY = [
-  "Daily_Prices",
-  "Price_History_NBS",
-  "Validated_Prices",
-];
 
 // ============================================================================
 // TYPE DEFINITIONS
@@ -83,18 +78,15 @@ function parseCSVLine(line: string): string[] {
   return result.map(v => v.replace(/^"|"$/g, "").trim());
 }
 
-// Safe string matching helper
 function flexibleMatch(source: string, target: string): boolean {
   if (!source || !target) return false;
   const sourceLower = source.toLowerCase();
   const targetLower = target.toLowerCase();
   
-  // Direct includes
   if (sourceLower.includes(targetLower) || targetLower.includes(sourceLower)) {
     return true;
   }
   
-  // Split and match first part (e.g., "Rice (50kg)" matches "Rice")
   const sourceParts = sourceLower.split(/[\s(]/);
   const targetParts = targetLower.split(/[\s(]/);
   const sourceFirst = sourceParts[0] || sourceLower;
@@ -104,123 +96,16 @@ function flexibleMatch(source: string, target: string): boolean {
 }
 
 // ============================================================================
-// FETCH SHEET AS CSV
+// PRIMARY: FETCH FROM AZURE SQL DATABASE
 // ============================================================================
 
-async function fetchSheetAsCSV(sheetName: string): Promise<string[][]> {
-  try {
-    const csvUrl = `https://docs.google.com/spreadsheets/d/${GOOGLE_SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(sheetName)}`;
-    
-    const response = await fetch(csvUrl, {
-      next: { revalidate: 300 },
-    });
-
-    if (!response.ok) return [];
-
-    const csvText = await response.text();
-    const lines = csvText.split("\n").filter(line => line.trim());
-    
-    return lines.map(line => parseCSVLine(line));
-  } catch (error) {
-    console.error(`Error fetching ${sheetName}:`, error);
-    return [];
-  }
-}
-
-// ============================================================================
-// FETCH HISTORY FROM GOOGLE SHEETS
-// ============================================================================
-
-async function fetchFromGoogleSheets(
+async function fetchFromDatabase(
   item: string,
   market: string,
   days: number
 ): Promise<PriceHistoryPoint[]> {
-  const cutoffDate = new Date();
-  cutoffDate.setDate(cutoffDate.getDate() - days);
-
-  const allHistory: PriceHistoryPoint[] = [];
-
-  for (const sheetName of SHEETS_PRIORITY) {
-    const rows = await fetchSheetAsCSV(sheetName);
-    if (rows.length < 2) continue;
-
-    const headers = rows[0];
-    if (!headers) continue;
-
-    const findCol = (names: string[]): number => {
-      for (const name of names) {
-        const idx = headers.findIndex(h => 
-          h && h.toLowerCase().includes(name.toLowerCase())
-        );
-        if (idx >= 0) return idx;
-      }
-      return -1;
-    };
-
-    const itemIdx = findCol(["item_name", "item", "commodity"]);
-    const marketIdx = findCol(["market_name", "market"]);
-    const priceIdx = findCol(["price_naira", "price", "validated_price", "average_price"]);
-    const dateIdx = findCol(["price_date", "date", "observation_date", "validated_at", "created_at"]);
-    const trendIdx = findCol(["trend"]);
-
-    if (itemIdx < 0 || priceIdx < 0) continue;
-
-    for (let i = 1; i < rows.length; i++) {
-      const row = rows[i];
-      if (!row) continue;
-
-      const rowItem = itemIdx >= 0 ? (row[itemIdx] || "") : "";
-      const rowMarket = marketIdx >= 0 ? (row[marketIdx] || "") : "";
-
-      // Use safe flexible matching
-      const itemMatch = flexibleMatch(rowItem, item);
-      const marketMatch = marketIdx < 0 || flexibleMatch(rowMarket, market);
-
-      if (!itemMatch || !marketMatch) continue;
-
-      const dateStr = dateIdx >= 0 ? row[dateIdx] : null;
-      let rowDate: Date;
-      
-      if (dateStr) {
-        rowDate = new Date(dateStr);
-        if (isNaN(rowDate.getTime())) continue;
-        if (rowDate < cutoffDate) continue;
-      } else {
-        continue;
-      }
-
-      const priceStr = priceIdx >= 0 ? row[priceIdx] : null;
-      const price = parseFloat(priceStr || "0");
-      if (isNaN(price) || price <= 0) continue;
-
-      let trend = "stable";
-      if (trendIdx >= 0 && row[trendIdx]) {
-        trend = row[trendIdx].toLowerCase();
-      }
-
-      allHistory.push({
-        date: rowDate.toISOString().substring(0, 10),
-        price: price,
-        trend: trend,
-        source: `Sheets:${sheetName}`,
-      });
-    }
-  }
-
-  console.log(`📊 Google Sheets: Found ${allHistory.length} history points`);
-  return allHistory;
-}
-
-// ============================================================================
-// FETCH HISTORY FROM AZURE SQL
-// ============================================================================
-
-async function fetchFromAzureSQL(
-  item: string,
-  market: string,
-  days: number
-): Promise<PriceHistoryPoint[]> {
+  const history: PriceHistoryPoint[] = [];
+  
   try {
     const { PrismaClient } = await import("@prisma/client");
     const prisma = new PrismaClient();
@@ -228,10 +113,9 @@ async function fetchFromAzureSQL(
     const cutoffDate = new Date();
     cutoffDate.setDate(cutoffDate.getDate() - days);
 
-    let results: Array<{ date: Date | string; price: number }> = [];
-    
+    // Try Daily_Prices first
     try {
-      results = await prisma.$queryRaw`
+      const results = await prisma.$queryRaw`
         SELECT 
           CAST(price_date AS DATE) as date,
           AVG(CAST(price_naira AS FLOAT)) as price
@@ -241,14 +125,28 @@ async function fetchFromAzureSQL(
           AND price_date >= ${cutoffDate}
         GROUP BY CAST(price_date AS DATE)
         ORDER BY date ASC
-      `;
+      ` as Array<{ date: Date | string; price: number }>;
+
+      for (const r of results) {
+        history.push({
+          date: r.date instanceof Date ? r.date.toISOString().substring(0, 10) : String(r.date).substring(0, 10),
+          price: Number(r.price),
+          trend: "stable",
+          source: "DB:Daily_Prices",
+        });
+      }
+      
+      if (history.length > 0) {
+        console.log(`✅ Database: ${history.length} points from Daily_Prices`);
+      }
     } catch (e) {
       console.log("Daily_Prices query failed...");
     }
 
-    if (results.length === 0) {
+    // Try Price_History_NBS if no daily prices
+    if (history.length === 0) {
       try {
-        results = await prisma.$queryRaw`
+        const results = await prisma.$queryRaw`
           SELECT 
             CAST(observation_date AS DATE) as date,
             AVG(CAST(price_naira AS FLOAT)) as price
@@ -258,25 +156,52 @@ async function fetchFromAzureSQL(
             AND observation_date >= ${cutoffDate}
           GROUP BY CAST(observation_date AS DATE)
           ORDER BY date ASC
-        `;
+        ` as Array<{ date: Date | string; price: number }>;
+
+        for (const r of results) {
+          history.push({
+            date: r.date instanceof Date ? r.date.toISOString().substring(0, 10) : String(r.date).substring(0, 10),
+            price: Number(r.price),
+            trend: "stable",
+            source: "DB:Price_History_NBS",
+          });
+        }
+        
+        if (history.length > 0) {
+          console.log(`✅ Database: ${history.length} points from Price_History_NBS`);
+        }
       } catch (e) {
         console.log("Price_History_NBS query failed...");
       }
     }
 
-    if (results.length === 0) {
+    // Try Validated_Prices as last resort
+    if (history.length === 0) {
       try {
-        results = await prisma.$queryRaw`
+        const results = await prisma.$queryRaw`
           SELECT 
             CAST(validated_at AS DATE) as date,
-            AVG(CAST(price_naira AS FLOAT)) as price
+            AVG(CAST(COALESCE(validated_price, price_naira) AS FLOAT)) as price
           FROM Validated_Prices
           WHERE item_name LIKE ${`%${item}%`}
             AND market_name LIKE ${`%${market}%`}
             AND validated_at >= ${cutoffDate}
           GROUP BY CAST(validated_at AS DATE)
           ORDER BY date ASC
-        `;
+        ` as Array<{ date: Date | string; price: number }>;
+
+        for (const r of results) {
+          history.push({
+            date: r.date instanceof Date ? r.date.toISOString().substring(0, 10) : String(r.date).substring(0, 10),
+            price: Number(r.price),
+            trend: "stable",
+            source: "DB:Validated_Prices",
+          });
+        }
+        
+        if (history.length > 0) {
+          console.log(`✅ Database: ${history.length} points from Validated_Prices`);
+        }
       } catch (e) {
         console.log("Validated_Prices query failed...");
       }
@@ -284,24 +209,100 @@ async function fetchFromAzureSQL(
 
     await prisma.$disconnect();
 
-    if (!results || results.length === 0) {
-      console.log("📊 Azure SQL: No historical data found");
-      return [];
-    }
-
-    console.log(`📊 Azure SQL: Found ${results.length} historical points`);
-
-    return results.map((r) => ({
-      date: r.date instanceof Date ? r.date.toISOString().substring(0, 10) : String(r.date).substring(0, 10),
-      price: Number(r.price),
-      trend: "stable",
-      source: "Azure:Historical",
-    }));
-
   } catch (error) {
-    console.error("Azure SQL error:", error);
-    return [];
+    console.error("Database history error:", error);
   }
+
+  return history;
+}
+
+// ============================================================================
+// SECONDARY: FETCH FROM GOOGLE SHEETS (for additional data)
+// ============================================================================
+
+async function fetchFromGoogleSheets(
+  item: string,
+  market: string,
+  days: number
+): Promise<PriceHistoryPoint[]> {
+  const history: PriceHistoryPoint[] = [];
+  const cutoffDate = new Date();
+  cutoffDate.setDate(cutoffDate.getDate() - days);
+
+  const sheetNames = ["Daily_Prices", "Price_History_NBS", "Validated_Prices"];
+
+  for (const sheetName of sheetNames) {
+    try {
+      const csvUrl = `https://docs.google.com/spreadsheets/d/${GOOGLE_SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(sheetName)}`;
+      
+      const response = await fetch(csvUrl, { next: { revalidate: 300 } });
+      if (!response.ok) continue;
+
+      const csvText = await response.text();
+      const lines = csvText.split("\n").filter(line => line.trim());
+      
+      if (lines.length < 2) continue;
+
+      const firstLine = lines[0];
+      if (!firstLine) continue;
+      
+      const headers = parseCSVLine(firstLine);
+      
+      const findCol = (names: string[]): number => {
+        for (const name of names) {
+          const idx = headers.findIndex(h => h && h.toLowerCase().includes(name.toLowerCase()));
+          if (idx >= 0) return idx;
+        }
+        return -1;
+      };
+
+      const itemIdx = findCol(["item_name", "item", "commodity"]);
+      const marketIdx = findCol(["market_name", "market"]);
+      const priceIdx = findCol(["price_naira", "price", "validated_price"]);
+      const dateIdx = findCol(["price_date", "observation_date", "validated_at", "date"]);
+
+      if (itemIdx < 0 || priceIdx < 0) continue;
+
+      for (let i = 1; i < lines.length; i++) {
+        const currentLine = lines[i];
+        if (!currentLine) continue;
+        
+        const row = parseCSVLine(currentLine);
+        
+        const rowItem = itemIdx >= 0 ? (row[itemIdx] || "") : "";
+        const rowMarket = marketIdx >= 0 ? (row[marketIdx] || "") : "";
+
+        if (!flexibleMatch(rowItem, item)) continue;
+        if (marketIdx >= 0 && !flexibleMatch(rowMarket, market)) continue;
+
+        const dateStr = dateIdx >= 0 ? row[dateIdx] : null;
+        if (!dateStr) continue;
+        
+        const rowDate = new Date(dateStr);
+        if (isNaN(rowDate.getTime()) || rowDate < cutoffDate) continue;
+
+        const priceStr = priceIdx >= 0 ? row[priceIdx] : null;
+        const price = parseFloat(priceStr || "0");
+        if (isNaN(price) || price <= 0) continue;
+
+        history.push({
+          date: rowDate.toISOString().substring(0, 10),
+          price: price,
+          trend: "stable",
+          source: `Sheets:${sheetName}`,
+        });
+      }
+
+      if (history.length > 0) {
+        console.log(`✅ Google Sheets: ${history.length} points from ${sheetName}`);
+        break;
+      }
+    } catch (error) {
+      console.error(`Sheets fetch error (${sheetName}):`, error);
+    }
+  }
+
+  return history;
 }
 
 // ============================================================================
@@ -345,7 +346,7 @@ function generateMockHistory(item: string, _market: string, days: number): Price
       date: date.toISOString().substring(0, 10),
       price: Math.round(currentPrice),
       trend: changePercent > 0.01 ? "up" : changePercent < -0.01 ? "down" : "stable",
-      source: "Mock:Simulated",
+      source: "Demo:Simulated",
     });
   }
 
@@ -353,20 +354,22 @@ function generateMockHistory(item: string, _market: string, days: number): Price
 }
 
 // ============================================================================
-// MERGE HISTORY
+// MERGE HISTORY (Database takes priority, Sheets fills gaps)
 // ============================================================================
 
 function mergeHistory(
-  sheetsData: PriceHistoryPoint[],
-  azureData: PriceHistoryPoint[]
+  dbData: PriceHistoryPoint[],
+  sheetsData: PriceHistoryPoint[]
 ): PriceHistoryPoint[] {
   const dateMap = new Map<string, PriceHistoryPoint>();
 
-  for (const point of azureData) {
+  // Add Sheets data first (will be overwritten by DB)
+  for (const point of sheetsData) {
     dateMap.set(point.date, point);
   }
 
-  for (const point of sheetsData) {
+  // Add Database data (takes priority)
+  for (const point of dbData) {
     dateMap.set(point.date, point);
   }
 
@@ -426,38 +429,47 @@ export async function GET(request: NextRequest) {
   const days = getDaysFromPeriod(period);
   
   console.log(`\n📈 Price History: ${item} @ ${market} (${period})`);
+  console.log("─".repeat(40));
 
+  // Fetch from both sources
+  const dbData = await fetchFromDatabase(item, market, days);
   const sheetsData = await fetchFromGoogleSheets(item, market, days);
-  const azureData = await fetchFromAzureSQL(item, market, days);
 
   let history: PriceHistoryPoint[] = [];
   let source = "unknown";
 
-  if (sheetsData.length > 0 && azureData.length > 0) {
-    history = mergeHistory(sheetsData, azureData);
-    source = "hybrid:sheets+azure";
-    console.log(`✅ HYBRID: ${sheetsData.length} Sheets + ${azureData.length} Azure = ${history.length} total`);
+  // Merge both sources (DB takes priority)
+  if (dbData.length > 0 && sheetsData.length > 0) {
+    history = mergeHistory(dbData, sheetsData);
+    source = "hybrid:db+sheets";
+    console.log(`✅ HYBRID: ${dbData.length} DB + ${sheetsData.length} Sheets = ${history.length} total`);
+  } else if (dbData.length > 0) {
+    history = dbData;
+    source = "database";
+    console.log(`✅ DATABASE: ${history.length} points`);
   } else if (sheetsData.length > 0) {
     history = sheetsData;
     source = "sheets";
-  } else if (azureData.length > 0) {
-    history = azureData;
-    source = "azure";
+    console.log(`✅ SHEETS: ${history.length} points`);
   }
 
+  // Fallback to mock
   if (history.length === 0) {
     console.log("⚠️ No data found, using mock...");
     history = generateMockHistory(item, market, days);
-    source = "mock";
+    source = "demo";
   }
 
   const statistics = calculateStatistics(history);
 
   const sourceBreakdown = {
-    sheets: history.filter(h => h.source.includes("Sheets")).length,
-    azure: history.filter(h => h.source.includes("Azure")).length,
-    mock: history.filter(h => h.source.includes("Mock")).length,
+    database: history.filter(h => h.source.startsWith("DB:")).length,
+    sheets: history.filter(h => h.source.startsWith("Sheets:")).length,
+    demo: history.filter(h => h.source.startsWith("Demo:")).length,
   };
+
+  console.log(`📊 Final: ${history.length} points | DB: ${sourceBreakdown.database} | Sheets: ${sourceBreakdown.sheets}`);
+  console.log("─".repeat(40));
 
   return NextResponse.json({
     success: true,
@@ -468,10 +480,10 @@ export async function GET(request: NextRequest) {
     statistics,
     source,
     sourceBreakdown,
-    note: source === "mock" 
+    note: source === "demo" 
       ? "Showing simulated data - no historical records found" 
-      : source === "hybrid:sheets+azure"
-      ? `Combined: ${sourceBreakdown.sheets} recent (Sheets) + ${sourceBreakdown.azure} historical (Azure)`
+      : source === "hybrid:db+sheets"
+      ? `Combined: ${sourceBreakdown.database} database + ${sourceBreakdown.sheets} sheets records`
       : undefined,
   });
 }

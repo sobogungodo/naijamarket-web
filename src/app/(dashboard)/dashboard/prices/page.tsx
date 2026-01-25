@@ -1,8 +1,8 @@
 // ============================================================================
 // src/app/(dashboard)/dashboard/prices/page.tsx
-// NaijaMarket Intel - Live Prices Page (Fully Dynamic)
-// Fetches prices AND filter options from Google Sheets
-// Version: 4.0.0 - Google Sheets as primary database
+// NaijaMarket Intel - Live Prices Page
+// Fetches prices and filters from Azure SQL Database
+// Version: 6.0.0 - Database as primary source
 // ============================================================================
 
 "use client";
@@ -23,7 +23,8 @@ import {
   BarChart3,
   Loader2,
   X,
-  Database
+  Database,
+  AlertCircle
 } from "lucide-react";
 import PriceHistoryModal from "@/components/PriceHistoryModal";
 
@@ -77,13 +78,12 @@ export default function PricesPage() {
   const [error, setError] = useState<string | null>(null);
   const [dataSource, setDataSource] = useState<string>("loading");
 
-  // Filter options (fetched from Google Sheets)
+  // Filter options from database
   const [filterOptions, setFilterOptions] = useState<FilterOptions>({
     categories: [],
     states: [],
     markets: [],
   });
-  const [filtersLoaded, setFiltersLoaded] = useState(false);
 
   // Filter state
   const [searchQuery, setSearchQuery] = useState("");
@@ -105,7 +105,7 @@ export default function PricesPage() {
   // DATA FETCHING
   // ============================================================================
 
-  const fetchPrices = useCallback(async (isRefresh = false, includeFilters = false) => {
+  const fetchPrices = useCallback(async (isRefresh = false) => {
     if (isRefresh) {
       setRefreshing(true);
     } else {
@@ -122,27 +122,27 @@ export default function PricesPage() {
       if (trendFilter && trendFilter !== "all") params.append("trend", trendFilter);
       params.append("sort", sortBy);
       params.append("limit", "200");
-      
-      // Include filters on initial load
-      if (includeFilters || !filtersLoaded) {
-        params.append("filters", "true");
-      }
+      params.append("filters", "true"); // Always request filters
 
       const response = await fetch("/api/prices?" + params.toString());
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error: ${response.status}`);
+      }
+      
       const result = await response.json();
 
       if (result.success) {
         setPrices(result.data || []);
         setDataSource(result.source || "unknown");
         
-        // Update filter options if returned
+        // Update filter options
         if (result.filters) {
           setFilterOptions({
             categories: result.filters.categories || [],
             states: result.filters.states || [],
             markets: result.filters.markets || [],
           });
-          setFiltersLoaded(true);
         }
       } else {
         setError(result.error || "Failed to fetch prices");
@@ -154,19 +154,17 @@ export default function PricesPage() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [searchQuery, categoryFilter, stateFilter, marketFilter, trendFilter, sortBy, filtersLoaded]);
+  }, [searchQuery, categoryFilter, stateFilter, marketFilter, trendFilter, sortBy]);
 
-  // Initial load with filters
+  // Initial load
   useEffect(() => {
-    fetchPrices(false, true);
+    fetchPrices(false);
   }, []);
 
   // Re-fetch when filters change (debounced)
   useEffect(() => {
-    if (!filtersLoaded) return; // Skip until initial load
-    
     const debounce = setTimeout(() => {
-      fetchPrices(false, false);
+      fetchPrices(false);
     }, 300);
     return () => clearTimeout(debounce);
   }, [searchQuery, categoryFilter, stateFilter, marketFilter, trendFilter, sortBy]);
@@ -176,10 +174,12 @@ export default function PricesPage() {
   // ============================================================================
 
   const handleRefresh = () => {
-    fetchPrices(true, true);
+    fetchPrices(true);
   };
 
   const handleExport = () => {
+    if (prices.length === 0) return;
+    
     const headers = ["Item", "Variant", "Category", "Market", "State", "Price (₦)", "Change (%)", "24H Low", "24H High", "Confidence", "Source", "Updated"];
     const rows = prices.map(p => [
       p.item_name,
@@ -254,11 +254,12 @@ export default function PricesPage() {
 
   // Get source display
   const getSourceDisplay = (source: string): { text: string; color: string } => {
-    if (source.includes("Daily_Prices")) return { text: "Daily Prices", color: "text-emerald-400" };
-    if (source.includes("Price_History")) return { text: "Historical", color: "text-blue-400" };
+    if (source === "database") return { text: "Azure SQL", color: "text-blue-400" };
+    if (source.includes("Daily")) return { text: "Daily Prices", color: "text-emerald-400" };
+    if (source.includes("NBS")) return { text: "NBS Historical", color: "text-cyan-400" };
     if (source.includes("Validated")) return { text: "Validated", color: "text-green-400" };
-    if (source.includes("azure")) return { text: "Database", color: "text-yellow-400" };
-    if (source.includes("mock")) return { text: "Demo", color: "text-orange-400" };
+    if (source.includes("sheets")) return { text: "Google Sheets", color: "text-yellow-400" };
+    if (source.includes("demo") || source.includes("mock")) return { text: "Demo Data", color: "text-orange-400" };
     return { text: source, color: "text-gray-400" };
   };
 
@@ -335,7 +336,7 @@ export default function PricesPage() {
             )}
           </div>
 
-          {/* Category Filter (Dynamic from Google Sheets) */}
+          {/* Category Filter */}
           <div className="relative" onClick={(e) => e.stopPropagation()}>
             <button 
               onClick={() => setShowCategoryDropdown(!showCategoryDropdown)}
@@ -353,25 +354,26 @@ export default function PricesPage() {
                 >
                   All Categories
                 </button>
-                {filterOptions.categories.map(cat => (
-                  <button
-                    key={cat}
-                    onClick={() => { setCategoryFilter(cat); setShowCategoryDropdown(false); }}
-                    className={`w-full px-3 py-2 text-left text-sm hover:bg-terminal-muted hover:text-white ${
-                      categoryFilter === cat ? "text-naija-green bg-naija-green/10" : "text-gray-300"
-                    }`}
-                  >
-                    {cat}
-                  </button>
-                ))}
-                {filterOptions.categories.length === 0 && (
-                  <div className="px-3 py-2 text-sm text-gray-500">Loading...</div>
+                {filterOptions.categories.length > 0 ? (
+                  filterOptions.categories.map(cat => (
+                    <button
+                      key={cat}
+                      onClick={() => { setCategoryFilter(cat); setShowCategoryDropdown(false); }}
+                      className={`w-full px-3 py-2 text-left text-sm hover:bg-terminal-muted hover:text-white ${
+                        categoryFilter === cat ? "text-naija-green bg-naija-green/10" : "text-gray-300"
+                      }`}
+                    >
+                      {cat}
+                    </button>
+                  ))
+                ) : (
+                  <div className="px-3 py-2 text-sm text-gray-500">No categories found</div>
                 )}
               </div>
             )}
           </div>
 
-          {/* State Filter (Dynamic from Google Sheets) */}
+          {/* State Filter */}
           <div className="relative" onClick={(e) => e.stopPropagation()}>
             <button 
               onClick={() => setShowStateDropdown(!showStateDropdown)}
@@ -388,25 +390,26 @@ export default function PricesPage() {
                 >
                   All States
                 </button>
-                {filterOptions.states.map(s => (
-                  <button
-                    key={s}
-                    onClick={() => { setStateFilter(s); setShowStateDropdown(false); }}
-                    className={`w-full px-3 py-2 text-left text-sm hover:bg-terminal-muted hover:text-white ${
-                      stateFilter === s ? "text-naija-green bg-naija-green/10" : "text-gray-300"
-                    }`}
-                  >
-                    {s}
-                  </button>
-                ))}
-                {filterOptions.states.length === 0 && (
-                  <div className="px-3 py-2 text-sm text-gray-500">Loading...</div>
+                {filterOptions.states.length > 0 ? (
+                  filterOptions.states.map(s => (
+                    <button
+                      key={s}
+                      onClick={() => { setStateFilter(s); setShowStateDropdown(false); }}
+                      className={`w-full px-3 py-2 text-left text-sm hover:bg-terminal-muted hover:text-white ${
+                        stateFilter === s ? "text-naija-green bg-naija-green/10" : "text-gray-300"
+                      }`}
+                    >
+                      {s}
+                    </button>
+                  ))
+                ) : (
+                  <div className="px-3 py-2 text-sm text-gray-500">No states found</div>
                 )}
               </div>
             )}
           </div>
 
-          {/* Market Filter (Dynamic from Google Sheets) */}
+          {/* Market Filter */}
           <div className="relative" onClick={(e) => e.stopPropagation()}>
             <button 
               onClick={() => setShowMarketDropdown(!showMarketDropdown)}
@@ -416,26 +419,27 @@ export default function PricesPage() {
               <ChevronDown className="w-4 h-4" />
             </button>
             {showMarketDropdown && (
-              <div className="absolute top-full mt-1 w-48 max-h-64 overflow-y-auto bg-terminal-surface border border-terminal-border rounded-lg shadow-xl z-20">
+              <div className="absolute top-full mt-1 w-56 max-h-64 overflow-y-auto bg-terminal-surface border border-terminal-border rounded-lg shadow-xl z-20">
                 <button
                   onClick={() => { setMarketFilter(""); setShowMarketDropdown(false); }}
                   className="w-full px-3 py-2 text-left text-sm text-gray-400 hover:bg-terminal-muted hover:text-white"
                 >
                   All Markets
                 </button>
-                {filterOptions.markets.map(m => (
-                  <button
-                    key={m}
-                    onClick={() => { setMarketFilter(m); setShowMarketDropdown(false); }}
-                    className={`w-full px-3 py-2 text-left text-sm hover:bg-terminal-muted hover:text-white ${
-                      marketFilter === m ? "text-naija-green bg-naija-green/10" : "text-gray-300"
-                    }`}
-                  >
-                    {m}
-                  </button>
-                ))}
-                {filterOptions.markets.length === 0 && (
-                  <div className="px-3 py-2 text-sm text-gray-500">Loading...</div>
+                {filterOptions.markets.length > 0 ? (
+                  filterOptions.markets.map(m => (
+                    <button
+                      key={m}
+                      onClick={() => { setMarketFilter(m); setShowMarketDropdown(false); }}
+                      className={`w-full px-3 py-2 text-left text-sm hover:bg-terminal-muted hover:text-white truncate ${
+                        marketFilter === m ? "text-naija-green bg-naija-green/10" : "text-gray-300"
+                      }`}
+                    >
+                      {m}
+                    </button>
+                  ))
+                ) : (
+                  <div className="px-3 py-2 text-sm text-gray-500">No markets found</div>
                 )}
               </div>
             )}
@@ -521,16 +525,17 @@ export default function PricesPage() {
       {loading && (
         <div className="flex flex-col items-center justify-center py-20">
           <Loader2 className="w-10 h-10 text-naija-green animate-spin mb-4" />
-          <p className="text-gray-400">Loading prices from Google Sheets...</p>
+          <p className="text-gray-400">Loading prices from database...</p>
         </div>
       )}
 
       {/* Error State */}
       {error && !loading && (
-        <div className="flex flex-col items-center justify-center py-20">
-          <p className="text-price-down mb-4">{error}</p>
+        <div className="flex flex-col items-center justify-center py-20 bg-terminal-surface border border-terminal-border rounded-xl">
+          <AlertCircle className="w-10 h-10 text-price-down mb-4" />
+          <p className="text-gray-400 mb-4">{error}</p>
           <button
-            onClick={() => fetchPrices(false, true)}
+            onClick={() => fetchPrices(false)}
             className="px-4 py-2 bg-naija-green/20 text-naija-green rounded-lg hover:bg-naija-green/30"
           >
             Try Again
@@ -637,7 +642,7 @@ export default function PricesPage() {
                     </td>
                     <td className="text-gray-500 text-xs">
                       <div>{formatTimeAgo(item.updated_at)}</div>
-                      <div className="text-gray-600">{item.source.split(":").pop()?.replace(/_/g, " ")}</div>
+                      <div className="text-gray-600">{item.source.replace(/_/g, " ")}</div>
                     </td>
                     <td>
                       <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all">
@@ -665,10 +670,18 @@ export default function PricesPage() {
           {/* Empty State */}
           {prices.length === 0 && (
             <div className="flex flex-col items-center justify-center py-20">
-              <p className="text-gray-400 mb-4">No prices found matching your filters</p>
-              <button onClick={clearFilters} className="text-naija-green hover:text-white">
-                Clear filters
-              </button>
+              <Database className="w-12 h-12 text-gray-600 mb-4" />
+              <p className="text-gray-400 mb-2">No prices found</p>
+              <p className="text-sm text-gray-500 mb-4">
+                {hasActiveFilters 
+                  ? "Try adjusting your filters or search query" 
+                  : "No price data available in the database"}
+              </p>
+              {hasActiveFilters && (
+                <button onClick={clearFilters} className="text-naija-green hover:text-white">
+                  Clear filters
+                </button>
+              )}
             </div>
           )}
 

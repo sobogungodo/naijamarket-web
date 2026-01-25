@@ -1,9 +1,8 @@
 // ============================================================================
 // src/app/api/prices/route.ts
 // NaijaMarket Intel - Live Prices API
-// PRIMARY: Google Sheets | BACKUP: Azure SQL | FALLBACK: Mock Data
-// Price Priority: Daily_Prices → Price_History_NBS → Validated_Prices
-// Version: 4.0.0 - Google Sheets as default database
+// PRIMARY: Azure SQL Database | BACKUP: Google Sheets | FALLBACK: Mock
+// Version: 6.0.0 - Database as primary source
 // ============================================================================
 
 import { NextRequest, NextResponse } from "next/server";
@@ -13,20 +12,6 @@ import { NextRequest, NextResponse } from "next/server";
 // ============================================================================
 
 const GOOGLE_SHEET_ID = "1n-7MXdoqvIoSHteBJaUYBmIPLjJBNtrE_jVuUxO5kr8";
-
-// Sheet names in priority order for prices
-const PRICE_SHEETS = [
-  "Daily_Prices",
-  "Price_History_NBS", 
-  "Validated_Prices",
-];
-
-// Reference sheets for filters
-const REFERENCE_SHEETS = {
-  categories: "Categories",
-  markets: "Markets",
-  states: "States_Reference",
-};
 
 // ============================================================================
 // TYPE DEFINITIONS
@@ -57,7 +42,7 @@ interface FilterOptions {
 }
 
 // ============================================================================
-// CSV PARSER
+// CSV PARSER (for Google Sheets backup)
 // ============================================================================
 
 function parseCSVLine(line: string): string[] {
@@ -81,258 +66,333 @@ function parseCSVLine(line: string): string[] {
 }
 
 // ============================================================================
-// GOOGLE SHEETS FETCHER
+// PRIMARY: FETCH FROM AZURE SQL DATABASE
 // ============================================================================
 
-async function fetchSheetAsCSV(sheetName: string): Promise<string[][]> {
-  try {
-    const csvUrl = `https://docs.google.com/spreadsheets/d/${GOOGLE_SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(sheetName)}`;
-    
-    const response = await fetch(csvUrl, {
-      next: { revalidate: 60 }, // Cache 60 seconds
-    });
+async function fetchFromDatabase(): Promise<{ prices: PriceRecord[]; filters: FilterOptions }> {
+  const prices: PriceRecord[] = [];
+  const filters: FilterOptions = { categories: [], states: [], markets: [] };
 
-    if (!response.ok) {
-      console.log(`Failed to fetch sheet: ${sheetName}`);
-      return [];
-    }
-
-    const csvText = await response.text();
-    const lines = csvText.split("\n").filter(line => line.trim());
-    
-    if (lines.length < 1) return [];
-
-    return lines.map(line => parseCSVLine(line));
-  } catch (error) {
-    console.error(`Error fetching sheet ${sheetName}:`, error);
-    return [];
-  }
-}
-
-// ============================================================================
-// FETCH FILTER OPTIONS FROM GOOGLE SHEETS
-// ============================================================================
-
-async function fetchFilterOptions(): Promise<FilterOptions> {
-  const options: FilterOptions = {
-    categories: [],
-    states: [],
-    markets: [],
-  };
-
-  // Fetch Categories
-  try {
-    const catRows = await fetchSheetAsCSV(REFERENCE_SHEETS.categories);
-    if (catRows.length > 1) {
-      const headers = catRows[0] || [];
-      const nameIdx = headers.findIndex(h => 
-        h.toLowerCase().includes("category") || h.toLowerCase().includes("name")
-      );
-      const idx = nameIdx >= 0 ? nameIdx : 0;
-      
-      for (let i = 1; i < catRows.length; i++) {
-        const row = catRows[i];
-        if (row && row[idx]) {
-          options.categories.push(row[idx]);
-        }
-      }
-    }
-  } catch (e) {
-    console.log("Could not fetch categories from sheet");
-  }
-
-  // Fetch States
-  try {
-    const stateRows = await fetchSheetAsCSV(REFERENCE_SHEETS.states);
-    if (stateRows.length > 1) {
-      const headers = stateRows[0] || [];
-      const nameIdx = headers.findIndex(h => 
-        h.toLowerCase().includes("state") || h.toLowerCase().includes("name")
-      );
-      const idx = nameIdx >= 0 ? nameIdx : 0;
-      
-      for (let i = 1; i < stateRows.length; i++) {
-        const row = stateRows[i];
-        if (row && row[idx]) {
-          options.states.push(row[idx]);
-        }
-      }
-    }
-  } catch (e) {
-    console.log("Could not fetch states from sheet");
-  }
-
-  // Fetch Markets
-  try {
-    const marketRows = await fetchSheetAsCSV(REFERENCE_SHEETS.markets);
-    if (marketRows.length > 1) {
-      const headers = marketRows[0] || [];
-      const nameIdx = headers.findIndex(h => 
-        h.toLowerCase().includes("market") || h.toLowerCase().includes("name")
-      );
-      const idx = nameIdx >= 0 ? nameIdx : 0;
-      
-      for (let i = 1; i < marketRows.length; i++) {
-        const row = marketRows[i];
-        if (row && row[idx]) {
-          options.markets.push(row[idx]);
-        }
-      }
-    }
-  } catch (e) {
-    console.log("Could not fetch markets from sheet");
-  }
-
-  // Remove duplicates
-  options.categories = [...new Set(options.categories)].filter(Boolean).sort();
-  options.states = [...new Set(options.states)].filter(Boolean).sort();
-  options.markets = [...new Set(options.markets)].filter(Boolean).sort();
-
-  return options;
-}
-
-// ============================================================================
-// FETCH PRICES FROM GOOGLE SHEETS (Priority Order)
-// ============================================================================
-
-async function fetchPricesFromSheets(): Promise<{ prices: PriceRecord[]; source: string }> {
-  // Try each sheet in priority order
-  for (const sheetName of PRICE_SHEETS) {
-    console.log(`Trying to fetch from: ${sheetName}`);
-    
-    const rows = await fetchSheetAsCSV(sheetName);
-    if (rows.length < 2) continue;
-
-    const headers = rows[0];
-    if (!headers) continue;
-
-    // Find column indices (flexible matching)
-    const findCol = (names: string[]): number => {
-      for (const name of names) {
-        const idx = headers.findIndex(h => 
-          h && h.toLowerCase().includes(name.toLowerCase())
-        );
-        if (idx >= 0) return idx;
-      }
-      return -1;
-    };
-
-    const itemIdx = findCol(["item_name", "item", "commodity"]);
-    const marketIdx = findCol(["market_name", "market"]);
-    const priceIdx = findCol(["price_naira", "price", "validated_price", "average_price"]);
-    const categoryIdx = findCol(["category", "category_name"]);
-    const stateIdx = findCol(["state", "state_name"]);
-    const unitIdx = findCol(["unit", "variant", "item_variant"]);
-    const dateIdx = findCol(["price_date", "validated_at", "created_at", "observation_date", "timestamp"]);
-    const changeIdx = findCol(["change_percent", "change", "price_change"]);
-    const trendIdx = findCol(["trend"]);
-
-    // Need at least item and price columns
-    if (itemIdx < 0 || priceIdx < 0) {
-      console.log(`Sheet ${sheetName} missing required columns (item or price)`);
-      continue;
-    }
-
-    const prices: PriceRecord[] = [];
-    
-    for (let i = 1; i < rows.length; i++) {
-      const row = rows[i];
-      if (!row) continue;
-
-      const itemName = row[itemIdx];
-      const priceStr = row[priceIdx];
-      const priceValue = parseFloat(priceStr || "0");
-
-      if (!itemName || isNaN(priceValue) || priceValue <= 0) continue;
-
-      // Calculate change
-      let change = 0;
-      if (changeIdx >= 0 && row[changeIdx]) {
-        change = parseFloat(row[changeIdx]) || 0;
-      } else if (trendIdx >= 0) {
-        const trend = row[trendIdx]?.toLowerCase();
-        if (trend === "up") change = Math.random() * 5;
-        else if (trend === "down") change = -Math.random() * 5;
-      } else {
-        change = (Math.random() - 0.5) * 6; // Random ±3%
-      }
-
-      prices.push({
-        id: `${sheetName.toLowerCase()}-${i}`,
-        item_name: itemName,
-        item_variant: unitIdx >= 0 ? row[unitIdx] || null : null,
-        category: categoryIdx >= 0 ? row[categoryIdx] || "General" : "General",
-        market_name: marketIdx >= 0 ? row[marketIdx] || "Unknown" : "Unknown",
-        state: stateIdx >= 0 ? row[stateIdx] || "Lagos" : "Lagos",
-        price_naira: priceValue,
-        change_percent: Number(change.toFixed(2)),
-        change_amount: Math.round(priceValue * change / 100),
-        low_24h: Math.round(priceValue * 0.96),
-        high_24h: Math.round(priceValue * 1.04),
-        confidence: Math.floor(80 + Math.random() * 15),
-        validators: Math.floor(2 + Math.random() * 2),
-        updated_at: dateIdx >= 0 && row[dateIdx] ? row[dateIdx] : new Date().toISOString(),
-        source: sheetName,
-      });
-    }
-
-    if (prices.length > 0) {
-      console.log(`✅ Fetched ${prices.length} prices from ${sheetName}`);
-      return { prices, source: sheetName };
-    }
-  }
-
-  return { prices: [], source: "none" };
-}
-
-// ============================================================================
-// AZURE SQL DATABASE FETCHER (BACKUP ONLY)
-// ============================================================================
-
-async function fetchFromDatabase(): Promise<PriceRecord[]> {
   try {
     const { PrismaClient } = await import("@prisma/client");
     const prisma = new PrismaClient();
 
-    const dbPrices = await prisma.approved_Prices.findMany({
-      take: 200,
-    });
+    // ========================================
+    // Fetch Filter Options from Reference Tables
+    // ========================================
+    
+    // Fetch Categories
+    try {
+      const categories = await prisma.$queryRaw`
+        SELECT DISTINCT category_name FROM Categories WHERE category_name IS NOT NULL ORDER BY category_name
+      ` as Array<{ category_name: string }>;
+      filters.categories = categories.map(c => c.category_name).filter(Boolean);
+    } catch (e) {
+      // If Categories table doesn't exist, extract from prices
+      console.log("Categories table not found, will extract from prices");
+    }
+
+    // Fetch States
+    try {
+      const states = await prisma.$queryRaw`
+        SELECT DISTINCT state_name FROM States WHERE state_name IS NOT NULL ORDER BY state_name
+      ` as Array<{ state_name: string }>;
+      filters.states = states.map(s => s.state_name).filter(Boolean);
+    } catch (e) {
+      // Try States_Reference table
+      try {
+        const states = await prisma.$queryRaw`
+          SELECT DISTINCT state FROM States_Reference WHERE state IS NOT NULL ORDER BY state
+        ` as Array<{ state: string }>;
+        filters.states = states.map(s => s.state).filter(Boolean);
+      } catch (e2) {
+        console.log("States table not found, will extract from prices");
+      }
+    }
+
+    // Fetch Markets
+    try {
+      const markets = await prisma.$queryRaw`
+        SELECT DISTINCT market_name FROM Markets WHERE market_name IS NOT NULL ORDER BY market_name
+      ` as Array<{ market_name: string }>;
+      filters.markets = markets.map(m => m.market_name).filter(Boolean);
+    } catch (e) {
+      console.log("Markets table not found, will extract from prices");
+    }
+
+    // ========================================
+    // Fetch Prices - Try multiple tables in order
+    // ========================================
+
+    // Try Daily_Prices first (most recent)
+    try {
+      const dailyPrices = await prisma.$queryRaw`
+        SELECT TOP 200
+          CAST(id AS VARCHAR(50)) as id,
+          item_name,
+          item_variant,
+          category,
+          market_name,
+          state,
+          CAST(price_naira AS FLOAT) as price_naira,
+          COALESCE(CAST(change_percent AS FLOAT), 0) as change_percent,
+          price_date as updated_at
+        FROM Daily_Prices
+        WHERE price_naira > 0
+        ORDER BY price_date DESC
+      ` as Array<Record<string, unknown>>;
+
+      if (dailyPrices.length > 0) {
+        for (const p of dailyPrices) {
+          const price = Number(p.price_naira) || 0;
+          const change = Number(p.change_percent) || (Math.random() - 0.5) * 6;
+          
+          prices.push({
+            id: `db-${p.id}`,
+            item_name: String(p.item_name || "Unknown"),
+            item_variant: p.item_variant ? String(p.item_variant) : null,
+            category: String(p.category || "General"),
+            market_name: String(p.market_name || "Unknown"),
+            state: String(p.state || "Lagos"),
+            price_naira: price,
+            change_percent: Number(change.toFixed(2)),
+            change_amount: Math.round(price * change / 100),
+            low_24h: Math.round(price * 0.96),
+            high_24h: Math.round(price * 1.04),
+            confidence: Math.floor(80 + Math.random() * 15),
+            validators: Math.floor(2 + Math.random() * 2),
+            updated_at: p.updated_at instanceof Date ? p.updated_at.toISOString() : String(p.updated_at || new Date().toISOString()),
+            source: "Daily_Prices",
+          });
+        }
+        console.log(`✅ Fetched ${prices.length} prices from Daily_Prices`);
+      }
+    } catch (e) {
+      console.log("Daily_Prices query failed, trying alternatives...");
+    }
+
+    // If no daily prices, try Price_History_NBS
+    if (prices.length === 0) {
+      try {
+        const nbsPrices = await prisma.$queryRaw`
+          SELECT TOP 200
+            ROW_NUMBER() OVER (ORDER BY observation_date DESC) as id,
+            item_name,
+            NULL as item_variant,
+            category,
+            market_name,
+            state,
+            CAST(price_naira AS FLOAT) as price_naira,
+            observation_date as updated_at
+          FROM Price_History_NBS
+          WHERE price_naira > 0
+          ORDER BY observation_date DESC
+        ` as Array<Record<string, unknown>>;
+
+        if (nbsPrices.length > 0) {
+          for (const p of nbsPrices) {
+            const price = Number(p.price_naira) || 0;
+            const change = (Math.random() - 0.5) * 6;
+            
+            prices.push({
+              id: `nbs-${p.id}`,
+              item_name: String(p.item_name || "Unknown"),
+              item_variant: null,
+              category: String(p.category || "General"),
+              market_name: String(p.market_name || "Unknown"),
+              state: String(p.state || "Lagos"),
+              price_naira: price,
+              change_percent: Number(change.toFixed(2)),
+              change_amount: Math.round(price * change / 100),
+              low_24h: Math.round(price * 0.96),
+              high_24h: Math.round(price * 1.04),
+              confidence: Math.floor(75 + Math.random() * 20),
+              validators: Math.floor(2 + Math.random() * 2),
+              updated_at: p.updated_at instanceof Date ? p.updated_at.toISOString() : String(p.updated_at || new Date().toISOString()),
+              source: "Price_History_NBS",
+            });
+          }
+          console.log(`✅ Fetched ${prices.length} prices from Price_History_NBS`);
+        }
+      } catch (e) {
+        console.log("Price_History_NBS query failed...");
+      }
+    }
+
+    // If still no prices, try Validated_Prices
+    if (prices.length === 0) {
+      try {
+        const validatedPrices = await prisma.$queryRaw`
+          SELECT TOP 200
+            CAST(id AS VARCHAR(50)) as id,
+            item_name,
+            item_variant,
+            category,
+            market_name,
+            state,
+            CAST(COALESCE(validated_price, price_naira) AS FLOAT) as price_naira,
+            validated_at as updated_at
+          FROM Validated_Prices
+          WHERE COALESCE(validated_price, price_naira) > 0
+          ORDER BY validated_at DESC
+        ` as Array<Record<string, unknown>>;
+
+        if (validatedPrices.length > 0) {
+          for (const p of validatedPrices) {
+            const price = Number(p.price_naira) || 0;
+            const change = (Math.random() - 0.5) * 6;
+            
+            prices.push({
+              id: `val-${p.id}`,
+              item_name: String(p.item_name || "Unknown"),
+              item_variant: p.item_variant ? String(p.item_variant) : null,
+              category: String(p.category || "General"),
+              market_name: String(p.market_name || "Unknown"),
+              state: String(p.state || "Lagos"),
+              price_naira: price,
+              change_percent: Number(change.toFixed(2)),
+              change_amount: Math.round(price * change / 100),
+              low_24h: Math.round(price * 0.96),
+              high_24h: Math.round(price * 1.04),
+              confidence: Math.floor(80 + Math.random() * 15),
+              validators: Math.floor(2 + Math.random() * 2),
+              updated_at: p.updated_at instanceof Date ? p.updated_at.toISOString() : String(p.updated_at || new Date().toISOString()),
+              source: "Validated_Prices",
+            });
+          }
+          console.log(`✅ Fetched ${prices.length} prices from Validated_Prices`);
+        }
+      } catch (e) {
+        console.log("Validated_Prices query failed...");
+      }
+    }
+
+    // ========================================
+    // Extract filters from prices if reference tables failed
+    // ========================================
+    if (prices.length > 0) {
+      if (filters.categories.length === 0) {
+        filters.categories = [...new Set(prices.map(p => p.category))].filter(Boolean).sort();
+      }
+      if (filters.states.length === 0) {
+        filters.states = [...new Set(prices.map(p => p.state))].filter(Boolean).sort();
+      }
+      if (filters.markets.length === 0) {
+        filters.markets = [...new Set(prices.map(p => p.market_name))].filter(Boolean).sort();
+      }
+    }
 
     await prisma.$disconnect();
 
-    if (dbPrices.length === 0) return [];
-
-    console.log(`✅ Fetched ${dbPrices.length} prices from Azure SQL (backup)`);
-
-    return dbPrices.map((p: Record<string, unknown>, index: number) => ({
-      id: `db-${p.id || index}`,
-      item_name: String(p.item_name || p.item || "Unknown"),
-      item_variant: p.unit ? String(p.unit) : null,
-      category: String(p.category || "General"),
-      market_name: String(p.market_name || p.market || "Unknown"),
-      state: String(p.state || "Lagos"),
-      price_naira: Number(p.price_naira || p.price || 0),
-      change_percent: Number(p.change_percent || 0),
-      change_amount: Number(p.change_amount || 0),
-      low_24h: Number(p.price_naira || 0) * 0.96,
-      high_24h: Number(p.price_naira || 0) * 1.04,
-      confidence: Number(p.confidence || 85),
-      validators: Number(p.validators || 3),
-      updated_at: new Date().toISOString(),
-      source: "Azure_SQL",
-    }));
-
   } catch (error) {
-    console.error("Azure SQL backup fetch error:", error);
-    return [];
+    console.error("Database fetch error:", error);
   }
+
+  return { prices, filters };
 }
 
 // ============================================================================
-// MOCK DATA GENERATOR (LAST RESORT FALLBACK)
+// BACKUP: FETCH FROM GOOGLE SHEETS
 // ============================================================================
 
-function generateMockData(): PriceRecord[] {
+async function fetchFromGoogleSheets(): Promise<{ prices: PriceRecord[]; filters: FilterOptions }> {
+  const prices: PriceRecord[] = [];
+  const filters: FilterOptions = { categories: [], states: [], markets: [] };
+
+  const sheetNames = ["Daily_Prices", "Price_History_NBS", "Validated_Prices", "Approved_Prices"];
+
+  for (const sheetName of sheetNames) {
+    try {
+      const csvUrl = `https://docs.google.com/spreadsheets/d/${GOOGLE_SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(sheetName)}`;
+      
+      const response = await fetch(csvUrl, { next: { revalidate: 60 } });
+      if (!response.ok) continue;
+
+      const csvText = await response.text();
+      const lines = csvText.split("\n").filter(line => line.trim());
+      
+      if (lines.length < 2) continue;
+
+      const firstLine = lines[0];
+      if (!firstLine) continue;
+      
+      const headers = parseCSVLine(firstLine);
+      
+      const findCol = (names: string[]): number => {
+        for (const name of names) {
+          const idx = headers.findIndex(h => h && h.toLowerCase().includes(name.toLowerCase()));
+          if (idx >= 0) return idx;
+        }
+        return -1;
+      };
+
+      const itemIdx = findCol(["item_name", "item", "commodity"]);
+      const marketIdx = findCol(["market_name", "market"]);
+      const priceIdx = findCol(["price_naira", "price", "validated_price"]);
+      const categoryIdx = findCol(["category"]);
+      const stateIdx = findCol(["state"]);
+      const unitIdx = findCol(["unit", "variant", "item_variant"]);
+      const dateIdx = findCol(["price_date", "validated_at", "observation_date", "created_at"]);
+
+      if (itemIdx < 0 || priceIdx < 0) continue;
+
+      for (let i = 1; i < lines.length && prices.length < 200; i++) {
+        const currentLine = lines[i];
+        if (!currentLine) continue;
+        
+        const row = parseCSVLine(currentLine);
+        
+        const itemName = itemIdx >= 0 ? row[itemIdx] : undefined;
+        const priceStr = priceIdx >= 0 ? row[priceIdx] : undefined;
+        const priceValue = parseFloat(priceStr || "0");
+        
+        if (!itemName || isNaN(priceValue) || priceValue <= 0) continue;
+
+        const change = (Math.random() - 0.5) * 6;
+        
+        prices.push({
+          id: `sheets-${sheetName}-${i}`,
+          item_name: itemName,
+          item_variant: unitIdx >= 0 ? row[unitIdx] || null : null,
+          category: categoryIdx >= 0 ? row[categoryIdx] || "General" : "General",
+          market_name: marketIdx >= 0 ? row[marketIdx] || "Unknown" : "Unknown",
+          state: stateIdx >= 0 ? row[stateIdx] || "Lagos" : "Lagos",
+          price_naira: priceValue,
+          change_percent: Number(change.toFixed(2)),
+          change_amount: Math.round(priceValue * change / 100),
+          low_24h: Math.round(priceValue * 0.96),
+          high_24h: Math.round(priceValue * 1.04),
+          confidence: Math.floor(75 + Math.random() * 20),
+          validators: Math.floor(2 + Math.random() * 2),
+          updated_at: dateIdx >= 0 && row[dateIdx] ? row[dateIdx] : new Date().toISOString(),
+          source: `Sheets:${sheetName}`,
+        });
+      }
+
+      if (prices.length > 0) {
+        console.log(`✅ Fetched ${prices.length} prices from Google Sheets (${sheetName})`);
+        break;
+      }
+    } catch (error) {
+      console.error(`Google Sheets fetch error (${sheetName}):`, error);
+    }
+  }
+
+  // Extract filters from prices
+  if (prices.length > 0) {
+    filters.categories = [...new Set(prices.map(p => p.category))].filter(Boolean).sort();
+    filters.states = [...new Set(prices.map(p => p.state))].filter(Boolean).sort();
+    filters.markets = [...new Set(prices.map(p => p.market_name))].filter(Boolean).sort();
+  }
+
+  return { prices, filters };
+}
+
+// ============================================================================
+// FALLBACK: GENERATE MOCK DATA
+// ============================================================================
+
+function generateMockData(): { prices: PriceRecord[]; filters: FilterOptions } {
   const items = [
     { name: "Rice (50kg)", variant: "Foreign Parboiled", category: "Grains", basePrice: 78500 },
     { name: "Beans (bag)", variant: "Brown/White", category: "Grains", basePrice: 62000 },
@@ -349,12 +409,12 @@ function generateMockData(): PriceRecord[] {
   ];
 
   const markets = [
-    { name: "Mile 12", state: "Lagos" },
-    { name: "Iddo", state: "Lagos" },
-    { name: "Kano Main", state: "Kano" },
-    { name: "Onitsha Main", state: "Anambra" },
-    { name: "Wuse", state: "FCT" },
-    { name: "Ariaria", state: "Abia" },
+    { name: "Mile 12 Market", state: "Lagos" },
+    { name: "Iddo Market", state: "Lagos" },
+    { name: "Kano Main Market", state: "Kano" },
+    { name: "Onitsha Main Market", state: "Anambra" },
+    { name: "Wuse Market", state: "FCT" },
+    { name: "Ariaria Market", state: "Abia" },
   ];
 
   const prices: PriceRecord[] = [];
@@ -381,16 +441,22 @@ function generateMockData(): PriceRecord[] {
         confidence: Math.floor(75 + Math.random() * 20),
         validators: Math.floor(2 + Math.random() * 2),
         updated_at: new Date(Date.now() - Math.random() * 3600000).toISOString(),
-        source: "Mock_Data",
+        source: "Demo_Data",
       });
     }
   }
 
-  return prices;
+  const filters: FilterOptions = {
+    categories: [...new Set(items.map(i => i.category))].sort(),
+    states: [...new Set(markets.map(m => m.state))].sort(),
+    markets: markets.map(m => m.name).sort(),
+  };
+
+  return { prices, filters };
 }
 
 // ============================================================================
-// FILTER & SORT HELPER
+// FILTER & SORT
 // ============================================================================
 
 function filterAndSort(
@@ -415,21 +481,15 @@ function filterAndSort(
   }
 
   if (category) {
-    filtered = filtered.filter(p => 
-      p.category.toLowerCase() === category.toLowerCase()
-    );
+    filtered = filtered.filter(p => p.category.toLowerCase() === category.toLowerCase());
   }
 
   if (state) {
-    filtered = filtered.filter(p => 
-      p.state.toLowerCase() === state.toLowerCase()
-    );
+    filtered = filtered.filter(p => p.state.toLowerCase() === state.toLowerCase());
   }
 
   if (market) {
-    filtered = filtered.filter(p => 
-      p.market_name.toLowerCase().includes(market.toLowerCase())
-    );
+    filtered = filtered.filter(p => p.market_name.toLowerCase().includes(market.toLowerCase()));
   }
 
   if (trend === "up") {
@@ -438,7 +498,7 @@ function filterAndSort(
     filtered = filtered.filter(p => p.change_percent < 0);
   }
 
-  // Remove duplicates (same item + market)
+  // Remove duplicates
   const seen = new Set<string>();
   filtered = filtered.filter(p => {
     const key = `${p.item_name.toLowerCase()}-${p.market_name.toLowerCase()}`;
@@ -447,7 +507,6 @@ function filterAndSort(
     return true;
   });
 
-  // Sort
   switch (sort) {
     case "price":
       filtered.sort((a, b) => b.price_naira - a.price_naira);
@@ -458,26 +517,11 @@ function filterAndSort(
     case "name":
       filtered.sort((a, b) => a.item_name.localeCompare(b.item_name));
       break;
-    case "updated":
     default:
-      filtered.sort((a, b) => 
-        new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
-      );
+      filtered.sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime());
   }
 
   return filtered;
-}
-
-// ============================================================================
-// EXTRACT FILTER OPTIONS FROM PRICES (Fallback if reference sheets fail)
-// ============================================================================
-
-function extractFiltersFromPrices(prices: PriceRecord[]): FilterOptions {
-  const categories = [...new Set(prices.map(p => p.category))].filter(Boolean).sort();
-  const states = [...new Set(prices.map(p => p.state))].filter(Boolean).sort();
-  const markets = [...new Set(prices.map(p => p.market_name))].filter(Boolean).sort();
-  
-  return { categories, states, markets };
 }
 
 // ============================================================================
@@ -497,58 +541,50 @@ export async function GET(request: NextRequest) {
   const includeFilters = searchParams.get("filters") === "true";
 
   let prices: PriceRecord[] = [];
+  let filters: FilterOptions = { categories: [], states: [], markets: [] };
   let source = "unknown";
-  let filterOptions: FilterOptions = { categories: [], states: [], markets: [] };
+
+  console.log("\n📊 Prices API Request");
+  console.log("─".repeat(40));
 
   // =========================================
-  // STEP 1: Fetch filter options from sheets
+  // STEP 1: PRIMARY - Azure SQL Database
   // =========================================
-  if (includeFilters) {
-    filterOptions = await fetchFilterOptions();
+  const dbResult = await fetchFromDatabase();
+  if (dbResult.prices.length > 0) {
+    prices = dbResult.prices;
+    filters = dbResult.filters;
+    source = "database";
+    console.log(`✅ PRIMARY: Database - ${prices.length} prices, ${filters.categories.length} categories, ${filters.states.length} states, ${filters.markets.length} markets`);
   }
 
   // =========================================
-  // STEP 2: PRIMARY - Google Sheets
-  // Priority: Daily_Prices → Price_History_NBS → Validated_Prices
-  // =========================================
-  const sheetsResult = await fetchPricesFromSheets();
-  if (sheetsResult.prices.length > 0) {
-    prices = sheetsResult.prices;
-    source = `sheets:${sheetsResult.source}`;
-  }
-
-  // =========================================
-  // STEP 3: BACKUP - Azure SQL Database
+  // STEP 2: BACKUP - Google Sheets
   // =========================================
   if (prices.length === 0) {
-    console.log("Google Sheets empty, trying Azure SQL backup...");
-    prices = await fetchFromDatabase();
-    if (prices.length > 0) {
-      source = "azure_sql_backup";
+    console.log("⚠️ Database empty, trying Google Sheets backup...");
+    const sheetsResult = await fetchFromGoogleSheets();
+    if (sheetsResult.prices.length > 0) {
+      prices = sheetsResult.prices;
+      filters = sheetsResult.filters;
+      source = "sheets_backup";
+      console.log(`✅ BACKUP: Google Sheets - ${prices.length} prices`);
     }
   }
 
   // =========================================
-  // STEP 4: FALLBACK - Mock Data
+  // STEP 3: FALLBACK - Mock Data
   // =========================================
   if (prices.length === 0) {
-    console.log("All sources failed, using mock data...");
-    prices = generateMockData();
-    source = "mock_fallback";
+    console.log("⚠️ All sources failed, using mock data...");
+    const mockResult = generateMockData();
+    prices = mockResult.prices;
+    filters = mockResult.filters;
+    source = "demo_fallback";
+    console.log(`✅ FALLBACK: Mock Data - ${prices.length} prices`);
   }
 
-  // =========================================
-  // STEP 5: Extract filters from prices if reference sheets failed
-  // =========================================
-  if (includeFilters && 
-      (filterOptions.categories.length === 0 || 
-       filterOptions.states.length === 0 || 
-       filterOptions.markets.length === 0)) {
-    const extractedFilters = extractFiltersFromPrices(prices);
-    if (filterOptions.categories.length === 0) filterOptions.categories = extractedFilters.categories;
-    if (filterOptions.states.length === 0) filterOptions.states = extractedFilters.states;
-    if (filterOptions.markets.length === 0) filterOptions.markets = extractedFilters.markets;
-  }
+  console.log("─".repeat(40));
 
   // Apply filters and sorting
   const filtered = filterAndSort(prices, search, category, state, market, trend, sort);
@@ -567,9 +603,9 @@ export async function GET(request: NextRequest) {
     timestamp: new Date().toISOString(),
   };
 
-  // Include filter options if requested
-  if (includeFilters) {
-    response.filters = filterOptions;
+  // Always include filters
+  if (includeFilters || true) { // Always include for dropdowns
+    response.filters = filters;
   }
 
   return NextResponse.json(response);
