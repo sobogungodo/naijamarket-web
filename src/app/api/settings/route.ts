@@ -102,7 +102,7 @@ function getDefaultSettings(user?: any): UserSettings {
       tier: tier,
       status: "active",
       expiresAt: null,
-      features: TIER_FEATURES[tier] || TIER_FEATURES.FREE,
+      features: TIER_FEATURES[tier] ?? TIER_FEATURES.FREE ?? [],
     },
     notifications: {
       emailAlerts: true,
@@ -250,7 +250,7 @@ export async function GET(): Promise<NextResponse> {
           subscription: { 
             ...defaults.subscription, 
             tier: user.subscription_tier?.toUpperCase() || defaults.subscription.tier,
-            features: TIER_FEATURES[user.subscription_tier?.toUpperCase() || "FREE"] || defaults.subscription.features,
+            features: TIER_FEATURES[user.subscription_tier?.toUpperCase() || "FREE"] ?? defaults.subscription.features,
           },
           notifications: { ...defaults.notifications, ...savedSettings.notifications },
           priceAlerts: { ...defaults.priceAlerts, ...savedSettings.priceAlerts },
@@ -336,7 +336,7 @@ export async function PUT(request: NextRequest): Promise<NextResponse> {
 
     // Refresh subscription info from database
     updatedSettings.subscription.tier = user.subscription_tier?.toUpperCase() || "FREE";
-    updatedSettings.subscription.features = TIER_FEATURES[updatedSettings.subscription.tier] || TIER_FEATURES.FREE;
+    updatedSettings.subscription.features = TIER_FEATURES[updatedSettings.subscription.tier] ?? TIER_FEATURES.FREE ?? [];
     updatedSettings.security.twoFactorEnabled = user.two_factor_enabled || false;
 
     return NextResponse.json({
