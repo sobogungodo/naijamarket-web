@@ -31,7 +31,6 @@ import {
   DollarSign,
   Shield,
   Key,
-  Smartphone,
   LogOut,
   Trash2,
   Download,
@@ -47,7 +46,6 @@ import {
   Sun,
   Monitor,
   Lock,
-  Unlock,
   Activity,
   Database,
   UserX,
@@ -57,6 +55,7 @@ import {
   Camera,
   Edit3,
 } from "lucide-react";
+import TwoFactorAuth from "@/components/TwoFactorAuth";
 
 // ============================================================================
 // TYPE DEFINITIONS
@@ -462,33 +461,6 @@ export default function SettingsPage() {
       }
     } catch {
       setMessage({ type: "error", text: "Failed to change password" });
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  // Toggle 2FA
-  const toggle2FA = async () => {
-    try {
-      setSaving(true);
-      const action = settings?.security.twoFactorEnabled ? "disable2FA" : "enable2FA";
-      
-      const response = await fetch("/api/settings", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action }),
-      });
-
-      const result = await response.json();
-
-      if (result.success) {
-        setMessage({ type: "success", text: result.message });
-        fetchSettings();
-      } else {
-        setMessage({ type: "error", text: result.error });
-      }
-    } catch {
-      setMessage({ type: "error", text: "Failed to update 2FA settings" });
     } finally {
       setSaving(false);
     }
@@ -1394,45 +1366,7 @@ export default function SettingsPage() {
                 </div>
 
                 {/* Two-Factor Authentication */}
-                <div className="bg-[#1a1a1a] border border-gray-800 rounded-xl p-6">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-4">
-                      <div className={`p-3 rounded-lg ${
-                        settings.security.twoFactorEnabled ? "bg-emerald-900/50" : "bg-gray-800"
-                      }`}>
-                        <Smartphone className={`w-6 h-6 ${
-                          settings.security.twoFactorEnabled ? "text-emerald-400" : "text-gray-500"
-                        }`} />
-                      </div>
-                      <div>
-                        <h3 className="font-semibold">Two-Factor Authentication</h3>
-                        <p className="text-sm text-gray-400">
-                          {settings.security.twoFactorEnabled 
-                            ? "Your account is protected with 2FA" 
-                            : "Add an extra layer of security"}
-                        </p>
-                      </div>
-                    </div>
-                    <button
-                      onClick={toggle2FA}
-                      disabled={saving}
-                      className={`px-4 py-2 rounded-lg flex items-center gap-2 ${
-                        settings.security.twoFactorEnabled
-                          ? "bg-red-600 hover:bg-red-700"
-                          : "bg-emerald-600 hover:bg-emerald-700"
-                      }`}
-                    >
-                      {saving ? (
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                      ) : settings.security.twoFactorEnabled ? (
-                        <Unlock className="w-4 h-4" />
-                      ) : (
-                        <Lock className="w-4 h-4" />
-                      )}
-                      {settings.security.twoFactorEnabled ? "Disable" : "Enable"}
-                    </button>
-                  </div>
-                </div>
+                <TwoFactorAuth />
 
                 {/* Active Sessions */}
                 <div className="bg-[#1a1a1a] border border-gray-800 rounded-xl p-6">

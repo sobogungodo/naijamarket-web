@@ -66,6 +66,9 @@ model Consumers {
   phone_verified             Boolean?  @default(false)
   email_verified             Boolean?  @default(false)
   phone                      String?   @db.VarChar(20)
+  two_factor_enabled    Boolean   @default(false)
+  two_factor_method     String?   @db.NVarChar(20)
+  two_factor_enabled_at DateTime?
 
   @@index([phone_number])
   @@index([email])
