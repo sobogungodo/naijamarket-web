@@ -10,6 +10,89 @@ import { getServerSession } from "next-auth";
 import sql from "mssql";
 
 // ============================================================================
+// DATABASE CONFIGURATION
+// ============================================================================
+
+const dbConfig: sql.config = {
+  user: process.env.DATABASE_USER,
+  password: process.env.DATABASE_PASSWORD,
+  database: process.env.DATABASE_NAME,
+  server: process.env.DATABASE_SERVER || "",
+  options: {
+    encrypt: true,
+    trustServerCertificate: false,
+  },
+};
+
+// ============================================================================
+// GET USER TIER FROM DATABASE
+// ============================================================================
+
+async function getUserTierFromDB(session: any): Promise<string> {
+  if (!session?.user) return "FREE";
+  
+  const { email, name, phone } = session.user as any;
+  
+  try {
+    const pool = await sql.connect(dbConfig);
+    
+    // Strategy 1: Try by email
+    if (email) {
+      const result = await pool.request()
+        .input("email", sql.NVarChar, email)
+        .query(`
+          SELECT subscription_tier 
+          FROM Consumers 
+          WHERE email = @email
+        `);
+      
+      if (result.recordset.length > 0) {
+        return (result.recordset[0].subscription_tier || "FREE").toString().toUpperCase();
+      }
+    }
+    
+    // Strategy 2: Try by phone (if in session)
+    if (phone) {
+      const result = await pool.request()
+        .input("phone", sql.NVarChar, phone)
+        .query(`
+          SELECT subscription_tier 
+          FROM Consumers 
+          WHERE phone_number = @phone
+        `);
+      
+      if (result.recordset.length > 0) {
+        return (result.recordset[0].subscription_tier || "FREE").toString().toUpperCase();
+      }
+    }
+    
+    // Strategy 3: Extract phone suffix from name like "User 5952"
+    if (name && name.startsWith("User ")) {
+      const phoneSuffix = name.replace("User ", "");
+      if (phoneSuffix && /^\d{4,}$/.test(phoneSuffix)) {
+        const result = await pool.request()
+          .query(`
+            SELECT TOP 1 subscription_tier 
+            FROM Consumers 
+            WHERE phone_number LIKE '%${phoneSuffix}'
+            ORDER BY created_at DESC
+          `);
+        
+        if (result.recordset.length > 0) {
+          return (result.recordset[0].subscription_tier || "FREE").toString().toUpperCase();
+        }
+      }
+    }
+    
+    console.log("[Reports] User not found. Session:", JSON.stringify(session.user));
+    return "FREE";
+  } catch (error) {
+    console.error("[Reports] Error fetching tier from DB:", error);
+    return "FREE";
+  }
+}
+
+// ============================================================================
 // TYPE DEFINITIONS
 // ============================================================================
 
@@ -686,8 +769,8 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   const searchParams = request.nextUrl.searchParams;
   const action = searchParams.get("action");
 
-  // Get user tier
-  const userTier = ((session?.user as { tier?: string })?.tier || "FREE").toUpperCase();
+  // Get user tier from database (since session doesn't include it)
+  const userTier = await getUserTierFromDB(session);
 
   // Check access
   if (!canAccessReports(userTier)) {
@@ -755,8 +838,8 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
 export async function POST(request: NextRequest): Promise<NextResponse> {
   const session = await getServerSession();
 
-  // Get user tier
-  const userTier = ((session?.user as { tier?: string })?.tier || "FREE").toUpperCase();
+  // Get user tier from database (since session doesn't include it)
+  const userTier = await getUserTierFromDB(session);
 
   // Check access
   if (!canAccessReports(userTier)) {
