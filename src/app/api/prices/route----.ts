@@ -1,13 +1,13 @@
 // ============================================================================
 // src/app/api/prices/route.ts
 // NaijaMarket Intel - Live Prices API
-// Version: 8.2.0 - Fixed for NVARCHAR category_id (CAT001, CAT002, etc.)
+// Version: 8.1.0 - SUPER FAST with Summary Table
 // ============================================================================
 
 import { NextRequest, NextResponse } from "next/server";
 
 // ============================================================================
-// TYPES
+// TYPES & CONSTANTS
 // ============================================================================
 
 interface PriceRecord {
@@ -36,38 +36,11 @@ interface FilterOptions {
   markets: string[];
 }
 
-// Category mapping - supports BOTH integer and string IDs
-const CATEGORY_MAP: Record<string, string> = {
-  // Integer IDs (as strings)
-  "1": "Grains & Cereals",
-  "2": "Tubers",
-  "3": "Vegetables",
-  "4": "Fruits",
-  "5": "Oils & Fats",
-  "6": "Protein",
-  "7": "Dairy",
-  "8": "Sweeteners",
-  "9": "Beverages",
-  "10": "Building Materials",
-  "11": "Livestock",
-  "12": "Fish & Seafood",
-  "13": "Condiments",
-  "14": "Processed Foods",
-  // String IDs (CAT001, CAT002, etc.)
-  "CAT001": "Grains & Cereals",
-  "CAT002": "Tubers",
-  "CAT003": "Vegetables",
-  "CAT004": "Fruits",
-  "CAT005": "Oils & Fats",
-  "CAT006": "Protein",
-  "CAT007": "Dairy",
-  "CAT008": "Sweeteners",
-  "CAT009": "Beverages",
-  "CAT010": "Building Materials",
-  "CAT011": "Livestock",
-  "CAT012": "Fish & Seafood",
-  "CAT013": "Condiments",
-  "CAT014": "Processed Foods",
+const CATEGORY_MAP: Record<number, string> = {
+  1: "Grains & Cereals", 2: "Tubers", 3: "Vegetables", 4: "Fruits",
+  5: "Oils & Fats", 6: "Protein", 7: "Dairy", 8: "Sweeteners",
+  9: "Beverages", 10: "Building Materials", 11: "Livestock",
+  12: "Fish & Seafood", 13: "Condiments", 14: "Processed Foods",
 };
 
 // ============================================================================
@@ -82,9 +55,7 @@ function generateMockData(): { prices: PriceRecord[]; filters: FilterOptions } {
     { name: "Garri", variant: "White 50kg", category: "Tubers", basePrice: 45000 },
     { name: "Yam", variant: "Single Tuber", category: "Tubers", basePrice: 2500 },
     { name: "Palm Oil", variant: "25 Litres", category: "Oils & Fats", basePrice: 45000 },
-    { name: "Groundnut Oil", variant: "25 Litres", category: "Oils & Fats", basePrice: 55000 },
     { name: "Tomatoes", variant: "Big Basket", category: "Vegetables", basePrice: 35000 },
-    { name: "Pepper", variant: "Big Basket", category: "Vegetables", basePrice: 28000 },
     { name: "Onions", variant: "Big Bag", category: "Vegetables", basePrice: 85000 },
     { name: "Chicken", variant: "Whole (1kg)", category: "Protein", basePrice: 5500 },
     { name: "Beef", variant: "1kg", category: "Protein", basePrice: 4800 },
@@ -152,6 +123,7 @@ async function fetchFromSummaryTable(): Promise<{ prices: PriceRecord[]; filters
     const { PrismaClient } = await import("@prisma/client");
     const prisma = new PrismaClient();
 
+    // This query should be < 100ms on the summary table
     const data = await prisma.$queryRaw`
       SELECT TOP 500
         id,
@@ -180,16 +152,12 @@ async function fetchFromSummaryTable(): Promise<{ prices: PriceRecord[]; filters
       const price = Number(p.price_naira) || 0;
       const prevPrice = Number(p.previous_price) || price;
       const changePercent = Number(p.price_change_pct) || 0;
-      
-      // Handle both integer and string category IDs
-      const categoryId = String(p.category_id || "");
-      const categoryName = CATEGORY_MAP[categoryId] || "General";
 
       return {
         id: `lps-${p.id}`,
         item_name: String(p.item_name || "Unknown"),
         item_variant: p.unit || null,
-        category: categoryName,
+        category: CATEGORY_MAP[Number(p.category_id)] || "General",
         market_name: String(p.market_name || "Unknown"),
         state: String(p.state || "Lagos"),
         price_naira: price,
@@ -222,7 +190,7 @@ async function fetchFromSummaryTable(): Promise<{ prices: PriceRecord[]; filters
 }
 
 // ============================================================================
-// SLOW FALLBACK: Query Daily_Prices
+// SLOW FALLBACK: Query Daily_Prices with optimized query
 // ============================================================================
 
 async function fetchFromDailyPrices(): Promise<{ prices: PriceRecord[]; filters: FilterOptions; success: boolean }> {
@@ -230,6 +198,7 @@ async function fetchFromDailyPrices(): Promise<{ prices: PriceRecord[]; filters:
     const { PrismaClient } = await import("@prisma/client");
     const prisma = new PrismaClient();
 
+    // Optimized query - only last 2 days, with NOLOCK
     const data = await prisma.$queryRaw`
       SELECT TOP 300
         price_id,
@@ -256,6 +225,7 @@ async function fetchFromDailyPrices(): Promise<{ prices: PriceRecord[]; filters:
       return { prices: [], filters: { categories: [], states: [], markets: [] }, success: false };
     }
 
+    // Deduplicate client-side
     const seen = new Set<string>();
     const prices: PriceRecord[] = [];
 
@@ -267,16 +237,12 @@ async function fetchFromDailyPrices(): Promise<{ prices: PriceRecord[]; filters:
       const price = Number(p.price_naira) || 0;
       const prevPrice = Number(p.previous_price) || price;
       const changePercent = Number(p.price_change_pct) || 0;
-      
-      // Handle both integer and string category IDs
-      const categoryId = String(p.category_id || "");
-      const categoryName = CATEGORY_MAP[categoryId] || "General";
 
       prices.push({
         id: `dp-${p.price_id}`,
         item_name: String(p.item_name || "Unknown"),
         item_variant: p.unit || null,
-        category: categoryName,
+        category: CATEGORY_MAP[Number(p.category_id)] || "General",
         market_name: String(p.market_name || "Unknown"),
         state: String(p.state || "Lagos"),
         price_naira: price,
@@ -370,7 +336,7 @@ export async function GET(request: NextRequest) {
     let filters: FilterOptions = { categories: [], states: [], markets: [] };
     let source = "Demo_Data";
 
-    // Try Summary Table first (fastest)
+    // STRATEGY 1: Try Summary Table first (fastest - < 100ms)
     const summaryResult = await fetchFromSummaryTable();
     if (summaryResult.success) {
       prices = summaryResult.prices;
@@ -378,7 +344,7 @@ export async function GET(request: NextRequest) {
       source = "Latest_Prices_Summary";
     }
 
-    // Fallback to Daily_Prices
+    // STRATEGY 2: Try Daily_Prices with date filter (slower but still fast with indexes)
     if (prices.length < 10) {
       const dailyResult = await fetchFromDailyPrices();
       if (dailyResult.success) {
@@ -388,7 +354,7 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Final fallback to mock data
+    // STRATEGY 3: Mock data fallback (guaranteed)
     if (prices.length < 10) {
       const mock = generateMockData();
       prices = mock.prices;
@@ -396,6 +362,7 @@ export async function GET(request: NextRequest) {
       source = "Demo_Data";
     }
 
+    // Apply client-side filters
     const filtered = filterAndSort(prices, search, category, state, market, trend, sort);
     const limited = filtered.slice(0, limit);
 
