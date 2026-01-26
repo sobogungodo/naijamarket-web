@@ -7,91 +7,87 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// ============================================================================
-// CORE MODELS - All have primary keys and are usable by Prisma
-// ============================================================================
-
 model Consumers {
-  consumer_id                String    @id @db.NVarChar(50)
-  phone_number               String?   @db.NVarChar(20)
-  email                      String?   @unique @db.NVarChar(255)
-  password_hash              String?   @db.NVarChar(255)
-  preferred_language         String?   @db.NVarChar(50)
-  first_name                 String?   @db.NVarChar(50)
-  last_name                  String?   @db.NVarChar(50)
-  full_name                  String?   @db.NVarChar(50)
-  gender                     String?   @db.NVarChar(50)
-  age_range                  String?   @db.NVarChar(255)
-  registration_date          DateTime? @db.Date
-  registration_source        String?   @db.NVarChar(50)
-  subscription_tier          String?   @db.NVarChar(50)
-  subscription_start         String?   @db.NVarChar(255)
-  subscription_end           String?   @db.NVarChar(255)
-  grace_period_end           String?   @db.NVarChar(255)
-  pending_downgrade_tier     String?   @db.NVarChar(255)
-  downgrade_effective_date   DateTime? @db.Date
-  auto_renew                 String?   @db.NVarChar(255)
+  consumer_id                String            @id(map: "PK_Consumers") @db.NVarChar(50)
+  phone_number               String?           @db.NVarChar(20)
+  preferred_language         String?           @db.NVarChar(50)
+  first_name                 String?           @db.NVarChar(50)
+  last_name                  String?           @db.NVarChar(50)
+  full_name                  String?           @db.NVarChar(50)
+  gender                     String?           @db.NVarChar(50)
+  age_range                  String?           @db.NVarChar(255)
+  registration_date          DateTime?         @db.Date
+  registration_source        String?           @db.NVarChar(50)
+  subscription_tier          String?           @db.NVarChar(50)
+  subscription_start         String?           @db.NVarChar(255)
+  subscription_end           String?           @db.NVarChar(255)
+  grace_period_end           String?           @db.NVarChar(255)
+  pending_downgrade_tier     String?           @db.NVarChar(255)
+  downgrade_effective_date   DateTime?         @db.Date
+  auto_renew                 String?           @db.NVarChar(255)
   daily_query_limit          Int?
   daily_queries_used         Boolean?
   weekly_queries_used        Boolean?
-  weekly_queries_reset       String?   @db.NVarChar(255)
+  weekly_queries_reset       String?           @db.NVarChar(255)
   queries_today              Boolean?
   queries_this_week          Boolean?
   total_queries              Int?
-  last_query_date            DateTime? @db.Date
-  favorite_markets           String?   @db.NVarChar(50)
-  favorite_items             String?   @db.NVarChar(255)
+  last_query_date            DateTime?         @db.Date
+  favorite_markets           String?           @db.NVarChar(50)
+  favorite_items             String?           @db.NVarChar(255)
   max_markets                Int?
-  favorite_markets_2         String?   @db.NVarChar(50)
+  favorite_markets_2         String?           @db.NVarChar(50)
   queries_remaining          Int?
-  account_status             String?   @db.NVarChar(50)
+  account_status             String?           @db.NVarChar(50)
   last_active_at             DateTime?
   created_at                 DateTime?
-  updated_at                 DateTime? @updatedAt
-  referred_by                String?   @db.NVarChar(255)
-  referral_code              String?   @db.NVarChar(255)
+  updated_at                 DateTime?         @updatedAt
+  referred_by                String?           @db.NVarChar(255)
+  referral_code              String?           @db.NVarChar(255)
   daily_abandon_count        Int?
-  last_abandon_date          DateTime? @db.Date
-  abandon_locked_until       String?   @db.NVarChar(255)
-  registration_blocked_until String?   @db.NVarChar(255)
-  notes                      String?   @db.NVarChar(255)
-  date_of_birth              DateTime? @db.Date
-  age                        String?   @db.NVarChar(255)
-  city                       String?   @db.NVarChar(50)
-  state                      String?   @db.NVarChar(50)
+  last_abandon_date          DateTime?         @db.Date
+  abandon_locked_until       String?           @db.NVarChar(255)
+  registration_blocked_until String?           @db.NVarChar(255)
+  notes                      String?           @db.NVarChar(255)
+  date_of_birth              DateTime?         @db.Date
+  age                        String?           @db.NVarChar(255)
+  city                       String?           @db.NVarChar(50)
+  state                      String?           @db.NVarChar(50)
   max_alerts                 Boolean?
   tc_accepted                Boolean?
   tc_accepted_at             DateTime?
   tc_version                 Boolean?
-  phone_verified             Boolean?  @default(false)
-  email_verified             Boolean?  @default(false)
-  phone                      String?   @db.VarChar(20)
-  settings_json         String?   @db.NVarChar(Max)
-  two_factor_enabled    Boolean   @default(false) @map("two_factor_enabled")
-  two_factor_method     String?   @map("two_factor_method") @db.NVarChar(20)
-  two_factor_enabled_at DateTime? @map("two_factor_enabled_at")
-
-  @@index([phone_number])
-  @@index([email])
+  phone_verified             Boolean?          @default(false, map: "DF__Consumers__phone__076CEECC")
+  email_verified             Boolean?          @default(false, map: "DF__Consumers__email__08611305")
+  phone                      String?           @db.VarChar(20)
+  email                      String?           @db.NVarChar(255)
+  password_hash              String?           @db.NVarChar(255)
+  subscription_start_date    DateTime?
+  subscription_end_date      DateTime?
+  two_factor_enabled         Boolean           @default(false, map: "DF__Consumers__two_f__158603F9") @map("two_factor_enabled")
+  two_factor_method          String?           @map("two_factor_method") @db.NVarChar(20)
+  two_factor_enabled_at      DateTime?         @map("two_factor_enabled_at")
+  settings_json              String?           @db.NVarChar(Max)
+  Consumer_Addons            Consumer_Addons[]
 }
 
 model OTP_Codes {
-  id          Int       @id @default(autoincrement())
+  id          Int       @id(map: "PK__OTP_Code__3213E83F59514465") @default(autoincrement())
   identifier  String    @db.NVarChar(255)
   type        String    @db.VarChar(20)
   code        String    @db.VarChar(6)
-  attempts    Int?      @default(0)
-  verified    Boolean?  @default(false)
+  attempts    Int?      @default(0, map: "DF__OTP_Codes__attem__02A839AF")
+  verified    Boolean?  @default(false, map: "DF__OTP_Codes__verif__039C5DE8")
   verified_at DateTime?
   expires_at  DateTime
-  created_at  DateTime? @default(now())
+  created_at  DateTime? @default(now(), map: "DF__OTP_Codes__creat__04908221")
 
-  @@index([expires_at])
-  @@index([identifier, type])
+  @@index([expires_at], map: "IX_OTP_Expires")
+  @@index([identifier, type], map: "IX_OTP_Identifier")
 }
 
 model Approved_Prices {
-  price_id             String    @id @db.VarChar(50)
+  price_id             String    @id(map: "PK__Approved__1681726DF2AAC986") @db.VarChar(50)
   submission_id        String?   @db.VarChar(50)
   state                String?   @db.NVarChar(100)
   market_name          String?   @db.NVarChar(200)
@@ -104,7 +100,7 @@ model Approved_Prices {
   brand_id             String?   @db.VarChar(20)
   price                Decimal?  @db.Decimal(18, 2)
   unit                 String?   @db.VarChar(50)
-  currency             String?   @default("NGN") @db.VarChar(10)
+  currency             String?   @default("NGN", map: "DF__Approved___curre__7ED7A8CB") @db.VarChar(10)
   submission_date      DateTime? @db.DateTime
   validated_at         DateTime? @db.DateTime
   validation_status    String?   @db.VarChar(30)
@@ -125,15 +121,15 @@ model Approved_Prices {
   price_trend          String?   @db.VarChar(10)
   data_source          String?   @db.VarChar(50)
   confidence_score     Int?
-  is_outlier           Boolean?  @default(false)
+  is_outlier           Boolean?  @default(false, map: "DF__Approved___is_ou__7FCBCD04")
   notes                String?   @db.NVarChar(Max)
 
-  @@index([item_id])
-  @@index([market_id])
+  @@index([item_id], map: "IX_Approved_Prices_item")
+  @@index([market_id], map: "IX_Approved_Prices_market")
 }
 
 model Markets {
-  market_id         String    @id @db.NVarChar(50)
+  market_id         String    @id(map: "PK_Markets") @db.NVarChar(50)
   region_id         String?   @db.NVarChar(50)
   market_name       String?   @db.NVarChar(50)
   state             String?   @db.NVarChar(50)
@@ -144,21 +140,21 @@ model Markets {
   status            String?   @db.NVarChar(50)
   created_at        DateTime?
   coordinate_source String?   @db.NVarChar(50)
-
-  @@index([state])
+  PowerAppsId__     String?   @map("__PowerAppsId__") @db.NVarChar(50)
 }
 
 model Categories {
-  category_id   String    @id @db.NVarChar(50)
+  category_id   String    @id(map: "PK_Categories") @db.NVarChar(50)
   category_name String?   @db.NVarChar(50)
   description   String?   @db.NVarChar(100)
   status        String?   @db.NVarChar(50)
   display_order Int?
   created_at    DateTime?
+  PowerAppsId__ String?   @map("__PowerAppsId__") @db.NVarChar(50)
 }
 
 model Items_Catalog {
-  item_id               String    @id @db.NVarChar(50)
+  item_id               String    @id(map: "PK_Items_Catalog") @db.NVarChar(50)
   item_name             String?   @db.NVarChar(50)
   category_id           String?   @db.NVarChar(50)
   Unit                  String?   @db.NVarChar(50)
@@ -171,12 +167,11 @@ model Items_Catalog {
   min_price             Decimal?  @db.Decimal(18, 2)
   max_price             Decimal?  @db.Decimal(18, 2)
   created_at            DateTime?
-
-  @@index([category_id])
+  PowerAppsId__         String?   @map("__PowerAppsId__") @db.NVarChar(50)
 }
 
 model Brands {
-  brand_id          String    @id @db.NVarChar(50)
+  brand_id          String    @id(map: "PK_Brands") @db.NVarChar(50)
   brand_name        String?   @db.NVarChar(50)
   category_id       String?   @db.NVarChar(50)
   category          String?   @db.NVarChar(50)
@@ -184,12 +179,10 @@ model Brands {
   description       String?   @db.NVarChar(50)
   status            String?   @db.NVarChar(50)
   created_at        DateTime?
-
-  @@index([category_id])
 }
 
 model Subscription_Tiers {
-  tier_id                  String   @id @db.NVarChar(50)
+  tier_id                  String   @id(map: "PK_Subscription_Tiers") @db.NVarChar(50)
   tier_name                String?  @db.NVarChar(50)
   tier_rank                Int?
   price_ngn                Decimal? @db.Decimal(18, 2)
@@ -211,8 +204,7 @@ model Subscription_Tiers {
 }
 
 model Price_History_NBS {
-  id                 Int       @id @default(autoincrement())
-  history_id         String?   @db.NVarChar(50)
+  history_id         String    @db.NVarChar(50)
   item_id            String?   @db.NVarChar(50)
   item_name_nbs      String?   @db.NVarChar(50)
   item_name_standard String?   @db.NVarChar(50)
@@ -228,46 +220,38 @@ model Price_History_NBS {
   variation_pct      Decimal?  @db.Decimal(6, 2)
   unit               String?   @db.NVarChar(50)
   year               Int?
-  month              Int?
+  month              Boolean?
   observation_date   DateTime? @db.Date
   data_source        String?   @db.NVarChar(50)
   import_batch       String?   @db.NVarChar(50)
   created_at         DateTime?
-
-  @@index([item_id])
-  @@index([market_id])
-  @@index([observation_date])
+  id                 Int       @id(map: "PK_Price_History_NBS") @default(autoincrement())
 }
 
 model Bank_Codes {
-  bank_id   Int      @id @default(autoincrement())
+  bank_id   Int?
   bank_name String?  @db.NVarChar(50)
   bank_code Int?
   bank_type String?  @db.NVarChar(50)
   is_active Boolean?
+  id        Int      @id(map: "PK_Bank_Codes") @default(autoincrement())
 }
 
 model Export_History {
-  export_id    String    @id @db.VarChar(50)
-  phone_number String?   @db.VarChar(20)
-  consumer_id  String?   @db.VarChar(50)
-  export_type  String?   @db.VarChar(30)
-  format       String?   @db.VarChar(10)
-  query_params String?   @db.NVarChar(Max)
-  markets      String?   @db.NVarChar(Max)
-  items        String?   @db.NVarChar(Max)
-  date_range   String?   @db.VarChar(50)
-  file_url     String?   @db.NVarChar(500)
-  status       String?   @default("COMPLETED") @db.VarChar(20)
-  row_count    Int?      @default(0)
-  file_size_kb Int?      @default(0)
-  created_at   DateTime? @default(now())
+  export_id     String    @id(map: "PK__Export_H__323057CF3979F411") @db.VarChar(50)
+  phone_number  String    @db.VarChar(20)
+  export_type   String    @db.VarChar(50)
+  export_format String    @db.VarChar(10)
+  date_range    String?   @db.VarChar(20)
+  row_count     Int?      @default(0, map: "DF__Export_Hi__row_c__7B3C2211")
+  file_size_kb  Int?      @default(0, map: "DF__Export_Hi__file___7C30464A")
+  created_at    DateTime? @default(now(), map: "DF__Export_Hi__creat__7D246A83")
 
-  @@index([phone_number])
+  @@index([phone_number], map: "IX_Export_History_phone")
 }
 
 model Blacklist {
-  blacklist_id      String    @id @db.NVarChar(50)
+  blacklist_id      String    @id(map: "PK_Blacklist") @db.NVarChar(50)
   type              String?   @db.NVarChar(50)
   value             Int?
   reason            String?   @db.NVarChar(50)
@@ -281,13 +265,9 @@ model Blacklist {
   notes             String?   @db.NVarChar(50)
 }
 
-// ============================================================================
-// SESSION MODELS - Using session_id as primary key
-// ============================================================================
-
 model Consumer_Query_Sessions {
-  session_id                   String    @id @db.NVarChar(50)
   Consumer_id                  String?   @db.NVarChar(50)
+  session_id                   String    @id(map: "PK_Consumer_Query_Sessions") @db.NVarChar(50)
   phone_number                 String?   @db.NVarChar(20)
   session_status               String?   @db.NVarChar(50)
   current_step                 String?   @db.NVarChar(50)
@@ -321,12 +301,10 @@ model Consumer_Query_Sessions {
   last_updated                 DateTime?
   selected_region              String?   @db.NVarChar(255)
   selected_region_code         String?   @db.NVarChar(255)
-
-  @@index([phone_number])
 }
 
 model Consumer_Registration_Sessions {
-  session_id         String    @id @db.NVarChar(50)
+  session_id         String    @id(map: "PK_Consumer_Registration_Sessions") @db.NVarChar(50)
   phone_number       String?   @db.NVarChar(20)
   preferred_language String?   @db.NVarChar(50)
   current_step       String?   @db.NVarChar(50)
@@ -348,33 +326,2179 @@ model Consumer_Registration_Sessions {
   payment_ref        String?   @db.NVarChar(50)
   payment_provider   String?   @db.NVarChar(255)
   current_tier       String?   @db.NVarChar(50)
-
-  @@index([phone_number])
 }
 
-// ============================================================================
-// LOG MODELS - Using auto-increment ID
-// ============================================================================
-
 model Message_Log {
-  id              Int       @id @default(autoincrement())
   timestamp       DateTime?
   phone_number    String?   @db.NVarChar(20)
   message_body    String?   @db.NVarChar(255)
   response_length String?   @db.NVarChar(255)
   status          String?   @db.NVarChar(255)
-
-  @@index([phone_number])
+  id              Int       @id(map: "PK_Message_Log") @default(autoincrement())
 }
 
 model Error_Log {
-  id            Int       @id @default(autoincrement())
   timestamp     DateTime?
   phone_number  String?   @db.NVarChar(20)
   message_body  String?   @db.NVarChar(255)
   status_code   String?   @db.NVarChar(255)
   error_details String?   @db.NVarChar(255)
   error_type    String?   @db.NVarChar(255)
+  id            Int       @id(map: "PK_Error_Log") @default(autoincrement())
+}
 
-  @@index([phone_number])
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model Column_Documentation {
+  Sheet       String? @db.NVarChar(50)
+  Column      String? @db.NVarChar(50)
+  Data_Type   String? @map("Data Type") @db.NVarChar(50)
+  Required    String? @db.NVarChar(50)
+  Description String? @db.NVarChar(50)
+  Example     String? @db.NVarChar(50)
+
+  @@map("_Column_Documentation")
+  @@ignore
+}
+
+model Addon_Products {
+  addon_code    String   @id(map: "PK__Addon_Pr__816D00DD1C856B16") @db.VarChar(50)
+  addon_name    String   @db.NVarChar(100)
+  description   String   @db.NVarChar(500)
+  weekly_price  Decimal? @db.Decimal(10, 2)
+  monthly_price Decimal? @db.Decimal(10, 2)
+  is_active     Boolean  @default(true, map: "DF__Addon_Pro__is_ac__2E86BBED")
+  created_at    DateTime @default(now(), map: "DF__Addon_Pro__creat__2F7AE026")
+}
+
+model API_Keys {
+  key_id                String    @id(map: "PK__API_Keys__97DF9ACD8DF07217") @db.VarChar(50)
+  phone_number          String    @db.VarChar(20)
+  key_name              String    @db.VarChar(100)
+  key_hash              String    @db.VarChar(64)
+  key_prefix            String    @db.VarChar(20)
+  status                String?   @default("active", map: "DF__API_Keys__status__739B0049") @db.VarChar(20)
+  request_count         Int?      @default(0, map: "DF__API_Keys__reques__748F2482")
+  daily_limit           Int?      @default(1000, map: "DF__API_Keys__daily___758348BB")
+  rate_limit_per_minute Int?      @default(100, map: "DF__API_Keys__rate_l__76776CF4")
+  last_used_at          DateTime?
+  created_at            DateTime? @default(now(), map: "DF__API_Keys__create__776B912D")
+  updated_at            DateTime? @default(now(), map: "DF__API_Keys__update__785FB566")
+
+  @@index([key_hash], map: "IX_API_Keys_hash")
+  @@index([phone_number], map: "IX_API_Keys_phone")
+  @@index([status], map: "IX_API_Keys_status")
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model AVAILABLE_CODES {
+  Code   String? @db.NVarChar(50)
+  Market String? @db.NVarChar(50)
+  State  String? @db.NVarChar(50)
+
+  @@ignore
+}
+
+model Calculated_Inflation {
+  yr                       Int
+  mth                      Int
+  month_name               String    @db.NVarChar(10)
+  month_date               DateTime  @db.Date
+  current_month_avg        Decimal   @db.Decimal(18, 2)
+  same_month_last_year_avg Decimal?  @db.Decimal(18, 2)
+  yoy_inflation            Decimal?  @db.Decimal(10, 2)
+  prev_month_avg           Decimal?  @db.Decimal(18, 2)
+  mom_inflation            Decimal?  @db.Decimal(10, 2)
+  daily_records            Int
+  days_with_data           Int
+  calculated_at            DateTime? @default(now(), map: "DF__Calculate__calcu__23D42350")
+
+  @@id([yr, mth], map: "PK_Calculated_Inflation")
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model Collusion_Monitor {
+  monitor_id                    String?   @db.NVarChar(50)
+  validator_phone               String?   @db.NVarChar(20)
+  validator_id                  String?   @db.NVarChar(50)
+  validator_name                String?   @db.NVarChar(50)
+  trader_phone                  String?   @db.NVarChar(20)
+  trader_id                     String?   @db.NVarChar(50)
+  trader_name                   String?   @db.NVarChar(255)
+  market_id                     String?   @db.NVarChar(50)
+  market_name                   String?   @db.NVarChar(255)
+  total_validations             Boolean?
+  approve_count                 Int?
+  reject_count                  Int?
+  approval_rate                 Boolean?
+  first_interaction             DateTime?
+  last_interaction              DateTime?
+  days_since_last               Boolean?
+  consecutive_approvals         Boolean?
+  avg_response_time_for_trader  Boolean?
+  variance_from_normal_response Boolean?
+  flagged                       Boolean?
+  flagged_at                    DateTime?
+  flagged_reason                String?   @db.NVarChar(255)
+  flag_severity                 String?   @db.NVarChar(255)
+  reviewed                      String?   @db.NVarChar(255)
+  reviewed_by                   String?   @db.NVarChar(255)
+  review_at                     DateTime?
+  review_decision               String?   @db.NVarChar(255)
+  review_notes                  String?   @db.NVarChar(255)
+  action_taken                  String?   @db.NVarChar(255)
+  action_at                     DateTime?
+  created_at                    DateTime?
+  updated_at                    DateTime?
+
+  @@ignore
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model Column_Reference {
+  Sheet         String? @db.NVarChar(50)
+  Column_Letter String? @db.NVarChar(50)
+  Column_Index  Int?
+  Column_Name   String? @db.NVarChar(50)
+  Data_Type     String? @db.NVarChar(50)
+  Description   String? @db.NVarChar(50)
+
+  @@ignore
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model Consumer_Abandon_Tracking {
+  tracking_id           String?   @db.NVarChar(50)
+  phone_number          String?   @db.NVarChar(20)
+  tracking_date         DateTime? @db.Date
+  registration_abandons String?   @db.NVarChar(255)
+  query_abandons        String?   @db.NVarChar(255)
+  total_abandons        String?   @db.NVarChar(255)
+  warning_sent          String?   @db.NVarChar(255)
+  warning_sent_at       DateTime?
+  locked                String?   @db.NVarChar(255)
+  locked_at             DateTime?
+  locked_until          String?   @db.NVarChar(255)
+  lock_reason           String?   @db.NVarChar(255)
+  created_at            DateTime?
+  updated_at            DateTime?
+
+  @@ignore
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model Consumer_Active_Subscriptions {
+  subscription_id    String?   @db.NVarChar(50)
+  consumer_id        String?   @db.NVarChar(50)
+  phone_number       String?   @db.NVarChar(20)
+  tier_code          String?   @db.NVarChar(50)
+  tier_name          String?   @db.NVarChar(50)
+  status             String?   @db.NVarChar(50)
+  start_date         DateTime? @db.Date
+  end_date           DateTime? @db.Date
+  grace_end_date     DateTime? @db.Date
+  queries_used_today String?   @db.NVarChar(255)
+  queries_used_week  String?   @db.NVarChar(255)
+  last_query_reset   String?   @db.NVarChar(255)
+  payment_reference  String?   @db.NVarChar(50)
+  payment_provider   String?   @db.NVarChar(255)
+  payment_amount     Decimal?  @db.Decimal(18, 2)
+  auto_renew         Boolean?
+  proration_credit   Decimal?  @db.Decimal(18, 2)
+  upgraded_from      String?   @db.NVarChar(255)
+  upgraded_at        DateTime?
+  created_at         DateTime?
+  updated_at         DateTime?
+  notes              String?   @db.NVarChar(255)
+  billing_cycle      String?   @db.NVarChar(50)
+  amount_paid        Decimal?  @db.Decimal(18, 2)
+  address            String?   @db.NVarChar(50)
+  nin                Int?
+  nin_verified       Boolean?
+  nin_verified_at    DateTime?
+  kyc_status         String?   @db.NVarChar(50)
+  kyc_completed_at   DateTime?
+
+  @@ignore
+}
+
+model Consumer_Addons {
+  addon_id          Int       @id(map: "PK__Consumer__8F1402CE1DECE0DE") @default(autoincrement())
+  consumer_id       String    @db.NVarChar(50)
+  addon_code        String    @db.VarChar(50)
+  addon_name        String    @db.NVarChar(100)
+  status            String    @default("ACTIVE", map: "DF__Consumer___statu__3533B97C") @db.VarChar(20)
+  price_naira       Decimal   @db.Decimal(10, 2)
+  billing_cycle     String    @db.VarChar(20)
+  purchased_at      DateTime  @default(now(), map: "DF__Consumer___purch__3627DDB5")
+  expires_at        DateTime
+  auto_renew        Boolean   @default(true, map: "DF__Consumer___auto___371C01EE")
+  payment_reference String?   @db.NVarChar(100)
+  Consumers         Consumers @relation(fields: [consumer_id], references: [consumer_id], onDelete: Cascade, onUpdate: NoAction, map: "FK_Addons_Consumer")
+
+  @@unique([consumer_id, addon_code], map: "UQ_Consumer_Addon")
+  @@index([addon_code], map: "IX_Addons_Code")
+  @@index([consumer_id], map: "IX_Addons_ConsumerId")
+  @@index([expires_at], map: "IX_Addons_Expires")
+  @@index([status], map: "IX_Addons_Status")
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model Consumer_Daily_Updates_Config {
+  config_id              String?   @db.NVarChar(50)
+  consumer_id            String?   @db.NVarChar(50)
+  phone_number           String?   @db.NVarChar(20)
+  frequency_code         String?   @db.NVarChar(255)
+  frequency_name         String?   @db.NVarChar(255)
+  status                 String?   @db.NVarChar(255)
+  start_date             DateTime? @db.Date
+  end_date               DateTime? @db.Date
+  billing_cycle          String?   @db.NVarChar(255)
+  price_paid             Decimal?  @db.Decimal(18, 2)
+  selected_markets_json  String?   @db.NVarChar(255)
+  selected_markets_count Int?
+  max_markets_allowed    String?   @db.NVarChar(255)
+  extra_markets_count    Int?
+  extra_markets_fee      Decimal?  @db.Decimal(18, 2)
+  selected_items_json    String?   @db.NVarChar(255)
+  last_sent_9am          String?   @db.NVarChar(255)
+  last_sent_12pm         String?   @db.NVarChar(255)
+  last_sent_4pm          String?   @db.NVarChar(255)
+  total_sent             String?   @db.NVarChar(255)
+  failed_count           Int?
+  payment_reference      String?   @db.NVarChar(255)
+  payment_provider       String?   @db.NVarChar(255)
+  created_at             DateTime?
+  updated_at             DateTime?
+  cancelled_at           DateTime?
+  cancellation_reason    String?   @db.NVarChar(255)
+
+  @@ignore
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model Consumer_Historical_Config {
+  config_id           String?   @db.NVarChar(50)
+  consumer_id         String?   @db.NVarChar(50)
+  phone_number        String?   @db.NVarChar(20)
+  period_code         String?   @db.NVarChar(255)
+  period_name         String?   @db.NVarChar(255)
+  status              String?   @db.NVarChar(255)
+  start_date          DateTime? @db.Date
+  end_date            DateTime? @db.Date
+  billing_cycle       String?   @db.NVarChar(255)
+  price_paid          Decimal?  @db.Decimal(18, 2)
+  data_period_days    String?   @db.NVarChar(255)
+  payment_reference   String?   @db.NVarChar(255)
+  payment_provider    String?   @db.NVarChar(255)
+  created_at          DateTime?
+  updated_at          DateTime?
+  cancelled_at        DateTime?
+  cancellation_reason String?   @db.NVarChar(255)
+
+  @@ignore
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model Consumer_Message_Templates {
+  template_id      String? @db.NVarChar(50)
+  template_name    String? @db.NVarChar(50)
+  context          String? @db.NVarChar(50)
+  language         String? @db.NVarChar(50)
+  message_template String?
+  placeholders     String? @db.NVarChar(100)
+  notes            String? @db.NVarChar(50)
+
+  @@ignore
+}
+
+model Consumer_OTP {
+  id           Int       @id(map: "PK__Consumer__3213E83F87B44A8A") @default(autoincrement())
+  phone_number String    @db.VarChar(20)
+  otp_code     String    @db.VarChar(6)
+  expires_at   DateTime
+  verified     Boolean?  @default(false, map: "DF__Consumer___verif__6FCA6F65")
+  created_at   DateTime? @default(now(), map: "DF__Consumer___creat__70BE939E")
+
+  @@index([expires_at], map: "IX_OTP_Expires")
+  @@index([phone_number], map: "IX_OTP_Phone")
+}
+
+model Consumer_Payments {
+  payment_id        Int       @id(map: "PK__Consumer__ED1FC9EA73A02EDE") @default(autoincrement())
+  reference         String    @unique(map: "UQ__Consumer__FD90DA994E3262F6") @db.NVarChar(50)
+  phone             String    @db.NVarChar(20)
+  consumer_id       String?   @db.NVarChar(50)
+  tier              String    @db.NVarChar(20)
+  amount            Decimal   @db.Decimal(18, 2)
+  currency          String?   @default("NGN", map: "DF__Consumer___curre__4C171ED4") @db.NVarChar(3)
+  provider          String    @db.NVarChar(20)
+  status            String    @default("PENDING", map: "DF__Consumer___statu__4D0B430D") @db.NVarChar(20)
+  failure_reason    String?   @db.NVarChar(500)
+  provider_response String?   @db.NVarChar(Max)
+  created_at        DateTime  @default(now(), map: "DF__Consumer___creat__4DFF6746")
+  updated_at        DateTime  @default(now(), map: "DF__Consumer___updat__4EF38B7F")
+  completed_at      DateTime?
+
+  @@index([created_at(sort: Desc)], map: "IX_Consumer_Payments_CreatedAt")
+  @@index([phone], map: "IX_Consumer_Payments_Phone")
+  @@index([status], map: "IX_Consumer_Payments_Status")
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model Consumer_Query_Session_Archive {
+  consumer_id          String?   @db.NVarChar(50)
+  archive_id           String?   @db.NVarChar(50)
+  session_id           String?   @db.NVarChar(50)
+  phone_number         String?   @db.NVarChar(20)
+  current_step         String?   @db.NVarChar(255)
+  session_status       String?   @db.NVarChar(255)
+  selected_market      String?   @db.NVarChar(255)
+  selected_market_id   String?   @db.NVarChar(50)
+  selected_category    String?   @db.NVarChar(255)
+  selected_category_id String?   @db.NVarChar(50)
+  selected_item        String?   @db.NVarChar(255)
+  selected_item_id     String?   @db.NVarChar(50)
+  selected_brand       String?   @db.NVarChar(255)
+  selected_brand_id    String?   @db.NVarChar(50)
+  page_number          String?   @db.NVarChar(255)
+  displayed_ids        String?   @db.NVarChar(255)
+  session_data         String?   @db.NVarChar(255)
+  created_at           DateTime?
+  expires_at           DateTime?
+  last_updated         DateTime?
+  timeout_prompted     String?   @db.NVarChar(255)
+  timeout_prompt_at    DateTime?
+  archived_at          DateTime?
+  archive_reason       String?   @db.NVarChar(255)
+  query_completed      String?   @db.NVarChar(255)
+  can_restore          String?   @db.NVarChar(255)
+  selected_region      String?   @db.NVarChar(255)
+  selected_state       String?   @db.NVarChar(255)
+  abandon_count        Int?
+
+  @@ignore
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model Consumer_Reg_Session_Archive {
+  archive_id            String?   @db.NVarChar(50)
+  session_id            String?   @db.NVarChar(50)
+  phone_number          String?   @db.NVarChar(20)
+  current_step          String?   @db.NVarChar(255)
+  session_status        String?   @db.NVarChar(255)
+  first_name            String?   @db.NVarChar(255)
+  last_name             String?   @db.NVarChar(255)
+  gender                String?   @db.NVarChar(255)
+  age_range             String?   @db.NVarChar(255)
+  selected_tier         String?   @db.NVarChar(255)
+  payment_reference     String?   @db.NVarChar(255)
+  step_data             String?   @db.NVarChar(255)
+  created_at            DateTime?
+  expires_at            DateTime?
+  last_updated          DateTime?
+  archived_at           DateTime?
+  archive_reason        String?   @db.NVarChar(255)
+  exit_count_at_archive String?   @db.NVarChar(255)
+  blocked_until         String?   @db.NVarChar(255)
+  wa_profile_name       String?   @db.NVarChar(255)
+  can_restore           String?   @db.NVarChar(255)
+
+  @@ignore
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model Consumers_Registration {
+  record_id         String?   @db.NVarChar(50)
+  consumer_id       String?   @db.NVarChar(50)
+  phone_number      String?   @db.NVarChar(20)
+  first_name        String?   @db.NVarChar(255)
+  last_name         String?   @db.NVarChar(255)
+  gender            String?   @db.NVarChar(255)
+  age_range         String?   @db.NVarChar(255)
+  subscription_tier String?   @db.NVarChar(255)
+  tier_price_paid   Decimal?  @db.Decimal(18, 2)
+  billing_cycle     String?   @db.NVarChar(255)
+  daily_query_limit String?   @db.NVarChar(255)
+  max_markets       String?   @db.NVarChar(255)
+  valid_from        String?   @db.NVarChar(255)
+  valid_to          String?   @db.NVarChar(255)
+  is_current        Boolean?
+  change_type       String?   @db.NVarChar(255)
+  change_reason     String?   @db.NVarChar(255)
+  previous_tier     String?   @db.NVarChar(255)
+  payment_id        String?   @db.NVarChar(50)
+  created_at        DateTime?
+  created_by        String?   @db.NVarChar(255)
+
+  @@ignore
+}
+
+model Daily_Price_Config {
+  config_key   String    @id(map: "PK__Daily_Pr__BDF6033C2CFFCCE5") @db.NVarChar(50)
+  config_value String?   @db.NVarChar(200)
+  description  String?   @db.NVarChar(500)
+  updated_at   DateTime? @default(dbgenerated("getutcdate()"), map: "DF__Daily_Pri__updat__70547F4A")
+}
+
+model Daily_Prices {
+  price_id         Int       @default(autoincrement())
+  price_date       DateTime  @db.Date
+  time_slot        String    @db.NVarChar(10)
+  time_slot_name   String    @db.NVarChar(20)
+  item_id          String    @db.NVarChar(20)
+  item_name        String    @db.NVarChar(200)
+  market_id        String    @db.NVarChar(20)
+  market_name      String    @db.NVarChar(200)
+  state            String    @db.NVarChar(50)
+  category_id      String?   @db.NVarChar(20)
+  unit             String?   @db.NVarChar(50)
+  price_naira      Decimal   @db.Decimal(18, 2)
+  previous_price   Decimal?  @db.Decimal(18, 2)
+  price_change_pct Decimal?  @db.Decimal(10, 4)
+  trend            String?   @default("?", map: "DF__Daily_Pri__trend__0A14514D") @db.NVarChar(5)
+  confidence_score Int?
+  data_source      String?   @default("NBS_SYNTHETIC", map: "DF__Daily_Pri__data___0B087586") @db.NVarChar(50)
+  generated_at     DateTime? @default(dbgenerated("getutcdate()"), map: "DF__Daily_Pri__gener__0BFC99BF")
+
+  @@id([price_date, time_slot, item_id, market_id], map: "PK_Daily_Prices")
+  @@index([item_id], map: "IX_DP_Item")
+  @@index([market_id], map: "IX_DP_Market")
+  @@index([price_id], map: "IX_DP_PriceId")
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model Daily_Update_Queue {
+  queue_id        String?   @db.NVarChar(50)
+  consumer_id     String?   @db.NVarChar(50)
+  phone_number    String?   @db.NVarChar(20)
+  scheduled_time  String?   @db.NVarChar(255)
+  scheduled_date  DateTime? @db.Date
+  frequency_code  String?   @db.NVarChar(255)
+  markets_json    String?   @db.NVarChar(255)
+  items_json      String?   @db.NVarChar(255)
+  message_content String?   @db.NVarChar(255)
+  status          String?   @db.NVarChar(255)
+  twilio_sid      String?   @db.NVarChar(255)
+  sent_at         DateTime?
+  delivered_at    DateTime?
+  error_message   String?   @db.NVarChar(255)
+  retry_count     Int?
+  created_at      DateTime?
+
+  @@ignore
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model Daily_Updates_Subscriptions {
+  consumer_id           String?   @db.NVarChar(50)
+  subscription_id       String?   @db.NVarChar(50)
+  consumer_phone        String?   @db.NVarChar(20)
+  consumer_name         String?   @db.NVarChar(50)
+  frequency             String?   @db.NVarChar(50)
+  delivery_times        String?   @db.NVarChar(50)
+  selected_markets      String?   @db.NVarChar(50)
+  selected_items        String?   @db.NVarChar(50)
+  billing_cycle         String?   @db.NVarChar(50)
+  price_paid            Decimal?  @db.Decimal(18, 2)
+  currency              String?   @db.NVarChar(50)
+  start_date            DateTime? @db.Date
+  end_date              DateTime? @db.Date
+  is_active             Boolean?
+  last_delivery_at      DateTime?
+  delivery_count        Int?
+  failed_delivery_count Int?
+  created_at            DateTime?
+  updated_at            DateTime?
+  cancelled_at          DateTime?
+  cancellation_reason   String?   @db.NVarChar(255)
+
+  @@ignore
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model Device_Fingerprints {
+  fingerprint_id       String?   @db.NVarChar(50)
+  device_id            String?   @db.NVarChar(50)
+  whatsapp_version     String?   @db.NVarChar(50)
+  phone_model          String?   @db.NVarChar(20)
+  os_version           String?   @db.NVarChar(50)
+  first_seen_phone     String?   @db.NVarChar(20)
+  first_seen_user_type String?   @db.NVarChar(50)
+  first_seen_at        DateTime?
+  all_phones_json      String?   @db.NVarChar(20)
+  phone_count          Int?
+  trader_count         Int?
+  validator_count      Int?
+  consumer_count       Int?
+  is_suspicious        Boolean?
+  suspicious_reason    String?   @db.NVarChar(255)
+  flagged              Boolean?
+  flagged_at           DateTime?
+  flagged_reason       String?   @db.NVarChar(255)
+  reviewed             Boolean?
+  reviewed_by          String?   @db.NVarChar(255)
+  review_at            DateTime?
+  review_decision      String?   @db.NVarChar(255)
+  review_notes         String?   @db.NVarChar(255)
+  action_taken         String?   @db.NVarChar(255)
+  action_at            DateTime?
+  affected_phones      String?   @db.NVarChar(20)
+  created_at           DateTime?
+  updated_at           DateTime?
+
+  @@ignore
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model FakeGPS_Detection_Log {
+  log_id         String?   @db.NVarChar(50)
+  timestamp      DateTime?
+  phone          String?   @db.NVarChar(20)
+  latitude       Decimal?  @db.Decimal(9, 6)
+  longitude      Decimal?  @db.Decimal(9, 6)
+  score          Decimal?  @db.Decimal(9, 4)
+  recommendation String?   @db.NVarChar(255)
+  flags_count    Int?
+  flag_types     String?   @db.NVarChar(255)
+
+  @@ignore
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model Flag_Types_Reference {
+  Flag_Type   String? @map("Flag Type") @db.NVarChar(50)
+  Severity    String? @db.NVarChar(50)
+  Trigger     String? @db.NVarChar(50)
+  Auto_Action String? @map("Auto Action") @db.NVarChar(50)
+
+  @@ignore
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model Fraud_Flags {
+  flag_id                  String?   @db.NVarChar(50)
+  user_type                String?   @db.NVarChar(50)
+  phone_number             String?   @db.NVarChar(20)
+  user_id                  String?   @db.NVarChar(50)
+  user_name                String?   @db.NVarChar(50)
+  flag_type                String?   @db.NVarChar(50)
+  flag_subtype             String?   @db.NVarChar(50)
+  severity                 String?   @db.NVarChar(50)
+  reference_type           String?   @db.NVarChar(50)
+  reference_id             String?   @db.NVarChar(50)
+  market_id                String?   @db.NVarChar(50)
+  market_name              String?   @db.NVarChar(50)
+  details                  String?   @db.NVarChar(50)
+  evidence_json            String?   @db.NVarChar(50)
+  triggered_by             String?   @db.NVarChar(50)
+  metrics_json             String?   @db.NVarChar(50)
+  status                   String?   @db.NVarChar(50)
+  flagged_at               DateTime?
+  assigned_to              String?   @db.NVarChar(50)
+  investigation_started_at DateTime?
+  investigation_notes      String?   @db.NVarChar(50)
+  resolution               String?   @db.NVarChar(50)
+  resolution_notes         String?   @db.NVarChar(50)
+  resolved_at              DateTime?
+  resolved_by              String?   @db.NVarChar(50)
+  action_type              String?   @db.NVarChar(50)
+  action_details           String?   @db.NVarChar(50)
+  action_at                DateTime?
+  created_at               DateTime?
+  updated_at               DateTime?
+
+  @@ignore
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model GPS_Coordinates_Log {
+  log_id          String?   @db.NVarChar(50)
+  latitude        Decimal?  @db.Decimal(9, 6)
+  longitude       Decimal?  @db.Decimal(9, 6)
+  coordinate_hash String?   @db.NVarChar(255)
+  first_seen      String?   @db.NVarChar(255)
+  user_phones     String?   @db.NVarChar(20)
+  usage_count     Int?
+  flagged         String?   @db.NVarChar(255)
+  flagged_at      DateTime?
+
+  @@ignore
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model GPS_Verification_Log {
+  log_id                String?   @db.NVarChar(50)
+  phone                 String?   @db.NVarChar(20)
+  user_type             String?   @db.NVarChar(255)
+  action_type           String?   @db.NVarChar(255)
+  reference_id          String?   @db.NVarChar(50)
+  gps_latitude          String?   @db.NVarChar(255)
+  gps_longitude         String?   @db.NVarChar(255)
+  gps_accuracy_meters   String?   @db.NVarChar(255)
+  gps_timestamp         DateTime?
+  gps_age_seconds       String?   @db.NVarChar(255)
+  expected_market_id    String?   @db.NVarChar(50)
+  expected_market_name  String?   @db.NVarChar(255)
+  market_latitude       String?   @db.NVarChar(255)
+  market_longitude      String?   @db.NVarChar(255)
+  market_radius_meters  String?   @db.NVarChar(255)
+  distance_from_market  String?   @db.NVarChar(255)
+  is_within_radius      Boolean?
+  is_gps_fresh          Boolean?
+  verification_result   String?   @db.NVarChar(255)
+  verification_notes    String?   @db.NVarChar(255)
+  prev_latitude         String?   @db.NVarChar(255)
+  prev_longitude        String?   @db.NVarChar(255)
+  prev_timestamp        DateTime?
+  time_diff_seconds     String?   @db.NVarChar(255)
+  distance_moved_meters String?   @db.NVarChar(255)
+  velocity_kmh          String?   @db.NVarChar(255)
+  velocity_flag         Boolean?
+  is_fraudulent         Boolean?
+  fraud_type            String?   @db.NVarChar(255)
+  fraud_action_taken    String?   @db.NVarChar(255)
+  created_at            DateTime?
+
+  @@ignore
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model Historical_Trends_Subs {
+  consumer_id         String?   @db.NVarChar(50)
+  subscription_id     String?   @db.NVarChar(50)
+  consumer_phone      String?   @db.NVarChar(20)
+  consumer_name       String?   @db.NVarChar(50)
+  trend_period        String?   @db.NVarChar(50)
+  selected_markets    String?   @db.NVarChar(50)
+  selected_items      String?   @db.NVarChar(50)
+  delivery_day        String?   @db.NVarChar(50)
+  delivery_time       String?   @db.NVarChar(50)
+  delivery_format     String?   @db.NVarChar(50)
+  billing_cycle       String?   @db.NVarChar(50)
+  price_paid          Decimal?  @db.Decimal(18, 2)
+  currency            String?   @db.NVarChar(50)
+  start_date          DateTime? @db.Date
+  end_date            DateTime? @db.Date
+  is_active           Boolean?
+  last_delivery_at    DateTime?
+  delivery_count      Int?
+  created_at          DateTime?
+  updated_at          DateTime?
+  cancelled_at        DateTime?
+  cancellation_reason String?   @db.NVarChar(255)
+
+  @@ignore
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model Honorifics_Reference {
+  Language String? @db.NVarChar(50)
+  Gender   String? @db.NVarChar(50)
+
+  /// This field was commented out because of an invalid name. Please provide a valid one that matches [a-zA-Z][a-zA-Z0-9_]*
+  // 18-30 String? @map("18-30") @db.NVarChar(50)
+  /// This field was commented out because of an invalid name. Please provide a valid one that matches [a-zA-Z][a-zA-Z0-9_]*
+  // 31-45 String? @map("31-45") @db.NVarChar(50)
+  /// This field was commented out because of an invalid name. Please provide a valid one that matches [a-zA-Z][a-zA-Z0-9_]*
+  // 46+ String? @map("46+") @db.NVarChar(50)
+  @@ignore
+}
+
+model Inflation_Refresh_Log {
+  log_id            Int       @id(map: "PK__Inflatio__9E2397E0C66B99B9") @default(autoincrement())
+  run_date          DateTime  @db.Date
+  run_type          String    @db.NVarChar(20)
+  months_processed  Int?
+  latest_month      DateTime? @db.Date
+  latest_yoy        Decimal?  @db.Decimal(10, 2)
+  latest_mom        Decimal?  @db.Decimal(10, 2)
+  execution_time_ms Int?
+  created_at        DateTime? @default(now(), map: "DF__Inflation__creat__1E1B49FA")
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model Item_Mapping {
+  catalog_item_id        String?   @db.NVarChar(50)
+  catalog_item_name      String?   @db.NVarChar(50)
+  catalog_category_id    String?   @db.NVarChar(50)
+  nbs_item_id            String?   @db.NVarChar(50)
+  nbs_item_name_standard String?   @db.NVarChar(50)
+  nbs_category_name      String?   @db.NVarChar(50)
+  match_score            Decimal?  @db.Decimal(9, 4)
+  match_status           String?   @db.NVarChar(50)
+  manual_override_nbs_id String?   @db.NVarChar(50)
+  last_updated           DateTime?
+
+  @@ignore
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model Make_Module_Reference {
+  Module_ID Int?    @map("Module ID")
+  Name      String? @db.NVarChar(50)
+  Type      String? @db.NVarChar(50)
+  Purpose   String? @db.NVarChar(50)
+  Input     String? @db.NVarChar(50)
+  Output    String? @db.NVarChar(50)
+
+  @@ignore
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model Market_Tier_Limits {
+  tier_code                String?  @db.NVarChar(50)
+  tier_name                String?  @db.NVarChar(50)
+  max_markets_included     Int?
+  extra_market_fee_weekly  Decimal? @db.Decimal(18, 2)
+  extra_market_fee_monthly Decimal? @db.Decimal(18, 2)
+  upgrade_strategy         String?  @db.NVarChar(50)
+  description              String?  @db.NVarChar(50)
+  status                   String?  @db.NVarChar(50)
+
+  @@ignore
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model Message_Templates {
+  message_id String? @db.NVarChar(50)
+  context    String? @db.NVarChar(50)
+  english    String? @db.NVarChar(255)
+  pidgin     String? @db.NVarChar(255)
+
+  @@ignore
+}
+
+model Monthly_Prices {
+  yr             Int
+  mth            Int
+  month_date     DateTime @db.Date
+  month_name     String   @db.NVarChar(10)
+  daily_records  Int
+  days_with_data Int
+  items          Int
+  markets        Int
+  avg_price      Decimal  @db.Decimal(18, 2)
+  min_price      Decimal  @db.Decimal(18, 2)
+  max_price      Decimal  @db.Decimal(18, 2)
+
+  @@id([yr, mth], map: "PK_Monthly_Prices")
+}
+
+model NBS_Inflation_Rates {
+  yr            Int
+  mth           Int
+  yoy_inflation Decimal @db.Decimal(10, 2)
+  month_name    String? @db.NVarChar(10)
+
+  @@id([yr, mth], map: "PK__NBS_Infl__AFE36B58ED681387")
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model NBS_Items_Reference {
+  nbs_item_id            String? @db.NVarChar(50)
+  nbs_item_name_nbs      String? @db.NVarChar(50)
+  nbs_item_name_standard String? @db.NVarChar(50)
+  nbs_category_name      String? @db.NVarChar(50)
+
+  @@ignore
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model NFPI_Basket {
+  item_id        String?   @db.NVarChar(50)
+  item_name      String?   @db.NVarChar(50)
+  search_terms   String?   @db.NVarChar(50)
+  unit           String?   @db.NVarChar(50)
+  weight_pct     Decimal?  @db.Decimal(6, 2)
+  category       String?   @db.NVarChar(50)
+  is_active      Boolean?
+  baseline_price Decimal?  @db.Decimal(18, 2)
+  created_at     DateTime?
+  updated_at     DateTime?
+
+  @@ignore
+}
+
+model NFPI_Delivery_Log {
+  log_id        Int      @id(map: "PK__NFPI_Del__9E2397E01FDE2B5F") @default(autoincrement())
+  phone         String   @db.VarChar(20)
+  tier          String   @db.VarChar(20)
+  channel       String   @db.VarChar(20)
+  status        String   @db.VarChar(20)
+  error_message String?  @db.NVarChar(500)
+  twilio_sid    String?  @db.VarChar(50)
+  sent_at       DateTime @default(now(), map: "DF__NFPI_Deli__sent___24FD51B3")
+  period        String?  @db.VarChar(10)
+
+  @@index([phone], map: "IX_NFPI_Delivery_Phone")
+  @@index([sent_at], map: "IX_NFPI_Delivery_SentAt")
+  @@index([status], map: "IX_NFPI_Delivery_Status")
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model NFPI_Item_Prices {
+  week_id                DateTime?
+  item_id                String?   @db.NVarChar(50)
+  item_name              String?   @db.NVarChar(50)
+  category               String?   @db.NVarChar(50)
+  avg_price              Decimal?  @db.Decimal(18, 2)
+  weighted_price         Decimal?  @db.Decimal(18, 2)
+  price_change_pct       Decimal?  @db.Decimal(6, 2)
+  price_change_direction Decimal?  @db.Decimal(18, 2)
+  submission_count       Int?
+  min_price              Decimal?  @db.Decimal(18, 2)
+  max_price              Decimal?  @db.Decimal(18, 2)
+  std_dev                Decimal?  @db.Decimal(18, 4)
+  data_quality           String?   @db.NVarChar(50)
+  markets_count          Int?
+  regions_count          Int?
+  calculated_at          DateTime?
+
+  @@ignore
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model NFPI_Weekly {
+  week_id                   DateTime?
+  week_start                DateTime? @db.Date
+  week_end                  DateTime? @db.Date
+  is_baseline               Boolean?
+  national_index            Int?
+  national_change_pct       Decimal?  @db.Decimal(6, 2)
+  national_change_direction String?   @db.NVarChar(50)
+  nw_index                  Decimal?  @db.Decimal(18, 4)
+  ne_index                  Decimal?  @db.Decimal(18, 4)
+  nc_index                  Decimal?  @db.Decimal(18, 4)
+  sw_index                  Decimal?  @db.Decimal(18, 4)
+  se_index                  Decimal?  @db.Decimal(18, 4)
+  ss_index                  Decimal?  @db.Decimal(18, 4)
+  grains_index              Decimal?  @db.Decimal(18, 4)
+  proteins_index            Decimal?  @db.Decimal(18, 4)
+  vegetables_index          Decimal?  @db.Decimal(18, 4)
+  oils_index                Decimal?  @db.Decimal(18, 4)
+  basket_value_naira        Int?
+  baseline_value            Int?
+  data_quality_score        Decimal?  @db.Decimal(9, 4)
+  items_with_data           Int?
+  total_submissions         Int?
+  top_gainers               String?   @db.NVarChar(255)
+  top_losers                String?   @db.NVarChar(255)
+  insight                   String?   @db.NVarChar(100)
+  calculated_at             DateTime?
+  published_at              DateTime?
+
+  @@ignore
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model Notification_Queue {
+  notification_id  String?   @db.NVarChar(50)
+  timestamp        DateTime?
+  phone            String?   @db.NVarChar(20)
+  user_type        String?   @db.NVarChar(50)
+  user_id          String?   @db.NVarChar(50)
+  user_name        String?   @db.NVarChar(50)
+  type             String?   @db.NVarChar(50)
+  subtype          String?   @db.NVarChar(50)
+  priority         String?   @db.NVarChar(50)
+  message          String?   @db.NVarChar(255)
+  message_template String?   @db.NVarChar(50)
+  variables_json   String?   @db.NVarChar(255)
+  reference_type   String?   @db.NVarChar(50)
+  reference_id     String?   @db.NVarChar(50)
+  status           String?   @db.NVarChar(50)
+  sent_at          DateTime?
+  delivered_at     DateTime?
+  read_at          DateTime?
+  twilio_sid       String?   @db.NVarChar(50)
+  retry_count      Int?
+  last_retry_at    DateTime?
+  error_message    String?   @db.NVarChar(255)
+  created_at       DateTime?
+  updated_at       DateTime?
+
+  @@ignore
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model Payment_Log {
+  payment_id     String?   @db.NVarChar(50)
+  consumer_id    String?   @db.NVarChar(50)
+  phone_number   String?   @db.NVarChar(20)
+  tier           String?   @db.NVarChar(50)
+  duration       String?   @db.NVarChar(50)
+  amount         Decimal?  @db.Decimal(18, 2)
+  status         String?   @db.NVarChar(50)
+  payment_method String?   @db.NVarChar(50)
+  reference      String?   @db.NVarChar(255)
+  created_at     DateTime?
+
+  @@ignore
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model Payment_Logs {
+  payment_id           String?   @db.NVarChar(50)
+  consumer_id          String?   @db.NVarChar(50)
+  consumer_phone       String?   @db.NVarChar(20)
+  consumer_name        String?   @db.NVarChar(255)
+  payment_type         String?   @db.NVarChar(255)
+  subscription_type    String?   @db.NVarChar(255)
+  tier_or_addon        String?   @db.NVarChar(255)
+  amount               Decimal?  @db.Decimal(18, 2)
+  currency             String?   @db.NVarChar(255)
+  payment_reference    String?   @db.NVarChar(50)
+  provider             String?   @db.NVarChar(255)
+  provider_reference   String?   @db.NVarChar(255)
+  payment_channel      String?   @db.NVarChar(255)
+  payment_link         String?   @db.NVarChar(255)
+  payment_link_expires String?   @db.NVarChar(255)
+  status               String?   @db.NVarChar(255)
+  failure_reason       String?   @db.NVarChar(255)
+  created_at           DateTime?
+  updated_at           DateTime?
+  completed_at         DateTime?
+  verified_at          DateTime?
+  subscription_start   String?   @db.NVarChar(255)
+  subscription_end     String?   @db.NVarChar(255)
+  refund_status        String?   @db.NVarChar(255)
+  refund_amount        Decimal?  @db.Decimal(18, 2)
+  refund_date          DateTime? @db.Date
+  notes                String?   @db.NVarChar(255)
+
+  @@ignore
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model Payment_Webhooks_Log {
+  log_id            String?   @db.NVarChar(50)
+  provider          String?   @db.NVarChar(255)
+  event_type        String?   @db.NVarChar(255)
+  reference         String?   @db.NVarChar(255)
+  payload_json      String?   @db.NVarChar(255)
+  processed         String?   @db.NVarChar(255)
+  processing_result String?   @db.NVarChar(255)
+  error_message     String?   @db.NVarChar(255)
+  received_at       DateTime?
+  processed_at      DateTime?
+
+  @@ignore
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model Payout_Log {
+  trader_id     String?   @db.NVarChar(50)
+  payout_id     Decimal?  @db.Decimal(18, 2)
+  batch_id      String?   @db.NVarChar(50)
+  phone_number  String?   @db.NVarChar(20)
+  network       String?   @db.NVarChar(255)
+  amount        Decimal?  @db.Decimal(18, 2)
+  status        String?   @db.NVarChar(255)
+  vtpass_ref    String?   @db.NVarChar(255)
+  error_message String?   @db.NVarChar(255)
+  processed_at  DateTime?
+
+  @@ignore
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model Payout_Summary {
+  batch_id               String?   @db.NVarChar(50)
+  period_start           String?   @db.NVarChar(50)
+  period_end             String?   @db.NVarChar(50)
+  total_validators       Int?
+  total_traders          Int?
+  validator_payout_total Decimal?  @db.Decimal(18, 2)
+  trader_payout_total    Decimal?  @db.Decimal(18, 2)
+  combined_total         Int?
+  success_count          Int?
+  failed_count           Int?
+  pending_count          Int?
+  success_rate           Decimal?  @db.Decimal(18, 4)
+  pdf_generated_count    Int?
+  whatsapp_sent_count    Int?
+  processed_at           DateTime?
+  notes                  String?   @db.NVarChar(50)
+
+  @@ignore
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model Penalty_Matrix {
+  Violation  String? @db.NVarChar(50)
+  st_Offense String? @map("1st Offense") @db.NVarChar(50)
+  nd_Offense String? @map("2nd Offense") @db.NVarChar(50)
+  rd_Offense String? @map("3rd Offense") @db.NVarChar(50)
+  Notes      String? @db.NVarChar(50)
+
+  @@ignore
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model Prediction_Usage {
+  phone         String? @db.NVarChar(20)
+  usage_month   String? @db.NVarChar(255)
+  count         Int?
+  tier          String? @db.NVarChar(255)
+  last_used     String? @db.NVarChar(255)
+  items_queried String? @db.NVarChar(255)
+
+  @@ignore
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model Price_Alerts {
+  alert_id      String?   @db.NVarChar(50)
+  consumer_id   String?   @db.NVarChar(50)
+  phone_number  String?   @db.NVarChar(20)
+  market_id     String?   @db.NVarChar(50)
+  market_name   String?   @db.NVarChar(50)
+  item_id       String?   @db.NVarChar(50)
+  item_name     String?   @db.NVarChar(50)
+  target_price  Decimal?  @db.Decimal(18, 2)
+  category_id   String?   @db.NVarChar(50)
+  category_name String?   @db.NVarChar(50)
+  alert_type    String?   @db.NVarChar(50)
+  status        String?   @db.NVarChar(50)
+  created_at    DateTime?
+  triggered_at  DateTime?
+
+  @@ignore
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model Price_Baselines {
+  baseline_id                String?   @db.NVarChar(50)
+  item_id                    String?   @db.NVarChar(50)
+  item_name                  String?   @db.NVarChar(255)
+  market_id                  String?   @db.NVarChar(50)
+  market_name                String?   @db.NVarChar(255)
+  brand_id                   String?   @db.NVarChar(50)
+  brand_name                 String?   @db.NVarChar(255)
+  unit                       String?   @db.NVarChar(255)
+  avg_price_24h              Decimal?  @db.Decimal(18, 2)
+  min_price_24h              Decimal?  @db.Decimal(18, 2)
+  max_price_24h              Decimal?  @db.Decimal(18, 2)
+  stddev_24h                 String?   @db.NVarChar(255)
+  submission_count_24h       String?   @db.NVarChar(255)
+  avg_price_7d               Decimal?  @db.Decimal(18, 2)
+  min_price_7d               Decimal?  @db.Decimal(18, 2)
+  max_price_7d               Decimal?  @db.Decimal(18, 2)
+  stddev_7d                  String?   @db.NVarChar(255)
+  submission_count_7d        String?   @db.NVarChar(255)
+  avg_price_30d              Decimal?  @db.Decimal(18, 2)
+  min_price_30d              Decimal?  @db.Decimal(18, 2)
+  max_price_30d              Decimal?  @db.Decimal(18, 2)
+  stddev_30d                 String?   @db.NVarChar(255)
+  submission_count_30d       String?   @db.NVarChar(255)
+  state_avg_price            Decimal?  @db.Decimal(18, 2)
+  national_avg_price         Decimal?  @db.Decimal(18, 2)
+  variance_from_state_avg    String?   @db.NVarChar(255)
+  variance_from_national_avg String?   @db.NVarChar(255)
+  acceptable_min             String?   @db.NVarChar(255)
+  acceptable_max             String?   @db.NVarChar(255)
+  volatility_score           Decimal?  @db.Decimal(9, 4)
+  is_seasonal                Boolean?
+  last_submission_at         DateTime?
+  last_updated               DateTime?
+  created_at                 DateTime?
+
+  @@ignore
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model Price_Submission_Sessions {
+  session_id              String?   @db.NVarChar(50)
+  phone_number            String?   @db.NVarChar(20)
+  current_step            String?   @db.NVarChar(255)
+  status                  String?   @db.NVarChar(255)
+  selected_state          String?   @db.NVarChar(255)
+  selected_market_id      String?   @db.NVarChar(50)
+  selected_market_name    String?   @db.NVarChar(255)
+  selected_super_category String?   @db.NVarChar(255)
+  selected_category_id    String?   @db.NVarChar(50)
+  selected_category_name  String?   @db.NVarChar(255)
+  selected_item_id        String?   @db.NVarChar(50)
+  selected_item_name      String?   @db.NVarChar(255)
+  selected_brand_id       String?   @db.NVarChar(50)
+  selected_brand_name     String?   @db.NVarChar(255)
+  entered_price           Decimal?  @db.Decimal(18, 2)
+  price_unit              Decimal?  @db.Decimal(18, 2)
+  gps_latitude            String?   @db.NVarChar(255)
+  gps_longitude           String?   @db.NVarChar(255)
+  gps_verified            String?   @db.NVarChar(255)
+  gps_distance_meters     String?   @db.NVarChar(255)
+  page_number             String?   @db.NVarChar(255)
+  created_at              DateTime?
+  expires_at              DateTime?
+  last_updated            DateTime?
+  market_page             String?   @db.NVarChar(255)
+  category_page           String?   @db.NVarChar(255)
+  item_page               String?   @db.NVarChar(255)
+  brand_page              String?   @db.NVarChar(255)
+
+  @@ignore
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model Price_Update_Delivery_Log {
+  delivery_id       String?   @db.NVarChar(50)
+  subscription_id   String?   @db.NVarChar(50)
+  subscription_type String?   @db.NVarChar(255)
+  consumer_phone    String?   @db.NVarChar(20)
+  consumer_name     String?   @db.NVarChar(255)
+  delivery_time     String?   @db.NVarChar(255)
+  delivery_date     DateTime? @db.Date
+  scheduled_at      DateTime?
+  markets_included  String?   @db.NVarChar(255)
+  items_included    String?   @db.NVarChar(255)
+  message_preview   String?   @db.NVarChar(255)
+  message_length    String?   @db.NVarChar(255)
+  twilio_sid        String?   @db.NVarChar(255)
+  delivery_status   String?   @db.NVarChar(255)
+  error_message     String?   @db.NVarChar(255)
+  sent_at           DateTime?
+  delivered_at      DateTime?
+  read_at           DateTime?
+  created_at        DateTime?
+
+  @@ignore
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model Query_Log {
+  query_id              String?   @db.NVarChar(50)
+  consumer_phone        String?   @db.NVarChar(20)
+  consumer_name         String?   @db.NVarChar(50)
+  subscription_tier     String?   @db.NVarChar(50)
+  market_name           String?   @db.NVarChar(50)
+  market_id             String?   @db.NVarChar(50)
+  category_name         Boolean?
+  category_id           String?   @db.NVarChar(50)
+  item_name             String?   @db.NVarChar(255)
+  item_id               String?   @db.NVarChar(50)
+  brand_name            String?   @db.NVarChar(255)
+  brand_id              String?   @db.NVarChar(50)
+  price_returned        Decimal?  @db.Decimal(18, 2)
+  unit                  String?   @db.NVarChar(255)
+  price_trend           Decimal?  @db.Decimal(18, 2)
+  previous_price        Decimal?  @db.Decimal(18, 2)
+  price_change_pct      Decimal?  @db.Decimal(6, 2)
+  query_source          String?   @db.NVarChar(255)
+  query_type            String?   @db.NVarChar(50)
+  query_timestamp       DateTime?
+  query_date            DateTime? @db.Date
+  query_hour            String?   @db.NVarChar(255)
+  session_id            String?   @db.NVarChar(50)
+  response_time_ms      String?   @db.NVarChar(255)
+  counted_against_limit String?   @db.NVarChar(255)
+  query_number_today    String?   @db.NVarChar(255)
+  query_number_week     String?   @db.NVarChar(255)
+  created_at            DateTime?
+
+  @@ignore
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model Re_Verification_Log {
+  reverify_id                      String?   @db.NVarChar(50)
+  submission_id                    String?   @db.NVarChar(50)
+  queue_id                         String?   @db.NVarChar(50)
+  trigger_reason                   String?   @db.NVarChar(50)
+  trigger_threshold                Decimal?  @db.Decimal(18, 4)
+  trigger_value                    Decimal?  @db.Decimal(18, 4)
+  original_validator_prices        Decimal?  @db.Decimal(18, 2)
+  original_price_mean              Decimal?  @db.Decimal(18, 2)
+  original_price_stddev            Decimal?  @db.Decimal(18, 2)
+  original_price_stddev_pct        Decimal?  @db.Decimal(6, 2)
+  original_price_range             Decimal?  @db.Decimal(18, 2)
+  reverify_round                   Boolean?
+  outlier_validator_phone          String?   @db.NVarChar(20)
+  outlier_validator_original_price Decimal?  @db.Decimal(18, 2)
+  outlier_variance_from_mean       Decimal?  @db.Decimal(18, 4)
+  notification_sent_at             DateTime?
+  notification_message             String?   @db.NVarChar(255)
+  deadline                         String?   @db.NVarChar(50)
+  response_received                Boolean?
+  response_at                      DateTime?
+  new_price_estimate               Decimal?  @db.Decimal(18, 2)
+  price_changed                    Decimal?  @db.Decimal(18, 2)
+  new_variance_from_mean           String?   @db.NVarChar(255)
+  outcome                          String?   @db.NVarChar(50)
+  outcome_notes                    String?   @db.NVarChar(50)
+  validator_replaced               Boolean?
+  replacement_validator_phone      String?   @db.NVarChar(20)
+  replacement_at                   DateTime?
+  escalated_to_admin               Boolean?
+  admin_decision                   String?   @db.NVarChar(255)
+  admin_notes                      String?   @db.NVarChar(255)
+  new_consensus_result             String?   @db.NVarChar(255)
+  resolved_at                      DateTime?
+  created_at                       DateTime?
+  updated_at                       DateTime?
+
+  @@ignore
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model Regions_Reference {
+  region_number Int?
+  region_code   String? @db.NVarChar(50)
+  region_name   String? @db.NVarChar(50)
+  emoji         String? @db.NVarChar(50)
+  states_list   String? @db.NVarChar(100)
+  total_markets Int?
+  state_count   Int?
+  display_text  String? @db.NVarChar(50)
+
+  @@ignore
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model Registration_Messages {
+  message_id   String? @db.NVarChar(50)
+  message_type String? @db.NVarChar(50)
+  message_text String? @db.NVarChar(255)
+  notes        String? @db.NVarChar(50)
+
+  @@ignore
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model Rewards_Ledger {
+  transaction_id   String?   @db.NVarChar(50)
+  timestamp        DateTime?
+  phone_number     String?   @db.NVarChar(20)
+  transaction_type String?   @db.NVarChar(50)
+  amount           Decimal?  @db.Decimal(18, 2)
+  fee              Decimal?  @db.Decimal(18, 2)
+  net_amount       Decimal?  @db.Decimal(18, 2)
+  status           String?   @db.NVarChar(50)
+  payout_batch_id  Decimal?  @db.Decimal(18, 2)
+  description      String?   @db.NVarChar(50)
+  user_type        String?   @db.NVarChar(50)
+  user_id          String?   @db.NVarChar(50)
+  reference_id     String?   @db.NVarChar(50)
+  balance_after    Decimal?  @db.Decimal(18, 2)
+
+  @@ignore
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model Session_Archive {
+  session_id             String?   @db.NVarChar(50)
+  phone_number           String?   @db.NVarChar(20)
+  current_flow           String?   @db.NVarChar(255)
+  flow_step              String?   @db.NVarChar(255)
+  flow_data              String?   @db.NVarChar(255)
+  created_at             DateTime?
+  last_updated           DateTime?
+  expires_at             DateTime?
+  selected_state         String?   @db.NVarChar(255)
+  selected_market_id     String?   @db.NVarChar(50)
+  selected_market_name   String?   @db.NVarChar(255)
+  selected_category_id   String?   @db.NVarChar(50)
+  selected_category_name String?   @db.NVarChar(255)
+  selected_item_id       String?   @db.NVarChar(50)
+  selected_item_name     String?   @db.NVarChar(255)
+  entered_price          Decimal?  @db.Decimal(18, 2)
+  gps_latitude           String?   @db.NVarChar(255)
+  gps_longitude          String?   @db.NVarChar(255)
+  gps_verified           String?   @db.NVarChar(255)
+  submission_id          String?   @db.NVarChar(50)
+  session_status         String?   @db.NVarChar(255)
+  archived_at            DateTime?
+  archived_reason        String?   @db.NVarChar(255)
+  steps_completed        String?   @db.NVarChar(255)
+  duration_seconds       String?   @db.NVarChar(255)
+
+  @@ignore
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model Session_Columns_Update {
+  Column      String? @db.NVarChar(50)
+  Field       String? @db.NVarChar(50)
+  Type        String? @db.NVarChar(50)
+  Description String? @db.NVarChar(50)
+  Status      String? @db.NVarChar(50)
+
+  @@ignore
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model Setup_Checklist {
+  Step   Int?
+  Task   String? @db.NVarChar(50)
+  Status String? @db.NVarChar(50)
+  Notes  String? @db.NVarChar(100)
+
+  @@ignore
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model States_Reference {
+  state_number Int?
+  state_name   String?  @db.NVarChar(50)
+  region_code  String?  @db.NVarChar(50)
+  region_name  String?  @db.NVarChar(50)
+  market_count Int?
+  display_text String?  @db.NVarChar(50)
+  status       String?  @db.NVarChar(50)
+  created_at   DateTime @default(dbgenerated("sysutcdatetime()"), map: "DF__States_Re__creat__0CF0BDF8")
+  updated_at   DateTime @default(dbgenerated("sysutcdatetime()"), map: "DF__States_Re__updat__0DE4E231")
+
+  @@index([region_code], map: "IX_States_Reference_RegionCode")
+  @@ignore
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model Status_Reference {
+  status      String? @db.NVarChar(50)
+  description String? @db.NVarChar(50)
+
+  @@ignore
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model Submissions {
+  submission_id               String?   @db.NVarChar(50)
+  trader_phone                String?   @db.NVarChar(20)
+  trader_name                 String?   @db.NVarChar(50)
+  trader_id                   String?   @db.NVarChar(50)
+  reputation_at_submission    Int?
+  state                       String?   @db.NVarChar(50)
+  market_id                   String?   @db.NVarChar(50)
+  market                      String?   @db.NVarChar(50)
+  category_id                 String?   @db.NVarChar(50)
+  category                    String?   @db.NVarChar(255)
+  item_id                     String?   @db.NVarChar(50)
+  item                        String?   @db.NVarChar(50)
+  brand_id                    String?   @db.NVarChar(50)
+  brand                       String?   @db.NVarChar(50)
+  unit                        String?   @db.NVarChar(50)
+  price                       Decimal?  @db.Decimal(18, 2)
+  price_range_min             Decimal?  @db.Decimal(18, 2)
+  price_range_max             Decimal?  @db.Decimal(18, 2)
+  gps_latitude                Decimal?  @db.Decimal(18, 4)
+  gps_longitude               Decimal?  @db.Decimal(18, 4)
+  gps_timestamp               DateTime?
+  gps_age_seconds             String?   @db.NVarChar(255)
+  gps_verified                Boolean?
+  distance_from_market        String?   @db.NVarChar(255)
+  validator_1                 String?   @db.NVarChar(255)
+  validator_2                 String?   @db.NVarChar(255)
+  validator_3                 String?   @db.NVarChar(255)
+  vote_1                      String?   @db.NVarChar(255)
+  vote_2                      String?   @db.NVarChar(255)
+  vote_3                      String?   @db.NVarChar(255)
+  validator_replacement_count Int?
+  re_verification_count       Int?
+  final_consensus_method      String?   @db.NVarChar(255)
+  validation_status           String?   @db.NVarChar(50)
+  status                      String?   @db.NVarChar(50)
+  consensus_result            String?   @db.NVarChar(255)
+  fraud_flag                  Boolean?
+  fraud_flag_reason           String?   @db.NVarChar(255)
+  is_outlier                  Boolean?
+  baseline_price              Decimal?  @db.Decimal(18, 2)
+  variance_from_baseline      String?   @db.NVarChar(255)
+  is_honeypot                 Boolean?
+  honeypot_expected_vote      String?   @db.NVarChar(255)
+  honeypot_type               String?   @db.NVarChar(255)
+  honeypot_baseline_price     Decimal?  @db.Decimal(18, 2)
+  submitted_at                DateTime?
+  approved_at                 DateTime?
+  rejected_at                 DateTime?
+  notes                       String?   @db.NVarChar(255)
+  created_at                  DateTime?
+  updated_at                  DateTime?
+
+  @@ignore
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model Subscription_Price_Codes {
+  code             String?  @db.NVarChar(50)
+  type             String?  @db.NVarChar(50)
+  name             String?  @db.NVarChar(50)
+  price_weekly     Decimal? @db.Decimal(18, 2)
+  price_monthly    Decimal? @db.Decimal(18, 2)
+  duration_days    Int?
+  queries_per_day  Int?
+  queries_per_week Int?
+  max_markets      Int?
+  delivery_times   String?  @db.NVarChar(50)
+  data_period_days Int?
+  features         String?  @db.NVarChar(50)
+  description      String?  @db.NVarChar(50)
+  display_order    Int?
+  status           String?  @db.NVarChar(50)
+  created_at       DateTime @default(dbgenerated("sysutcdatetime()"), map: "DF__Subscript__creat__0ED9066A")
+  updated_at       DateTime @default(dbgenerated("sysutcdatetime()"), map: "DF__Subscript__updat__0FCD2AA3")
+
+  @@ignore
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model Subscription_Reminders {
+  reminder_id       String?   @db.NVarChar(50)
+  consumer_id       String?   @db.NVarChar(50)
+  phone_number      String?   @db.NVarChar(20)
+  subscription_id   String?   @db.NVarChar(50)
+  reminder_type     String?   @db.NVarChar(50)
+  days_until_expiry Int?
+  scheduled_date    DateTime? @db.Date
+  message_sent      Boolean?
+  status            String?   @db.NVarChar(255)
+  twilio_sid        String?   @db.NVarChar(255)
+  sent_at           DateTime?
+  created_at        DateTime?
+
+  @@ignore
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model Subscription_Transactions {
+  transaction_id     String?   @db.NVarChar(50)
+  consumer_id        String?   @db.NVarChar(50)
+  phone_number       String?   @db.NVarChar(20)
+  transaction_type   String?   @db.NVarChar(50)
+  product_code       String?   @db.NVarChar(50)
+  product_name       String?   @db.NVarChar(255)
+  billing_cycle      String?   @db.NVarChar(50)
+  gross_amount       Decimal?  @db.Decimal(18, 2)
+  proration_credit   Decimal?  @db.Decimal(18, 2)
+  discount_amount    Decimal?  @db.Decimal(18, 2)
+  net_amount         Decimal?  @db.Decimal(18, 2)
+  currency           String?   @db.NVarChar(50)
+  payment_provider   String?   @db.NVarChar(255)
+  payment_reference  String?   @db.NVarChar(50)
+  provider_reference String?   @db.NVarChar(255)
+  payment_channel    String?   @db.NVarChar(255)
+  payment_status     String?   @db.NVarChar(50)
+  failure_reason     String?   @db.NVarChar(255)
+  subscription_start String?   @db.NVarChar(50)
+  subscription_end   String?   @db.NVarChar(50)
+  created_at         DateTime?
+  completed_at       DateTime?
+  verified_at        DateTime?
+  refund_status      String?   @db.NVarChar(255)
+  refund_amount      Decimal?  @db.Decimal(18, 2)
+  refund_date        DateTime? @db.Date
+  notes              String?   @db.NVarChar(255)
+
+  @@ignore
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model Terms_Acceptance {
+  acceptance_id     String?   @db.NVarChar(50)
+  phone_number      String?   @db.NVarChar(20)
+  trader_id         String?   @db.NVarChar(50)
+  tc_version        Boolean?
+  accepted_at       DateTime?
+  ip_address        String?   @db.NVarChar(255)
+  device_info       String?   @db.NVarChar(255)
+  acceptance_method String?   @db.NVarChar(50)
+  acceptance_text   String?   @db.NVarChar(255)
+
+  @@ignore
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model Trader_Payout_Log {
+  payout_id            Decimal?  @db.Decimal(18, 2)
+  batch_id             String?   @db.NVarChar(50)
+  period_start         DateTime?
+  period_end           DateTime?
+  trader_id            String?   @db.NVarChar(50)
+  trader_name          String?   @db.NVarChar(50)
+  phone                String?   @db.NVarChar(20)
+  email                String?   @db.NVarChar(320)
+  earnings_amount      Decimal?  @db.Decimal(18, 2)
+  deductions           Boolean?
+  net_amount           Decimal?  @db.Decimal(18, 2)
+  payment_method       String?   @db.NVarChar(50)
+  bank_name            String?   @db.NVarChar(50)
+  account_number       Int?
+  account_name         String?   @db.NVarChar(50)
+  network              String?   @db.NVarChar(50)
+  status               String?   @db.NVarChar(50)
+  vtpass_ref           String?   @db.NVarChar(50)
+  bank_ref             String?   @db.NVarChar(50)
+  error_message        String?   @db.NVarChar(255)
+  retry_count          Int?
+  total_submissions    Int?
+  approved_submissions Int?
+  approval_rate        Boolean?
+  pdf_generated        Boolean?
+  pdf_url              String?   @db.NVarChar(2048)
+  whatsapp_sent        Boolean?
+  whatsapp_sent_at     DateTime?
+  processed_at         DateTime?
+  created_at           DateTime?
+  updated_at           DateTime?
+  notes                String?   @db.NVarChar(50)
+
+  @@ignore
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model Trader_registration_archive {
+  session_id         String?   @db.NVarChar(50)
+  phone_number       String?   @db.NVarChar(20)
+  current_step       Int?
+  step_data          String?
+  expires_at         DateTime?
+  created_at         DateTime?
+  updated_at         DateTime?
+  full_name          String?   @db.NVarChar(50)
+  dob                DateTime? @db.Date
+  address            String?   @db.NVarChar(50)
+  nin                Int?
+  bank_code          Int?
+  account_number     Int?
+  tc_accepted        Boolean?
+  preferred_language String?   @db.NVarChar(50)
+  archived_at        DateTime?
+  archive_reason     String?   @db.NVarChar(50)
+
+  @@ignore
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model Trader_Registration_Sessions {
+  session_id               String?   @db.NVarChar(50)
+  phone_number             String?   @db.NVarChar(20)
+  preferred_language       String?   @db.NVarChar(255)
+  current_step             String?   @db.NVarChar(255)
+  step_data                String?   @db.NVarChar(255)
+  expires_at               DateTime?
+  created_at               DateTime?
+  last_updated_at          DateTime?
+  bank_verified            String?   @db.NVarChar(255)
+  bank_account_name        String?   @db.NVarChar(255)
+  name_match_status        String?   @db.NVarChar(255)
+  tc_accepted              String?   @db.NVarChar(255)
+  tc_accepted_at           DateTime?
+  fraud_check_passed       String?   @db.NVarChar(255)
+  fraud_flags              String?   @db.NVarChar(255)
+  tc_quit_count            Int?
+  preferred_language_2     String?   @db.NVarChar(255)
+  tc_decline_count         Int?
+  wa_profile_name          String?   @db.NVarChar(255)
+  wa_id                    String?   @db.NVarChar(50)
+  registration_device_info String?   @db.NVarChar(255)
+  photo_url                String?   @db.NVarChar(2048)
+
+  @@ignore
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model Trader_Service_Messages {
+  message_id       String? @db.NVarChar(50)
+  command          String? @db.NVarChar(50)
+  message_type     String? @db.NVarChar(50)
+  message_template String?
+  placeholders     String? @db.NVarChar(255)
+  notes            String? @db.NVarChar(50)
+
+  @@ignore
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model Trader_Service_Sessions {
+  trader_id       String?   @db.NVarChar(50)
+  phone_number    String?   @db.NVarChar(20)
+  current_flow    String?   @db.NVarChar(255)
+  flow_step       String?   @db.NVarChar(255)
+  flow_data       String?   @db.NVarChar(255)
+  created_at      DateTime?
+  expires_at      DateTime?
+  last_updated_at DateTime?
+  completed_at    DateTime?
+  status          String?   @db.NVarChar(255)
+
+  @@ignore
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model Trader_Tiers {
+  tier_id                String?  @db.NVarChar(50)
+  tier_name              String?  @db.NVarChar(50)
+  min_reputation         Int?
+  max_reputation         Int?
+  daily_submission_limit Int?
+  instant_approval       Boolean?
+  reward_per_submission  Int?
+  description            String?  @db.NVarChar(100)
+  upgrade_message        String?  @db.NVarChar(100)
+  emoji                  String?  @db.NVarChar(50)
+  status                 String?  @db.NVarChar(50)
+
+  @@ignore
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model Traders_KYC_Verification_Queue {
+  verification_id   String?   @db.NVarChar(50)
+  trader_id         String?   @db.NVarChar(50)
+  phone_number      String?   @db.NVarChar(20)
+  full_name         String?   @db.NVarChar(50)
+  address           String?   @db.NVarChar(50)
+  date_of_birth     DateTime? @db.Date
+  nin               Int?
+  bank_name         String?   @db.NVarChar(50)
+  account_number    Int?
+  photo_url         String?   @db.NVarChar(2048)
+  status            String?   @db.NVarChar(50)
+  submitted_at      DateTime?
+  reviewed_at       DateTime?
+  reviewed_by       String?   @db.NVarChar(255)
+  notification_sent Boolean?
+  tc_accepted       Boolean?
+  tc_accepted_at    DateTime?
+  tc_version        Boolean?
+  region            String?   @db.NVarChar(50)
+
+  @@ignore
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model Traders_register {
+  trader_id                String?   @db.NVarChar(50)
+  phone_number             String?   @db.NVarChar(20)
+  full_name                String?   @db.NVarChar(255)
+  first_name               String?   @db.NVarChar(255)
+  date_of_birth            DateTime? @db.Date
+  Address                  String?   @db.NVarChar(255)
+  total_submissions        String?   @db.NVarChar(255)
+  approved_submissions     String?   @db.NVarChar(255)
+  rejected_submissions     String?   @db.NVarChar(255)
+  reputation               String?   @db.NVarChar(255)
+  balance                  Decimal?  @db.Decimal(18, 2)
+  total_earned             String?   @db.NVarChar(255)
+  registration_status      String?   @db.NVarChar(255)
+  registered_at            DateTime?
+  approved_at              DateTime?
+  last_submission_at       DateTime?
+  assigned_markets         String?   @db.NVarChar(255)
+  nin                      String?   @db.NVarChar(255)
+  bank_name                String?   @db.NVarChar(255)
+  account_number           String?   @db.NVarChar(255)
+  photo_url                String?   @db.NVarChar(2048)
+  bank_account_verified    String?   @db.NVarChar(255)
+  bank_account_name        String?   @db.NVarChar(255)
+  name_match_score         Decimal?  @db.Decimal(9, 4)
+  name_match_status        String?   @db.NVarChar(255)
+  verification_date        DateTime? @db.Date
+  tc_version_accepted      String?   @db.NVarChar(255)
+  tc_accepted_at           DateTime?
+  fraud_flag_count         Int?
+  last_fraud_flag          Boolean?
+  suspension_count         Int?
+  is_suspended             Boolean?
+  suspended_until          String?   @db.NVarChar(255)
+  suspension_reason        String?   @db.NVarChar(255)
+  wa_profile_name          String?   @db.NVarChar(255)
+  wa_id                    String?   @db.NVarChar(50)
+  registration_device_info String?   @db.NVarChar(255)
+  notification_sent_at     DateTime?
+  approval_rate            String?   @db.NVarChar(255)
+  pending_count            Int?
+  tier_name                String?   @db.NVarChar(255)
+  tier_emoji               String?   @db.NVarChar(255)
+  points_to_trusted        String?   @db.NVarChar(255)
+  last_rate_limit_hit      String?   @db.NVarChar(255)
+  preferred_language       String?   @db.NVarChar(255)
+  alternate_last_name      String?   @db.NVarChar(255)
+
+  @@ignore
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model User_Preferences {
+  phone_number       String?   @db.NVarChar(20)
+  preferred_language String?   @db.NVarChar(255)
+  updated_at         DateTime?
+
+  @@ignore
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model User_Roles {
+  phone_number        String?   @db.NVarChar(20)
+  role                String?   @db.NVarChar(50)
+  status              String?   @db.NVarChar(50)
+  created_at          DateTime?
+  locked              Boolean?
+  lock_reason         String?   @db.NVarChar(50)
+  bank_account_number Int?
+  verified_last_name  String?   @db.NVarChar(50)
+
+  @@ignore
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model User_Sessions {
+  phone_number String?   @db.NVarChar(20)
+  current_step String?   @db.NVarChar(255)
+  step_data    String?   @db.NVarChar(255)
+  created_at   DateTime?
+  updated_at   DateTime?
+  expires_at   DateTime?
+
+  @@ignore
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model v17_Column_Reference {
+  Sheet       String? @db.NVarChar(50)
+  Column      String? @db.NVarChar(50)
+  Index       String? @db.NVarChar(50)
+  Data_Type   String? @map("Data Type") @db.NVarChar(50)
+  Description String? @db.NVarChar(50)
+
+  @@ignore
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model Validated_Prices {
+  price_id         Decimal?  @db.Decimal(18, 2)
+  submission_id    String?   @db.NVarChar(50)
+  market           String?   @db.NVarChar(50)
+  category         String?   @db.NVarChar(50)
+  item             String?   @db.NVarChar(50)
+  price_naira      Decimal?  @db.Decimal(18, 2)
+  validated_at     DateTime?
+  validators_count Int?
+  approval_count   Int?
+  previous_price   Decimal?  @db.Decimal(18, 2)
+  price_change_pct Decimal?  @db.Decimal(6, 2)
+  trend            String?   @db.NVarChar(50)
+  price            Decimal?  @db.Decimal(18, 2)
+  price_min        Decimal?  @db.Decimal(18, 2)
+  price_max        Decimal?  @db.Decimal(18, 2)
+  unit             String?   @db.NVarChar(50)
+  currency         String?   @db.NVarChar(50)
+  trader_id        String?   @db.NVarChar(50)
+  trader_name      String?   @db.NVarChar(50)
+  trader_phone     String?   @db.NVarChar(20)
+  validation_count Int?
+  approve_count    Int?
+  reject_count     Int?
+  consensus_result String?   @db.NVarChar(50)
+  confidence_score Decimal?  @db.Decimal(9, 4)
+  price_trend      Decimal?  @db.Decimal(18, 2)
+  trend_percent    Decimal?  @db.Decimal(6, 2)
+  previous_price_1 Decimal?  @map("previous_price.1") @db.Decimal(18, 2)
+  validated_at_1   String?   @map("validated_at.1") @db.NVarChar(50)
+  expires_at       DateTime?
+  status           String?   @db.NVarChar(50)
+  created_at       DateTime?
+
+  @@ignore
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model Validation_Queue {
+  queue_id                      String?   @db.NVarChar(50)
+  submission_id                 String?   @db.NVarChar(50)
+  trader_phone                  String?   @db.NVarChar(20)
+  trader_name                   String?   @db.NVarChar(50)
+  trader_reputation             Int?
+  market                        String?   @db.NVarChar(50)
+  market_id                     String?   @db.NVarChar(50)
+  item                          String?   @db.NVarChar(50)
+  item_id                       String?   @db.NVarChar(50)
+  brand                         String?   @db.NVarChar(50)
+  brand_id                      String?   @db.NVarChar(50)
+  price                         Decimal?  @db.Decimal(18, 2)
+  unit                          String?   @db.NVarChar(50)
+  price_range_min               Decimal?  @db.Decimal(18, 2)
+  price_range_max               Decimal?  @db.Decimal(18, 2)
+  created_at                    DateTime?
+  deadline                      String?   @db.NVarChar(50)
+  timeout_duration              Int?
+  is_timed_out                  Boolean?
+  completed_at                  DateTime?
+  validator1_phone              String?   @db.NVarChar(20)
+  validator1_id                 String?   @db.NVarChar(50)
+  validator1_name               String?   @db.NVarChar(50)
+  validator1_status             String?   @db.NVarChar(50)
+  validator1_vote               String?   @db.NVarChar(50)
+  validator1_price_estimate     Decimal?  @db.Decimal(18, 2)
+  validator1_response_time      String?   @db.NVarChar(50)
+  validator1_gps_verified       String?   @db.NVarChar(255)
+  validator1_timeout_at         DateTime?
+  validator1_replaced_by        String?   @db.NVarChar(255)
+  validator1_replacement_reason String?   @db.NVarChar(255)
+  validator1_replacement_count  Int?
+  validator2_phone              String?   @db.NVarChar(20)
+  validator2_id                 String?   @db.NVarChar(50)
+  validator2_name               String?   @db.NVarChar(50)
+  validator2_status             String?   @db.NVarChar(50)
+  validator2_vote               String?   @db.NVarChar(50)
+  validator2_price_estimate     Decimal?  @db.Decimal(18, 2)
+  validator2_response_time      String?   @db.NVarChar(50)
+  validator2_gps_verified       String?   @db.NVarChar(255)
+  validator2_timeout_at         DateTime?
+  validator2_replaced_by        String?   @db.NVarChar(255)
+  validator2_replacement_reason String?   @db.NVarChar(255)
+  validator2_replacement_count  Int?
+  validator3_phone              String?   @db.NVarChar(20)
+  validator3_id                 String?   @db.NVarChar(50)
+  validator3_name               String?   @db.NVarChar(50)
+  validator3_status             String?   @db.NVarChar(50)
+  validator3_vote               String?   @db.NVarChar(255)
+  validator3_price_estimate     Decimal?  @db.Decimal(18, 2)
+  validator3_response_time      String?   @db.NVarChar(255)
+  validator3_gps_verified       String?   @db.NVarChar(255)
+  validator3_timeout_at         DateTime?
+  validator3_replaced_by        String?   @db.NVarChar(255)
+  validator3_replacement_reason String?   @db.NVarChar(255)
+  validator3_replacement_count  Int?
+  votes_received                Int?
+  votes_required                Int?
+  consensus_required            Int?
+  approve_votes                 Int?
+  reject_votes                  Int?
+  validator_prices_json         Decimal?  @db.Decimal(18, 2)
+  price_mean                    Decimal?  @db.Decimal(18, 2)
+  price_stddev                  Decimal?  @db.Decimal(18, 2)
+  price_range                   Decimal?  @db.Decimal(18, 2)
+  price_stddev_percent          Decimal?  @db.Decimal(6, 2)
+  re_verification_requested     String?   @db.NVarChar(255)
+  re_verification_count         Int?
+  re_verification_reason        String?   @db.NVarChar(255)
+  re_verification_validators    String?   @db.NVarChar(255)
+  re_verification_started_at    DateTime?
+  re_verification_completed_at  DateTime?
+  total_replacements            Int?
+  replacement_log_json          String?   @db.NVarChar(255)
+  status                        String?   @db.NVarChar(50)
+  consensus_result              String?   @db.NVarChar(50)
+  final_consensus_method        String?   @db.NVarChar(50)
+  auto_approved_reason          String?   @db.NVarChar(255)
+  admin_override                String?   @db.NVarChar(255)
+  admin_notes                   String?   @db.NVarChar(255)
+  updated_at                    DateTime?
+
+  @@ignore
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model Validator_Invite_Codes {
+  invite_code         String?   @db.NVarChar(50)
+  market_id           String?   @db.NVarChar(50)
+  market_name         String?   @db.NVarChar(50)
+  created_at          DateTime?
+  expires_at          DateTime?
+  status              String?   @db.NVarChar(50)
+  used_by_phone       String?   @db.NVarChar(20)
+  used_by_name        String?   @db.NVarChar(50)
+  used_at             DateTime?
+  generated_by        String?   @db.NVarChar(50)
+  generation_batch_id String?   @db.NVarChar(50)
+  notes               String?   @db.NVarChar(50)
+  updated_at          DateTime?
+
+  @@ignore
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model Validator_Payout_Log {
+  payout_id           Decimal?  @db.Decimal(18, 2)
+  batch_id            String?   @db.NVarChar(50)
+  period_start        DateTime?
+  period_end          DateTime?
+  validator_id        String?   @db.NVarChar(50)
+  validator_name      String?   @db.NVarChar(50)
+  phone               String?   @db.NVarChar(20)
+  email               String?   @db.NVarChar(320)
+  earnings_amount     Decimal?  @db.Decimal(18, 2)
+  deductions          Boolean?
+  net_amount          Decimal?  @db.Decimal(18, 2)
+  payment_method      String?   @db.NVarChar(50)
+  bank_name           String?   @db.NVarChar(50)
+  account_number      Int?
+  account_name        String?   @db.NVarChar(50)
+  network             String?   @db.NVarChar(50)
+  status              String?   @db.NVarChar(50)
+  vtpass_ref          String?   @db.NVarChar(50)
+  bank_ref            String?   @db.NVarChar(50)
+  error_message       String?   @db.NVarChar(50)
+  retry_count         Int?
+  total_validations   Int?
+  correct_validations Int?
+  accuracy_rate       Decimal?  @db.Decimal(18, 4)
+  pdf_generated       Boolean?
+  pdf_url             String?   @db.NVarChar(2048)
+  whatsapp_sent       Boolean?
+  whatsapp_sent_at    DateTime?
+  processed_at        DateTime?
+  created_at          DateTime?
+  updated_at          DateTime?
+  notes               String?   @db.NVarChar(50)
+
+  @@ignore
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model Validator_Reg_Sessions {
+  session_id                 String?   @db.NVarChar(50)
+  phone_number               String?   @db.NVarChar(20)
+  step                       Int?
+  status                     String?   @db.NVarChar(50)
+  invite_code                String?   @db.NVarChar(50)
+  invite_code_valid          Boolean?
+  invite_code_market_id      String?   @db.NVarChar(50)
+  invite_code_market_name    String?   @db.NVarChar(50)
+  full_name                  String?   @db.NVarChar(50)
+  first_name                 String?   @db.NVarChar(50)
+  last_name                  String?   @db.NVarChar(50)
+  date_of_birth              DateTime? @db.Date
+  address                    String?   @db.NVarChar(50)
+  state                      String?   @db.NVarChar(50)
+  bank_name                  String?   @db.NVarChar(50)
+  bank_code                  Int?
+  account_number             Int?
+  bank_verification_status   String?   @db.NVarChar(50)
+  bank_account_name          String?   @db.NVarChar(50)
+  verified_last_name         String?   @db.NVarChar(255)
+  alternate_last_name        String?   @db.NVarChar(255)
+  bank_verified_at           DateTime?
+  assigned_market_id         String?   @db.NVarChar(50)
+  assigned_market_name       String?   @db.NVarChar(255)
+  tc_page                    String?   @db.NVarChar(255)
+  tc_version                 String?   @db.NVarChar(255)
+  tc_accepted                String?   @db.NVarChar(255)
+  tc_accepted_at             DateTime?
+  preferred_language         String?   @db.NVarChar(255)
+  started_at                 DateTime?
+  last_activity_at           DateTime?
+  expires_at                 DateTime?
+  completed_at               DateTime?
+  abandoned_at               DateTime?
+  invite_code_attempts       Boolean?
+  bank_verification_attempts String?   @db.NVarChar(255)
+  max_attempts_reached       String?   @db.NVarChar(255)
+  last_error                 String?   @db.NVarChar(255)
+  error_count                Int?
+  registration_successful    Boolean?
+  validator_id               String?   @db.NVarChar(50)
+  created_at                 DateTime?
+  updated_at                 DateTime?
+
+  @@ignore
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model Validator_Replacements {
+  replacement_id                String?   @db.NVarChar(50)
+  submission_id                 String?   @db.NVarChar(50)
+  queue_id                      String?   @db.NVarChar(50)
+  original_validator_phone      String?   @db.NVarChar(20)
+  original_validator_id         String?   @db.NVarChar(50)
+  original_validator_name       String?   @db.NVarChar(50)
+  original_assigned_at          DateTime?
+  replacement_reason            String?   @db.NVarChar(50)
+  replacement_round             Int?
+  replacement_validator_phone   String?   @db.NVarChar(20)
+  replacement_validator_id      String?   @db.NVarChar(50)
+  replacement_validator_name    String?   @db.NVarChar(50)
+  replacement_at                DateTime?
+  original_notified             String?   @db.NVarChar(255)
+  original_notification_at      DateTime?
+  original_notification_message String?   @db.NVarChar(255)
+  replacement_notified          Boolean?
+  replacement_notification_at   DateTime?
+  replacement_responded         String?   @db.NVarChar(255)
+  replacement_response_at       DateTime?
+  replacement_vote              String?   @db.NVarChar(255)
+  created_at                    DateTime?
+  updated_at                    DateTime?
+
+  @@ignore
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model Validator_Suspensions {
+  suspension_id                      String?   @db.NVarChar(50)
+  validator_phone                    String?   @db.NVarChar(20)
+  validator_id                       String?   @db.NVarChar(50)
+  validator_name                     String?   @db.NVarChar(255)
+  suspension_reason                  String?   @db.NVarChar(255)
+  suspension_trigger                 String?   @db.NVarChar(255)
+  evidence_json                      String?   @db.NVarChar(255)
+  suspension_type                    String?   @db.NVarChar(255)
+  duration_days                      String?   @db.NVarChar(255)
+  suspended_at                       DateTime?
+  suspension_ends_at                 DateTime?
+  accuracy_at_suspension             String?   @db.NVarChar(255)
+  honeypot_failures_at_suspension    String?   @db.NVarChar(255)
+  consecutive_timeouts_at_suspension String?   @db.NVarChar(255)
+  total_votes_at_suspension          String?   @db.NVarChar(255)
+  notification_sent                  String?   @db.NVarChar(255)
+  notification_at                    DateTime?
+  notification_message               String?   @db.NVarChar(255)
+  is_active                          Boolean?
+  reinstated                         String?   @db.NVarChar(255)
+  reinstated_at                      DateTime?
+  reinstated_by                      String?   @db.NVarChar(255)
+  reinstatement_reason               String?   @db.NVarChar(255)
+  reinstatement_conditions           String?   @db.NVarChar(255)
+  appeal_submitted                   String?   @db.NVarChar(255)
+  appeal_at                          DateTime?
+  appeal_message                     String?   @db.NVarChar(255)
+  appeal_decision                    String?   @db.NVarChar(255)
+  appeal_decided_at                  DateTime?
+  appeal_decided_by                  String?   @db.NVarChar(255)
+  created_at                         DateTime?
+  updated_at                         DateTime?
+
+  @@ignore
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model Validator_Votes {
+  vote_id                    String?   @db.NVarChar(50)
+  queue_id                   String?   @db.NVarChar(50)
+  submission_id              String?   @db.NVarChar(50)
+  validator_phone            String?   @db.NVarChar(20)
+  validator_id               String?   @db.NVarChar(50)
+  validator_name             String?   @db.NVarChar(50)
+  market                     String?   @db.NVarChar(50)
+  market_id                  String?   @db.NVarChar(50)
+  item                       String?   @db.NVarChar(50)
+  item_id                    String?   @db.NVarChar(50)
+  brand                      String?   @db.NVarChar(50)
+  brand_id                   String?   @db.NVarChar(50)
+  trader_submitted_price     Decimal?  @db.Decimal(18, 2)
+  price_range_shown          Decimal?  @db.Decimal(18, 2)
+  price_range_min            Decimal?  @db.Decimal(18, 2)
+  price_range_max            Decimal?  @db.Decimal(18, 2)
+  validator_price_estimate   Decimal?  @db.Decimal(18, 2)
+  variance_percent           Decimal?  @db.Decimal(6, 2)
+  variance_from_range_center Boolean?
+  vote                       String?   @db.NVarChar(50)
+  vote_reason                String?   @db.NVarChar(50)
+  vote_confidence            String?   @db.NVarChar(50)
+  request_sent_at            DateTime?
+  deadline                   DateTime?
+  voted_at                   DateTime?
+  response_time_sec          String?   @db.NVarChar(50)
+  local_time_of_vote         DateTime?
+  is_expired                 Boolean?
+  expired_at                 DateTime?
+  was_replaced               Boolean?
+  replaced_by                String?   @db.NVarChar(255)
+  replacement_reason         String?   @db.NVarChar(255)
+  gps_latitude               Decimal?  @db.Decimal(18, 4)
+  gps_longitude              Decimal?  @db.Decimal(18, 4)
+  gps_timestamp              DateTime?
+  gps_age_seconds            Int?
+  gps_distance_from_market   Boolean?
+  gps_market_radius          Int?
+  gps_verified               Boolean?
+  gps_verification_notes     String?   @db.NVarChar(50)
+  prev_gps_latitude          Decimal?  @db.Decimal(18, 4)
+  prev_gps_longitude         Decimal?  @db.Decimal(18, 4)
+  prev_gps_timestamp         DateTime?
+  movement_velocity_kmh      Boolean?
+  movement_flag              Boolean?
+  re_verification_round      Boolean?
+  re_verification_requested  Boolean?
+  re_verification_reason     String?   @db.NVarChar(255)
+  original_vote_id           String?   @db.NVarChar(50)
+  is_honeypot                Boolean?
+  honeypot_expected_vote     String?   @db.NVarChar(255)
+  honeypot_result            String?   @db.NVarChar(255)
+  consensus_result           String?   @db.NVarChar(50)
+  agreed_with_consensus      Boolean?
+  reward_earned              Int?
+  status                     String?   @db.NVarChar(50)
+  created_at                 DateTime?
+  updated_at                 DateTime?
+
+  @@ignore
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model Validators {
+  validator_id             String?   @db.NVarChar(50)
+  phone_number             String?   @db.NVarChar(20)
+  full_name                String?   @db.NVarChar(50)
+  first_name               String?   @db.NVarChar(50)
+  date_of_birth            DateTime? @db.Date
+  address                  String?   @db.NVarChar(50)
+  state                    String?   @db.NVarChar(50)
+  assigned_market          String?   @db.NVarChar(50)
+  market_id                String?   @db.NVarChar(50)
+  assigned_at              DateTime?
+  bank_name                String?   @db.NVarChar(50)
+  bank_code                Int?
+  account_number           Int?
+  bank_verified_at         DateTime?
+  bank_account_name        String?   @db.NVarChar(50)
+  verified_last_name       String?   @db.NVarChar(50)
+  alternate_last_name      String?   @db.NVarChar(50)
+  invite_code              String?   @db.NVarChar(50)
+  invited_by               String?   @db.NVarChar(255)
+  registration_status      String?   @db.NVarChar(50)
+  tc_version_accepted      Boolean?
+  tc_accepted_at           DateTime?
+  registered_at            DateTime?
+  approved_at              DateTime?
+  total_votes              Int?
+  correct_votes            Int?
+  approval_count           Int?
+  rejection_count          Int?
+  accuracy_rate            Int?
+  approval_rate            Int?
+  avg_response_time_sec    Int?
+  response_rate            Int?
+  consecutive_timeouts     Int?
+  total_timeouts           Int?
+  honeypot_failures        Boolean?
+  honeypot_correct         Int?
+  honeypot_accuracy        Int?
+  tier                     String?   @db.NVarChar(50)
+  status                   String?   @db.NVarChar(50)
+  suspension_reason        String?   @db.NVarChar(255)
+  suspended_at             DateTime?
+  suspension_duration_days String?   @db.NVarChar(255)
+  suspension_ends_at       DateTime?
+  suspension_count         Int?
+  last_suspension_at       DateTime?
+  reinstatement_at         DateTime?
+  reinstated_by            String?   @db.NVarChar(255)
+  balance                  Decimal?  @db.Decimal(18, 2)
+  total_earned             Int?
+  last_payout_at           DateTime?
+  last_payout_amount       Decimal?  @db.Decimal(18, 2)
+  last_gps_latitude        Int?
+  last_gps_longitude       Int?
+  last_gps_timestamp       DateTime?
+  gps_compliance_rate      Int?
+  gps_fraud_count          Int?
+  weekly_assignments       Int?
+  weekly_assignment_limit  Int?
+  votes_last_hour          Int?
+  last_vote_at             DateTime?
+  last_assignment_at       DateTime?
+  device_id                String?   @db.NVarChar(50)
+  whatsapp_version         String?   @db.NVarChar(255)
+  phone_model              String?   @db.NVarChar(20)
+  last_device_change_at    DateTime?
+  device_change_count      Int?
+  typical_active_start     String?   @db.NVarChar(50)
+  typical_active_end       String?   @db.NVarChar(50)
+  odd_hours_vote_count     Int?
+  preferred_language       String?   @db.NVarChar(50)
+  created_at               DateTime?
+  updated_at               DateTime?
+
+  @@ignore
 }
