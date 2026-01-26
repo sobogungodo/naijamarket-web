@@ -184,10 +184,6 @@ async function getUserTierFromDB(session: any): Promise<string> {
 // HELPER FUNCTIONS
 // ============================================================================
 
-function formatDate(date: Date): string {
-  return date.toISOString().split("T")[0] || "";
-}
-
 function generateReportId(): string {
   return `RPT-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 }
