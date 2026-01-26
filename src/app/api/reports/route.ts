@@ -335,15 +335,6 @@ function formatDate(date: Date): string {
   return date.toISOString().split("T")[0] || "";
 }
 
-function formatCurrency(amount: number): string {
-  return new Intl.NumberFormat("en-NG", {
-    style: "currency",
-    currency: "NGN",
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  }).format(amount);
-}
-
 // ============================================================================
 // MOCK DATA GENERATORS (Replace with real DB queries)
 // ============================================================================
