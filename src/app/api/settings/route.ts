@@ -438,12 +438,12 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         }
 
         // Mark account for deletion (soft delete)
+        // Note: Update settings_json to mark as deleted since status column may not exist
         await prisma.consumers.update({
           where: { consumer_id: user.consumer_id },
           data: { 
-            status: "DELETED",
             // Clear sensitive data
-            settings_json: null,
+            settings_json: JSON.stringify({ deleted: true, deletedAt: new Date().toISOString() }),
           },
         });
 
