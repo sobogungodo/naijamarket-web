@@ -87,7 +87,9 @@ export default function TwoFactorAuth() {
 
     try {
       // Get setup options (includes available methods)
-      const response = await fetch("/api/auth/2fa/setup");
+      const response = await fetch("/api/auth/2fa/setup", {
+        credentials: "include",
+      });
       const data = await response.json();
 
       if (data.success) {
@@ -131,6 +133,7 @@ export default function TwoFactorAuth() {
       const response = await fetch("/api/auth/2fa/setup", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify({ method }),
       });
 
@@ -162,6 +165,7 @@ export default function TwoFactorAuth() {
       const response = await fetch("/api/auth/2fa/setup", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify({ 
           method: selectedMethod,
           otp: verificationCode,
@@ -209,6 +213,7 @@ export default function TwoFactorAuth() {
       const response = await fetch("/api/auth/2fa/disable", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify({}), // No OTP yet - will trigger send
       });
 
@@ -240,6 +245,7 @@ export default function TwoFactorAuth() {
       const response = await fetch("/api/auth/2fa/disable", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify({ otp: disableCode }),
       });
 
