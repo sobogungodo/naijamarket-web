@@ -1,23 +1,14 @@
 // ============================================================================
 // src/app/api/reports/debug/route.ts
-// NaijaMarket Intel - Reports Debug Endpoint
+// NaijaMarket Intel - Reports Debug Endpoint (Using Prisma)
 // TEMPORARY - Remove after fixing
 // ============================================================================
 
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
-import sql from "mssql";
+import { PrismaClient } from "@prisma/client";
 
-const dbConfig: sql.config = {
-  user: process.env.DATABASE_USER,
-  password: process.env.DATABASE_PASSWORD,
-  database: process.env.DATABASE_NAME,
-  server: process.env.DATABASE_SERVER || "",
-  options: {
-    encrypt: true,
-    trustServerCertificate: false,
-  },
-};
+const prisma = new PrismaClient();
 
 export async function GET(): Promise<NextResponse> {
   try {
@@ -39,7 +30,7 @@ export async function GET(): Promise<NextResponse> {
       phoneSuffix = name.replace("User ", "");
     }
 
-    // Try database lookup
+    // Try database lookup with Prisma
     let dbResult: any = { attempted: false };
     let userTier = "UNKNOWN";
     
@@ -48,26 +39,24 @@ export async function GET(): Promise<NextResponse> {
       dbResult.phoneSuffix = phoneSuffix;
       
       try {
-        const pool = await sql.connect(dbConfig);
-        const result = await pool.request()
-          .query(`
-            SELECT TOP 1 
-              consumer_id,
-              phone_number,
-              email,
-              subscription_tier,
-              full_name
-            FROM Consumers 
-            WHERE phone_number LIKE '%${phoneSuffix}'
-            ORDER BY created_at DESC
-          `);
+        const users = await prisma.$queryRawUnsafe<any[]>(`
+          SELECT TOP 1 
+            consumer_id,
+            phone_number,
+            email,
+            subscription_tier,
+            full_name
+          FROM Consumers 
+          WHERE phone_number LIKE '%${phoneSuffix}'
+          ORDER BY created_at DESC
+        `);
         
         dbResult.success = true;
-        dbResult.rowCount = result.recordset.length;
-        dbResult.data = result.recordset;
+        dbResult.rowCount = users?.length || 0;
+        dbResult.data = users;
         
-        if (result.recordset.length > 0) {
-          userTier = (result.recordset[0].subscription_tier || "FREE").toString().toUpperCase();
+        if (users && users.length > 0 && users[0].subscription_tier) {
+          userTier = users[0].subscription_tier.toUpperCase();
         }
       } catch (dbError: any) {
         dbResult.success = false;
