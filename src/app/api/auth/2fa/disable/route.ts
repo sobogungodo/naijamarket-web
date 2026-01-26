@@ -56,7 +56,6 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
     // Get the 2FA method to determine where to send OTP
     const method = user.two_factor_method || "email";
-    const identifier = method === "whatsapp" ? user.phone_number : user.email;
 
     // ================================================================
     // Step 1: If no OTP provided, send one
