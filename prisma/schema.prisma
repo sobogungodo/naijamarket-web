@@ -66,6 +66,7 @@ model Consumers {
   phone_verified             Boolean?  @default(false)
   email_verified             Boolean?  @default(false)
   phone                      String?   @db.VarChar(20)
+  settings_json         String?   @db.NVarChar(Max)
   two_factor_enabled    Boolean   @default(false) @map("two_factor_enabled")
   two_factor_method     String?   @map("two_factor_method") @db.NVarChar(20)
   two_factor_enabled_at DateTime? @map("two_factor_enabled_at")
