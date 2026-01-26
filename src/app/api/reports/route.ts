@@ -14,10 +14,31 @@ const prisma = new PrismaClient();
 // TIER ACCESS CONFIGURATION
 // ============================================================================
 
+// Reports per month by tier
+const TIER_REPORTS: Record<string, number> = {
+  FREE: 0,
+  SILVER: 0,
+  GOLD: 5,        // 5 reports per month
+  BUSINESS: 10,   // 10 reports per month
+  CORPORATE: 999, // Unlimited
+  ENTERPRISE: 999, // Unlimited
+};
+
+// Schedule limits by tier (0 = cannot schedule)
+const TIER_SCHEDULE_LIMIT: Record<string, number> = {
+  FREE: 0,
+  SILVER: 0,
+  GOLD: 0,        // Cannot schedule
+  BUSINESS: 3,    // Can schedule up to 3 reports
+  CORPORATE: 999, // Unlimited
+  ENTERPRISE: 999, // Unlimited
+};
+
+// Legacy: for tier level comparison (report type access)
 const TIER_ACCESS: Record<string, number> = {
   FREE: 0,
   SILVER: 0,
-  GOLD: 0,
+  GOLD: 5,
   BUSINESS: 10,
   CORPORATE: 999,
   ENTERPRISE: 999,
@@ -212,13 +233,13 @@ export async function GET(request: NextRequest) {
     const userTier = await getUserTierFromDB(session);
     const tierLevel = TIER_ACCESS[userTier] ?? 0;
 
-    // Check minimum tier requirement
+    // Check minimum tier requirement (GOLD+ can access reports)
     if (tierLevel === 0) {
       return NextResponse.json({
         success: false,
-        error: "Reports require BUSINESS tier or higher",
+        error: "Reports require GOLD tier or higher",
         currentTier: userTier,
-        requiredTier: "BUSINESS",
+        requiredTier: "GOLD",
         upgradeUrl: "/subscribe",
       }, { status: 403 });
     }
@@ -234,9 +255,12 @@ export async function GET(request: NextRequest) {
         requiredTier: report.tier,
       }));
 
-      // Calculate reports remaining (CORPORATE/ENTERPRISE = unlimited = 999)
-      const reportsPerMonth = tierLevel >= 999 ? 999 : tierLevel;
-      const canSchedule = tierLevel >= 999; // CORPORATE and ENTERPRISE can schedule
+      // Get reports per month for this tier
+      const reportsPerMonth = TIER_REPORTS[userTier] ?? 0;
+      
+      // Get schedule limit for this tier
+      const scheduleLimit = TIER_SCHEDULE_LIMIT[userTier] ?? 0;
+      const canSchedule = scheduleLimit > 0;
 
       return NextResponse.json({
         success: true,
@@ -246,10 +270,12 @@ export async function GET(request: NextRequest) {
         reportTypes: availableReports,
         reportsRemaining: reportsPerMonth,
         canSchedule: canSchedule,
+        scheduleLimit: scheduleLimit,
         // Also include limits for completeness
         limits: {
           reportsPerMonth: reportsPerMonth,
           scheduledDelivery: canSchedule,
+          maxScheduledReports: scheduleLimit,
           apiAccess: userTier === "ENTERPRISE",
         },
       });
@@ -291,9 +317,9 @@ export async function POST(request: NextRequest) {
     if (tierLevel === 0) {
       return NextResponse.json({
         success: false,
-        error: "Reports require BUSINESS tier or higher",
+        error: "Reports require GOLD tier or higher",
         currentTier: userTier,
-        requiredTier: "BUSINESS",
+        requiredTier: "GOLD",
         upgradeUrl: "/subscribe",
       }, { status: 403 });
     }
@@ -326,8 +352,8 @@ export async function POST(request: NextRequest) {
     const reportId = generateReportId();
     const generatedAt = new Date();
 
-    // Calculate reports remaining (CORPORATE/ENTERPRISE = unlimited = 999)
-    const reportsRemaining = tierLevel >= 999 ? 999 : tierLevel;
+    // Get reports per month for this tier
+    const reportsRemaining = TIER_REPORTS[userTier] ?? 0;
 
     return NextResponse.json({
       success: true,
