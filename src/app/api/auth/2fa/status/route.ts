@@ -40,11 +40,11 @@ async function findUserFromSession(session: any) {
     const phoneSuffix = name.replace("User ", "");
     if (phoneSuffix && /^\d{4,}$/.test(phoneSuffix)) {
       // Use raw query for SQL Server LIKE pattern
-      const users = await prisma.$queryRaw<any[]>`
+      const users = await prisma.$queryRawUnsafe<any[]>(`
         SELECT * FROM Consumers 
-        WHERE phone_number LIKE ${'%' + phoneSuffix}
+        WHERE phone_number LIKE '%${phoneSuffix}'
         ORDER BY created_at DESC
-      `;
+      `);
       if (users && users.length > 0) {
         return users[0];
       }
