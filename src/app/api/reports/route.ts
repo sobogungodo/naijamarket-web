@@ -35,6 +35,8 @@ const REPORT_TYPES = [
     frequency: "Daily",
     tier: "BUSINESS",
     icon: "📊",
+    sections: ["Price Overview", "Top Movers", "Market Activity", "Regional Summary"],
+    estimatedPages: 5,
   },
   {
     id: "weekly-trends",
@@ -43,6 +45,8 @@ const REPORT_TYPES = [
     frequency: "Weekly",
     tier: "BUSINESS",
     icon: "📈",
+    sections: ["Weekly Summary", "Price Trends", "Category Analysis", "Forecast"],
+    estimatedPages: 12,
   },
   {
     id: "market-comparison",
@@ -51,6 +55,8 @@ const REPORT_TYPES = [
     frequency: "On-demand",
     tier: "BUSINESS",
     icon: "🔄",
+    sections: ["Market Overview", "Price Comparison", "Regional Analysis", "Recommendations"],
+    estimatedPages: 8,
   },
   {
     id: "arbitrage-opportunities",
@@ -59,6 +65,8 @@ const REPORT_TYPES = [
     frequency: "Daily",
     tier: "CORPORATE",
     icon: "💰",
+    sections: ["Top Opportunities", "Risk Analysis", "Route Optimization", "ROI Projections"],
+    estimatedPages: 10,
   },
   {
     id: "inflation-tracker",
@@ -67,6 +75,8 @@ const REPORT_TYPES = [
     frequency: "Monthly",
     tier: "CORPORATE",
     icon: "📉",
+    sections: ["Inflation Summary", "NBS Comparison", "Category Breakdown", "Historical Trends"],
+    estimatedPages: 15,
   },
   {
     id: "supply-chain",
@@ -75,6 +85,8 @@ const REPORT_TYPES = [
     frequency: "Weekly",
     tier: "ENTERPRISE",
     icon: "🚛",
+    sections: ["Supply Overview", "Shortage Alerts", "Logistics Analysis", "Vendor Insights"],
+    estimatedPages: 20,
   },
   {
     id: "custom-analytics",
@@ -83,6 +95,8 @@ const REPORT_TYPES = [
     frequency: "On-demand",
     tier: "ENTERPRISE",
     icon: "⚙️",
+    sections: ["Custom Metrics", "Date Range Analysis", "Comparison Tools", "Export Options"],
+    estimatedPages: 25,
   },
 ];
 
@@ -220,14 +234,22 @@ export async function GET(request: NextRequest) {
         requiredTier: report.tier,
       }));
 
+      // Calculate reports remaining (CORPORATE/ENTERPRISE = unlimited = 999)
+      const reportsPerMonth = tierLevel >= 999 ? 999 : tierLevel;
+      const canSchedule = tierLevel >= 999; // CORPORATE and ENTERPRISE can schedule
+
       return NextResponse.json({
         success: true,
         userTier,
         tierLevel,
-        reports: availableReports,
+        // Frontend expects these field names:
+        reportTypes: availableReports,
+        reportsRemaining: reportsPerMonth,
+        canSchedule: canSchedule,
+        // Also include limits for completeness
         limits: {
-          reportsPerMonth: tierLevel,
-          scheduledDelivery: tierLevel >= 999,
+          reportsPerMonth: reportsPerMonth,
+          scheduledDelivery: canSchedule,
           apiAccess: userTier === "ENTERPRISE",
         },
       });
@@ -304,6 +326,9 @@ export async function POST(request: NextRequest) {
     const reportId = generateReportId();
     const generatedAt = new Date();
 
+    // Calculate reports remaining (CORPORATE/ENTERPRISE = unlimited = 999)
+    const reportsRemaining = tierLevel >= 999 ? 999 : tierLevel;
+
     return NextResponse.json({
       success: true,
       report: {
@@ -315,6 +340,7 @@ export async function POST(request: NextRequest) {
         estimatedCompletion: new Date(generatedAt.getTime() + 30000).toISOString(),
         parameters,
       },
+      reportsRemaining: reportsRemaining,
       message: "Report generation started. You will be notified when ready.",
     });
   } catch (error: any) {
