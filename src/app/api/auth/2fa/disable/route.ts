@@ -1,8 +1,7 @@
 // ============================================================================
 // src/app/api/auth/2fa/disable/route.ts
-// NaijaMarket Intel - Disable Two-Factor Authentication
-// Uses existing WhatsApp/Email OTP infrastructure
-// Version: 1.1.0 - Fixed user lookup
+// NaijaMarket Intel - Two-Factor Authentication Disable
+// Version: 1.2.0 - Fixed user lookup with full_name strategy
 // ============================================================================
 
 import { NextRequest, NextResponse } from "next/server";
@@ -12,70 +11,86 @@ import { PrismaClient } from "@prisma/client";
 const prisma = new PrismaClient();
 
 // ============================================================================
-// HELPER: Find user from session
+// USER LOOKUP HELPER - HANDLES ALL SESSION SCENARIOS
 // ============================================================================
 
 async function findUserFromSession(session: any) {
   if (!session?.user) return null;
 
   const { email, name, phone } = session.user as any;
+  console.log("[2FA Disable] Session data:", { email, name, phone });
 
-  // Strategy 1: By email
-  if (email) {
-    const user = await prisma.consumers.findFirst({
-      where: { email: email },
-    });
-    if (user) return user;
-  }
+  try {
+    // Strategy 1: By email
+    if (email) {
+      const user = await prisma.consumers.findFirst({
+        where: { email: email },
+      });
+      if (user) return user;
+    }
 
-  // Strategy 2: By phone (if present in session)
-  if (phone) {
-    const user = await prisma.consumers.findFirst({
-      where: { phone_number: phone },
-    });
-    if (user) return user;
-  }
+    // Strategy 2: By phone (if present in session)
+    if (phone) {
+      const user = await prisma.consumers.findFirst({
+        where: { phone_number: phone },
+      });
+      if (user) return user;
+    }
 
-  // Strategy 3: Extract phone suffix from name like "User 5952"
-  if (name && name.startsWith("User ")) {
-    const phoneSuffix = name.replace("User ", "");
-    if (phoneSuffix && /^\d{4,}$/.test(phoneSuffix)) {
-      // Use raw query for SQL Server LIKE pattern
-      const users = await prisma.$queryRawUnsafe<any[]>(`
-        SELECT * FROM Consumers 
-        WHERE phone_number LIKE '%${phoneSuffix}'
-        ORDER BY created_at DESC
-      `);
-      if (users && users.length > 0) {
-        return users[0];
+    // Strategy 3: Extract phone suffix from name like "User 5952"
+    if (name && name.startsWith("User ")) {
+      const phoneSuffix = name.replace("User ", "");
+      if (phoneSuffix && /^\d{4,}$/.test(phoneSuffix)) {
+        const users = await prisma.$queryRawUnsafe<any[]>(`
+          SELECT * FROM Consumers 
+          WHERE phone_number LIKE '%${phoneSuffix}'
+          ORDER BY created_at DESC
+        `);
+        if (users && users.length > 0) return users[0];
       }
     }
-  }
 
-  return null;
+    // Strategy 4: By full_name (when session has actual name, not "User XXXX")
+    if (name && !name.startsWith("User ")) {
+      // Try exact match first
+      let user = await prisma.consumers.findFirst({
+        where: { full_name: name },
+      });
+      if (user) return user;
+
+      // Try case-insensitive search
+      const users = await prisma.$queryRawUnsafe<any[]>(`
+        SELECT * FROM Consumers 
+        WHERE LOWER(full_name) = LOWER('${name.replace(/'/g, "''")}')
+        ORDER BY created_at DESC
+      `);
+      if (users && users.length > 0) return users[0];
+    }
+
+    return null;
+  } catch (error: any) {
+    console.error("[2FA Disable] Database error:", error.message);
+    return null;
+  }
 }
 
 // ============================================================================
 // POST - Disable 2FA
 // ============================================================================
 
-export async function POST(request: NextRequest): Promise<NextResponse> {
+export async function POST(request: NextRequest) {
   try {
     const session = await getServerSession();
     
     if (!session?.user) {
       return NextResponse.json({
         success: false,
-        error: "Authentication required",
+        error: "Not authenticated",
       }, { status: 401 });
     }
 
-    const body = await request.json();
-    const { otp } = body;
-
-    // Find user
     const user = await findUserFromSession(session);
-
+    
     if (!user) {
       return NextResponse.json({
         success: false,
@@ -91,125 +106,88 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       }, { status: 400 });
     }
 
-    // Get the 2FA method to determine where to send OTP
-    const method = user.two_factor_method || "email";
+    const body = await request.json();
+    const { otp } = body;
 
-    // ================================================================
-    // Step 1: If no OTP provided, send one
-    // ================================================================
-    if (!otp) {
-      const otpType = method === "whatsapp" ? "phone" : "email";
-      
-      const baseUrl = process.env.NEXTAUTH_URL || 
-        (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000");
-      
-      const sendResponse = await fetch(`${baseUrl}/api/auth/send-otp`, {
+    // If OTP provided, verify and disable 2FA
+    if (otp) {
+      // Verify OTP using existing endpoint
+      const verifyResponse = await fetch(new URL("/api/auth/verify-otp", request.url).toString(), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          type: otpType,
-          phone: method === "whatsapp" ? user.phone_number : undefined,
-          email: method === "email" ? user.email : undefined,
+          phone: user.phone_number,
+          email: user.email,
+          otp: otp,
         }),
       });
 
-      const sendResult = await sendResponse.json();
+      const verifyResult = await verifyResponse.json();
 
-      if (!sendResponse.ok) {
+      if (!verifyResult.success) {
         return NextResponse.json({
           success: false,
-          error: sendResult.error || "Failed to send verification code",
-        }, { status: sendResponse.status });
+          error: verifyResult.error || "Invalid verification code",
+        }, { status: 400 });
       }
+
+      // Disable 2FA
+      await prisma.consumers.update({
+        where: { consumer_id: user.consumer_id },
+        data: {
+          two_factor_enabled: false,
+          two_factor_method: null,
+          two_factor_enabled_at: null,
+        },
+      });
 
       return NextResponse.json({
         success: true,
-        step: "verify",
-        message: `Verification code sent to your ${method === "whatsapp" ? "WhatsApp" : "email"}`,
-        destination: method === "whatsapp" ? maskPhone(user.phone_number!) : maskEmail(user.email!),
-        method,
+        message: "Two-factor authentication disabled successfully",
+        data: {
+          isEnabled: false,
+        },
       });
     }
 
-    // ================================================================
-    // Step 2: Verify OTP and disable 2FA
-    // ================================================================
-    if (otp.length !== 6) {
-      return NextResponse.json({
-        success: false,
-        error: "Please enter a valid 6-digit code",
-      }, { status: 400 });
-    }
+    // No OTP - send verification code to current 2FA method
+    const method = user.two_factor_method || "whatsapp";
 
-    // Verify OTP
-    const otpType = method === "whatsapp" ? "phone" : "email";
-    
-    const baseUrl = process.env.NEXTAUTH_URL || 
-      (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000");
-    
-    const verifyResponse = await fetch(`${baseUrl}/api/auth/verify-otp`, {
+    const sendResponse = await fetch(new URL("/api/auth/send-otp", request.url).toString(), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        type: otpType,
         phone: method === "whatsapp" ? user.phone_number : undefined,
         email: method === "email" ? user.email : undefined,
-        otp,
+        type: "2fa_disable",
       }),
     });
 
-    const verifyResult = await verifyResponse.json();
+    const sendResult = await sendResponse.json();
 
-    if (!verifyResponse.ok) {
+    if (!sendResult.success) {
       return NextResponse.json({
         success: false,
-        error: verifyResult.error || "Invalid verification code",
-      }, { status: verifyResponse.status });
+        error: sendResult.error || "Failed to send verification code",
+      }, { status: 500 });
     }
-
-    // Disable 2FA in database
-    await prisma.consumers.update({
-      where: { consumer_id: user.consumer_id },
-      data: {
-        two_factor_enabled: false,
-        two_factor_method: null,
-        two_factor_enabled_at: null,
-      },
-    });
-
-    console.log("✅ [2FA] Disabled for:", user.consumer_id);
 
     return NextResponse.json({
       success: true,
-      message: "Two-factor authentication has been disabled",
+      message: `Verification code sent via ${method}`,
+      data: {
+        method,
+        codeSent: true,
+        expiresIn: 300, // 5 minutes
+      },
     });
-  } catch (error) {
-    console.error("❌ 2FA disable error:", error);
+  } catch (error: any) {
+    console.error("[2FA Disable] Error:", error);
     return NextResponse.json({
       success: false,
-      error: "Failed to disable 2FA",
+      error: error.message || "Internal server error",
     }, { status: 500 });
   }
-}
-
-// ============================================================================
-// HELPERS
-// ============================================================================
-
-function maskPhone(phone: string): string {
-  if (phone.length < 6) return "***";
-  return phone.slice(0, 4) + "****" + phone.slice(-3);
-}
-
-function maskEmail(email: string): string {
-  const [localPart, domain] = email.split("@");
-  if (!localPart || !domain) return "***@***";
-  
-  const maskedLocal = localPart.length > 2 
-    ? localPart[0] + "***" + localPart.slice(-1)
-    : "***";
-  
-  return `${maskedLocal}@${domain}`;
 }
 
 export const dynamic = "force-dynamic";

@@ -1,8 +1,7 @@
 // ============================================================================
 // src/app/api/auth/2fa/setup/route.ts
 // NaijaMarket Intel - Two-Factor Authentication Setup
-// Uses existing WhatsApp/Email OTP infrastructure
-// Version: 1.1.0 - Fixed user lookup
+// Version: 1.2.0 - Fixed user lookup with full_name strategy
 // ============================================================================
 
 import { NextRequest, NextResponse } from "next/server";
@@ -12,275 +11,269 @@ import { PrismaClient } from "@prisma/client";
 const prisma = new PrismaClient();
 
 // ============================================================================
-// HELPER: Find user from session
+// USER LOOKUP HELPER - HANDLES ALL SESSION SCENARIOS
 // ============================================================================
 
 async function findUserFromSession(session: any) {
   if (!session?.user) return null;
 
   const { email, name, phone } = session.user as any;
+  console.log("[2FA Setup] Session data:", { email, name, phone });
 
-  // Strategy 1: By email
-  if (email) {
-    const user = await prisma.consumers.findFirst({
-      where: { email: email },
-    });
-    if (user) return user;
-  }
+  try {
+    // Strategy 1: By email
+    if (email) {
+      console.log("[2FA Setup] Trying lookup by email:", email);
+      const user = await prisma.consumers.findFirst({
+        where: { email: email },
+      });
+      if (user) {
+        console.log("[2FA Setup] Found by email");
+        return user;
+      }
+    }
 
-  // Strategy 2: By phone (if present in session)
-  if (phone) {
-    const user = await prisma.consumers.findFirst({
-      where: { phone_number: phone },
-    });
-    if (user) return user;
-  }
+    // Strategy 2: By phone (if present in session)
+    if (phone) {
+      console.log("[2FA Setup] Trying lookup by phone:", phone);
+      const user = await prisma.consumers.findFirst({
+        where: { phone_number: phone },
+      });
+      if (user) {
+        console.log("[2FA Setup] Found by phone");
+        return user;
+      }
+    }
 
-  // Strategy 3: Extract phone suffix from name like "User 5952"
-  if (name && name.startsWith("User ")) {
-    const phoneSuffix = name.replace("User ", "");
-    if (phoneSuffix && /^\d{4,}$/.test(phoneSuffix)) {
-      // Use raw query for SQL Server LIKE pattern
+    // Strategy 3: Extract phone suffix from name like "User 5952"
+    if (name && name.startsWith("User ")) {
+      const phoneSuffix = name.replace("User ", "");
+      if (phoneSuffix && /^\d{4,}$/.test(phoneSuffix)) {
+        console.log("[2FA Setup] Trying lookup by phone suffix:", phoneSuffix);
+        const users = await prisma.$queryRawUnsafe<any[]>(`
+          SELECT * FROM Consumers 
+          WHERE phone_number LIKE '%${phoneSuffix}'
+          ORDER BY created_at DESC
+        `);
+        if (users && users.length > 0) {
+          console.log("[2FA Setup] Found by phone suffix");
+          return users[0];
+        }
+      }
+    }
+
+    // Strategy 4: By full_name (when session has actual name, not "User XXXX")
+    if (name && !name.startsWith("User ")) {
+      console.log("[2FA Setup] Trying lookup by full_name:", name);
+      
+      // Try exact match first
+      let user = await prisma.consumers.findFirst({
+        where: { full_name: name },
+      });
+      
+      if (user) {
+        console.log("[2FA Setup] Found by full_name (exact)");
+        return user;
+      }
+
+      // Try case-insensitive search
+      console.log("[2FA Setup] Trying case-insensitive full_name search");
       const users = await prisma.$queryRawUnsafe<any[]>(`
         SELECT * FROM Consumers 
-        WHERE phone_number LIKE '%${phoneSuffix}'
+        WHERE LOWER(full_name) = LOWER('${name.replace(/'/g, "''")}')
         ORDER BY created_at DESC
       `);
+
       if (users && users.length > 0) {
+        console.log("[2FA Setup] Found by full_name (case-insensitive)");
         return users[0];
       }
     }
-  }
 
-  return null;
+    console.log("[2FA Setup] User not found with any strategy");
+    return null;
+  } catch (error: any) {
+    console.error("[2FA Setup] Database error:", error.message);
+    return null;
+  }
 }
 
 // ============================================================================
-// GET - Get 2FA setup options
+// GET - Get available 2FA methods
 // ============================================================================
 
-export async function GET(): Promise<NextResponse> {
+export async function GET(_request: NextRequest) {
   try {
     const session = await getServerSession();
     
     if (!session?.user) {
       return NextResponse.json({
         success: false,
-        error: "Authentication required",
+        error: "Not authenticated",
       }, { status: 401 });
     }
 
-    // Find user using helper
     const user = await findUserFromSession(session);
-
+    
     if (!user) {
-      console.log("[2FA] User not found. Session:", JSON.stringify(session.user));
       return NextResponse.json({
         success: false,
         error: "User not found",
       }, { status: 404 });
     }
 
+    // Determine available methods based on user's contact info
+    const availableMethods = [];
+    
+    if (user.phone_number) {
+      availableMethods.push({
+        id: "whatsapp",
+        name: "WhatsApp",
+        description: `Send code to ${user.phone_number.slice(0, 4)}****${user.phone_number.slice(-4)}`,
+        icon: "📱",
+      });
+    }
+    
+    if (user.email) {
+      availableMethods.push({
+        id: "email",
+        name: "Email",
+        description: `Send code to ${user.email.replace(/(.{2})(.*)(@.*)/, "$1***$3")}`,
+        icon: "📧",
+      });
+    }
+
     return NextResponse.json({
       success: true,
       data: {
-        enabled: user.two_factor_enabled || false,
-        method: user.two_factor_method || null,
-        availableMethods: [
-          {
-            id: "whatsapp",
-            name: "WhatsApp OTP",
-            description: "Receive verification code via WhatsApp",
-            icon: "whatsapp",
-            available: !!user.phone_number,
-            destination: user.phone_number ? maskPhone(user.phone_number) : null,
-          },
-          {
-            id: "email",
-            name: "Email OTP",
-            description: "Receive verification code via Email",
-            icon: "email",
-            available: !!user.email,
-            destination: user.email ? maskEmail(user.email) : null,
-          },
-        ],
+        isEnabled: user.two_factor_enabled || false,
+        currentMethod: user.two_factor_method || null,
+        enabledAt: user.two_factor_enabled_at || null,
+        availableMethods,
       },
     });
-  } catch (error) {
-    console.error("2FA setup GET error:", error);
+  } catch (error: any) {
+    console.error("[2FA Setup] Error:", error);
     return NextResponse.json({
       success: false,
-      error: "Failed to get 2FA setup options",
+      error: error.message || "Internal server error",
     }, { status: 500 });
   }
 }
 
 // ============================================================================
-// POST - Enable 2FA (Step 1: Send OTP, Step 2: Verify & Enable)
+// POST - Setup 2FA (send code or verify)
 // ============================================================================
 
-export async function POST(request: NextRequest): Promise<NextResponse> {
+export async function POST(request: NextRequest) {
   try {
     const session = await getServerSession();
     
     if (!session?.user) {
       return NextResponse.json({
         success: false,
-        error: "Authentication required",
+        error: "Not authenticated",
       }, { status: 401 });
+    }
+
+    const user = await findUserFromSession(session);
+    
+    if (!user) {
+      return NextResponse.json({
+        success: false,
+        error: "User not found",
+      }, { status: 404 });
     }
 
     const body = await request.json();
     const { method, otp } = body;
 
-    // Validate method
-    if (!method || !["whatsapp", "email"].includes(method)) {
-      return NextResponse.json({
-        success: false,
-        error: "Invalid 2FA method. Choose 'whatsapp' or 'email'",
-      }, { status: 400 });
-    }
-
-    // Find user
-    const user = await findUserFromSession(session);
-
-    if (!user) {
-      return NextResponse.json({
-        success: false,
-        error: "User not found",
-      }, { status: 404 });
-    }
-
-    // Determine identifier based on method
-    const identifier = method === "whatsapp" ? user.phone_number : user.email;
-    
-    if (!identifier) {
-      return NextResponse.json({
-        success: false,
-        error: `No ${method === "whatsapp" ? "phone number" : "email"} associated with your account`,
-      }, { status: 400 });
-    }
-
-    // ================================================================
-    // Step 1: If no OTP provided, send one
-    // ================================================================
-    if (!otp) {
-      const otpType = method === "whatsapp" ? "phone" : "email";
-      
-      // Use existing OTP infrastructure
-      const baseUrl = process.env.NEXTAUTH_URL || 
-        (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000");
-      
-      const sendResponse = await fetch(`${baseUrl}/api/auth/send-otp`, {
+    // If OTP provided, verify and enable 2FA
+    if (otp) {
+      // Verify OTP using existing endpoint
+      const verifyResponse = await fetch(new URL("/api/auth/verify-otp", request.url).toString(), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          type: otpType,
-          phone: method === "whatsapp" ? user.phone_number : undefined,
-          email: method === "email" ? user.email : undefined,
+          phone: user.phone_number,
+          email: user.email,
+          otp: otp,
         }),
       });
 
-      const sendResult = await sendResponse.json();
+      const verifyResult = await verifyResponse.json();
 
-      if (!sendResponse.ok) {
+      if (!verifyResult.success) {
         return NextResponse.json({
           success: false,
-          error: sendResult.error || "Failed to send verification code",
-        }, { status: sendResponse.status });
+          error: verifyResult.error || "Invalid verification code",
+        }, { status: 400 });
       }
+
+      // Enable 2FA
+      await prisma.consumers.update({
+        where: { consumer_id: user.consumer_id },
+        data: {
+          two_factor_enabled: true,
+          two_factor_method: method || user.two_factor_method || "whatsapp",
+          two_factor_enabled_at: new Date(),
+        },
+      });
 
       return NextResponse.json({
         success: true,
-        step: "verify",
-        message: `Verification code sent to your ${method === "whatsapp" ? "WhatsApp" : "email"}`,
-        destination: method === "whatsapp" ? maskPhone(user.phone_number!) : maskEmail(user.email!),
+        message: "Two-factor authentication enabled successfully",
+        data: {
+          isEnabled: true,
+          method: method || user.two_factor_method || "whatsapp",
+        },
       });
     }
 
-    // ================================================================
-    // Step 2: Verify OTP and enable 2FA
-    // ================================================================
-    if (otp.length !== 6) {
+    // No OTP - send verification code
+    if (!method) {
       return NextResponse.json({
         success: false,
-        error: "Please enter a valid 6-digit code",
+        error: "Method is required",
       }, { status: 400 });
     }
 
-    // Verify OTP using existing infrastructure
-    const otpType = method === "whatsapp" ? "phone" : "email";
-    
-    const baseUrl = process.env.NEXTAUTH_URL || 
-      (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000");
-    
-    const verifyResponse = await fetch(`${baseUrl}/api/auth/verify-otp`, {
+    // Send OTP using existing endpoint
+    const sendResponse = await fetch(new URL("/api/auth/send-otp", request.url).toString(), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        type: otpType,
         phone: method === "whatsapp" ? user.phone_number : undefined,
         email: method === "email" ? user.email : undefined,
-        otp,
+        type: "2fa_setup",
       }),
     });
 
-    const verifyResult = await verifyResponse.json();
+    const sendResult = await sendResponse.json();
 
-    if (!verifyResponse.ok) {
+    if (!sendResult.success) {
       return NextResponse.json({
         success: false,
-        error: verifyResult.error || "Invalid verification code",
-      }, { status: verifyResponse.status });
+        error: sendResult.error || "Failed to send verification code",
+      }, { status: 500 });
     }
-
-    // Enable 2FA in database
-    await prisma.consumers.update({
-      where: { consumer_id: user.consumer_id },
-      data: {
-        two_factor_enabled: true,
-        two_factor_method: method,
-        two_factor_enabled_at: new Date(),
-      },
-    });
-
-    console.log("✅ [2FA] Enabled for:", user.consumer_id, "Method:", method);
 
     return NextResponse.json({
       success: true,
-      message: "Two-factor authentication has been enabled successfully",
+      message: `Verification code sent via ${method}`,
       data: {
-        enabled: true,
         method,
+        codeSent: true,
+        expiresIn: 300, // 5 minutes
       },
     });
-  } catch (error) {
-    console.error("❌ 2FA setup POST error:", error);
+  } catch (error: any) {
+    console.error("[2FA Setup] Error:", error);
     return NextResponse.json({
       success: false,
-      error: "Failed to enable 2FA",
+      error: error.message || "Internal server error",
     }, { status: 500 });
   }
-}
-
-// ============================================================================
-// HELPERS
-// ============================================================================
-
-function maskPhone(phone: string): string {
-  if (phone.length < 6) return "***";
-  return phone.slice(0, 4) + "****" + phone.slice(-3);
-}
-
-function maskEmail(email: string): string {
-  const [localPart, domain] = email.split("@");
-  if (!localPart || !domain) return "***@***";
-  
-  const maskedLocal = localPart.length > 2 
-    ? localPart[0] + "***" + localPart.slice(-1)
-    : "***";
-  
-  return `${maskedLocal}@${domain}`;
 }
 
 export const dynamic = "force-dynamic";
