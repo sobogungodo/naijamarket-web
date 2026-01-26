@@ -2,7 +2,7 @@
 // src/app/api/auth/2fa/disable/route.ts
 // NaijaMarket Intel - Disable Two-Factor Authentication
 // Uses existing WhatsApp/Email OTP infrastructure
-// Version: 1.0.0
+// Version: 1.1.0 - Fixed user lookup
 // ============================================================================
 
 import { NextRequest, NextResponse } from "next/server";
@@ -10,6 +10,50 @@ import { getServerSession } from "next-auth";
 import { PrismaClient } from "@prisma/client";
 
 const prisma = new PrismaClient();
+
+// ============================================================================
+// HELPER: Find user from session
+// ============================================================================
+
+async function findUserFromSession(session: any) {
+  if (!session?.user) return null;
+
+  const { email, name, phone } = session.user as any;
+
+  // Strategy 1: By email
+  if (email) {
+    const user = await prisma.consumers.findFirst({
+      where: { email: email },
+    });
+    if (user) return user;
+  }
+
+  // Strategy 2: By phone (if present in session)
+  if (phone) {
+    const user = await prisma.consumers.findFirst({
+      where: { phone_number: phone },
+    });
+    if (user) return user;
+  }
+
+  // Strategy 3: Extract phone suffix from name like "User 5952"
+  if (name && name.startsWith("User ")) {
+    const phoneSuffix = name.replace("User ", "");
+    if (phoneSuffix && /^\d{4,}$/.test(phoneSuffix)) {
+      // Use raw query for SQL Server LIKE pattern
+      const users = await prisma.$queryRaw<any[]>`
+        SELECT * FROM Consumers 
+        WHERE phone_number LIKE ${'%' + phoneSuffix}
+        ORDER BY created_at DESC
+      `;
+      if (users && users.length > 0) {
+        return users[0];
+      }
+    }
+  }
+
+  return null;
+}
 
 // ============================================================================
 // POST - Disable 2FA
@@ -30,14 +74,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     const { otp } = body;
 
     // Find user
-    const user = await prisma.consumers.findFirst({
-      where: { 
-        OR: [
-          { email: session.user.email || undefined },
-          { phone_number: (session.user as any)?.phone || undefined },
-        ]
-      },
-    });
+    const user = await findUserFromSession(session);
 
     if (!user) {
       return NextResponse.json({
