@@ -179,7 +179,7 @@ const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Frid
 // ============================================================================
 
 export default function ReportsPage() {
-  const { data: session, status } = useSession();
+  const { status } = useSession();
   const router = useRouter();
 
   // State
@@ -219,18 +219,6 @@ export default function ReportsPage() {
   const [previewReport, setPreviewReport] = useState<GeneratedReport | null>(null);
   const [showPreview, setShowPreview] = useState(false);
 
-  // Get user tier from session
-  useEffect(() => {
-    if (session?.user) {
-      const tier = (
-        (session.user as { tier?: string })?.tier ||
-        (session.user as { subscriptionTier?: string })?.subscriptionTier ||
-        "FREE"
-      ).toString().toUpperCase();
-      setUserTier(tier);
-    }
-  }, [session]);
-
   // Fetch initial data
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -238,23 +226,35 @@ export default function ReportsPage() {
 
     try {
       // Fetch report types and user data
-      const response = await fetch("/api/reports?action=types");
+      const response = await fetch("/api/reports?action=types", {
+        credentials: "include",
+      });
       const data = await response.json();
 
       if (data.success) {
         setReportTypes(data.reportTypes || []);
         setReportsRemaining(data.reportsRemaining || 0);
         setCanSchedule(data.canSchedule || false);
+        // Get tier from API response
+        if (data.userTier) {
+          setUserTier(data.userTier.toUpperCase());
+        }
         if (data.reportTypes?.length > 0) {
           setSelectedReportType(data.reportTypes[0].id);
         }
       } else if (response.status === 403) {
         setError(data.error || "Reports require BUSINESS tier or higher");
+        // Still set tier even on access denied
+        if (data.currentTier) {
+          setUserTier(data.currentTier.toUpperCase());
+        }
       }
 
       // Fetch scheduled reports if allowed
       if (canSchedule) {
-        const scheduleResponse = await fetch("/api/reports/schedule");
+        const scheduleResponse = await fetch("/api/reports/schedule", {
+          credentials: "include",
+        });
         const scheduleData = await scheduleResponse.json();
         if (scheduleData.success) {
           setScheduledReports(scheduleData.schedules || []);
@@ -297,6 +297,7 @@ export default function ReportsPage() {
       const response = await fetch("/api/reports", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify(body),
       });
 
@@ -326,7 +327,9 @@ export default function ReportsPage() {
       window.open(url, "_blank");
     } else if (report.format === "pdf") {
       // For PDF, fetch the HTML and generate client-side
-      const response = await fetch(url);
+      const response = await fetch(url, {
+        credentials: "include",
+      });
       const data = await response.json();
       
       if (data.success && data.pdfData?.htmlContent) {
@@ -350,6 +353,7 @@ export default function ReportsPage() {
       const response = await fetch("/api/reports/schedule", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify(scheduleForm),
       });
 
@@ -382,6 +386,7 @@ export default function ReportsPage() {
       const response = await fetch(`/api/reports/schedule?id=${scheduleId}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
+        credentials: "include",
         body: JSON.stringify({ isActive: !isActive }),
       });
 
@@ -404,6 +409,7 @@ export default function ReportsPage() {
     try {
       const response = await fetch(`/api/reports/schedule?id=${scheduleId}`, {
         method: "DELETE",
+        credentials: "include",
       });
 
       const data = await response.json();
