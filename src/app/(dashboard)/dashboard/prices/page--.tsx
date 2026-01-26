@@ -1,12 +1,13 @@
 // ============================================================================
 // src/app/(dashboard)/dashboard/prices/page.tsx
 // NaijaMarket Intel - Live Prices Page
-// Version: 6.1.0 - FIXED dropdown click handlers
+// Fetches prices and filters from Azure SQL Database
+// Version: 6.0.0 - Database as primary source
 // ============================================================================
 
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { 
   Search, 
   Filter, 
@@ -97,11 +98,6 @@ export default function PricesPage() {
   const [showStateDropdown, setShowStateDropdown] = useState(false);
   const [showMarketDropdown, setShowMarketDropdown] = useState(false);
 
-  // Refs for dropdown containers
-  const categoryRef = useRef<HTMLDivElement>(null);
-  const stateRef = useRef<HTMLDivElement>(null);
-  const marketRef = useRef<HTMLDivElement>(null);
-
   // Modal state
   const [selectedPrice, setSelectedPrice] = useState<SelectedPrice | null>(null);
 
@@ -126,6 +122,7 @@ export default function PricesPage() {
       if (trendFilter && trendFilter !== "all") params.append("trend", trendFilter);
       params.append("sort", sortBy);
       params.append("limit", "200");
+      params.append("filters", "true"); // Always request filters
 
       const response = await fetch("/api/prices?" + params.toString());
       
@@ -139,7 +136,7 @@ export default function PricesPage() {
         setPrices(result.data || []);
         setDataSource(result.source || "unknown");
         
-        // Update filter options from API
+        // Update filter options
         if (result.filters) {
           setFilterOptions({
             categories: result.filters.categories || [],
@@ -171,30 +168,6 @@ export default function PricesPage() {
     }, 300);
     return () => clearTimeout(debounce);
   }, [searchQuery, categoryFilter, stateFilter, marketFilter, trendFilter, sortBy]);
-
-  // ============================================================================
-  // CLOSE DROPDOWNS ON OUTSIDE CLICK - FIXED VERSION
-  // ============================================================================
-
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      const target = event.target as Node;
-      
-      // Only close if click is outside all dropdown containers
-      if (categoryRef.current && !categoryRef.current.contains(target)) {
-        setShowCategoryDropdown(false);
-      }
-      if (stateRef.current && !stateRef.current.contains(target)) {
-        setShowStateDropdown(false);
-      }
-      if (marketRef.current && !marketRef.current.contains(target)) {
-        setShowMarketDropdown(false);
-      }
-    };
-
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
 
   // ============================================================================
   // HANDLERS
@@ -283,13 +256,23 @@ export default function PricesPage() {
   const getSourceDisplay = (source: string): { text: string; color: string } => {
     if (source === "database") return { text: "Azure SQL", color: "text-blue-400" };
     if (source.includes("Daily")) return { text: "Daily Prices", color: "text-emerald-400" };
-    if (source.includes("Latest")) return { text: "Latest Prices Summary", color: "text-emerald-400" };
     if (source.includes("NBS")) return { text: "NBS Historical", color: "text-cyan-400" };
     if (source.includes("Validated")) return { text: "Validated", color: "text-green-400" };
     if (source.includes("sheets")) return { text: "Google Sheets", color: "text-yellow-400" };
-    if (source.includes("demo") || source.includes("mock") || source.includes("Demo")) return { text: "Demo Data", color: "text-orange-400" };
+    if (source.includes("demo") || source.includes("mock")) return { text: "Demo Data", color: "text-orange-400" };
     return { text: source, color: "text-gray-400" };
   };
+
+  // Close dropdowns when clicking outside
+  useEffect(() => {
+    const handleClick = () => {
+      setShowCategoryDropdown(false);
+      setShowStateDropdown(false);
+      setShowMarketDropdown(false);
+    };
+    document.addEventListener("click", handleClick);
+    return () => document.removeEventListener("click", handleClick);
+  }, []);
 
   // ============================================================================
   // RENDER
@@ -304,7 +287,7 @@ export default function PricesPage() {
         <div>
           <h1 className="text-2xl font-display font-bold text-white">Live Prices</h1>
           <p className="text-sm text-gray-500 mt-1 flex items-center gap-2">
-            Real-time commodity prices from {filterOptions.markets.length || 224} markets
+            Real-time commodity prices from {filterOptions.markets.length || 226} markets
             {dataSource && dataSource !== "loading" && (
               <span className={`flex items-center gap-1 text-xs px-2 py-0.5 rounded bg-terminal-muted ${sourceInfo.color}`}>
                 <Database className="w-3 h-3" />
@@ -353,29 +336,21 @@ export default function PricesPage() {
             )}
           </div>
 
-          {/* Category Filter - FIXED */}
-          <div className="relative" ref={categoryRef}>
+          {/* Category Filter */}
+          <div className="relative" onClick={(e) => e.stopPropagation()}>
             <button 
-              onClick={() => {
-                setShowCategoryDropdown(!showCategoryDropdown);
-                setShowStateDropdown(false);
-                setShowMarketDropdown(false);
-              }}
-              className={`flex items-center gap-2 px-3 py-2 bg-terminal-bg border rounded-lg text-sm transition-colors ${
-                categoryFilter 
-                  ? "border-naija-green text-naija-green" 
-                  : "border-terminal-border text-gray-400 hover:text-white"
-              }`}
+              onClick={() => setShowCategoryDropdown(!showCategoryDropdown)}
+              className="flex items-center gap-2 px-3 py-2 bg-terminal-bg border border-terminal-border rounded-lg text-sm text-gray-400 hover:text-white transition-colors"
             >
               <Filter className="w-4 h-4" />
               {categoryFilter || "Category"}
-              <ChevronDown className={`w-4 h-4 transition-transform ${showCategoryDropdown ? "rotate-180" : ""}`} />
+              <ChevronDown className="w-4 h-4" />
             </button>
             {showCategoryDropdown && (
-              <div className="absolute top-full mt-1 w-56 max-h-64 overflow-y-auto bg-terminal-surface border border-terminal-border rounded-lg shadow-xl z-50">
+              <div className="absolute top-full mt-1 w-48 max-h-64 overflow-y-auto bg-terminal-surface border border-terminal-border rounded-lg shadow-xl z-20">
                 <button
                   onClick={() => { setCategoryFilter(""); setShowCategoryDropdown(false); }}
-                  className="w-full px-3 py-2 text-left text-sm text-gray-400 hover:bg-terminal-muted hover:text-white border-b border-terminal-border"
+                  className="w-full px-3 py-2 text-left text-sm text-gray-400 hover:bg-terminal-muted hover:text-white"
                 >
                   All Categories
                 </button>
@@ -392,34 +367,26 @@ export default function PricesPage() {
                     </button>
                   ))
                 ) : (
-                  <div className="px-3 py-2 text-sm text-gray-500">Loading categories...</div>
+                  <div className="px-3 py-2 text-sm text-gray-500">No categories found</div>
                 )}
               </div>
             )}
           </div>
 
-          {/* State Filter - FIXED */}
-          <div className="relative" ref={stateRef}>
+          {/* State Filter */}
+          <div className="relative" onClick={(e) => e.stopPropagation()}>
             <button 
-              onClick={() => {
-                setShowStateDropdown(!showStateDropdown);
-                setShowCategoryDropdown(false);
-                setShowMarketDropdown(false);
-              }}
-              className={`flex items-center gap-2 px-3 py-2 bg-terminal-bg border rounded-lg text-sm transition-colors ${
-                stateFilter 
-                  ? "border-naija-green text-naija-green" 
-                  : "border-terminal-border text-gray-400 hover:text-white"
-              }`}
+              onClick={() => setShowStateDropdown(!showStateDropdown)}
+              className="flex items-center gap-2 px-3 py-2 bg-terminal-bg border border-terminal-border rounded-lg text-sm text-gray-400 hover:text-white transition-colors"
             >
               {stateFilter || "State"}
-              <ChevronDown className={`w-4 h-4 transition-transform ${showStateDropdown ? "rotate-180" : ""}`} />
+              <ChevronDown className="w-4 h-4" />
             </button>
             {showStateDropdown && (
-              <div className="absolute top-full mt-1 w-48 max-h-64 overflow-y-auto bg-terminal-surface border border-terminal-border rounded-lg shadow-xl z-50">
+              <div className="absolute top-full mt-1 w-40 max-h-64 overflow-y-auto bg-terminal-surface border border-terminal-border rounded-lg shadow-xl z-20">
                 <button
                   onClick={() => { setStateFilter(""); setShowStateDropdown(false); }}
-                  className="w-full px-3 py-2 text-left text-sm text-gray-400 hover:bg-terminal-muted hover:text-white border-b border-terminal-border"
+                  className="w-full px-3 py-2 text-left text-sm text-gray-400 hover:bg-terminal-muted hover:text-white"
                 >
                   All States
                 </button>
@@ -436,34 +403,26 @@ export default function PricesPage() {
                     </button>
                   ))
                 ) : (
-                  <div className="px-3 py-2 text-sm text-gray-500">Loading states...</div>
+                  <div className="px-3 py-2 text-sm text-gray-500">No states found</div>
                 )}
               </div>
             )}
           </div>
 
-          {/* Market Filter - FIXED */}
-          <div className="relative" ref={marketRef}>
+          {/* Market Filter */}
+          <div className="relative" onClick={(e) => e.stopPropagation()}>
             <button 
-              onClick={() => {
-                setShowMarketDropdown(!showMarketDropdown);
-                setShowCategoryDropdown(false);
-                setShowStateDropdown(false);
-              }}
-              className={`flex items-center gap-2 px-3 py-2 bg-terminal-bg border rounded-lg text-sm transition-colors ${
-                marketFilter 
-                  ? "border-naija-green text-naija-green" 
-                  : "border-terminal-border text-gray-400 hover:text-white"
-              }`}
+              onClick={() => setShowMarketDropdown(!showMarketDropdown)}
+              className="flex items-center gap-2 px-3 py-2 bg-terminal-bg border border-terminal-border rounded-lg text-sm text-gray-400 hover:text-white transition-colors"
             >
               {marketFilter || "Market"}
-              <ChevronDown className={`w-4 h-4 transition-transform ${showMarketDropdown ? "rotate-180" : ""}`} />
+              <ChevronDown className="w-4 h-4" />
             </button>
             {showMarketDropdown && (
-              <div className="absolute top-full mt-1 w-64 max-h-64 overflow-y-auto bg-terminal-surface border border-terminal-border rounded-lg shadow-xl z-50">
+              <div className="absolute top-full mt-1 w-56 max-h-64 overflow-y-auto bg-terminal-surface border border-terminal-border rounded-lg shadow-xl z-20">
                 <button
                   onClick={() => { setMarketFilter(""); setShowMarketDropdown(false); }}
-                  className="w-full px-3 py-2 text-left text-sm text-gray-400 hover:bg-terminal-muted hover:text-white border-b border-terminal-border"
+                  className="w-full px-3 py-2 text-left text-sm text-gray-400 hover:bg-terminal-muted hover:text-white"
                 >
                   All Markets
                 </button>
@@ -475,13 +434,12 @@ export default function PricesPage() {
                       className={`w-full px-3 py-2 text-left text-sm hover:bg-terminal-muted hover:text-white truncate ${
                         marketFilter === m ? "text-naija-green bg-naija-green/10" : "text-gray-300"
                       }`}
-                      title={m}
                     >
                       {m}
                     </button>
                   ))
                 ) : (
-                  <div className="px-3 py-2 text-sm text-gray-500">Loading markets...</div>
+                  <div className="px-3 py-2 text-sm text-gray-500">No markets found</div>
                 )}
               </div>
             )}
