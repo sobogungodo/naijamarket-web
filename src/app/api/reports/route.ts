@@ -408,7 +408,7 @@ function generateMockMetrics(): ReportMetrics {
 
 function generateReport(reportType: string, format: string): GeneratedReport {
   const { startDate, endDate } = getDateRange(reportType);
-  const reportTypeInfo = REPORT_TYPES.find((t) => t.id === reportType) || REPORT_TYPES[0];
+  const reportTypeInfo = REPORT_TYPES.find((t) => t.id === reportType) ?? REPORT_TYPES[0]!;
   const reportId = generateReportId();
 
   const expiresAt = new Date();
