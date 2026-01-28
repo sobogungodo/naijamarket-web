@@ -4,6 +4,7 @@
 
 // ----- USER & AUTH TYPES -----
 export interface AdminUser {
+  [key: string]: unknown;
   id: string;
   email: string;
   name: string;
@@ -125,6 +126,7 @@ export interface OverviewStats {
 }
 
 export interface TrendData {
+  [key: string]: unknown;
   date: string;
   submissions: number;
   validations: number;
@@ -134,6 +136,7 @@ export interface TrendData {
 }
 
 export interface ActivityItem {
+  [key: string]: unknown;
   id: string;
   type: 'submission' | 'validation' | 'payout' | 'fraud_alert' | 'user_action';
   description: string;
@@ -143,6 +146,7 @@ export interface ActivityItem {
 }
 
 export interface SystemAlert {
+  [key: string]: unknown;
   id: string;
   severity: 'critical' | 'warning' | 'info';
   title: string;
@@ -154,6 +158,7 @@ export interface SystemAlert {
 
 // ----- TRADER TYPES -----
 export interface Trader {
+  [key: string]: unknown;
   id: string;
   phoneNumber: string;
   name: string;
@@ -177,6 +182,7 @@ export interface Trader {
 export type UserStatus = 'active' | 'suspended' | 'banned' | 'pending_review';
 
 export interface FraudFlag {
+  [key: string]: unknown;
   id: string;
   type: FraudType;
   severity: 'low' | 'medium' | 'high' | 'critical';
@@ -199,6 +205,7 @@ export type FraudType =
 
 // ----- VALIDATOR TYPES -----
 export interface Validator {
+  [key: string]: unknown;
   id: string;
   phoneNumber: string;
   name: string;
@@ -222,6 +229,7 @@ export type ValidatorTier = 'gold' | 'silver' | 'bronze' | 'probation';
 
 // ----- SUBMISSION TYPES -----
 export interface Submission {
+  [key: string]: unknown;
   id: string;
   traderId: string;
   traderPhone: string;
@@ -261,6 +269,7 @@ export type SubmissionStatus =
   | 'manual_review';
 
 export interface ValidationVote {
+  [key: string]: unknown;
   validatorId: string;
   validatorName: string;
   vote: 'approve' | 'reject';
@@ -271,6 +280,7 @@ export interface ValidationVote {
 
 // ----- FINANCIAL TYPES -----
 export interface PayoutRecord {
+  [key: string]: unknown;
   id: string;
   recipientId: string;
   recipientType: 'trader' | 'validator';
@@ -293,6 +303,7 @@ export type PayoutStatus = 'pending' | 'processing' | 'completed' | 'failed' | '
 export type MobileNetwork = 'MTN' | 'Airtel' | 'Glo' | '9mobile';
 
 export interface PayoutBatch {
+  [key: string]: unknown;
   id: string;
   createdAt: Date;
   processedAt?: Date;
@@ -335,6 +346,7 @@ export interface FinancialSummary {
 
 // ----- MARKET TYPES -----
 export interface Market {
+  [key: string]: unknown;
   id: string;
   name: string;
   state: string;
@@ -363,6 +375,7 @@ export type MarketCategory =
 
 // ----- COMMODITY TYPES -----
 export interface Commodity {
+  [key: string]: unknown;
   id: string;
   name: string;
   category: CommodityCategory;
@@ -389,6 +402,7 @@ export type CommodityCategory =
 
 // ----- FRAUD DETECTION TYPES -----
 export interface FraudAlert {
+  [key: string]: unknown;
   id: string;
   type: FraudType;
   severity: 'low' | 'medium' | 'high' | 'critical';
@@ -415,6 +429,7 @@ export interface FraudAlert {
 }
 
 export interface FraudEvidence {
+  [key: string]: unknown;
   type: string;
   description: string;
   value: string | number;
@@ -484,6 +499,7 @@ export interface SystemHealth {
 }
 
 export interface ServiceStatus {
+  [key: string]: unknown;
   name: string;
   status: 'operational' | 'degraded' | 'down';
   responseTime?: number;
@@ -492,6 +508,7 @@ export interface ServiceStatus {
 }
 
 export interface SystemError {
+  [key: string]: unknown;
   id: string;
   service: string;
   message: string;
