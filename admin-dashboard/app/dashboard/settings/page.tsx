@@ -30,6 +30,10 @@ import {
   Lock,
   Smartphone,
   MessageSquare,
+  X,
+  UserPlus,
+  Trash2,
+  Send,
 } from 'lucide-react';
 import type { AdminRole } from '@/types';
 
@@ -115,6 +119,19 @@ const TABS: TabConfig[] = [
 ];
 
 // ============================================
+// TYPES
+// ============================================
+
+interface TeamMember {
+  id: string;
+  name: string;
+  email: string;
+  role: string;
+  status: 'active' | 'inactive';
+  lastLogin: Date;
+}
+
+// ============================================
 // MOCK SETTINGS DATA
 // ============================================
 
@@ -178,7 +195,7 @@ const mockSettings = {
   },
 };
 
-const mockTeamMembers = [
+const initialTeamMembers: TeamMember[] = [
   { id: '1', name: 'Olawale Sobogungodo', email: 'olawale.sobogungodo@giggabytes.eu', role: 'super_admin', status: 'active', lastLogin: new Date() },
   { id: '2', name: 'Admin User', email: 'admin@naijamarket.ng', role: 'admin', status: 'active', lastLogin: new Date(Date.now() - 2 * 60 * 60 * 1000) },
   { id: '3', name: 'Supervisor User', email: 'supervisor@naijamarket.ng', role: 'supervisor', status: 'active', lastLogin: new Date(Date.now() - 24 * 60 * 60 * 1000) },
@@ -197,6 +214,7 @@ export default function SettingsPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [showApiKeys, setShowApiKeys] = useState<Record<string, boolean>>({});
+  const [teamMembers, setTeamMembers] = useState<TeamMember[]>(initialTeamMembers);
 
   // Filter tabs based on user role
   const availableTabs = TABS.filter(tab => tab.requiredRole.includes(userRole));
@@ -217,6 +235,25 @@ export default function SettingsPage() {
 
   const toggleApiKeyVisibility = (key: string) => {
     setShowApiKeys(prev => ({ ...prev, [key]: !prev[key] }));
+  };
+
+  const handleUpdateMember = (updatedMember: TeamMember) => {
+    setTeamMembers(prev => 
+      prev.map(m => m.id === updatedMember.id ? updatedMember : m)
+    );
+  };
+
+  const handleDeleteMember = (memberId: string) => {
+    setTeamMembers(prev => prev.filter(m => m.id !== memberId));
+  };
+
+  const handleInviteMember = (newMember: Omit<TeamMember, 'id' | 'lastLogin'>) => {
+    const member: TeamMember = {
+      ...newMember,
+      id: `${Date.now()}`,
+      lastLogin: new Date(),
+    };
+    setTeamMembers(prev => [...prev, member]);
   };
 
   return (
@@ -313,11 +350,360 @@ export default function SettingsPage() {
 
           {/* Team Management */}
           {activeTab === 'team' && (
-            <TeamSettings members={mockTeamMembers} />
+            <TeamSettings 
+              members={teamMembers}
+              onUpdateMember={handleUpdateMember}
+              onDeleteMember={handleDeleteMember}
+              onInviteMember={handleInviteMember}
+            />
           )}
         </div>
       </div>
     </PageWrapper>
+  );
+}
+
+// ============================================
+// MODAL COMPONENT
+// ============================================
+
+interface ModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  title: string;
+  children: React.ReactNode;
+}
+
+function Modal({ isOpen, onClose, title, children }: ModalProps) {
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      {/* Backdrop */}
+      <div 
+        className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+        onClick={onClose}
+      />
+      
+      {/* Modal Content */}
+      <div className="relative bg-dash-card border border-dash-border rounded-xl shadow-2xl w-full max-w-md mx-4 max-h-[90vh] overflow-y-auto">
+        {/* Header */}
+        <div className="flex items-center justify-between p-4 border-b border-dash-border">
+          <h2 className="text-lg font-semibold text-dash-text">{title}</h2>
+          <button
+            onClick={onClose}
+            className="p-1 rounded-lg hover:bg-dash-hover text-dash-muted hover:text-dash-text transition-colors"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+        
+        {/* Body */}
+        <div className="p-4">
+          {children}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================
+// EDIT MEMBER MODAL
+// ============================================
+
+interface EditMemberModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  member: TeamMember | null;
+  onSave: (member: TeamMember) => void;
+  onDelete: (memberId: string) => void;
+}
+
+function EditMemberModal({ isOpen, onClose, member, onSave, onDelete }: EditMemberModalProps) {
+  const [name, setName] = useState(member?.name || '');
+  const [email, setEmail] = useState(member?.email || '');
+  const [role, setRole] = useState(member?.role || 'viewer');
+  const [status, setStatus] = useState<'active' | 'inactive'>(member?.status || 'active');
+  const [isSaving, setIsSaving] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+
+  // Reset form when member changes
+  React.useEffect(() => {
+    if (member) {
+      setName(member.name);
+      setEmail(member.email);
+      setRole(member.role);
+      setStatus(member.status);
+    }
+  }, [member]);
+
+  const handleSave = async () => {
+    if (!member) return;
+    
+    setIsSaving(true);
+    await new Promise(resolve => setTimeout(resolve, 500));
+    
+    onSave({
+      ...member,
+      name,
+      email,
+      role,
+      status,
+    });
+    
+    setIsSaving(false);
+    onClose();
+  };
+
+  const handleDelete = async () => {
+    if (!member) return;
+    
+    setIsSaving(true);
+    await new Promise(resolve => setTimeout(resolve, 500));
+    
+    onDelete(member.id);
+    setIsSaving(false);
+    setShowDeleteConfirm(false);
+    onClose();
+  };
+
+  if (!member) return null;
+
+  return (
+    <Modal isOpen={isOpen} onClose={onClose} title="Edit Team Member">
+      {showDeleteConfirm ? (
+        <div className="space-y-4">
+          <Alert variant="danger" icon={AlertTriangle}>
+            Are you sure you want to remove <strong>{member.name}</strong> from the team? This action cannot be undone.
+          </Alert>
+          <div className="flex gap-3">
+            <Button
+              variant="secondary"
+              onClick={() => setShowDeleteConfirm(false)}
+              className="flex-1"
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="danger"
+              onClick={handleDelete}
+              isLoading={isSaving}
+              leftIcon={Trash2}
+              className="flex-1"
+            >
+              Remove Member
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <div className="space-y-4">
+          <Input
+            label="Full Name"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            leftIcon={User}
+            placeholder="Enter full name"
+          />
+          
+          <Input
+            label="Email Address"
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            leftIcon={Mail}
+            placeholder="Enter email address"
+          />
+          
+          <div>
+            <label className="block text-sm font-medium text-dash-muted mb-2">Role</label>
+            <select
+              value={role}
+              onChange={(e) => setRole(e.target.value)}
+              className="w-full bg-dash-bg border border-dash-border rounded-lg px-4 py-2.5 text-dash-text"
+            >
+              <option value="super_admin">Super Admin</option>
+              <option value="admin">Admin</option>
+              <option value="supervisor">Supervisor</option>
+              <option value="analyst">Analyst</option>
+              <option value="viewer">Viewer</option>
+            </select>
+            <p className="mt-1 text-xs text-dash-muted">
+              {role === 'super_admin' && 'Full access to all settings and features'}
+              {role === 'admin' && 'Can manage users and approve payouts'}
+              {role === 'supervisor' && 'Can take actions on fraud alerts'}
+              {role === 'analyst' && 'View-only access to dashboards and reports'}
+              {role === 'viewer' && 'Basic dashboard access only'}
+            </p>
+          </div>
+          
+          <div>
+            <label className="block text-sm font-medium text-dash-muted mb-2">Status</label>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setStatus('active')}
+                className={`flex-1 py-2 px-4 rounded-lg border transition-colors ${
+                  status === 'active'
+                    ? 'bg-status-success/20 border-status-success text-status-success'
+                    : 'border-dash-border text-dash-muted hover:border-dash-hover'
+                }`}
+              >
+                Active
+              </button>
+              <button
+                onClick={() => setStatus('inactive')}
+                className={`flex-1 py-2 px-4 rounded-lg border transition-colors ${
+                  status === 'inactive'
+                    ? 'bg-status-danger/20 border-status-danger text-status-danger'
+                    : 'border-dash-border text-dash-muted hover:border-dash-hover'
+                }`}
+              >
+                Inactive
+              </button>
+            </div>
+          </div>
+
+          <div className="pt-4 border-t border-dash-border flex gap-3">
+            <Button
+              variant="danger"
+              onClick={() => setShowDeleteConfirm(true)}
+              leftIcon={Trash2}
+            >
+              Remove
+            </Button>
+            <div className="flex-1" />
+            <Button variant="secondary" onClick={onClose}>
+              Cancel
+            </Button>
+            <Button
+              onClick={handleSave}
+              isLoading={isSaving}
+              leftIcon={Save}
+              disabled={!name || !email}
+            >
+              Save Changes
+            </Button>
+          </div>
+        </div>
+      )}
+    </Modal>
+  );
+}
+
+// ============================================
+// INVITE MEMBER MODAL
+// ============================================
+
+interface InviteMemberModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  onInvite: (member: Omit<TeamMember, 'id' | 'lastLogin'>) => void;
+}
+
+function InviteMemberModal({ isOpen, onClose, onInvite }: InviteMemberModalProps) {
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
+  const [role, setRole] = useState('analyst');
+  const [isSending, setIsSending] = useState(false);
+  const [inviteSent, setInviteSent] = useState(false);
+
+  const handleInvite = async () => {
+    setIsSending(true);
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    
+    onInvite({
+      name,
+      email,
+      role,
+      status: 'active',
+    });
+    
+    setIsSending(false);
+    setInviteSent(true);
+  };
+
+  const handleClose = () => {
+    setName('');
+    setEmail('');
+    setRole('analyst');
+    setInviteSent(false);
+    onClose();
+  };
+
+  return (
+    <Modal isOpen={isOpen} onClose={handleClose} title="Invite Team Member">
+      {inviteSent ? (
+        <div className="text-center py-6">
+          <div className="w-16 h-16 rounded-full bg-status-success/20 flex items-center justify-center mx-auto mb-4">
+            <CheckCircle className="w-8 h-8 text-status-success" />
+          </div>
+          <h3 className="text-lg font-semibold text-dash-text mb-2">Invitation Sent!</h3>
+          <p className="text-dash-muted mb-6">
+            An invitation email has been sent to <strong className="text-dash-text">{email}</strong>
+          </p>
+          <Button onClick={handleClose}>
+            Done
+          </Button>
+        </div>
+      ) : (
+        <div className="space-y-4">
+          <Input
+            label="Full Name"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            leftIcon={User}
+            placeholder="Enter full name"
+          />
+          
+          <Input
+            label="Email Address"
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            leftIcon={Mail}
+            placeholder="Enter email address"
+          />
+          
+          <div>
+            <label className="block text-sm font-medium text-dash-muted mb-2">Role</label>
+            <select
+              value={role}
+              onChange={(e) => setRole(e.target.value)}
+              className="w-full bg-dash-bg border border-dash-border rounded-lg px-4 py-2.5 text-dash-text"
+            >
+              <option value="admin">Admin</option>
+              <option value="supervisor">Supervisor</option>
+              <option value="analyst">Analyst</option>
+              <option value="viewer">Viewer</option>
+            </select>
+            <p className="mt-1 text-xs text-dash-muted">
+              {role === 'admin' && 'Can manage users and approve payouts'}
+              {role === 'supervisor' && 'Can take actions on fraud alerts'}
+              {role === 'analyst' && 'View-only access to dashboards and reports'}
+              {role === 'viewer' && 'Basic dashboard access only'}
+            </p>
+          </div>
+
+          <Alert variant="info" icon={Mail}>
+            An email will be sent with instructions to set up their account.
+          </Alert>
+
+          <div className="pt-4 flex gap-3">
+            <Button variant="secondary" onClick={handleClose} className="flex-1">
+              Cancel
+            </Button>
+            <Button
+              onClick={handleInvite}
+              isLoading={isSending}
+              leftIcon={Send}
+              disabled={!name || !email}
+              className="flex-1"
+            >
+              Send Invitation
+            </Button>
+          </div>
+        </div>
+      )}
+    </Modal>
   );
 }
 
@@ -842,7 +1228,30 @@ function ApiKeysSettings({
 // TEAM SETTINGS
 // ============================================
 
-function TeamSettings({ members }: { members: typeof mockTeamMembers }) {
+interface TeamSettingsProps {
+  members: TeamMember[];
+  onUpdateMember: (member: TeamMember) => void;
+  onDeleteMember: (memberId: string) => void;
+  onInviteMember: (member: Omit<TeamMember, 'id' | 'lastLogin'>) => void;
+}
+
+function TeamSettings({ members, onUpdateMember, onDeleteMember, onInviteMember }: TeamSettingsProps) {
+  const [editingMember, setEditingMember] = useState<TeamMember | null>(null);
+  const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
+
+  const formatLastLogin = (date: Date) => {
+    const now = new Date();
+    const diff = now.getTime() - date.getTime();
+    const minutes = Math.floor(diff / 60000);
+    const hours = Math.floor(diff / 3600000);
+    const days = Math.floor(diff / 86400000);
+
+    if (minutes < 60) return `${minutes} minutes ago`;
+    if (hours < 24) return `${hours} hours ago`;
+    if (days < 7) return `${days} days ago`;
+    return date.toLocaleDateString();
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -850,7 +1259,7 @@ function TeamSettings({ members }: { members: typeof mockTeamMembers }) {
           <h3 className="text-lg font-semibold text-dash-text">Team Members</h3>
           <p className="text-sm text-dash-muted">Manage admin access to the dashboard</p>
         </div>
-        <Button leftIcon={Users}>
+        <Button leftIcon={UserPlus} onClick={() => setIsInviteModalOpen(true)}>
           Invite Member
         </Button>
       </div>
@@ -859,7 +1268,7 @@ function TeamSettings({ members }: { members: typeof mockTeamMembers }) {
         {members.map((member) => (
           <div
             key={member.id}
-            className="flex items-center justify-between p-4 bg-dash-card border border-dash-border rounded-lg"
+            className="flex items-center justify-between p-4 bg-dash-card border border-dash-border rounded-lg hover:border-dash-hover transition-colors"
           >
             <div className="flex items-center gap-4">
               <div className="w-10 h-10 rounded-full bg-naija-green-500/20 flex items-center justify-center">
@@ -873,13 +1282,21 @@ function TeamSettings({ members }: { members: typeof mockTeamMembers }) {
               </div>
             </div>
             <div className="flex items-center gap-4">
+              <div className="text-right text-sm text-dash-muted hidden md:block">
+                <p>Last login</p>
+                <p>{formatLastLogin(member.lastLogin)}</p>
+              </div>
               <Badge variant={member.status === 'active' ? 'success' : 'default'}>
                 {member.status}
               </Badge>
               <Badge variant="info">
                 {member.role.replace('_', ' ')}
               </Badge>
-              <Button variant="ghost" size="sm">
+              <Button 
+                variant="ghost" 
+                size="sm"
+                onClick={() => setEditingMember(member)}
+              >
                 Edit
               </Button>
             </div>
@@ -928,6 +1345,22 @@ function TeamSettings({ members }: { members: typeof mockTeamMembers }) {
           </table>
         </div>
       </SettingsSection>
+
+      {/* Edit Member Modal */}
+      <EditMemberModal
+        isOpen={editingMember !== null}
+        onClose={() => setEditingMember(null)}
+        member={editingMember}
+        onSave={onUpdateMember}
+        onDelete={onDeleteMember}
+      />
+
+      {/* Invite Member Modal */}
+      <InviteMemberModal
+        isOpen={isInviteModalOpen}
+        onClose={() => setIsInviteModalOpen(false)}
+        onInvite={onInviteMember}
+      />
     </div>
   );
 }
