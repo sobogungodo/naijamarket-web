@@ -251,47 +251,69 @@ export function Button({
 }
 
 // ============================================
-// INPUT COMPONENT
+// INPUT COMPONENT (ENHANCED)
 // ============================================
 
 interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> {
   label?: string;
   error?: string;
+  helperText?: string;
   leftIcon?: LucideIcon;
+  rightIcon?: LucideIcon;
+  onRightIconClick?: () => void;
 }
 
 export function Input({
   label,
   error,
+  helperText,
   leftIcon: LeftIcon,
+  rightIcon: RightIcon,
+  onRightIconClick,
   className,
   ...props
 }: InputProps) {
   return (
     <div className="w-full">
       {label && (
-        <label className="block text-sm font-medium text-dash-text mb-1.5">
+        <label className="block text-sm font-medium text-dash-muted mb-2">
           {label}
         </label>
       )}
       <div className="relative">
         {LeftIcon && (
           <div className="absolute left-3 top-1/2 -translate-y-1/2 text-dash-muted">
-            <LeftIcon className="w-4 h-4" />
+            <LeftIcon className="w-5 h-5" />
           </div>
         )}
         <input
           className={cn(
-            'input-field',
-            LeftIcon && 'pl-10',
+            'w-full h-11 px-4 bg-dash-bg border border-dash-border rounded-lg',
+            'text-dash-text placeholder:text-dash-muted',
+            'focus:outline-none focus:border-naija-green-500 focus:ring-1 focus:ring-naija-green-500/50',
+            'transition-colors',
+            LeftIcon && 'pl-11',
+            RightIcon && 'pr-11',
             error && 'border-status-danger focus:border-status-danger focus:ring-status-danger/50',
             className
           )}
           {...props}
         />
+        {RightIcon && (
+          <button
+            type="button"
+            onClick={onRightIconClick}
+            className="absolute right-3 top-1/2 -translate-y-1/2 text-dash-muted hover:text-dash-text transition-colors"
+          >
+            <RightIcon className="w-5 h-5" />
+          </button>
+        )}
       </div>
       {error && (
         <p className="mt-1.5 text-sm text-status-danger">{error}</p>
+      )}
+      {helperText && !error && (
+        <p className="mt-1.5 text-sm text-dash-muted">{helperText}</p>
       )}
     </div>
   );
@@ -319,15 +341,19 @@ export function Alert({
   onClose,
 }: AlertProps) {
   const variants = {
-    info: 'alert-info',
-    success: 'alert-success',
-    warning: 'alert-warning',
-    danger: 'alert-danger',
+    info: 'bg-status-info/10 border-status-info/30 text-status-info',
+    success: 'bg-status-success/10 border-status-success/30 text-status-success',
+    warning: 'bg-status-warning/10 border-status-warning/30 text-status-warning',
+    danger: 'bg-status-danger/10 border-status-danger/30 text-status-danger',
   };
 
   return (
-    <div className={cn(variants[variant], className)}>
-      {Icon && <Icon className="w-5 h-5 flex-shrink-0" />}
+    <div className={cn(
+      'flex items-start gap-3 p-4 rounded-lg border',
+      variants[variant],
+      className
+    )}>
+      {Icon && <Icon className="w-5 h-5 flex-shrink-0 mt-0.5" />}
       <div className="flex-1">
         {title && <h5 className="font-semibold mb-1">{title}</h5>}
         <p className="text-sm opacity-90">{children}</p>
