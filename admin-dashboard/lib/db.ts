@@ -1,4 +1,4 @@
-import sql from 'mssql';
+import sql, { IRecordSet } from 'mssql';
 
 // ============================================
 // AZURE SQL DATABASE CONNECTION
@@ -410,9 +410,12 @@ export async function getTraders(
 
   const result = await request.query(tradersQuery);
   
+  // Cast recordsets to array type for proper indexing
+  const recordsets = result.recordsets as IRecordSet<unknown>[];
+  
   return {
-    items: result.recordsets[0],
-    total: result.recordsets[1][0]?.total || 0,
+    items: recordsets[0] || [],
+    total: (recordsets[1]?.[0] as { total?: number })?.total || 0,
   };
 }
 
