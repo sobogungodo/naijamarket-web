@@ -1,20 +1,23 @@
 /**
  * ============================================================================
- * NAIJAMARKET INTEL - GOOGLE SHEETS INTEGRATION LIBRARY
+ * NAIJAMARKET INTEL - DATA ACCESS LIBRARY
  * ============================================================================
  * 
- * This library provides functions to read/write data from the NaijaMarket
- * Google Sheets database used by the WhatsApp bot (validators.txt).
+ * HYBRID DATA LAYER:
+ * - PRIMARY: Azure SQL Database (faster, more reliable)
+ * - FALLBACK: Google Sheets (backup if Azure is unavailable)
  * 
- * Spreadsheet ID: 1n-7MXdoqvIoSHteBJaUYBmIPLjJBNtrE_jVuUxO5kr8
+ * Azure SQL: naijafood.database.windows.net/NaijaMarketIntel
+ * Google Sheets: 1n-7MXdoqvIoSHteBJaUYBmIPLjJBNtrE_jVuUxO5kr8
  * 
  * ============================================================================
  */
 
 import { google } from 'googleapis';
+import sql from 'mssql';
 
 // ============================================================================
-// CONFIGURATION - Synced with validators.txt CONFIG
+// CONFIGURATION
 // ============================================================================
 
 export const SHEETS_CONFIG = {
@@ -41,7 +44,6 @@ export const SHEETS_CONFIG = {
     VALIDATOR_PAYOUT_LOG: 'Validator_Payout_Log',
     PAYOUT_SUMMARY: 'Payout_Summary',
     BANK_CODES: 'Bank_Codes',
-    // Trader sheets
     TRADERS: 'Traders',
     TRADER_SUBMISSIONS: 'Trader_Submissions',
     VALIDATED_PRICES: 'Validated_Prices',
@@ -56,14 +58,14 @@ export const SHEETS_CONFIG = {
   },
   
   REWARDS: {
-    TRADER_APPROVED: 20,      // ₦20 per approved submission
-    VALIDATOR_CORRECT: 100,   // ₦100 per correct vote (from script)
+    TRADER_APPROVED: 20,
+    VALIDATOR_CORRECT: 100,
     VALIDATOR_INCORRECT: 0,
   },
   
   PAYOUT: {
     MINIMUM_BALANCE: 500,
-    FREQUENCY_DAYS: 14,       // Bi-weekly
+    FREQUENCY_DAYS: 14,
     PAYMENT_METHODS: ['BANK_TRANSFER', 'AIRTIME'],
     DEFAULT_METHOD: 'BANK_TRANSFER',
     MAX_RETRIES: 3,
@@ -79,15 +81,71 @@ export const SHEETS_CONFIG = {
   },
   
   FRAUD: {
-    PRICE_DEVIATION_THRESHOLD: 30,  // 30% deviation triggers flag
+    PRICE_DEVIATION_THRESHOLD: 30,
     COLLUSION_WINDOW_DAYS: 7,
     GPS_RADIUS_METERS: 500,
-    RAPID_SUBMISSION_THRESHOLD: 5,  // per hour
+    RAPID_SUBMISSION_THRESHOLD: 5,
   },
 };
 
 // ============================================================================
-// GOOGLE SHEETS CLIENT
+// AZURE SQL CONNECTION
+// ============================================================================
+
+const azureConfig: sql.config = {
+  server: process.env.AZURE_SQL_SERVER || 'naijafood.database.windows.net',
+  database: process.env.AZURE_SQL_DATABASE || 'NaijaMarketIntel',
+  user: process.env.AZURE_SQL_USER || '',
+  password: process.env.AZURE_SQL_PASSWORD || '',
+  options: {
+    encrypt: true,
+    trustServerCertificate: false,
+  },
+  pool: {
+    max: 10,
+    min: 0,
+    idleTimeoutMillis: 30000,
+  },
+};
+
+let azurePool: sql.ConnectionPool | null = null;
+let azureAvailable = true;
+let lastAzureCheck = 0;
+const AZURE_CHECK_INTERVAL = 60000; // Re-check Azure every 60 seconds if it was down
+
+/**
+ * Get Azure SQL connection pool
+ */
+async function getAzurePool(): Promise<sql.ConnectionPool | null> {
+  // Skip if we know Azure is unavailable (with periodic recheck)
+  if (!azureAvailable && Date.now() - lastAzureCheck < AZURE_CHECK_INTERVAL) {
+    return null;
+  }
+
+  // Check if credentials are configured
+  if (!process.env.AZURE_SQL_USER || !process.env.AZURE_SQL_PASSWORD) {
+    console.log('[DataLayer] Azure SQL credentials not configured, using Google Sheets');
+    azureAvailable = false;
+    return null;
+  }
+
+  try {
+    if (!azurePool || !azurePool.connected) {
+      azurePool = await sql.connect(azureConfig);
+      console.log('[DataLayer] Connected to Azure SQL');
+    }
+    azureAvailable = true;
+    return azurePool;
+  } catch (error) {
+    console.error('[DataLayer] Azure SQL connection failed:', error);
+    azureAvailable = false;
+    lastAzureCheck = Date.now();
+    return null;
+  }
+}
+
+// ============================================================================
+// GOOGLE SHEETS CONNECTION (FALLBACK)
 // ============================================================================
 
 let sheetsClient: ReturnType<typeof google.sheets> | null = null;
@@ -95,10 +153,9 @@ let sheetsClient: ReturnType<typeof google.sheets> | null = null;
 /**
  * Initialize Google Sheets client with service account credentials
  */
-export async function getGoogleSheetsClient() {
+async function getGoogleSheetsClient() {
   if (sheetsClient) return sheetsClient;
   
-  // Check for credentials in environment
   const credentials = process.env.GOOGLE_SERVICE_ACCOUNT_KEY;
   
   if (!credentials) {
@@ -116,23 +173,42 @@ export async function getGoogleSheetsClient() {
     sheetsClient = google.sheets({ version: 'v4', auth });
     return sheetsClient;
   } catch (error) {
-    console.error('Failed to initialize Google Sheets client:', error);
+    console.error('[DataLayer] Failed to initialize Google Sheets client:', error);
     throw error;
   }
 }
 
 // ============================================================================
-// GENERIC SHEET OPERATIONS
+// DATA SOURCE TRACKING
+// ============================================================================
+
+export type DataSource = 'AZURE_SQL' | 'GOOGLE_SHEETS';
+
+let lastDataSource: DataSource = 'GOOGLE_SHEETS';
+
+/**
+ * Get the last data source used
+ */
+export function getLastDataSource(): DataSource {
+  return lastDataSource;
+}
+
+/**
+ * Check if Azure SQL is currently available
+ */
+export function isAzureAvailable(): boolean {
+  return azureAvailable;
+}
+
+// ============================================================================
+// GENERIC READ OPERATIONS
 // ============================================================================
 
 /**
- * Read all data from a sheet and convert to objects
- * Note: Removed Record<string, unknown> constraint for TypeScript compatibility
+ * Read from Google Sheets (fallback)
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export async function readSheet<T = any>(
-  sheetName: string
-): Promise<T[]> {
+async function readFromSheets<T = any>(sheetName: string): Promise<T[]> {
   const sheets = await getGoogleSheetsClient();
   
   const response = await sheets.spreadsheets.values.get({
@@ -158,7 +234,65 @@ export async function readSheet<T = any>(
 }
 
 /**
- * Append a row to a sheet
+ * Read from Azure SQL (primary)
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function readFromAzure<T = any>(tableName: string, orderBy?: string): Promise<T[]> {
+  const pool = await getAzurePool();
+  if (!pool) return [];
+  
+  try {
+    const orderClause = orderBy ? `ORDER BY ${orderBy}` : '';
+    const result = await pool.request().query(`SELECT * FROM dbo.${tableName} ${orderClause}`);
+    return result.recordset as T[];
+  } catch (error) {
+    console.error(`[DataLayer] Azure SQL query failed for ${tableName}:`, error);
+    throw error;
+  }
+}
+
+/**
+ * Hybrid read - tries Azure first, falls back to Google Sheets
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function readSheet<T = any>(
+  sheetName: string,
+  azureTableName?: string,
+  orderBy?: string
+): Promise<T[]> {
+  const tableName = azureTableName || sheetName;
+  
+  // Try Azure SQL first
+  try {
+    const pool = await getAzurePool();
+    if (pool) {
+      const data = await readFromAzure<T>(tableName, orderBy);
+      lastDataSource = 'AZURE_SQL';
+      console.log(`[DataLayer] Read ${data.length} rows from Azure SQL: ${tableName}`);
+      return data;
+    }
+  } catch (error) {
+    console.warn(`[DataLayer] Azure failed for ${tableName}, falling back to Sheets:`, error);
+  }
+  
+  // Fallback to Google Sheets
+  try {
+    const data = await readFromSheets<T>(sheetName);
+    lastDataSource = 'GOOGLE_SHEETS';
+    console.log(`[DataLayer] Read ${data.length} rows from Google Sheets: ${sheetName}`);
+    return data;
+  } catch (error) {
+    console.error(`[DataLayer] Both Azure and Sheets failed for ${sheetName}:`, error);
+    throw error;
+  }
+}
+
+// ============================================================================
+// WRITE OPERATIONS (Always write to both for sync)
+// ============================================================================
+
+/**
+ * Append a row to Google Sheets
  */
 export async function appendRow(
   sheetName: string,
@@ -177,7 +311,7 @@ export async function appendRow(
 }
 
 /**
- * Update a specific cell
+ * Update a specific cell in Google Sheets
  */
 export async function updateCell(
   sheetName: string,
@@ -197,7 +331,7 @@ export async function updateCell(
 }
 
 /**
- * Update a row by finding a match in a column
+ * Update a row by finding a match in a column (Google Sheets)
  */
 export async function updateRowByMatch(
   sheetName: string,
@@ -207,7 +341,6 @@ export async function updateRowByMatch(
 ): Promise<boolean> {
   const sheets = await getGoogleSheetsClient();
   
-  // First, read the sheet to find the row
   const response = await sheets.spreadsheets.values.get({
     spreadsheetId: SHEETS_CONFIG.SPREADSHEET_ID,
     range: `${sheetName}!A:ZZ`,
@@ -222,18 +355,16 @@ export async function updateRowByMatch(
   
   if (matchColIndex === -1) return false;
   
-  // Find the row
   let rowIndex = -1;
   for (let i = 1; i < rows.length; i++) {
     if (String(rows[i][matchColIndex]) === matchValue) {
-      rowIndex = i + 1; // 1-indexed for Sheets
+      rowIndex = i + 1;
       break;
     }
   }
   
   if (rowIndex === -1) return false;
   
-  // Update each field
   const updateRequests: { range: string; values: unknown[][] }[] = [];
   
   Object.entries(updates).forEach(([key, value]) => {
@@ -247,7 +378,6 @@ export async function updateRowByMatch(
     }
   });
   
-  // Batch update
   await sheets.spreadsheets.values.batchUpdate({
     spreadsheetId: SHEETS_CONFIG.SPREADSHEET_ID,
     requestBody: {
@@ -257,6 +387,35 @@ export async function updateRowByMatch(
   });
   
   return true;
+}
+
+/**
+ * Update a row in Azure SQL
+ */
+export async function updateAzureRow(
+  tableName: string,
+  idColumn: string,
+  idValue: string,
+  updates: Record<string, unknown>
+): Promise<boolean> {
+  const pool = await getAzurePool();
+  if (!pool) return false;
+  
+  try {
+    const setClauses = Object.keys(updates).map((key, i) => `${key} = @val${i}`).join(', ');
+    const request = pool.request();
+    
+    Object.entries(updates).forEach(([, value], i) => {
+      request.input(`val${i}`, value);
+    });
+    request.input('id', idValue);
+    
+    await request.query(`UPDATE dbo.${tableName} SET ${setClauses} WHERE ${idColumn} = @id`);
+    return true;
+  } catch (error) {
+    console.error(`[DataLayer] Azure update failed for ${tableName}:`, error);
+    return false;
+  }
 }
 
 // ============================================================================
@@ -283,7 +442,7 @@ export interface Validator {
   state: string;
   bank_name?: string;
   account_number?: string;
-  [key: string]: unknown; // Index signature for compatibility
+  [key: string]: unknown;
 }
 
 export interface Trader {
@@ -301,7 +460,7 @@ export interface Trader {
   pending_balance: number;
   last_submission_at: string;
   registered_at: string;
-  [key: string]: unknown; // Index signature for compatibility
+  [key: string]: unknown;
 }
 
 export interface FraudAlert {
@@ -316,12 +475,12 @@ export interface FraudAlert {
   market_id: string;
   market_name: string;
   description: string;
-  evidence: string; // JSON string
+  evidence: string;
   created_at: string;
   resolved_at?: string;
   resolved_by?: string;
   resolution_notes?: string;
-  [key: string]: unknown; // Index signature for compatibility
+  [key: string]: unknown;
 }
 
 export interface Payout {
@@ -341,7 +500,7 @@ export interface Payout {
   transaction_ref?: string;
   created_at: string;
   processed_at?: string;
-  [key: string]: unknown; // Index signature for compatibility
+  [key: string]: unknown;
 }
 
 export interface Submission {
@@ -363,7 +522,7 @@ export interface Submission {
   gps_accuracy: number;
   created_at: string;
   validated_at?: string;
-  [key: string]: unknown; // Index signature for compatibility
+  [key: string]: unknown;
 }
 
 export interface ValidationVote {
@@ -377,7 +536,7 @@ export interface ValidationVote {
   gps_latitude?: number;
   gps_longitude?: number;
   created_at: string;
-  [key: string]: unknown; // Index signature for compatibility
+  [key: string]: unknown;
 }
 
 export interface Market {
@@ -393,7 +552,7 @@ export interface Market {
   total_traders: number;
   total_validators: number;
   total_submissions: number;
-  [key: string]: unknown; // Index signature for compatibility
+  [key: string]: unknown;
 }
 
 export interface RewardsLedger {
@@ -407,18 +566,23 @@ export interface RewardsLedger {
   reference_id?: string;
   description: string;
   created_at: string;
-  [key: string]: unknown; // Index signature for compatibility
+  [key: string]: unknown;
 }
 
 // ============================================================================
-// SPECIFIC DATA FETCHERS
+// SPECIFIC DATA FETCHERS (Hybrid: Azure → Sheets)
 // ============================================================================
 
 /**
  * Get all validators with computed stats
  */
 export async function getValidators(): Promise<Validator[]> {
-  const data = await readSheet<Validator>(SHEETS_CONFIG.SHEETS.VALIDATORS);
+  const data = await readSheet<Validator>(
+    SHEETS_CONFIG.SHEETS.VALIDATORS,
+    'Validators',
+    'registered_at DESC'
+  );
+  
   return data.map(v => ({
     ...v,
     total_votes: Number(v.total_votes) || 0,
@@ -434,7 +598,12 @@ export async function getValidators(): Promise<Validator[]> {
  * Get all traders with computed stats
  */
 export async function getTraders(): Promise<Trader[]> {
-  const data = await readSheet<Trader>(SHEETS_CONFIG.SHEETS.TRADERS);
+  const data = await readSheet<Trader>(
+    SHEETS_CONFIG.SHEETS.TRADERS,
+    'Traders',
+    'registered_at DESC'
+  );
+  
   return data.map(t => ({
     ...t,
     reputation_score: Number(t.reputation_score) || 50,
@@ -454,7 +623,11 @@ export async function getFraudAlerts(filters?: {
   severity?: string;
   type?: string;
 }): Promise<FraudAlert[]> {
-  let data = await readSheet<FraudAlert>(SHEETS_CONFIG.SHEETS.FRAUD_FLAGS);
+  let data = await readSheet<FraudAlert>(
+    SHEETS_CONFIG.SHEETS.FRAUD_FLAGS,
+    'Fraud_Flags',
+    'created_at DESC'
+  );
   
   if (filters) {
     if (filters.status) {
@@ -468,8 +641,10 @@ export async function getFraudAlerts(filters?: {
     }
   }
   
-  // Sort by created_at descending
-  data.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+  // Only sort if from Sheets (Azure already sorted)
+  if (lastDataSource === 'GOOGLE_SHEETS') {
+    data.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+  }
   
   return data;
 }
@@ -481,10 +656,11 @@ export async function getPayouts(filters?: {
   status?: string;
   user_type?: string;
 }): Promise<Payout[]> {
-  let data = await readSheet<Payout>(SHEETS_CONFIG.SHEETS.VALIDATOR_PAYOUT_LOG);
-  
-  // Also get trader payouts if they exist in a separate sheet
-  // For now, assuming all payouts are in one sheet
+  let data = await readSheet<Payout>(
+    SHEETS_CONFIG.SHEETS.VALIDATOR_PAYOUT_LOG,
+    'Validator_Payout_Log',
+    'created_at DESC'
+  );
   
   if (filters) {
     if (filters.status) {
@@ -501,8 +677,9 @@ export async function getPayouts(filters?: {
     retry_count: Number(p.retry_count) || 0,
   }));
   
-  // Sort by created_at descending
-  data.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+  if (lastDataSource === 'GOOGLE_SHEETS') {
+    data.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+  }
   
   return data;
 }
@@ -514,7 +691,11 @@ export async function getSubmissions(filters?: {
   status?: string;
   market_id?: string;
 }): Promise<Submission[]> {
-  let data = await readSheet<Submission>(SHEETS_CONFIG.SHEETS.SUBMISSIONS);
+  let data = await readSheet<Submission>(
+    SHEETS_CONFIG.SHEETS.SUBMISSIONS,
+    'Submissions',
+    'created_at DESC'
+  );
   
   if (filters) {
     if (filters.status) {
@@ -533,8 +714,9 @@ export async function getSubmissions(filters?: {
     gps_accuracy: Number(s.gps_accuracy) || 0,
   }));
   
-  // Sort by created_at descending
-  data.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+  if (lastDataSource === 'GOOGLE_SHEETS') {
+    data.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+  }
   
   return data;
 }
@@ -543,7 +725,11 @@ export async function getSubmissions(filters?: {
  * Get markets
  */
 export async function getMarkets(): Promise<Market[]> {
-  const data = await readSheet<Market>(SHEETS_CONFIG.SHEETS.MARKETS);
+  const data = await readSheet<Market>(
+    SHEETS_CONFIG.SHEETS.MARKETS,
+    'Markets'
+  );
+  
   return data.map(m => ({
     ...m,
     latitude: Number(m.latitude) || 0,
@@ -559,7 +745,10 @@ export async function getMarkets(): Promise<Market[]> {
  * Get validation queue (pending validations)
  */
 export async function getValidationQueue(): Promise<Submission[]> {
-  const data = await readSheet<Submission>(SHEETS_CONFIG.SHEETS.VALIDATION_QUEUE);
+  const data = await readSheet<Submission>(
+    SHEETS_CONFIG.SHEETS.VALIDATION_QUEUE,
+    'Validation_Queue'
+  );
   return data.filter(s => s.status === 'VALIDATING' || s.status === 'PENDING');
 }
 
@@ -567,7 +756,11 @@ export async function getValidationQueue(): Promise<Submission[]> {
  * Get rewards ledger for a user
  */
 export async function getRewardsLedger(userId?: string): Promise<RewardsLedger[]> {
-  let data = await readSheet<RewardsLedger>(SHEETS_CONFIG.SHEETS.REWARDS_LEDGER);
+  let data = await readSheet<RewardsLedger>(
+    SHEETS_CONFIG.SHEETS.REWARDS_LEDGER,
+    'Rewards_Ledger',
+    'created_at DESC'
+  );
   
   if (userId) {
     data = data.filter(r => r.user_id === userId);
@@ -579,8 +772,9 @@ export async function getRewardsLedger(userId?: string): Promise<RewardsLedger[]
     balance_after: Number(r.balance_after) || 0,
   }));
   
-  // Sort by created_at descending
-  data.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+  if (lastDataSource === 'GOOGLE_SHEETS') {
+    data.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+  }
   
   return data;
 }
@@ -590,33 +784,25 @@ export async function getRewardsLedger(userId?: string): Promise<RewardsLedger[]
 // ============================================================================
 
 export interface DashboardStats {
-  // Users
   totalTraders: number;
   activeTraders: number;
   totalValidators: number;
   activeValidators: number;
-  
-  // Submissions
   totalSubmissions: number;
   submissionsToday: number;
   pendingValidations: number;
   approvalRate: number;
-  
-  // Financial
   totalEarningsDistributed: number;
   pendingPayouts: number;
   pendingPayoutAmount: number;
   weeklyPayoutAmount: number;
-  
-  // Fraud
   totalFraudAlerts: number;
   criticalAlerts: number;
   unresolvedAlerts: number;
   resolutionRate: number;
-  
-  // Markets
   activeMarkets: number;
   topMarketBySubmissions: string;
+  dataSource: DataSource; // Track which source was used
 }
 
 export async function getDashboardStats(): Promise<DashboardStats> {
@@ -656,7 +842,6 @@ export async function getDashboardStats(): Promise<DashboardStats> {
     ? (resolvedAlerts / fraudAlerts.length) * 100 
     : 100;
   
-  // Find top market
   const marketSubmissionCounts = new Map<string, number>();
   submissions.forEach(s => {
     const count = marketSubmissionCounts.get(s.market_name) || 0;
@@ -677,26 +862,23 @@ export async function getDashboardStats(): Promise<DashboardStats> {
     activeTraders: traders.filter(t => t.status === 'ACTIVE').length,
     totalValidators: validators.length,
     activeValidators: validators.filter(v => v.status === 'ACTIVE').length,
-    
     totalSubmissions: submissions.length,
     submissionsToday,
     pendingValidations: submissions.filter(s => s.status === 'VALIDATING').length,
     approvalRate: Math.round(approvalRate * 10) / 10,
-    
     totalEarningsDistributed: payouts
       .filter(p => p.status === 'COMPLETED')
       .reduce((sum, p) => sum + p.amount, 0),
     pendingPayouts: pendingPayoutsList.length,
     pendingPayoutAmount,
-    weeklyPayoutAmount: pendingPayoutAmount, // Simplified
-    
+    weeklyPayoutAmount: pendingPayoutAmount,
     totalFraudAlerts: fraudAlerts.length,
     criticalAlerts: fraudAlerts.filter(a => a.severity === 'CRITICAL').length,
     unresolvedAlerts,
     resolutionRate: Math.round(resolutionRate * 10) / 10,
-    
     activeMarkets: markets.filter(m => m.status === 'ACTIVE').length,
     topMarketBySubmissions: topMarket,
+    dataSource: lastDataSource,
   };
 }
 
@@ -706,6 +888,7 @@ export async function getDashboardStats(): Promise<DashboardStats> {
 
 /**
  * Suspend a user (trader or validator)
+ * Writes to both Azure and Sheets for sync
  */
 export async function suspendUser(
   userId: string,
@@ -717,17 +900,23 @@ export async function suspendUser(
     ? SHEETS_CONFIG.SHEETS.VALIDATORS 
     : SHEETS_CONFIG.SHEETS.TRADERS;
   
+  const tableName = userType === 'VALIDATOR' ? 'Validators' : 'Traders';
   const idColumn = userType === 'VALIDATOR' ? 'validator_id' : 'trader_id';
   
-  const updated = await updateRowByMatch(sheet, idColumn, userId, {
+  const updates = {
     status: 'SUSPENDED',
     suspended_at: new Date().toISOString(),
     suspended_by: suspendedBy,
     suspension_reason: reason,
-  });
+  };
   
-  // Also log to suspensions sheet
-  if (updated) {
+  // Update Azure first (if available)
+  await updateAzureRow(tableName, idColumn, userId, updates);
+  
+  // Always update Sheets (source of truth for WhatsApp bot)
+  const sheetUpdated = await updateRowByMatch(sheet, idColumn, userId, updates);
+  
+  if (sheetUpdated) {
     await appendRow(SHEETS_CONFIG.SHEETS.VALIDATOR_SUSPENSIONS, [
       `SUSP_${Date.now()}`,
       userId,
@@ -735,12 +924,12 @@ export async function suspendUser(
       reason,
       suspendedBy,
       new Date().toISOString(),
-      '', // reinstated_at
-      '', // reinstated_by
+      '',
+      '',
     ]);
   }
   
-  return updated;
+  return sheetUpdated;
 }
 
 /**
@@ -752,24 +941,95 @@ export async function resolveFraudAlert(
   notes: string,
   resolvedBy: string
 ): Promise<boolean> {
-  return await updateRowByMatch(SHEETS_CONFIG.SHEETS.FRAUD_FLAGS, 'alert_id', alertId, {
+  const updates = {
     status: resolution,
     resolution_notes: notes,
     resolved_by: resolvedBy,
     resolved_at: new Date().toISOString(),
-  });
+  };
+  
+  // Update Azure
+  await updateAzureRow('Fraud_Flags', 'alert_id', alertId, updates);
+  
+  // Update Sheets
+  return await updateRowByMatch(SHEETS_CONFIG.SHEETS.FRAUD_FLAGS, 'alert_id', alertId, updates);
 }
 
 /**
  * Retry a failed payout
  */
 export async function retryPayout(payoutId: string): Promise<boolean> {
-  return await updateRowByMatch(SHEETS_CONFIG.SHEETS.VALIDATOR_PAYOUT_LOG, 'payout_id', payoutId, {
+  const updates = {
     status: 'PENDING',
-    retry_count: 0, // Will be incremented by the payout processor
+    retry_count: 0,
     failure_reason: '',
-  });
+  };
+  
+  // Update Azure
+  await updateAzureRow('Validator_Payout_Log', 'payout_id', payoutId, updates);
+  
+  // Update Sheets
+  return await updateRowByMatch(SHEETS_CONFIG.SHEETS.VALIDATOR_PAYOUT_LOG, 'payout_id', payoutId, updates);
 }
+
+// ============================================================================
+// HEALTH CHECK
+// ============================================================================
+
+export interface HealthStatus {
+  azure: {
+    available: boolean;
+    latencyMs?: number;
+    error?: string;
+  };
+  sheets: {
+    available: boolean;
+    latencyMs?: number;
+    error?: string;
+  };
+}
+
+export async function checkHealth(): Promise<HealthStatus> {
+  const status: HealthStatus = {
+    azure: { available: false },
+    sheets: { available: false },
+  };
+  
+  // Check Azure
+  try {
+    const start = Date.now();
+    const pool = await getAzurePool();
+    if (pool) {
+      await pool.request().query('SELECT 1');
+      status.azure.available = true;
+      status.azure.latencyMs = Date.now() - start;
+    }
+  } catch (error) {
+    status.azure.error = error instanceof Error ? error.message : 'Unknown error';
+  }
+  
+  // Check Sheets
+  try {
+    const start = Date.now();
+    const sheets = await getGoogleSheetsClient();
+    await sheets.spreadsheets.get({
+      spreadsheetId: SHEETS_CONFIG.SPREADSHEET_ID,
+      fields: 'properties.title',
+    });
+    status.sheets.available = true;
+    status.sheets.latencyMs = Date.now() - start;
+  } catch (error) {
+    status.sheets.error = error instanceof Error ? error.message : 'Unknown error';
+  }
+  
+  return status;
+}
+
+// ============================================================================
+// EXPORTS
+// ============================================================================
+
+export { getGoogleSheetsClient };
 
 export default {
   SHEETS_CONFIG,
@@ -778,6 +1038,7 @@ export default {
   appendRow,
   updateCell,
   updateRowByMatch,
+  updateAzureRow,
   getValidators,
   getTraders,
   getFraudAlerts,
@@ -790,4 +1051,7 @@ export default {
   suspendUser,
   resolveFraudAlert,
   retryPayout,
+  checkHealth,
+  getLastDataSource,
+  isAzureAvailable,
 };
