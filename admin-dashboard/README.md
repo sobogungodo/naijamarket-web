@@ -1,308 +1,327 @@
-# 🎛️ NaijaMarket Intel Admin Dashboard
+# NaijaMarket Intel - Admin Dashboard API Integration
 
-> Operations Control Center for Nigeria's Premier Commodity Intelligence Platform
+This package provides the complete API integration layer connecting the Admin Dashboard to the Validator WebApp's Google Sheets database.
 
-<p align="center">
-  <img src="https://img.shields.io/badge/Next.js-14.2-black?style=flat-square&logo=next.js" />
-  <img src="https://img.shields.io/badge/TypeScript-5.4-blue?style=flat-square&logo=typescript" />
-  <img src="https://img.shields.io/badge/Tailwind-3.4-38B2AC?style=flat-square&logo=tailwind-css" />
-  <img src="https://img.shields.io/badge/Recharts-2.12-FF6B6B?style=flat-square" />
-  <img src="https://img.shields.io/badge/Azure%20SQL-Ready-0078D4?style=flat-square&logo=microsoft-azure" />
-</p>
+## 🏗️ Architecture
 
----
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         NAIJAMARKET INTEL PLATFORM                          │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  ┌──────────────────────┐         ┌────────────────────────────────────┐   │
+│  │   WhatsApp Users     │         │   Admin Dashboard                   │   │
+│  │   (Traders/Validators)│        │   (naijamarket-admin.vercel.app)   │   │
+│  └──────────┬───────────┘         └─────────────────┬──────────────────┘   │
+│             │                                       │                       │
+│             ▼                                       ▼                       │
+│  ┌──────────────────────┐         ┌────────────────────────────────────┐   │
+│  │   validators.txt     │         │   API Routes (/api/*)              │   │
+│  │   (Google Apps Script)│        │   - /api/dashboard/stats           │   │
+│  │                      │         │   - /api/validators                │   │
+│  │   • Registration     │         │   - /api/traders                   │   │
+│  │   • Vote Processing  │◄───────►│   - /api/fraud                     │   │
+│  │   • Payout Processing│         │   - /api/payouts                   │   │
+│  │   • GPS Verification │         │   - /api/config                    │   │
+│  └──────────┬───────────┘         └─────────────────┬──────────────────┘   │
+│             │                                       │                       │
+│             ▼                                       ▼                       │
+│  ┌──────────────────────────────────────────────────────────────────────┐  │
+│  │                    GOOGLE SHEETS DATABASE                             │  │
+│  │                    Spreadsheet ID: 1n-7MXdoqvIoSHteBJaUYBmIPLjJBNtrE  │  │
+│  │                                                                       │  │
+│  │   ┌──────────────┬──────────────┬──────────────┬──────────────┐      │  │
+│  │   │ Validators   │ Trader       │ Rewards      │ Fraud_Flags  │      │  │
+│  │   │ _Votes       │ _Submissions │ _Ledger      │              │      │  │
+│  │   └──────────────┴──────────────┴──────────────┴──────────────┘      │  │
+│  └──────────────────────────────────────────────────────────────────────┘  │
+│                                     │                                       │
+│                                     ▼                                       │
+│  ┌──────────────────────────────────────────────────────────────────────┐  │
+│  │                    AZURE SQL DATABASE (Analytics)                     │  │
+│  │                    naijafood.database.windows.net                     │  │
+│  │                    Daily sync from Google Sheets                      │  │
+│  └──────────────────────────────────────────────────────────────────────┘  │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
 
-## 📋 Overview
+## 📁 File Structure
 
-A comprehensive admin dashboard for managing the NaijaMarket Intel platform - Nigeria's Bloomberg of Commodities. Built with Next.js 14, TypeScript, and Tailwind CSS, featuring:
-
-- 🛡️ **Fraud Detection Center** - Real-time monitoring of GPS spoofing, price manipulation, and collusion
-- 💰 **Financial Operations** - Payout management, VTPass integration, transaction tracking
-- 👥 **User Management** - Trader and validator administration with reputation tracking
-- 📊 **System Health** - Service status, performance metrics, error monitoring
-- 📈 **Analytics Dashboard** - Interactive charts powered by Recharts
-
----
-
-## 🎨 Design System
-
-### Theme: Industrial Bloomberg Terminal
-- **Primary Color**: Nigerian Green (#008751)
-- **Accent Color**: Nigerian Gold (#FCD116)
-- **Background**: Deep dark (#0a0e14)
-- **Typography**: JetBrains Mono (data), Plus Jakarta Sans (UI)
-
-### Key Features
-- Dark theme optimized for extended monitoring sessions
-- High data density with clear visual hierarchy
-- Real-time pulse animations for live data
-- Responsive design for desktop and tablet
-
----
+```
+admin-dashboard-api/
+├── lib/
+│   └── google-sheets.ts      # Google Sheets API client and data functions
+├── app/
+│   └── api/
+│       ├── dashboard/
+│       │   └── stats/
+│       │       └── route.ts  # Dashboard statistics API
+│       ├── validators/
+│       │   └── route.ts      # Validators CRUD API
+│       ├── traders/
+│       │   └── route.ts      # Traders CRUD API
+│       ├── fraud/
+│       │   └── route.ts      # Fraud alerts API
+│       ├── payouts/
+│       │   └── route.ts      # Payouts management API
+│       └── config/
+│           └── route.ts      # Platform configuration API
+├── hooks/
+│   └── use-data.ts           # React hooks for data fetching
+├── scripts/
+│   └── sync-to-azure.ts      # Google Sheets to Azure SQL sync script
+├── .env.example              # Environment variables template
+└── README.md                 # This file
+```
 
 ## 🚀 Quick Start
 
-### Prerequisites
-- Node.js 18+
-- npm or yarn
-- Azure SQL Database access (or use mock data)
-
-### Installation
+### 1. Install Dependencies
 
 ```bash
-# Clone or navigate to the project
-cd admin-dashboard
+npm install googleapis swr mssql
+# or
+yarn add googleapis swr mssql
+```
 
-# Install dependencies
-npm install
+### 2. Configure Environment Variables
 
-# Copy environment variables
+Copy `.env.example` to `.env.local` and configure:
+
+```bash
 cp .env.example .env.local
-
-# Edit .env.local with your credentials
-nano .env.local
-
-# Start development server
-npm run dev
 ```
 
-### Default Login Credentials
-```
-Email: olawale.sobogungod@giggabytes.eu
-Password: NaijaAdmin2024!
-```
+**Required variables:**
 
----
+| Variable | Description |
+|----------|-------------|
+| `NEXTAUTH_SECRET` | Session encryption key |
+| `GOOGLE_SERVICE_ACCOUNT_KEY` | Google service account JSON |
+| `GOOGLE_SPREADSHEET_ID` | Google Sheets spreadsheet ID |
 
-## 📁 Project Structure
+### 3. Set Up Google Service Account
 
-```
-admin-dashboard/
-├── app/
-│   ├── layout.tsx              # Root layout with providers
-│   ├── page.tsx                # Redirect to dashboard
-│   ├── login/
-│   │   └── page.tsx            # Login page
-│   ├── dashboard/
-│   │   ├── layout.tsx          # Dashboard shell with sidebar
-│   │   ├── page.tsx            # Executive overview
-│   │   ├── fraud/page.tsx      # Fraud detection center
-│   │   ├── financial/page.tsx  # Financial operations
-│   │   ├── users/page.tsx      # User management
-│   │   └── health/page.tsx     # System health
-│   └── api/
-│       └── auth/[...nextauth]/ # NextAuth API routes
-├── components/
-│   ├── ui/                     # Reusable UI components
-│   │   └── index.tsx           # StatCard, Badge, Button, etc.
-│   ├── charts/                 # Recharts wrappers
-│   │   └── index.tsx           # Area, Line, Bar, Pie charts
-│   ├── dashboard/              # Dashboard-specific components
-│   │   ├── layout.tsx          # Sidebar, Header
-│   │   ├── widgets.tsx         # FraudAlert, ActivityFeed
-│   │   └── data-table.tsx      # DataTable with pagination
-│   └── providers/
-│       └── session-provider.tsx
-├── lib/
-│   ├── auth.ts                 # NextAuth configuration
-│   ├── db.ts                   # Azure SQL connection
-│   └── utils.ts                # Utility functions
-├── types/
-│   └── index.ts                # TypeScript definitions
-├── middleware.ts               # Auth middleware
-├── tailwind.config.ts          # Tailwind with Nigerian theme
-└── next.config.js              # Next.js configuration
-```
+1. Go to [Google Cloud Console](https://console.cloud.google.com/)
+2. Create a new project or select existing
+3. Enable Google Sheets API
+4. Create a Service Account:
+   - Go to IAM & Admin > Service Accounts
+   - Create Service Account
+   - Create JSON key
+5. Share your Google Sheet with the service account email (Editor access)
+6. Copy the JSON key to `GOOGLE_SERVICE_ACCOUNT_KEY` environment variable
 
----
-
-## 🔐 Role-Based Access Control
-
-| Role | Dashboard | Fraud | Financial | Users | Settings |
-|------|-----------|-------|-----------|-------|----------|
-| Super Admin | ✅ Full | ✅ Full | ✅ Full | ✅ Full | ✅ Full |
-| Admin | ✅ Full | ✅ Full | ✅ Full | ✅ Full | ❌ View |
-| Supervisor | ✅ Full | ✅ Full | ✅ View | ❌ None | ❌ None |
-| Analyst | ✅ View | ✅ View | ✅ View | ❌ None | ❌ None |
-| Viewer | ✅ View | ❌ None | ❌ None | ❌ None | ❌ None |
-
----
-
-## 📊 Dashboard Modules
-
-### 1. Executive Overview
-- Real-time KPI cards (traders, submissions, payouts, approval rate)
-- Weekly activity trend chart
-- Market distribution pie chart
-- Payout by network breakdown
-- Quick actions panel
-- System status bar
-
-### 2. Fraud Detection Center
-- Critical alert banner with counts
-- Fraud type distribution
-- 4-week trend analysis
-- Alert severity filtering
-- Top offenders table
-- Fraud pattern analysis
-
-### 3. Financial Operations
-- Pending payout queue
-- Weekly payout trend
-- Network breakdown with success rates
-- Batch processing controls
-- VTPass integration status
-- Transaction history
-
-### 4. User Management
-- Trader listing with reputation scores
-- Validator listing with accuracy rates
-- Registration trend chart
-- Status filtering (active/suspended/banned)
-- Quick actions (view/suspend/approve)
-
-### 5. System Health
-- Service status grid (8 services)
-- Response time trends (24h)
-- Request throughput chart
-- 7-day uptime history
-- Recent errors log
-- Resource usage meters
-
----
-
-## 🛠️ Development
-
-### Scripts
+### 4. Copy Files to Your Dashboard Project
 
 ```bash
-# Development
-npm run dev          # Start dev server at localhost:3000
+# Copy the lib folder
+cp -r lib/google-sheets.ts your-dashboard/lib/
 
-# Production
-npm run build        # Build for production
-npm run start        # Start production server
+# Copy API routes
+cp -r app/api/* your-dashboard/app/api/
 
-# Quality
-npm run lint         # Run ESLint
-npm run type-check   # TypeScript check
+# Copy hooks
+cp -r hooks/use-data.ts your-dashboard/hooks/
+
+# Copy environment template
+cp .env.example your-dashboard/
 ```
 
-### Adding New Admin Users
+### 5. Update Your Dashboard Pages
 
-Edit `lib/auth.ts` and add to the `ADMIN_USERS` array:
+Example usage in a page:
 
-```typescript
-{
-  id: '5',
-  email: 'newadmin@naijamarket.ng',
-  name: 'New Admin',
-  passwordHash: await bcrypt.hash('SecurePassword123!', 12),
-  role: 'admin',
-  avatar: null,
-  isActive: true,
+```tsx
+'use client';
+
+import { useDashboardStats, useFraudAlerts } from '@/hooks/use-data';
+
+export default function DashboardPage() {
+  const { stats, isLoading: statsLoading } = useDashboardStats();
+  const { alerts, resolveAlert } = useFraudAlerts({ status: 'PENDING' });
+
+  if (statsLoading) return <div>Loading...</div>;
+
+  return (
+    <div>
+      <h1>Active Traders: {stats?.activeTraders}</h1>
+      <h2>Pending Fraud Alerts: {alerts.length}</h2>
+    </div>
+  );
 }
 ```
 
-### Connecting to Real Database
+## 📊 API Reference
 
-1. Update `.env.local` with Azure SQL credentials
-2. Uncomment the database calls in API routes
-3. Replace mock data with actual queries
+### GET /api/dashboard/stats
 
----
+Returns aggregated platform statistics.
 
-## 🚢 Deployment to Vercel
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "totalTraders": 1247,
+    "activeTraders": 1089,
+    "totalValidators": 342,
+    "activeValidators": 298,
+    "submissionsToday": 234,
+    "pendingValidations": 47,
+    "pendingPayouts": 89,
+    "pendingPayoutAmount": 156700,
+    "criticalAlerts": 3,
+    "unresolvedAlerts": 12
+  }
+}
+```
 
-### Step 1: Push to GitHub
+### GET /api/validators
+
+List validators with optional filters.
+
+**Query Parameters:**
+- `status`: Filter by status (ACTIVE, SUSPENDED, BANNED)
+- `market`: Filter by market name or ID
+- `search`: Search by name or phone
+- `limit`: Pagination limit (default: 100)
+- `offset`: Pagination offset (default: 0)
+
+### GET /api/traders
+
+List traders with optional filters.
+
+**Query Parameters:**
+- `status`: Filter by status
+- `market`: Filter by market
+- `search`: Search by name or phone
+- `minReputation`: Minimum reputation score
+- `maxReputation`: Maximum reputation score
+
+### GET /api/fraud
+
+List fraud alerts with optional filters.
+
+**Query Parameters:**
+- `status`: PENDING, INVESTIGATING, RESOLVED, DISMISSED
+- `severity`: CRITICAL, HIGH, MEDIUM, LOW
+- `type`: GPS_SPOOFING, PRICE_MANIPULATION, COLLUSION, etc.
+
+### POST /api/fraud
+
+Resolve a fraud alert.
+
+**Request Body:**
+```json
+{
+  "action": "resolve",
+  "alertId": "FRD_001",
+  "resolution": "RESOLVED",
+  "notes": "Confirmed GPS spoofing, user suspended",
+  "adminId": "admin@naijamarket.ng"
+}
+```
+
+### GET /api/payouts
+
+List payouts with optional filters.
+
+### POST /api/payouts
+
+Retry a failed payout or process batch.
+
+**Request Body:**
+```json
+{
+  "action": "retry",
+  "payoutId": "PAY_001"
+}
+```
+
+### GET /api/config
+
+Get platform configuration (synchronized with validators.txt CONFIG).
+
+### PUT /api/config
+
+Update platform configuration.
+
+## ⚙️ Configuration Synchronization
+
+The dashboard settings are synchronized with the `validators.txt` CONFIG object:
+
+| Script CONFIG | Dashboard Settings | Value |
+|---------------|-------------------|-------|
+| `VALIDATION.TIMEOUT_MINUTES` | Validation Timeout | 30 min |
+| `VALIDATION.VALIDATORS_REQUIRED` | Validators per Submission | 3 |
+| `VALIDATION.CONSENSUS_REQUIRED` | Consensus Threshold | 2 |
+| `REWARDS.CORRECT_VOTE` | Validator Reward | ₦100 |
+| `PAYOUT.MINIMUM_BALANCE` | Minimum Balance | ₦500 |
+| `PAYOUT.FREQUENCY_DAYS` | Payout Frequency | 14 days |
+| `GPS.DEFAULT_MARKET_RADIUS` | GPS Radius | 500m |
+
+## 🔄 Azure SQL Sync
+
+The `sync-to-azure.ts` script syncs data from Google Sheets to Azure SQL for analytics:
+
 ```bash
-git init
-git add .
-git commit -m "Initial admin dashboard"
-git remote add origin https://github.com/yourusername/naijamarket-admin.git
-git push -u origin main
+# Run manually
+npx ts-node scripts/sync-to-azure.ts
+
+# Or deploy as Azure Function (scheduled trigger)
 ```
 
-### Step 2: Deploy on Vercel
-1. Go to [vercel.com](https://vercel.com)
-2. Import your GitHub repository
-3. Add environment variables from `.env.example`
-4. Deploy!
+**Sync Schedule Recommendation:**
+- Production: Every 15 minutes
+- Analytics: Daily at midnight
 
-### Step 3: Configure Domain
-```
-admin.naijamarket.ng → your-vercel-deployment.vercel.app
-```
+## 🧪 Mock Data Mode
 
----
+When Google Sheets is not configured, the API returns mock data automatically. This allows for:
+- Local development without Google credentials
+- Demo deployments
+- Testing
 
-## 📈 Performance Optimizations
+Set `ENABLE_MOCK_DATA=true` in environment to force mock mode.
 
-- ✅ Server-side rendering for initial load
-- ✅ Client-side data fetching with SWR (ready to implement)
-- ✅ Skeleton loaders for loading states
-- ✅ Responsive design with mobile support
-- ✅ Dark theme to reduce eye strain
-- ✅ Lazy loading for charts
-- ✅ Debounced search inputs
+## 🔒 Security Notes
 
----
+1. **Never commit `.env.local`** - Contains sensitive credentials
+2. **Use environment variables in Vercel** - Configure in project settings
+3. **Rotate service account keys** - Periodically regenerate
+4. **Limit sheet permissions** - Service account only needs specific sheets
 
-## 🔒 Security Features
+## 📈 Performance Tips
 
-- ✅ JWT-based authentication (8-hour expiry)
-- ✅ Role-based route protection
-- ✅ CSRF protection via NextAuth
-- ✅ Secure headers (X-Frame-Options, etc.)
-- ✅ Password hashing with bcrypt (12 rounds)
-- ✅ Environment variables for secrets
+1. **Use SWR caching** - Data hooks include automatic caching
+2. **Batch API calls** - Use `Promise.all()` for multiple requests
+3. **Implement pagination** - All list endpoints support limit/offset
+4. **Set appropriate refresh intervals** - Don't over-fetch
 
----
+## 🐛 Troubleshooting
 
-## 📝 API Integration Notes
+### "GOOGLE_SERVICE_ACCOUNT_KEY not set"
+- Check that the environment variable is properly set
+- Ensure JSON is properly escaped (single line, no newlines in string)
 
-### Azure SQL Queries
-The `lib/db.ts` file contains pre-built queries for:
-- Dashboard statistics
-- Fraud alerts
-- Recent submissions
-- Pending payouts
-- Trader/validator listings
+### "Failed to fetch data"
+- Verify Google Sheet is shared with service account email
+- Check that sheet names match exactly (case-sensitive)
+- Verify Spreadsheet ID is correct
 
-### Google Sheets Sync
-For real-time data from Google Sheets, implement:
-1. Service account authentication
-2. Sheets API v4 integration
-3. Webhook for change notifications
+### "Azure SQL connection failed"
+- Check connection string format
+- Verify IP is whitelisted in Azure SQL firewall
+- Confirm credentials are correct
 
-### VTPass Integration
-For airtime payouts:
-1. Configure API credentials
-2. Implement retry logic
-3. Handle webhook callbacks
+## 📝 Version History
 
----
-
-## 🤝 Contributing
-
-This is an internal tool for NaijaMarket Intel. For feature requests or bug reports, contact the development team.
-
----
-
-## 📄 License
-
-Proprietary - © 2024 Giggababytes Oy. All rights reserved.
-
----
-
-## 👨‍💻 Author
-
-**Prof** (Olawale)  
-Giggababytes Oy  
-olawale.sobogungod@giggabytes.eu
-
----
-
-<p align="center">
-  <strong>🇳🇬 Built for Nigeria, Powered by Innovation 🚀</strong>
-</p>
+- **v1.0.0** (2026-01-29)
+  - Initial API integration package
+  - Google Sheets client library
+  - All API routes (stats, validators, traders, fraud, payouts, config)
+  - React data fetching hooks
+  - Azure SQL sync script
+  - Configuration synchronization with validators.txt
