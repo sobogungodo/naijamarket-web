@@ -9,7 +9,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import {
-  AreaChart, Area, BarChart, Bar, LineChart, Line,
+   Area, BarChart, Bar, LineChart, Line,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend,
   ResponsiveContainer, PieChart, Pie, Cell, 
   ComposedChart, Scatter, RadarChart, Radar,
