@@ -1,0 +1,32 @@
+{
+  "name": "naijamarket-admin-api",
+  "version": "1.0.0",
+  "description": "API integration layer for NaijaMarket Intel Admin Dashboard",
+  "private": true,
+  "scripts": {
+    "sync": "ts-node scripts/sync-to-azure.ts",
+    "test:sheets": "ts-node -e \"require('./lib/google-sheets').getDashboardStats().then(console.log)\""
+  },
+  "dependencies": {
+    "googleapis": "^126.0.0",
+    "mssql": "^10.0.0",
+    "lucide-react": "^0.469.0",
+    "next-auth": "^4.24.13",
+    "swr": "^2.2.0"
+  },
+  "devDependencies": {
+    "@types/mssql": "^9.0.0",
+    "@types/node": "^20.0.0",
+    "ts-node": "^10.9.0",
+    "typescript": "^5.0.0"
+  },
+  "peerDependencies": {
+    "next": ">=14.0.0",
+    "react": ">=18.0.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "author": "NaijaMarket Intel",
+  "license": "PROPRIETARY"
+}
