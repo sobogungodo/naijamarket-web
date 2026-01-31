@@ -1,4 +1,15 @@
+// src/app/layout.tsx
+// NaijaMarket Intel - Root Layout with Single Session Support
+// Version: 2.0.0 - Added SingleSessionProvider
+// Date: 2026-01-31
+//
+// CHANGES FROM PREVIOUS VERSION:
+// - Added SingleSessionProvider for one-browser-at-a-time enforcement
+// - Added SessionExpiredModal to show when user logged out from another device
+// - Added Suspense boundary for client components using useSearchParams
+
 import type { Metadata, Viewport } from "next";
+import { Suspense } from "react";
 import { GeistSans } from "geist/font/sans";
 import { GeistMono } from "geist/font/mono";
 import { Space_Grotesk } from "next/font/google";
@@ -8,6 +19,8 @@ import "@/styles/globals.css";
 import { cn } from "@/lib/utils";
 import Providers from "@/components/Providers";
 import { SessionTimeoutProvider } from "@/components/SessionTimeoutProvider";
+import { SingleSessionProvider } from "@/components/SingleSessionProvider"; // ✅ NEW
+import SessionExpiredModal from "@/components/SessionExpiredModal"; // ✅ NEW
 
 // ============================================================================
 // FONTS
@@ -162,13 +175,26 @@ export default function RootLayout({
           "selection:bg-naija-green/30 selection:text-naija-green"
         )}
       >
-        {/* NextAuth Session Provider + Session Timeout */}
+        {/* ════════════════════════════════════════════════════════════════════
+            PROVIDER HIERARCHY (order matters!)
+            1. Providers (NextAuth SessionProvider) - handles JWT tokens
+            2. SingleSessionProvider - validates session against database
+            3. SessionTimeoutProvider - auto-logout after inactivity
+            ════════════════════════════════════════════════════════════════════ */}
         <Providers>
-          {/* Session Timeout Provider - Shows warning at 4 min, auto-logout at 5 min */}
-          <SessionTimeoutProvider>
-            {/* Main Content */}
-            {children}
-          </SessionTimeoutProvider>
+          {/* ✅ NEW: Single Session Provider - enforces one-browser-at-a-time */}
+          <SingleSessionProvider>
+            {/* Session Timeout Provider - Shows warning at 4 min, auto-logout at 5 min */}
+            <SessionTimeoutProvider>
+              {/* Main Content */}
+              {children}
+            </SessionTimeoutProvider>
+
+            {/* ✅ NEW: Modal that shows when user is logged out from another device */}
+            <Suspense fallback={null}>
+              <SessionExpiredModal />
+            </Suspense>
+          </SingleSessionProvider>
 
           {/* Toast Notifications */}
           <Toaster

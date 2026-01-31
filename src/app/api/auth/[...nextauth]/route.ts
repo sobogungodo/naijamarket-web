@@ -1,11 +1,16 @@
 // src/app/api/auth/[...nextauth]/route.ts
-// NaijaMarket Intel - NextAuth Configuration with Phone OTP
-// FIXED v4: Added countryCode to credentials, matching phone format with send-otp
-// Updated: 2026-01-19
+// NaijaMarket Intel - NextAuth Configuration with Phone OTP + Single Session
+// UPDATED: 2026-01-31 - Added single-session token support
+// 
+// CHANGES FROM PREVIOUS VERSION:
+// - Added session token generation on login
+// - Old sessions are invalidated when user logs in from new device
+// - Session token stored in JWT for validation
 
 import NextAuth, { NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
 import { prisma } from "@/lib/prisma";
+import crypto from "crypto";
 
 // ============================================================================
 // PHONE FORMATTING - MUST MATCH send-otp/route.ts EXACTLY!
@@ -45,6 +50,16 @@ function formatPhoneNumber(phone: string, countryCode?: string): string {
   return cleaned;
 }
 
+// ============================================================================
+// SESSION TOKEN GENERATOR
+// ============================================================================
+function generateSessionToken(): string {
+  return crypto.randomBytes(32).toString("hex");
+}
+
+// ============================================================================
+// NEXTAUTH OPTIONS
+// ============================================================================
 const authOptions: NextAuthOptions = {
   providers: [
     CredentialsProvider({
@@ -52,24 +67,26 @@ const authOptions: NextAuthOptions = {
       name: "Phone OTP",
       credentials: {
         phone: { label: "Phone Number", type: "text" },
-        countryCode: { label: "Country Code", type: "text" },  // ✅ ADDED!
+        countryCode: { label: "Country Code", type: "text" },
         otp: { label: "OTP Code", type: "text" },
       },
-      async authorize(credentials) {
+      async authorize(credentials, req) {
         if (!credentials?.phone || !credentials?.otp) {
           throw new Error("Phone number and OTP are required");
         }
 
-        // ✅ FIXED: Use same formatting function as send-otp
+        // Format phone number consistently
         const phone = formatPhoneNumber(credentials.phone, credentials.countryCode);
         const otp = credentials.otp;
 
-        console.log("[AUTH] Attempting login for phone:", phone, "OTP:", otp);
+        console.log("[AUTH] ═══════════════════════════════════════════════════");
+        console.log("[AUTH] Single-Session Login Attempt");
+        console.log("[AUTH] Phone:", phone, "OTP:", otp);
         console.log("[AUTH] Country code received:", credentials.countryCode);
 
         try {
           // ============================================================
-          // Check for verified OTP in OTP_Codes table
+          // STEP 1: Check for verified OTP in OTP_Codes table
           // ============================================================
           const otpRecords = await prisma.$queryRaw`
             SELECT * FROM OTP_Codes
@@ -117,9 +134,11 @@ const authOptions: NextAuthOptions = {
             }
           }
 
-          console.log("[AUTH] OTP verified for:", phone);
+          console.log("[AUTH] ✅ OTP verified for:", phone);
 
-          // Find or create consumer - use flexible phone matching
+          // ============================================================
+          // STEP 2: Find or create consumer
+          // ============================================================
           const phoneLastDigits = phone.slice(-9);
           let consumers = await prisma.$queryRaw`
             SELECT 
@@ -129,7 +148,8 @@ const authOptions: NextAuthOptions = {
               first_name,
               last_name,
               subscription_tier,
-              account_status
+              account_status,
+              session_token
             FROM Consumers 
             WHERE phone_number = ${phone}
                OR phone_number LIKE ${'%' + phoneLastDigits}
@@ -143,12 +163,31 @@ const authOptions: NextAuthOptions = {
             consumer = consumers[0];
             console.log("[AUTH] Found consumer:", consumer.consumer_id, "Tier:", consumer.subscription_tier, "Name:", consumer.full_name);
 
-            // Update last active
-            await prisma.$executeRaw`
-              UPDATE Consumers
-              SET last_active_at = GETDATE(), updated_at = GETDATE()
-              WHERE consumer_id = ${consumer.consumer_id}
-            `;
+            // Check if there's an existing session (will be invalidated)
+            if (consumer.session_token) {
+              console.log("[AUTH] ⚠️ Invalidating previous session for consumer:", consumer.consumer_id);
+              
+              // Log the old session to history (if table exists)
+              try {
+                await prisma.$executeRaw`
+                  INSERT INTO Consumer_Session_History 
+                    (consumer_id, phone_number, session_token, login_at, logout_at, logout_reason)
+                  SELECT 
+                    consumer_id, 
+                    phone_number,
+                    session_token, 
+                    session_created_at, 
+                    GETDATE(),
+                    'NEW_LOGIN'
+                  FROM Consumers 
+                  WHERE consumer_id = ${consumer.consumer_id}
+                    AND session_token IS NOT NULL
+                `;
+              } catch (historyError) {
+                // History table might not exist yet, that's okay
+                console.log("[AUTH] Session history logging skipped (table may not exist)");
+              }
+            }
           } else {
             // Create new consumer
             const consumerId = `CON${Date.now()}`;
@@ -183,23 +222,46 @@ const authOptions: NextAuthOptions = {
             consumer = newConsumers[0];
           }
 
+          // ============================================================
+          // STEP 3: Generate new session token and update consumer
+          // ============================================================
+          const newSessionToken = generateSessionToken();
+          const ipAddress = req?.headers?.["x-forwarded-for"] || "unknown";
+          const userAgent = req?.headers?.["user-agent"] || "unknown";
+
+          console.log("[AUTH] 🔑 Generating new session token:", newSessionToken.substring(0, 8) + "...");
+
+          await prisma.$executeRaw`
+            UPDATE Consumers
+            SET 
+              session_token = ${newSessionToken},
+              session_created_at = GETDATE(),
+              session_ip_address = ${String(ipAddress).substring(0, 45)},
+              session_user_agent = ${String(userAgent).substring(0, 500)},
+              last_active_at = GETDATE(),
+              updated_at = GETDATE()
+            WHERE consumer_id = ${consumer.consumer_id}
+          `;
+
           // Build display name
           const displayName = consumer.full_name 
             || `${consumer.first_name || ''} ${consumer.last_name || ''}`.trim() 
             || `User ${phone.slice(-4)}`;
 
-          console.log("[AUTH] SUCCESS - Name:", displayName, "Tier:", consumer.subscription_tier);
+          console.log("[AUTH] ✅ SUCCESS - Name:", displayName, "Tier:", consumer.subscription_tier);
+          console.log("[AUTH] ═══════════════════════════════════════════════════");
 
-          // Return user object for session
+          // Return user object for session (includes sessionToken)
           return {
             id: consumer.consumer_id,
             phone: consumer.phone_number,
             name: displayName,
             tier: consumer.subscription_tier || "FREE",
             status: consumer.account_status || "ACTIVE",
+            sessionToken: newSessionToken, // ✅ NEW: Include session token
           };
         } catch (error: any) {
-          console.error("[AUTH] Error:", error.message);
+          console.error("[AUTH] ❌ Error:", error.message);
           throw new Error(error.message || "Authentication failed");
         }
       },
@@ -208,7 +270,7 @@ const authOptions: NextAuthOptions = {
 
   session: {
     strategy: "jwt",
-    maxAge: 30 * 24 * 60 * 60, // 30 days
+    maxAge: 24 * 60 * 60, // 24 hours (reduced from 30 days for security)
   },
 
   callbacks: {
@@ -220,10 +282,11 @@ const authOptions: NextAuthOptions = {
         token.tier = (user as any).tier;
         token.status = (user as any).status;
         token.name = user.name;
+        token.sessionToken = (user as any).sessionToken; // ✅ NEW: Store session token
         console.log("[JWT] Initial sign-in - ID:", token.id, "Tier:", token.tier, "Name:", token.name);
       }
 
-      // Refresh tier from database on each request
+      // Refresh tier from database on each request (but NOT sessionToken - that stays fixed)
       if (token.phone) {
         try {
           const phoneLastDigits = String(token.phone).slice(-9);
@@ -272,6 +335,7 @@ const authOptions: NextAuthOptions = {
         (session.user as any).phone = token.phone;
         (session.user as any).tier = token.tier;
         (session.user as any).status = token.status;
+        (session.user as any).sessionToken = token.sessionToken; // ✅ NEW: Include in session
         session.user.name = token.name as string;
       }
       

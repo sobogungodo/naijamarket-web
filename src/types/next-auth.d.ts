@@ -1,5 +1,7 @@
 // src/types/next-auth.d.ts
 // NextAuth TypeScript Type Definitions
+// Version: 2.0.0 - Added sessionToken for single-session support
+// Date: 2026-01-31
 
 import { DefaultSession, DefaultUser } from "next-auth";
 import { JWT, DefaultJWT } from "next-auth/jwt";
@@ -11,6 +13,7 @@ declare module "next-auth" {
       phone: string;
       tier: string;
       status: string;
+      sessionToken: string; // ✅ NEW: For single-session validation
     } & DefaultSession["user"];
   }
 
@@ -18,6 +21,7 @@ declare module "next-auth" {
     phone: string;
     tier: string;
     status: string;
+    sessionToken: string; // ✅ NEW: For single-session validation
   }
 }
 
@@ -27,5 +31,6 @@ declare module "next-auth/jwt" {
     phone: string;
     tier: string;
     status: string;
+    sessionToken: string; // ✅ NEW: For single-session validation
   }
 }
