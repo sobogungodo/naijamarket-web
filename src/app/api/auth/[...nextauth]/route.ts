@@ -1,58 +1,61 @@
 // src/app/api/auth/[...nextauth]/route.ts
-// NaijaMarket Intel - NextAuth Configuration with Phone OTP + Single Session
-// UPDATED: 2026-01-31 - Added single-session token support
+// NaijaMarket Intel - NextAuth Configuration
+// UPDATED: 2026-01-31 - Added Email+Password LOGIN for Business+ tiers
 // 
-// CHANGES FROM PREVIOUS VERSION:
-// - Added session token generation on login
-// - Old sessions are invalidated when user logs in from new device
-// - Session token stored in JWT for validation
+// LOGIN METHODS:
+// 1. Phone + WhatsApp OTP (All tiers) - EXISTING
+// 2. Email + Password (BUSINESS, CORPORATE, ENTERPRISE only) - NEW
+//
+// Both methods share the same session_token for single-session enforcement
 
 import NextAuth, { NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
-import { prisma } from "@/lib/prisma";
+import { PrismaClient } from "@prisma/client";
 import crypto from "crypto";
+import bcrypt from "bcryptjs";
+
+const prisma = new PrismaClient();
 
 // ============================================================================
-// PHONE FORMATTING - MUST MATCH send-otp/route.ts EXACTLY!
+// CONSTANTS
 // ============================================================================
+
+// Tiers that can use email login
+const EMAIL_LOGIN_TIERS = ["BUSINESS", "CORPORATE", "ENTERPRISE", "OGA_BOSS", "GOVERNMENT"];
+
+// Rate limiting
+const MAX_LOGIN_ATTEMPTS = 5;
+const LOCKOUT_DURATION_MINUTES = 15;
+
+// ============================================================================
+// HELPER FUNCTIONS
+// ============================================================================
+
 function formatPhoneNumber(phone: string, countryCode?: string): string {
   let cleaned = phone.replace(/[\s\-\(\)]/g, "");
   
-  // If phone already starts with +, just remove the + and return
   if (cleaned.startsWith("+")) {
     return cleaned.substring(1);
   }
   
-  // If country code is provided separately (from UI dropdown)
   if (countryCode) {
-    // Remove + from country code if present
     const cleanCountryCode = countryCode.replace("+", "");
-    
-    // If phone starts with 0, remove it (local format)
     if (cleaned.startsWith("0")) {
       cleaned = cleaned.substring(1);
     }
-    
-    // If phone already starts with country code, don't duplicate
     if (cleaned.startsWith(cleanCountryCode)) {
       return cleaned;
     }
-    
     return cleanCountryCode + cleaned;
   }
   
-  // If no country code and starts with 0, assume Nigerian
   if (cleaned.startsWith("0")) {
     return "234" + cleaned.substring(1);
   }
   
-  // Return as-is (already has country code without +)
   return cleaned;
 }
 
-// ============================================================================
-// SESSION TOKEN GENERATOR
-// ============================================================================
 function generateSessionToken(): string {
   return crypto.randomBytes(32).toString("hex");
 }
@@ -60,8 +63,12 @@ function generateSessionToken(): string {
 // ============================================================================
 // NEXTAUTH OPTIONS
 // ============================================================================
+
 const authOptions: NextAuthOptions = {
   providers: [
+    // ========================================================================
+    // PROVIDER 1: Phone + OTP (All Tiers) - EXISTING
+    // ========================================================================
     CredentialsProvider({
       id: "phone-otp",
       name: "Phone OTP",
@@ -75,193 +82,273 @@ const authOptions: NextAuthOptions = {
           throw new Error("Phone number and OTP are required");
         }
 
-        // Format phone number consistently
         const phone = formatPhoneNumber(credentials.phone, credentials.countryCode);
         const otp = credentials.otp;
 
-        console.log("[AUTH] ═══════════════════════════════════════════════════");
-        console.log("[AUTH] Single-Session Login Attempt");
-        console.log("[AUTH] Phone:", phone, "OTP:", otp);
-        console.log("[AUTH] Country code received:", credentials.countryCode);
+        console.log("[AUTH:PHONE] ═══════════════════════════════════════════════");
+        console.log("[AUTH:PHONE] Login attempt for:", phone);
 
         try {
-          // ============================================================
-          // STEP 1: Check for verified OTP in OTP_Codes table
-          // ============================================================
-          const otpRecords = await prisma.$queryRaw`
-            SELECT * FROM OTP_Codes
-            WHERE identifier = ${phone}
-            AND code = ${otp}
-            AND verified = 1
-            AND expires_at > GETDATE()
-            ORDER BY created_at DESC
-          ` as any[];
+          // Check OTP in OTP_Codes table
+          const otpRecord = await prisma.oTP_Codes.findFirst({
+            where: {
+              identifier: phone,
+              code: otp,
+              type: "phone",
+              verified: true,
+              expires_at: { gt: new Date() }
+            },
+            orderBy: { created_at: "desc" }
+          });
 
-          console.log("[AUTH] OTP query result count:", otpRecords?.length || 0);
-
-          if (!otpRecords || otpRecords.length === 0) {
-            console.log("[AUTH] No verified OTP found, checking for unverified...");
+          if (!otpRecord) {
+            // Try to verify unverified OTP
+            const unverifiedOtp = await prisma.oTP_Codes.findFirst({
+              where: {
+                identifier: phone,
+                code: otp,
+                type: "phone",
+                verified: false,
+                expires_at: { gt: new Date() }
+              }
+            });
             
-            // Check if there's an unverified OTP we can verify now
-            const unverifiedOtp = await prisma.$queryRaw`
-              SELECT * FROM OTP_Codes
-              WHERE identifier = ${phone}
-              AND code = ${otp}
-              AND verified = 0
-              AND expires_at > GETDATE()
-            ` as any[];
-            
-            if (unverifiedOtp && unverifiedOtp.length > 0) {
-              console.log("[AUTH] Found unverified OTP, verifying now...");
-              await prisma.$executeRaw`
-                UPDATE OTP_Codes
-                SET verified = 1, verified_at = GETDATE()
-                WHERE identifier = ${phone} AND code = ${otp}
-              `;
+            if (unverifiedOtp) {
+              await prisma.oTP_Codes.update({
+                where: { id: unverifiedOtp.id },
+                data: { verified: true }
+              });
             } else {
-              console.log("[AUTH] No valid OTP found at all for identifier:", phone);
-              
-              // Debug: Show what identifiers exist
-              const debugOtps = await prisma.$queryRaw`
-                SELECT TOP 5 identifier, code, verified, expires_at 
-                FROM OTP_Codes 
-                WHERE type = 'phone'
-                ORDER BY created_at DESC
-              ` as any[];
-              console.log("[AUTH] Recent OTPs in DB:", debugOtps);
-              
               throw new Error("Invalid or expired OTP");
             }
           }
 
-          console.log("[AUTH] ✅ OTP verified for:", phone);
+          console.log("[AUTH:PHONE] ✅ OTP verified");
 
-          // ============================================================
-          // STEP 2: Find or create consumer
-          // ============================================================
-          const phoneLastDigits = phone.slice(-9);
-          let consumers = await prisma.$queryRaw`
-            SELECT 
-              consumer_id,
-              phone_number,
-              full_name,
-              first_name,
-              last_name,
-              subscription_tier,
-              account_status,
-              session_token
-            FROM Consumers 
-            WHERE phone_number = ${phone}
-               OR phone_number LIKE ${'%' + phoneLastDigits}
-          ` as any[];
+          // Find consumer by phone
+          let consumer = await prisma.consumers.findFirst({
+            where: { phone_number: phone }
+          });
 
-          console.log("[AUTH] Consumer query result count:", consumers?.length || 0);
-
-          let consumer;
-
-          if (consumers && consumers.length > 0) {
-            consumer = consumers[0];
-            console.log("[AUTH] Found consumer:", consumer.consumer_id, "Tier:", consumer.subscription_tier, "Name:", consumer.full_name);
-
-            // Check if there's an existing session (will be invalidated)
-            if (consumer.session_token) {
-              console.log("[AUTH] ⚠️ Invalidating previous session for consumer:", consumer.consumer_id);
-              
-              // Log the old session to history (if table exists)
-              try {
-                await prisma.$executeRaw`
-                  INSERT INTO Consumer_Session_History 
-                    (consumer_id, phone_number, session_token, login_at, logout_at, logout_reason)
-                  SELECT 
-                    consumer_id, 
-                    phone_number,
-                    session_token, 
-                    session_created_at, 
-                    GETDATE(),
-                    'NEW_LOGIN'
-                  FROM Consumers 
-                  WHERE consumer_id = ${consumer.consumer_id}
-                    AND session_token IS NOT NULL
-                `;
-              } catch (historyError) {
-                // History table might not exist yet, that's okay
-                console.log("[AUTH] Session history logging skipped (table may not exist)");
-              }
-            }
-          } else {
-            // Create new consumer
-            const consumerId = `CON${Date.now()}`;
-            const now = new Date().toISOString();
-
-            console.log("[AUTH] Creating new consumer:", consumerId);
-
-            await prisma.$executeRaw`
-              INSERT INTO Consumers (
-                consumer_id, phone_number, subscription_tier,
-                account_status, registration_date, created_at, updated_at
-              ) VALUES (
-                ${consumerId}, ${phone}, 'FREE',
-                'ACTIVE', ${now}, ${now}, ${now}
-              )
-            `;
-
-            // Fetch the new consumer
-            const newConsumers = await prisma.$queryRaw`
-              SELECT 
-                consumer_id,
-                phone_number,
-                full_name,
-                first_name,
-                last_name,
-                subscription_tier,
-                account_status
-              FROM Consumers 
-              WHERE consumer_id = ${consumerId}
-            ` as any[];
-
-            consumer = newConsumers[0];
+          if (!consumer) {
+            // Try partial match
+            const phoneLastDigits = phone.slice(-9);
+            consumer = await prisma.consumers.findFirst({
+              where: { phone_number: { endsWith: phoneLastDigits } }
+            });
           }
 
-          // ============================================================
-          // STEP 3: Generate new session token and update consumer
-          // ============================================================
+          if (!consumer) {
+            throw new Error("No account found with this phone number. Please register first.");
+          }
+
+          // Check account status
+          if (consumer.account_status === "BLOCKED" || consumer.account_status === "BANNED") {
+            throw new Error("Your account has been suspended. Please contact support.");
+          }
+
+          // Log old session to history if exists
+          if (consumer.session_token) {
+            try {
+              await prisma.$executeRaw`
+                INSERT INTO Consumer_Session_History 
+                  (consumer_id, phone_number, session_token, login_at, logout_at, logout_reason)
+                VALUES (${consumer.consumer_id}, ${consumer.phone_number}, ${consumer.session_token}, 
+                        ${consumer.session_created_at}, GETDATE(), 'NEW_LOGIN')
+              `;
+            } catch (e) { /* History table may not exist */ }
+          }
+
+          // Generate new session token
           const newSessionToken = generateSessionToken();
-          const ipAddress = req?.headers?.["x-forwarded-for"] || "unknown";
-          const userAgent = req?.headers?.["user-agent"] || "unknown";
+          const ipAddress = String(req?.headers?.["x-forwarded-for"] || "unknown").substring(0, 45);
+          const userAgent = String(req?.headers?.["user-agent"] || "unknown").substring(0, 500);
 
-          console.log("[AUTH] 🔑 Generating new session token:", newSessionToken.substring(0, 8) + "...");
+          await prisma.consumers.update({
+            where: { id: consumer.id },
+            data: {
+              session_token: newSessionToken,
+              session_created_at: new Date(),
+              session_ip_address: ipAddress,
+              session_user_agent: userAgent,
+              last_active_at: new Date(),
+              updated_at: new Date(),
+              failed_login_attempts: 0,
+              locked_until: null
+            }
+          });
 
-          await prisma.$executeRaw`
-            UPDATE Consumers
-            SET 
-              session_token = ${newSessionToken},
-              session_created_at = GETDATE(),
-              session_ip_address = ${String(ipAddress).substring(0, 45)},
-              session_user_agent = ${String(userAgent).substring(0, 500)},
-              last_active_at = GETDATE(),
-              updated_at = GETDATE()
-            WHERE consumer_id = ${consumer.consumer_id}
-          `;
-
-          // Build display name
           const displayName = consumer.full_name 
             || `${consumer.first_name || ''} ${consumer.last_name || ''}`.trim() 
+            || consumer.consumer_name
             || `User ${phone.slice(-4)}`;
 
-          console.log("[AUTH] ✅ SUCCESS - Name:", displayName, "Tier:", consumer.subscription_tier);
-          console.log("[AUTH] ═══════════════════════════════════════════════════");
+          console.log("[AUTH:PHONE] ✅ SUCCESS -", displayName, "| Tier:", consumer.subscription_tier);
 
-          // Return user object for session (includes sessionToken)
           return {
             id: consumer.consumer_id,
             phone: consumer.phone_number,
+            email: consumer.email || null,
             name: displayName,
             tier: consumer.subscription_tier || "FREE",
             status: consumer.account_status || "ACTIVE",
-            sessionToken: newSessionToken, // ✅ NEW: Include session token
+            sessionToken: newSessionToken,
+            authMethod: "phone",
           };
         } catch (error: any) {
-          console.error("[AUTH] ❌ Error:", error.message);
+          console.error("[AUTH:PHONE] ❌ Error:", error.message);
+          throw new Error(error.message || "Authentication failed");
+        }
+      },
+    }),
+
+    // ========================================================================
+    // PROVIDER 2: Email + Password (Business+ Tiers Only) - NEW
+    // ========================================================================
+    CredentialsProvider({
+      id: "email-password",
+      name: "Email and Password",
+      credentials: {
+        email: { label: "Email", type: "email" },
+        password: { label: "Password", type: "password" },
+      },
+      async authorize(credentials, req) {
+        if (!credentials?.email || !credentials?.password) {
+          throw new Error("Email and password are required");
+        }
+
+        const email = credentials.email.toLowerCase().trim();
+        const password = credentials.password;
+
+        console.log("[AUTH:EMAIL] ═══════════════════════════════════════════════");
+        console.log("[AUTH:EMAIL] Login attempt for:", email);
+
+        try {
+          // Find consumer by email
+          const consumer = await prisma.consumers.findFirst({
+            where: { email: email }
+          });
+
+          if (!consumer) {
+            console.log("[AUTH:EMAIL] ❌ No account found for email");
+            throw new Error("No account found with this email. Please use phone login or register first.");
+          }
+
+          // Check if email login is allowed for this tier
+          const tier = (consumer.subscription_tier || "FREE").toUpperCase();
+          if (!EMAIL_LOGIN_TIERS.includes(tier)) {
+            console.log("[AUTH:EMAIL] ❌ Email login not allowed for tier:", tier);
+            throw new Error(`Email login is available for Business, Corporate, and Enterprise tiers only. Your tier: ${consumer.subscription_tier}. Please use phone login.`);
+          }
+
+          // Check if email is verified
+          if (!consumer.email_verified) {
+            console.log("[AUTH:EMAIL] ❌ Email not verified");
+            throw new Error("Please verify your email before using email login.");
+          }
+
+          // Check account status
+          if (consumer.account_status === "BLOCKED" || consumer.account_status === "BANNED") {
+            throw new Error("Your account has been suspended. Please contact support.");
+          }
+
+          // Check account lockout
+          if (consumer.locked_until) {
+            const lockUntil = new Date(consumer.locked_until);
+            if (lockUntil > new Date()) {
+              const minutesLeft = Math.ceil((lockUntil.getTime() - Date.now()) / 60000);
+              console.log("[AUTH:EMAIL] ❌ Account locked for", minutesLeft, "more minutes");
+              throw new Error(`Account temporarily locked. Please try again in ${minutesLeft} minutes.`);
+            }
+          }
+
+          // Verify password
+          if (!consumer.password_hash) {
+            console.log("[AUTH:EMAIL] ❌ No password set");
+            throw new Error("No password set for this account. Please use 'Forgot Password' to set one, or use phone login.");
+          }
+
+          const passwordValid = await bcrypt.compare(password, consumer.password_hash);
+
+          if (!passwordValid) {
+            // Increment failed attempts
+            const newAttempts = (consumer.failed_login_attempts || 0) + 1;
+            
+            if (newAttempts >= MAX_LOGIN_ATTEMPTS) {
+              // Lock account
+              const lockUntil = new Date(Date.now() + LOCKOUT_DURATION_MINUTES * 60 * 1000);
+              await prisma.consumers.update({
+                where: { id: consumer.id },
+                data: { 
+                  failed_login_attempts: newAttempts,
+                  locked_until: lockUntil
+                }
+              });
+              console.log("[AUTH:EMAIL] ❌ Account locked after", newAttempts, "attempts");
+              throw new Error(`Too many failed attempts. Account locked for ${LOCKOUT_DURATION_MINUTES} minutes.`);
+            } else {
+              await prisma.consumers.update({
+                where: { id: consumer.id },
+                data: { failed_login_attempts: newAttempts }
+              });
+              const remaining = MAX_LOGIN_ATTEMPTS - newAttempts;
+              console.log("[AUTH:EMAIL] ❌ Invalid password. Attempts remaining:", remaining);
+              throw new Error(`Invalid password. ${remaining} attempts remaining.`);
+            }
+          }
+
+          console.log("[AUTH:EMAIL] ✅ Password verified");
+
+          // Log old session to history if exists
+          if (consumer.session_token) {
+            try {
+              await prisma.$executeRaw`
+                INSERT INTO Consumer_Session_History 
+                  (consumer_id, phone_number, session_token, login_at, logout_at, logout_reason)
+                VALUES (${consumer.consumer_id}, ${consumer.phone_number}, ${consumer.session_token}, 
+                        ${consumer.session_created_at}, GETDATE(), 'NEW_LOGIN')
+              `;
+            } catch (e) { /* History table may not exist */ }
+          }
+
+          // Generate new session token
+          const newSessionToken = generateSessionToken();
+          const ipAddress = String(req?.headers?.["x-forwarded-for"] || "unknown").substring(0, 45);
+          const userAgent = String(req?.headers?.["user-agent"] || "unknown").substring(0, 500);
+
+          await prisma.consumers.update({
+            where: { id: consumer.id },
+            data: {
+              session_token: newSessionToken,
+              session_created_at: new Date(),
+              session_ip_address: ipAddress,
+              session_user_agent: userAgent,
+              last_active_at: new Date(),
+              updated_at: new Date(),
+              failed_login_attempts: 0,
+              locked_until: null
+            }
+          });
+
+          const displayName = consumer.full_name 
+            || `${consumer.first_name || ''} ${consumer.last_name || ''}`.trim() 
+            || consumer.consumer_name
+            || email.split('@')[0];
+
+          console.log("[AUTH:EMAIL] ✅ SUCCESS -", displayName, "| Tier:", consumer.subscription_tier);
+
+          return {
+            id: consumer.consumer_id,
+            phone: consumer.phone_number || null,
+            email: consumer.email,
+            name: displayName,
+            tier: consumer.subscription_tier || "FREE",
+            status: consumer.account_status || "ACTIVE",
+            sessionToken: newSessionToken,
+            authMethod: "email",
+          };
+        } catch (error: any) {
+          console.error("[AUTH:EMAIL] ❌ Error:", error.message);
           throw new Error(error.message || "Authentication failed");
         }
       },
@@ -270,56 +357,38 @@ const authOptions: NextAuthOptions = {
 
   session: {
     strategy: "jwt",
-    maxAge: 24 * 60 * 60, // 24 hours (reduced from 30 days for security)
+    maxAge: 24 * 60 * 60, // 24 hours
   },
 
   callbacks: {
     async jwt({ token, user }) {
-      // On initial sign in, store user data in token
       if (user) {
         token.id = user.id;
         token.phone = (user as any).phone;
+        token.email = (user as any).email;
         token.tier = (user as any).tier;
         token.status = (user as any).status;
         token.name = user.name;
-        token.sessionToken = (user as any).sessionToken; // ✅ NEW: Store session token
-        console.log("[JWT] Initial sign-in - ID:", token.id, "Tier:", token.tier, "Name:", token.name);
+        token.sessionToken = (user as any).sessionToken;
+        token.authMethod = (user as any).authMethod;
       }
 
-      // Refresh tier from database on each request (but NOT sessionToken - that stays fixed)
-      if (token.phone) {
+      // Refresh tier from database periodically
+      if (token.id) {
         try {
-          const phoneLastDigits = String(token.phone).slice(-9);
-          const consumers = await prisma.$queryRaw`
-            SELECT 
-              consumer_id,
-              phone_number,
-              full_name,
-              first_name,
-              last_name,
-              subscription_tier,
-              account_status
-            FROM Consumers 
-            WHERE phone_number = ${token.phone}
-               OR phone_number LIKE ${'%' + phoneLastDigits}
-          ` as any[];
+          const consumer = await prisma.consumers.findFirst({
+            where: { consumer_id: token.id as string }
+          });
 
-          if (consumers && consumers.length > 0) {
-            const consumer = consumers[0];
-            
-            token.id = consumer.consumer_id;
+          if (consumer) {
             token.tier = consumer.subscription_tier || "FREE";
             token.status = consumer.account_status || "ACTIVE";
+            token.email = consumer.email || token.email;
             
-            // Build name from available fields
             const newName = consumer.full_name 
-              || `${consumer.first_name || ''} ${consumer.last_name || ''}`.trim();
-            
-            if (newName) {
-              token.name = newName;
-            }
-
-            console.log("[JWT] Refreshed - ID:", token.id, "Tier:", token.tier, "Name:", token.name);
+              || `${consumer.first_name || ''} ${consumer.last_name || ''}`.trim()
+              || consumer.consumer_name;
+            if (newName) token.name = newName;
           }
         } catch (error) {
           console.error("[JWT] Error refreshing user data:", error);
@@ -333,14 +402,13 @@ const authOptions: NextAuthOptions = {
       if (session.user) {
         (session.user as any).id = token.id;
         (session.user as any).phone = token.phone;
+        (session.user as any).email = token.email;
         (session.user as any).tier = token.tier;
         (session.user as any).status = token.status;
-        (session.user as any).sessionToken = token.sessionToken; // ✅ NEW: Include in session
+        (session.user as any).sessionToken = token.sessionToken;
+        (session.user as any).authMethod = token.authMethod;
         session.user.name = token.name as string;
       }
-      
-      console.log("[SESSION] Name:", session.user?.name, "Tier:", (session.user as any)?.tier);
-      
       return session;
     },
   },
