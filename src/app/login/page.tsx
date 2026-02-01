@@ -1,16 +1,14 @@
 // src/app/login/page.tsx
 // NaijaMarket Intel - Login Page
-// UPDATED: 2026-01-31 - Added Email+Password tab for Business+ tiers
+// FIXED: 2026-01-31 - Added Suspense boundary for useSearchParams
 //
 // Two login methods:
 // 1. Phone + WhatsApp OTP (All tiers) - Default
 // 2. Email + Password (BUSINESS, CORPORATE, ENTERPRISE only)
-//
-// NOTE: Users already have passwords from registration (dual phone+email OTP flow)
 
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, Suspense } from "react";
 import { signIn } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
@@ -93,10 +91,10 @@ const WhatsAppIcon = () => (
 );
 
 // ============================================================================
-// MAIN COMPONENT
+// LOGIN FORM COMPONENT (uses useSearchParams)
 // ============================================================================
 
-export default function LoginPage() {
+function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const callbackUrl = searchParams.get("callbackUrl") || "/dashboard";
@@ -243,6 +241,275 @@ export default function LoginPage() {
   // ============================================================================
 
   return (
+    <>
+      {/* Auth Method Tabs */}
+      <div className="flex border-b border-terminal-border">
+        <button
+          onClick={() => {
+            setAuthMethod("phone");
+            setError("");
+            setSuccess("");
+          }}
+          className={`flex-1 py-4 px-6 flex items-center justify-center gap-2 text-sm font-medium transition-colors ${
+            authMethod === "phone"
+              ? "bg-naija-green/10 text-naija-green border-b-2 border-naija-green"
+              : "text-gray-400 hover:text-white hover:bg-white/5"
+          }`}
+        >
+          <PhoneIcon />
+          Phone + OTP
+        </button>
+        <button
+          onClick={() => {
+            setAuthMethod("email");
+            setError("");
+            setSuccess("");
+          }}
+          className={`flex-1 py-4 px-6 flex items-center justify-center gap-2 text-sm font-medium transition-colors ${
+            authMethod === "email"
+              ? "bg-naija-green/10 text-naija-green border-b-2 border-naija-green"
+              : "text-gray-400 hover:text-white hover:bg-white/5"
+          }`}
+        >
+          <MailIcon />
+          Email Login
+        </button>
+      </div>
+
+      <div className="p-6">
+        {/* Error/Success Messages */}
+        {error && (
+          <div className="mb-4 p-3 bg-red-500/10 border border-red-500/30 rounded-lg text-red-400 text-sm">
+            {error}
+          </div>
+        )}
+        {success && (
+          <div className="mb-4 p-3 bg-green-500/10 border border-green-500/30 rounded-lg text-green-400 text-sm flex items-center gap-2">
+            <WhatsAppIcon />
+            {success}
+          </div>
+        )}
+
+        {/* ================================================================
+            PHONE + OTP LOGIN
+            ================================================================ */}
+        {authMethod === "phone" && (
+          <>
+            {phoneStep === "phone" ? (
+              <form onSubmit={handleSendOtp} className="space-y-4">
+                <div>
+                  <label className="block text-sm text-gray-400 mb-2">
+                    Phone Number
+                  </label>
+                  <div className="flex gap-2">
+                    <select
+                      value={countryCode}
+                      onChange={(e) => setCountryCode(e.target.value)}
+                      className="bg-terminal-bg border border-terminal-border rounded-lg px-3 py-3 text-white focus:outline-none focus:border-naija-green"
+                    >
+                      {COUNTRY_CODES.map((c) => (
+                        <option key={c.code} value={c.code}>
+                          {c.flag} {c.code}
+                        </option>
+                      ))}
+                    </select>
+                    <input
+                      type="tel"
+                      value={phone}
+                      onChange={(e) => setPhone(e.target.value.replace(/\D/g, ""))}
+                      placeholder="8012345678"
+                      className="flex-1 bg-terminal-bg border border-terminal-border rounded-lg px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-naija-green"
+                      required
+                    />
+                  </div>
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={loading || !phone}
+                  className="w-full bg-naija-green hover:bg-naija-green/90 disabled:bg-gray-600 disabled:cursor-not-allowed text-black font-semibold py-3 px-6 rounded-lg flex items-center justify-center gap-2 transition-colors"
+                >
+                  {loading ? (
+                    <LoadingSpinner />
+                  ) : (
+                    <>
+                      <WhatsAppIcon />
+                      Send OTP via WhatsApp
+                    </>
+                  )}
+                </button>
+
+                <p className="text-center text-gray-500 text-xs mt-4">
+                  We&apos;ll send a 6-digit code to your WhatsApp
+                </p>
+              </form>
+            ) : (
+              <form onSubmit={handleVerifyOtp} className="space-y-4">
+                <div>
+                  <label className="block text-sm text-gray-400 mb-2">
+                    Enter OTP sent to WhatsApp
+                  </label>
+                  <input
+                    type="text"
+                    value={otp}
+                    onChange={(e) => setOtp(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                    placeholder="123456"
+                    maxLength={6}
+                    className="w-full bg-terminal-bg border border-terminal-border rounded-lg px-4 py-3 text-white text-center text-2xl tracking-widest placeholder-gray-500 focus:outline-none focus:border-naija-green font-mono"
+                    required
+                    autoFocus
+                  />
+                  <p className="text-center text-gray-500 text-xs mt-2">
+                    Check your WhatsApp for the 6-digit code
+                  </p>
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={loading || otp.length !== 6}
+                  className="w-full bg-naija-green hover:bg-naija-green/90 disabled:bg-gray-600 disabled:cursor-not-allowed text-black font-semibold py-3 px-6 rounded-lg flex items-center justify-center gap-2 transition-colors"
+                >
+                  {loading ? <LoadingSpinner /> : "Verify & Login"}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPhoneStep("phone");
+                    setOtp("");
+                    setError("");
+                    setSuccess("");
+                  }}
+                  className="w-full text-gray-400 hover:text-white text-sm py-2"
+                >
+                  ← Change phone number
+                </button>
+              </form>
+            )}
+          </>
+        )}
+
+        {/* ================================================================
+            EMAIL + PASSWORD LOGIN (Business+ Only)
+            ================================================================ */}
+        {authMethod === "email" && (
+          <form onSubmit={handleEmailLogin} className="space-y-4">
+            {/* Tier Notice */}
+            <div className="p-3 bg-blue-500/10 border border-blue-500/30 rounded-lg text-sm">
+              <p className="text-blue-400 font-medium flex items-center gap-2">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                Business+ Feature
+              </p>
+              <p className="text-gray-400 text-xs mt-1">
+                Email login is available for Business, Corporate, and Enterprise tiers.
+                Other tiers please use Phone + OTP.
+              </p>
+            </div>
+
+            <div>
+              <label className="block text-sm text-gray-400 mb-2">
+                Email Address
+              </label>
+              <div className="relative">
+                <div className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500">
+                  <MailIcon />
+                </div>
+                <input
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="you@company.com"
+                  className="w-full bg-terminal-bg border border-terminal-border rounded-lg pl-10 pr-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-naija-green"
+                  required
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm text-gray-400 mb-2">
+                Password
+              </label>
+              <div className="relative">
+                <div className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500">
+                  <LockIcon />
+                </div>
+                <input
+                  type={showPassword ? "text" : "password"}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="••••••••"
+                  className="w-full bg-terminal-bg border border-terminal-border rounded-lg pl-10 pr-12 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-naija-green"
+                  required
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300"
+                >
+                  <EyeIcon open={showPassword} />
+                </button>
+              </div>
+            </div>
+
+            <div className="flex justify-end">
+              <Link
+                href="/forgot-password"
+                className="text-sm text-naija-green hover:underline"
+              >
+                Forgot password?
+              </Link>
+            </div>
+
+            <button
+              type="submit"
+              disabled={loading || !email || !password}
+              className="w-full bg-naija-green hover:bg-naija-green/90 disabled:bg-gray-600 disabled:cursor-not-allowed text-black font-semibold py-3 px-6 rounded-lg flex items-center justify-center gap-2 transition-colors"
+            >
+              {loading ? <LoadingSpinner /> : "Sign In with Email"}
+            </button>
+          </form>
+        )}
+
+        {/* Divider */}
+        <div className="my-6 flex items-center gap-4">
+          <div className="flex-1 h-px bg-terminal-border" />
+          <span className="text-gray-500 text-xs">OR</span>
+          <div className="flex-1 h-px bg-terminal-border" />
+        </div>
+
+        {/* Register Link */}
+        <p className="text-center text-gray-400 text-sm">
+          Don&apos;t have an account?{" "}
+          <Link href="/register" className="text-naija-green hover:underline font-medium">
+            Register here
+          </Link>
+        </p>
+      </div>
+    </>
+  );
+}
+
+// ============================================================================
+// LOADING FALLBACK
+// ============================================================================
+
+function LoginLoading() {
+  return (
+    <div className="p-6 flex items-center justify-center">
+      <LoadingSpinner />
+      <span className="ml-2 text-gray-400">Loading...</span>
+    </div>
+  );
+}
+
+// ============================================================================
+// MAIN PAGE COMPONENT (with Suspense boundary)
+// ============================================================================
+
+export default function LoginPage() {
+  return (
     <div className="min-h-screen bg-terminal-bg flex items-center justify-center p-4">
       <div className="w-full max-w-md">
         {/* Logo */}
@@ -261,251 +528,10 @@ export default function LoginPage() {
 
         {/* Main Card */}
         <div className="bg-terminal-surface border border-terminal-border rounded-xl overflow-hidden">
-          {/* Auth Method Tabs */}
-          <div className="flex border-b border-terminal-border">
-            <button
-              onClick={() => {
-                setAuthMethod("phone");
-                setError("");
-                setSuccess("");
-              }}
-              className={`flex-1 py-4 px-6 flex items-center justify-center gap-2 text-sm font-medium transition-colors ${
-                authMethod === "phone"
-                  ? "bg-naija-green/10 text-naija-green border-b-2 border-naija-green"
-                  : "text-gray-400 hover:text-white hover:bg-white/5"
-              }`}
-            >
-              <PhoneIcon />
-              Phone + OTP
-            </button>
-            <button
-              onClick={() => {
-                setAuthMethod("email");
-                setError("");
-                setSuccess("");
-              }}
-              className={`flex-1 py-4 px-6 flex items-center justify-center gap-2 text-sm font-medium transition-colors ${
-                authMethod === "email"
-                  ? "bg-naija-green/10 text-naija-green border-b-2 border-naija-green"
-                  : "text-gray-400 hover:text-white hover:bg-white/5"
-              }`}
-            >
-              <MailIcon />
-              Email Login
-            </button>
-          </div>
-
-          <div className="p-6">
-            {/* Error/Success Messages */}
-            {error && (
-              <div className="mb-4 p-3 bg-red-500/10 border border-red-500/30 rounded-lg text-red-400 text-sm">
-                {error}
-              </div>
-            )}
-            {success && (
-              <div className="mb-4 p-3 bg-green-500/10 border border-green-500/30 rounded-lg text-green-400 text-sm flex items-center gap-2">
-                <WhatsAppIcon />
-                {success}
-              </div>
-            )}
-
-            {/* ================================================================
-                PHONE + OTP LOGIN
-                ================================================================ */}
-            {authMethod === "phone" && (
-              <>
-                {phoneStep === "phone" ? (
-                  <form onSubmit={handleSendOtp} className="space-y-4">
-                    <div>
-                      <label className="block text-sm text-gray-400 mb-2">
-                        Phone Number
-                      </label>
-                      <div className="flex gap-2">
-                        <select
-                          value={countryCode}
-                          onChange={(e) => setCountryCode(e.target.value)}
-                          className="bg-terminal-bg border border-terminal-border rounded-lg px-3 py-3 text-white focus:outline-none focus:border-naija-green"
-                        >
-                          {COUNTRY_CODES.map((c) => (
-                            <option key={c.code} value={c.code}>
-                              {c.flag} {c.code}
-                            </option>
-                          ))}
-                        </select>
-                        <input
-                          type="tel"
-                          value={phone}
-                          onChange={(e) => setPhone(e.target.value.replace(/\D/g, ""))}
-                          placeholder="8012345678"
-                          className="flex-1 bg-terminal-bg border border-terminal-border rounded-lg px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-naija-green"
-                          required
-                        />
-                      </div>
-                    </div>
-
-                    <button
-                      type="submit"
-                      disabled={loading || !phone}
-                      className="w-full bg-naija-green hover:bg-naija-green/90 disabled:bg-gray-600 disabled:cursor-not-allowed text-black font-semibold py-3 px-6 rounded-lg flex items-center justify-center gap-2 transition-colors"
-                    >
-                      {loading ? (
-                        <LoadingSpinner />
-                      ) : (
-                        <>
-                          <WhatsAppIcon />
-                          Send OTP via WhatsApp
-                        </>
-                      )}
-                    </button>
-
-                    <p className="text-center text-gray-500 text-xs mt-4">
-                      We&apos;ll send a 6-digit code to your WhatsApp
-                    </p>
-                  </form>
-                ) : (
-                  <form onSubmit={handleVerifyOtp} className="space-y-4">
-                    <div>
-                      <label className="block text-sm text-gray-400 mb-2">
-                        Enter OTP sent to WhatsApp
-                      </label>
-                      <input
-                        type="text"
-                        value={otp}
-                        onChange={(e) => setOtp(e.target.value.replace(/\D/g, "").slice(0, 6))}
-                        placeholder="123456"
-                        maxLength={6}
-                        className="w-full bg-terminal-bg border border-terminal-border rounded-lg px-4 py-3 text-white text-center text-2xl tracking-widest placeholder-gray-500 focus:outline-none focus:border-naija-green font-mono"
-                        required
-                        autoFocus
-                      />
-                      <p className="text-center text-gray-500 text-xs mt-2">
-                        Check your WhatsApp for the 6-digit code
-                      </p>
-                    </div>
-
-                    <button
-                      type="submit"
-                      disabled={loading || otp.length !== 6}
-                      className="w-full bg-naija-green hover:bg-naija-green/90 disabled:bg-gray-600 disabled:cursor-not-allowed text-black font-semibold py-3 px-6 rounded-lg flex items-center justify-center gap-2 transition-colors"
-                    >
-                      {loading ? <LoadingSpinner /> : "Verify & Login"}
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setPhoneStep("phone");
-                        setOtp("");
-                        setError("");
-                        setSuccess("");
-                      }}
-                      className="w-full text-gray-400 hover:text-white text-sm py-2"
-                    >
-                      ← Change phone number
-                    </button>
-                  </form>
-                )}
-              </>
-            )}
-
-            {/* ================================================================
-                EMAIL + PASSWORD LOGIN (Business+ Only)
-                ================================================================ */}
-            {authMethod === "email" && (
-              <form onSubmit={handleEmailLogin} className="space-y-4">
-                {/* Tier Notice */}
-                <div className="p-3 bg-blue-500/10 border border-blue-500/30 rounded-lg text-sm">
-                  <p className="text-blue-400 font-medium flex items-center gap-2">
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                    Business+ Feature
-                  </p>
-                  <p className="text-gray-400 text-xs mt-1">
-                    Email login is available for Business, Corporate, and Enterprise tiers.
-                    Other tiers please use Phone + OTP.
-                  </p>
-                </div>
-
-                <div>
-                  <label className="block text-sm text-gray-400 mb-2">
-                    Email Address
-                  </label>
-                  <div className="relative">
-                    <div className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500">
-                      <MailIcon />
-                    </div>
-                    <input
-                      type="email"
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      placeholder="you@company.com"
-                      className="w-full bg-terminal-bg border border-terminal-border rounded-lg pl-10 pr-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-naija-green"
-                      required
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-sm text-gray-400 mb-2">
-                    Password
-                  </label>
-                  <div className="relative">
-                    <div className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500">
-                      <LockIcon />
-                    </div>
-                    <input
-                      type={showPassword ? "text" : "password"}
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      placeholder="••••••••"
-                      className="w-full bg-terminal-bg border border-terminal-border rounded-lg pl-10 pr-12 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-naija-green"
-                      required
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowPassword(!showPassword)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300"
-                    >
-                      <EyeIcon open={showPassword} />
-                    </button>
-                  </div>
-                </div>
-
-                <div className="flex justify-end">
-                  <Link
-                    href="/forgot-password"
-                    className="text-sm text-naija-green hover:underline"
-                  >
-                    Forgot password?
-                  </Link>
-                </div>
-
-                <button
-                  type="submit"
-                  disabled={loading || !email || !password}
-                  className="w-full bg-naija-green hover:bg-naija-green/90 disabled:bg-gray-600 disabled:cursor-not-allowed text-black font-semibold py-3 px-6 rounded-lg flex items-center justify-center gap-2 transition-colors"
-                >
-                  {loading ? <LoadingSpinner /> : "Sign In with Email"}
-                </button>
-              </form>
-            )}
-
-            {/* Divider */}
-            <div className="my-6 flex items-center gap-4">
-              <div className="flex-1 h-px bg-terminal-border" />
-              <span className="text-gray-500 text-xs">OR</span>
-              <div className="flex-1 h-px bg-terminal-border" />
-            </div>
-
-            {/* Register Link */}
-            <p className="text-center text-gray-400 text-sm">
-              Don&apos;t have an account?{" "}
-              <Link href="/register" className="text-naija-green hover:underline font-medium">
-                Register here
-              </Link>
-            </p>
-          </div>
+          {/* Suspense boundary for useSearchParams */}
+          <Suspense fallback={<LoginLoading />}>
+            <LoginForm />
+          </Suspense>
         </div>
 
         {/* Footer */}
