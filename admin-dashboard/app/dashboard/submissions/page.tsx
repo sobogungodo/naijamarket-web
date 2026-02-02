@@ -2,14 +2,16 @@
 
 import { useState, useCallback } from 'react';
 import {
-  FileText, Search, RefreshCw, Download, Eye, CheckCircle,
-  XCircle, Clock, AlertTriangle, MapPin, Calendar, TrendingUp,
-  TrendingDown, ThumbsUp, ThumbsDown, X, Loader2
+  FileText, Search, Filter, RefreshCw, Download, Eye, CheckCircle,
+  XCircle, Clock, AlertTriangle, MapPin, User, Calendar, TrendingUp,
+  TrendingDown, ChevronDown, ChevronRight, MoreVertical, History,
+  ThumbsUp, ThumbsDown, MessageSquare, X, Loader2
 } from 'lucide-react';
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, PieChart, Pie, Cell
 } from 'recharts';
+import { exportPayouts } from '@/lib/export-utils';
 
 // Types
 interface Submission {
@@ -185,34 +187,6 @@ const hourlySubmissions = [
   { hour: '8PM', count: 60 },
 ];
 
-// Inline export function
-function exportSubmissionsToCSV(submissions: Submission[]) {
-  const headers = ['ID', 'Trader', 'Phone', 'Reputation', 'Market', 'Item', 'Price', 'Baseline', 'Variance %', 'GPS Valid', 'Status', 'Submitted'];
-  const rows = submissions.map(s => [
-    s.id,
-    s.traderName,
-    s.traderPhone,
-    s.traderReputation,
-    s.market,
-    s.item,
-    s.price,
-    s.baselinePrice,
-    s.priceVariance.toFixed(1),
-    s.gpsValid ? 'Yes' : 'No',
-    s.status,
-    s.submittedAt.toISOString()
-  ]);
-  
-  const csvContent = [headers, ...rows].map(row => row.join(',')).join('\n');
-  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = `submissions_${new Date().toISOString().split('T')[0]}.csv`;
-  link.click();
-  URL.revokeObjectURL(url);
-}
-
 export default function SubmissionsPage() {
   const [submissions, setSubmissions] = useState<Submission[]>(generateMockSubmissions());
   const [selectedSubmission, setSelectedSubmission] = useState<Submission | null>(null);
@@ -256,7 +230,22 @@ export default function SubmissionsPage() {
     setIsExporting(true);
     try {
       await new Promise(resolve => setTimeout(resolve, 500));
-      exportSubmissionsToCSV(submissions);
+      // Export submissions data
+      const exportData = submissions.map(s => ({
+        id: s.id,
+        userName: s.traderName,
+        userType: 'trader',
+        phone: s.traderPhone,
+        amount: s.price,
+        bankName: s.market,
+        accountNumber: s.item,
+        accountName: s.status,
+        status: s.status,
+        reference: s.id,
+        createdAt: s.submittedAt,
+        processedAt: s.submittedAt,
+      }));
+      exportPayouts(exportData);
     } catch (error) {
       console.error('Error exporting:', error);
     } finally {
@@ -374,7 +363,7 @@ export default function SubmissionsPage() {
       <div className="grid grid-cols-5 gap-4 mb-6">
         <div className="bg-[#1a1f2e] rounded-xl p-4 border border-gray-800">
           <div className="flex justify-between items-start mb-2">
-            <span className="text-gray-400 text-xs">TODAY&apos;S SUBMISSIONS</span>
+            <span className="text-gray-400 text-xs">TODAY'S SUBMISSIONS</span>
             <FileText className="w-4 h-4 text-blue-500" />
           </div>
           <p className="text-2xl font-bold">{stats.totalToday.toLocaleString()}</p>
@@ -391,7 +380,7 @@ export default function SubmissionsPage() {
         <div className="bg-[#1a1f2e] rounded-xl p-4 border border-gray-800">
           <div className="flex justify-between items-start mb-2">
             <span className="text-gray-400 text-xs">IN VALIDATION</span>
-            <Clock className="w-4 h-4 text-blue-500" />
+            <History className="w-4 h-4 text-blue-500" />
           </div>
           <p className="text-2xl font-bold text-blue-500">{stats.validating}</p>
         </div>

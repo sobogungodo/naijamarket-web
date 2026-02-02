@@ -4,7 +4,7 @@ import { useState, useCallback } from 'react';
 import {
   Package, Search, RefreshCw, Download, Plus, Edit2, Trash2,
   Eye, ToggleLeft, ToggleRight, TrendingUp, TrendingDown,
-  X, Loader2, CheckCircle, DollarSign, Scale,
+  X, Loader2, CheckCircle, AlertTriangle, DollarSign, Scale,
   Wheat, Droplets, Hammer, Cpu, Shirt
 } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
@@ -178,32 +178,6 @@ const priceChanges = [
   { item: 'Cement', change: 1.8 },
   { item: 'Garri', change: -2.1 },
 ];
-
-// Inline export function
-function exportCommoditiesToCSV(commodities: Commodity[]) {
-  const headers = ['ID', 'Name', 'Category', 'Unit', 'Avg Price', 'Min Price', 'Max Price', 'Variance %', '7D Change', 'Active'];
-  const rows = commodities.map(c => [
-    c.id,
-    c.name,
-    c.category,
-    c.unit,
-    c.avgPrice,
-    c.priceRangeMin,
-    c.priceRangeMax,
-    c.varianceThreshold,
-    c.priceChange7d,
-    c.isActive ? 'Yes' : 'No'
-  ]);
-  
-  const csvContent = [headers, ...rows].map(row => row.join(',')).join('\n');
-  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = `commodities_${new Date().toISOString().split('T')[0]}.csv`;
-  link.click();
-  URL.revokeObjectURL(url);
-}
 
 export default function CommoditiesPage() {
   const [commodities, setCommodities] = useState<Commodity[]>(generateMockCommodities());
@@ -447,14 +421,6 @@ export default function CommoditiesPage() {
             Live Data
             <span className="text-gray-500">Updated {formatTimeAgo(lastUpdated)}</span>
           </div>
-
-          <button
-            onClick={() => exportCommoditiesToCSV(commodities)}
-            className="flex items-center gap-2 px-4 py-2 bg-[#1a1f2e] border border-gray-700 rounded-lg hover:bg-[#252b3b] transition-colors"
-          >
-            <Download className="w-4 h-4" />
-            Export
-          </button>
 
           <button
             onClick={openAddModal}
