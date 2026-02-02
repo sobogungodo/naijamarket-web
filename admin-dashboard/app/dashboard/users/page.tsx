@@ -1,554 +1,456 @@
 'use client';
 
-import React, { useState } from 'react';
-import { PageWrapper } from '@/components/dashboard/layout';
-import { StatCard, Badge, Button, Input, Avatar } from '@/components/ui';
-import { DataTable, Column } from '@/components/dashboard/data-table';
-import { BarChartComponent, CHART_COLORS } from '@/components/charts';
-import { formatNaira, formatRelativeTime, formatPhoneNumber } from '@/lib/utils';
-import {
-  Users,
-  UserPlus,
-  UserCheck,
-  UserX,
-  Shield,
-  Star,
-  TrendingUp,
-  Search,
-  Filter,
-  Download,
-  Eye,
-  Ban,
-  CheckCircle,
-  AlertTriangle,
-  MapPin,
+import { useState, useEffect, useCallback } from 'react';
+import { 
+  Users, Shield, Search, Download, RefreshCw, UserPlus, Eye, Ban,
+  Star, TrendingUp, TrendingDown, Filter, MoreVertical, Phone, MapPin
 } from 'lucide-react';
-import type { Trader, Validator, UserStatus } from '@/types';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
+import AddUserModal from '@/components/modals/AddUserModal';
+import { exportTraders, exportValidators } from '@/lib/export-utils';
 
-// ============================================
-// MOCK DATA
-// ============================================
-
-const mockUserStats = {
-  totalTraders: 8432,
-  activeTraders: 6218,
-  newTradersToday: 23,
-  suspendedTraders: 45,
-  
-  totalValidators: 2156,
-  activeValidators: 1847,
-  goldValidators: 234,
-  newValidatorsToday: 8,
-  
-  avgTraderReputation: 72.4,
-  avgValidatorAccuracy: 91.2,
-};
-
-const mockRegistrationTrend = [
-  { name: 'Mon', traders: 45, validators: 12 },
-  { name: 'Tue', traders: 52, validators: 15 },
-  { name: 'Wed', traders: 38, validators: 8 },
-  { name: 'Thu', traders: 67, validators: 18 },
-  { name: 'Fri', traders: 58, validators: 14 },
-  { name: 'Sat', traders: 34, validators: 6 },
-  { name: 'Sun', traders: 21, validators: 4 },
+// Mock data - replace with API calls
+const generateMockTraders = () => [
+  { id: 1, name: 'Chidi Okonkwo', phone: '0803 123 4567', market: 'Mile 12 Market', reputation: 85, submissions: 234, approved: 218, balance: 4500, bankName: 'GTBank', accountNumber: '0123456789', status: 'active', lastActive: new Date(Date.now() - 6 * 60 * 60 * 1000), createdAt: new Date('2024-06-15') },
+  { id: 2, name: 'Ngozi Adeyemi', phone: '0805 123 4567', market: 'Onitsha Main Market', reputation: 92, submissions: 456, approved: 442, balance: 2500, bankName: 'Access Bank', accountNumber: '0987654321', status: 'active', lastActive: new Date(Date.now() - 4 * 60 * 60 * 1000), createdAt: new Date('2024-05-20') },
+  { id: 3, name: 'Emeka Nwosu', phone: '0806 234 5678', market: 'Ariaria Market', reputation: 78, submissions: 189, approved: 165, balance: 3200, bankName: 'First Bank', accountNumber: '1234567890', status: 'active', lastActive: new Date(Date.now() - 12 * 60 * 60 * 1000), createdAt: new Date('2024-07-01') },
+  { id: 4, name: 'Funke Ibrahim', phone: '0807 345 6789', market: 'Wuse Market', reputation: 65, submissions: 98, approved: 72, balance: 1800, bankName: 'Zenith Bank', accountNumber: '2345678901', status: 'suspended', lastActive: new Date(Date.now() - 48 * 60 * 60 * 1000), createdAt: new Date('2024-08-10') },
+  { id: 5, name: 'Yusuf Abubakar', phone: '0808 456 7890', market: 'Kano Main Market', reputation: 88, submissions: 312, approved: 298, balance: 5100, bankName: 'UBA', accountNumber: '3456789012', status: 'active', lastActive: new Date(Date.now() - 2 * 60 * 60 * 1000), createdAt: new Date('2024-04-05') },
 ];
 
-const mockTraders: Trader[] = [
-  {
-    id: 'T-1001',
-    phoneNumber: '08031234567',
-    name: 'Chidi Okonkwo',
-    marketId: 'M-001',
-    marketName: 'Mile 12 Market',
-    reputation: 85,
-    totalSubmissions: 234,
-    approvedSubmissions: 218,
-    rejectedSubmissions: 16,
-    pendingBalance: 4500,
-    totalEarned: 45800,
-    totalPaid: 41300,
-    registeredAt: new Date('2024-03-15'),
-    lastActive: new Date(Date.now() - 2 * 60 * 60 * 1000),
-    status: 'active',
-    fraudFlags: [],
-    bankVerified: true,
-    gpsVerified: true,
-  },
-  {
-    id: 'T-1002',
-    phoneNumber: '08051234567',
-    name: 'Ngozi Adeyemi',
-    marketId: 'M-002',
-    marketName: 'Onitsha Main Market',
-    reputation: 92,
-    totalSubmissions: 456,
-    approvedSubmissions: 442,
-    rejectedSubmissions: 14,
-    pendingBalance: 2500,
-    totalEarned: 89200,
-    totalPaid: 86700,
-    registeredAt: new Date('2024-01-10'),
-    lastActive: new Date(Date.now() - 30 * 60 * 1000),
-    status: 'active',
-    fraudFlags: [],
-    bankVerified: true,
-    gpsVerified: true,
-  },
-  {
-    id: 'T-1003',
-    phoneNumber: '08061234567',
-    name: 'Emeka Nwosu',
-    marketId: 'M-003',
-    marketName: 'Alaba International',
-    reputation: 45,
-    totalSubmissions: 89,
-    approvedSubmissions: 52,
-    rejectedSubmissions: 37,
-    pendingBalance: 0,
-    totalEarned: 10400,
-    totalPaid: 10400,
-    registeredAt: new Date('2024-06-20'),
-    lastActive: new Date(Date.now() - 24 * 60 * 60 * 1000),
-    status: 'suspended',
-    fraudFlags: [{ id: 'F-1', type: 'price_manipulation', severity: 'high', description: 'Multiple price manipulation attempts', detectedAt: new Date(), resolved: false }],
-    bankVerified: true,
-    gpsVerified: false,
-  },
-  {
-    id: 'T-1004',
-    phoneNumber: '08091234567',
-    name: 'Kunle Bakare',
-    marketId: 'M-004',
-    marketName: 'Wuse Market',
-    reputation: 78,
-    totalSubmissions: 167,
-    approvedSubmissions: 145,
-    rejectedSubmissions: 22,
-    pendingBalance: 3500,
-    totalEarned: 29000,
-    totalPaid: 25500,
-    registeredAt: new Date('2024-04-08'),
-    lastActive: new Date(Date.now() - 4 * 60 * 60 * 1000),
-    status: 'active',
-    fraudFlags: [],
-    bankVerified: true,
-    gpsVerified: true,
-  },
-  {
-    id: 'T-1005',
-    phoneNumber: '08131234567',
-    name: 'Fatima Bello',
-    marketId: 'M-001',
-    marketName: 'Mile 12 Market',
-    reputation: 88,
-    totalSubmissions: 312,
-    approvedSubmissions: 298,
-    rejectedSubmissions: 14,
-    pendingBalance: 1500,
-    totalEarned: 59600,
-    totalPaid: 58100,
-    registeredAt: new Date('2024-02-22'),
-    lastActive: new Date(Date.now() - 15 * 60 * 1000),
-    status: 'active',
-    fraudFlags: [],
-    bankVerified: true,
-    gpsVerified: true,
-  },
+const generateMockValidators = () => [
+  { id: 1, name: 'Dr. Amaka Eze', phone: '0809 111 2222', type: 'Expert', accuracy: 94.5, totalValidations: 1245, correctVotes: 1177, balance: 8500, bankName: 'GTBank', accountNumber: '5678901234', status: 'active', lastActive: new Date(Date.now() - 1 * 60 * 60 * 1000), createdAt: new Date('2024-03-15') },
+  { id: 2, name: 'Mallam Sani', phone: '0810 222 3333', type: 'Community', accuracy: 89.2, totalValidations: 876, correctVotes: 781, balance: 4200, bankName: 'First Bank', accountNumber: '6789012345', status: 'active', lastActive: new Date(Date.now() - 3 * 60 * 60 * 1000), createdAt: new Date('2024-04-20') },
+  { id: 3, name: 'Chief Obi Nnamdi', phone: '0811 333 4444', type: 'Official', accuracy: 97.1, totalValidations: 2034, correctVotes: 1975, balance: 12300, bankName: 'Zenith Bank', accountNumber: '7890123456', status: 'active', lastActive: new Date(Date.now() - 30 * 60 * 1000), createdAt: new Date('2024-02-10') },
+  { id: 4, name: 'Mrs. Blessing Okoro', phone: '0812 444 5555', type: 'Community', accuracy: 82.4, totalValidations: 543, correctVotes: 447, balance: 2100, bankName: 'Access Bank', accountNumber: '8901234567', status: 'active', lastActive: new Date(Date.now() - 8 * 60 * 60 * 1000), createdAt: new Date('2024-06-25') },
 ];
 
-const mockValidators: Validator[] = [
-  {
-    id: 'V-001',
-    phoneNumber: '08032222222',
-    name: 'Oluwaseun Ade',
-    marketIds: ['M-001', 'M-002'],
-    marketNames: ['Mile 12 Market', 'Onitsha Main Market'],
-    accuracyRate: 96.5,
-    totalValidations: 1234,
-    correctVotes: 1191,
-    incorrectVotes: 43,
-    pendingBalance: 12500,
-    totalEarned: 617000,
-    totalPaid: 604500,
-    tier: 'gold',
-    registeredAt: new Date('2024-01-05'),
-    lastActive: new Date(Date.now() - 1 * 60 * 60 * 1000),
-    status: 'active',
-    collusionScore: 2,
-  },
-  {
-    id: 'V-002',
-    phoneNumber: '08053333333',
-    name: 'Aisha Mohammed',
-    marketIds: ['M-003'],
-    marketNames: ['Alaba International'],
-    accuracyRate: 89.2,
-    totalValidations: 567,
-    correctVotes: 506,
-    incorrectVotes: 61,
-    pendingBalance: 5000,
-    totalEarned: 283500,
-    totalPaid: 278500,
-    tier: 'silver',
-    registeredAt: new Date('2024-03-12'),
-    lastActive: new Date(Date.now() - 3 * 60 * 60 * 1000),
-    status: 'active',
-    collusionScore: 5,
-  },
+const weeklyData = [
+  { day: 'Mon', traders: 45, validators: 12 },
+  { day: 'Tue', traders: 52, validators: 18 },
+  { day: 'Wed', traders: 38, validators: 15 },
+  { day: 'Thu', traders: 65, validators: 22 },
+  { day: 'Fri', traders: 48, validators: 14 },
+  { day: 'Sat', traders: 32, validators: 8 },
+  { day: 'Sun', traders: 28, validators: 6 },
 ];
-
-// ============================================
-// USER MANAGEMENT PAGE
-// ============================================
 
 export default function UserManagementPage() {
-  const [selectedTab, setSelectedTab] = useState<'traders' | 'validators'>('traders');
-  const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [activeTab, setActiveTab] = useState<'traders' | 'validators'>('traders');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState('All');
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [lastUpdated, setLastUpdated] = useState(new Date());
+  
+  const [traders, setTraders] = useState(generateMockTraders());
+  const [validators, setValidators] = useState(generateMockValidators());
 
-  const getStatusBadge = (status: UserStatus) => {
-    switch (status) {
-      case 'active':
-        return <Badge variant="success">Active</Badge>;
-      case 'suspended':
-        return <Badge variant="warning">Suspended</Badge>;
-      case 'banned':
-        return <Badge variant="danger">Banned</Badge>;
-      case 'pending_review':
-        return <Badge variant="info">Pending Review</Badge>;
-      default:
-        return <Badge>{status}</Badge>;
-    }
+  // Calculate stats
+  const traderStats = {
+    total: 8432,
+    active: 6218,
+    avgReputation: 72.4,
+    newToday: 23,
   };
 
-  const getReputationBadge = (reputation: number) => {
-    if (reputation >= 80) {
-      return <Badge variant="success">{reputation} ⭐</Badge>;
-    } else if (reputation >= 60) {
-      return <Badge variant="info">{reputation}</Badge>;
-    } else if (reputation >= 40) {
-      return <Badge variant="warning">{reputation}</Badge>;
+  const validatorStats = {
+    total: 2156,
+    gold: 234,
+    avgAccuracy: 91.2,
+    newToday: 8,
+  };
+
+  // Refresh data
+  const handleRefresh = useCallback(async () => {
+    setIsRefreshing(true);
+    try {
+      // Simulate API call
+      await new Promise(resolve => setTimeout(resolve, 1500));
+      setTraders(generateMockTraders());
+      setValidators(generateMockValidators());
+      setLastUpdated(new Date());
+    } catch (error) {
+      console.error('Error refreshing data:', error);
+    } finally {
+      setIsRefreshing(false);
+    }
+  }, []);
+
+  // Export data
+  const handleExport = useCallback(async () => {
+    setIsExporting(true);
+    try {
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      if (activeTab === 'traders') {
+        const exportData = traders.map(t => ({
+          ...t,
+          rejected: t.submissions - t.approved,
+        }));
+        exportTraders(exportData);
+      } else {
+        exportValidators(validators);
+      }
+    } catch (error) {
+      console.error('Error exporting:', error);
+    } finally {
+      setIsExporting(false);
+    }
+  }, [activeTab, traders, validators]);
+
+  // Add user success
+  const handleAddUserSuccess = (newUser: any) => {
+    if (activeTab === 'traders') {
+      setTraders(prev => [newUser, ...prev]);
     } else {
-      return <Badge variant="danger">{reputation}</Badge>;
+      setValidators(prev => [newUser, ...prev]);
     }
   };
 
-  const getTierBadge = (tier: string) => {
-    switch (tier) {
-      case 'gold':
-        return <Badge className="bg-yellow-500/20 text-yellow-500">🥇 Gold</Badge>;
-      case 'silver':
-        return <Badge className="bg-gray-400/20 text-gray-400">🥈 Silver</Badge>;
-      case 'bronze':
-        return <Badge className="bg-orange-600/20 text-orange-600">🥉 Bronze</Badge>;
-      default:
-        return <Badge variant="warning">Probation</Badge>;
-    }
+  // Filter data
+  const filteredTraders = traders.filter(trader => {
+    const matchesSearch = trader.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                         trader.phone.includes(searchQuery);
+    const matchesStatus = statusFilter === 'All' || trader.status === statusFilter.toLowerCase();
+    return matchesSearch && matchesStatus;
+  });
+
+  const filteredValidators = validators.filter(validator => {
+    const matchesSearch = validator.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                         validator.phone.includes(searchQuery);
+    const matchesStatus = statusFilter === 'All' || validator.status === statusFilter.toLowerCase();
+    return matchesSearch && matchesStatus;
+  });
+
+  const formatTimeAgo = (date: Date) => {
+    const seconds = Math.floor((new Date().getTime() - date.getTime()) / 1000);
+    if (seconds < 60) return 'just now';
+    const minutes = Math.floor(seconds / 60);
+    if (minutes < 60) return `${minutes}m ago`;
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return `${hours}h ago`;
+    const days = Math.floor(hours / 24);
+    return `${days}d ago`;
   };
-
-  const traderColumns: Column<Trader>[] = [
-    { 
-      key: 'name', 
-      label: 'Trader',
-      render: (_, row) => (
-        <div className="flex items-center gap-3">
-          <Avatar name={row.name} size="sm" />
-          <div>
-            <p className="font-medium text-dash-text">{row.name}</p>
-            <p className="text-xs text-dash-muted font-mono">{formatPhoneNumber(row.phoneNumber)}</p>
-          </div>
-        </div>
-      )
-    },
-    { 
-      key: 'marketName', 
-      label: 'Market',
-      render: (value) => (
-        <div className="flex items-center gap-1 text-sm text-dash-muted">
-          <MapPin className="w-3 h-3" />
-          {value as string}
-        </div>
-      )
-    },
-    { 
-      key: 'reputation', 
-      label: 'Reputation',
-      sortable: true,
-      render: (value) => getReputationBadge(value as number)
-    },
-    { 
-      key: 'approvedSubmissions', 
-      label: 'Submissions',
-      sortable: true,
-      render: (_, row) => (
-        <div className="text-sm">
-          <span className="text-dash-text">{row.approvedSubmissions}</span>
-          <span className="text-dash-muted"> / {row.totalSubmissions}</span>
-        </div>
-      )
-    },
-    { 
-      key: 'pendingBalance', 
-      label: 'Balance',
-      align: 'right',
-      sortable: true,
-      render: (value) => (
-        <span className="font-mono text-sm text-dash-text">
-          {formatNaira(value as number)}
-        </span>
-      )
-    },
-    { 
-      key: 'status', 
-      label: 'Status',
-      render: (value) => getStatusBadge(value as UserStatus)
-    },
-    { 
-      key: 'lastActive', 
-      label: 'Last Active',
-      render: (value) => (
-        <span className="text-sm text-dash-muted">
-          {formatRelativeTime(value as Date)}
-        </span>
-      )
-    },
-    {
-      key: 'actions',
-      label: 'Actions',
-      render: (_, row) => (
-        <div className="flex items-center gap-1">
-          <Button variant="ghost" size="sm">
-            <Eye className="w-4 h-4" />
-          </Button>
-          {row.status === 'active' ? (
-            <Button variant="ghost" size="sm" className="text-status-warning">
-              <Ban className="w-4 h-4" />
-            </Button>
-          ) : (
-            <Button variant="ghost" size="sm" className="text-status-success">
-              <CheckCircle className="w-4 h-4" />
-            </Button>
-          )}
-        </div>
-      )
-    },
-  ];
-
-  const validatorColumns: Column<Validator>[] = [
-    { 
-      key: 'name', 
-      label: 'Validator',
-      render: (_, row) => (
-        <div className="flex items-center gap-3">
-          <Avatar name={row.name} size="sm" />
-          <div>
-            <p className="font-medium text-dash-text">{row.name}</p>
-            <p className="text-xs text-dash-muted font-mono">{formatPhoneNumber(row.phoneNumber)}</p>
-          </div>
-        </div>
-      )
-    },
-    { 
-      key: 'tier', 
-      label: 'Tier',
-      render: (value) => getTierBadge(value as string)
-    },
-    { 
-      key: 'accuracyRate', 
-      label: 'Accuracy',
-      sortable: true,
-      render: (value) => (
-        <span className={`font-mono text-sm ${
-          (value as number) >= 90 ? 'text-status-success' : 
-          (value as number) >= 80 ? 'text-status-info' : 
-          (value as number) >= 70 ? 'text-status-warning' : 'text-status-danger'
-        }`}>
-          {(value as number).toFixed(1)}%
-        </span>
-      )
-    },
-    { 
-      key: 'totalValidations', 
-      label: 'Validations',
-      sortable: true,
-      render: (value) => (
-        <span className="text-sm text-dash-text">{(value as number).toLocaleString()}</span>
-      )
-    },
-    { 
-      key: 'marketNames', 
-      label: 'Markets',
-      render: (value) => (
-        <div className="text-sm text-dash-muted max-w-[150px] truncate">
-          {(value as string[]).join(', ')}
-        </div>
-      )
-    },
-    { 
-      key: 'pendingBalance', 
-      label: 'Balance',
-      align: 'right',
-      sortable: true,
-      render: (value) => (
-        <span className="font-mono text-sm text-dash-text">
-          {formatNaira(value as number)}
-        </span>
-      )
-    },
-    { 
-      key: 'status', 
-      label: 'Status',
-      render: (value) => getStatusBadge(value as UserStatus)
-    },
-    {
-      key: 'actions',
-      label: 'Actions',
-      render: (_, row) => (
-        <div className="flex items-center gap-1">
-          <Button variant="ghost" size="sm">
-            <Eye className="w-4 h-4" />
-          </Button>
-          {row.collusionScore > 5 && (
-            <Button variant="ghost" size="sm" className="text-status-danger">
-              <AlertTriangle className="w-4 h-4" />
-            </Button>
-          )}
-        </div>
-      )
-    },
-  ];
 
   return (
-    <PageWrapper
-      title="User Management"
-      subtitle="Manage traders, validators, and user permissions"
-      actions={
-        <div className="flex items-center gap-2">
-          <Button variant="secondary" size="sm" leftIcon={Download}>
-            Export
-          </Button>
-          <Button variant="primary" size="sm" leftIcon={UserPlus}>
+    <div className="min-h-screen bg-[#0d1117] text-white p-6">
+      {/* Header */}
+      <div className="flex justify-between items-start mb-6">
+        <div>
+          <h1 className="text-2xl font-bold">User Management</h1>
+          <p className="text-gray-400 text-sm">Manage traders, validators, and user permissions</p>
+        </div>
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 text-sm text-gray-400">
+            <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
+            Live Data
+            <span className="text-gray-500">Last updated {formatTimeAgo(lastUpdated)}</span>
+          </div>
+          
+          <button
+            onClick={handleExport}
+            disabled={isExporting}
+            className="flex items-center gap-2 px-4 py-2 bg-[#1a1f2e] border border-gray-700 rounded-lg hover:bg-[#252b3b] transition-colors disabled:opacity-50"
+          >
+            <Download className={`w-4 h-4 ${isExporting ? 'animate-bounce' : ''}`} />
+            {isExporting ? 'Exporting...' : 'Export'}
+          </button>
+          
+          <button
+            onClick={() => setShowAddModal(true)}
+            className="flex items-center gap-2 px-4 py-2 bg-green-500 hover:bg-green-600 rounded-lg font-medium transition-colors"
+          >
+            <UserPlus className="w-4 h-4" />
             Add User
-          </Button>
-        </div>
-      }
-    >
-      <div className="space-y-6">
-        {/* Stats Row */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          <StatCard
-            title="Total Traders"
-            value={mockUserStats.totalTraders}
-            subtitle={`${mockUserStats.activeTraders} active`}
-            trend={12.4}
-            trendLabel="+23 today"
-            icon={Users}
-            iconColor="text-naija-green-500"
-            format="compact"
-          />
-          <StatCard
-            title="Total Validators"
-            value={mockUserStats.totalValidators}
-            subtitle={`${mockUserStats.goldValidators} gold tier`}
-            trend={5.2}
-            trendLabel="+8 today"
-            icon={Shield}
-            iconColor="text-naija-gold-400"
-            format="compact"
-          />
-          <StatCard
-            title="Avg Trader Reputation"
-            value={mockUserStats.avgTraderReputation}
-            subtitle="out of 100"
-            icon={Star}
-            iconColor="text-status-info"
-          />
-          <StatCard
-            title="Avg Validator Accuracy"
-            value={mockUserStats.avgValidatorAccuracy}
-            subtitle="vote accuracy"
-            icon={TrendingUp}
-            iconColor="text-status-success"
-            format="percentage"
-          />
-        </div>
+          </button>
 
-        {/* Registration Trend */}
-        <div className="dash-card">
-          <h3 className="font-semibold text-dash-text mb-4">Weekly Registration Trend</h3>
-          <BarChartComponent
-            data={mockRegistrationTrend}
-            dataKeys={[
-              { key: 'traders', name: 'Traders', color: CHART_COLORS.primary },
-              { key: 'validators', name: 'Validators', color: CHART_COLORS.secondary },
-            ]}
-            height={200}
-          />
-        </div>
+          <button
+            onClick={handleRefresh}
+            disabled={isRefreshing}
+            className="p-2 bg-[#1a1f2e] border border-gray-700 rounded-lg hover:bg-[#252b3b] transition-colors disabled:opacity-50"
+          >
+            <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} />
+          </button>
 
-        {/* Tab Navigation */}
-        <div className="flex items-center gap-4 border-b border-dash-border pb-4">
-          <div className="flex items-center gap-2">
-            <Button
-              variant={selectedTab === 'traders' ? 'primary' : 'ghost'}
-              size="sm"
-              onClick={() => setSelectedTab('traders')}
-              leftIcon={Users}
-            >
-              Traders ({mockUserStats.totalTraders.toLocaleString()})
-            </Button>
-            <Button
-              variant={selectedTab === 'validators' ? 'primary' : 'ghost'}
-              size="sm"
-              onClick={() => setSelectedTab('validators')}
-              leftIcon={Shield}
-            >
-              Validators ({mockUserStats.totalValidators.toLocaleString()})
-            </Button>
-          </div>
-          <div className="flex-1" />
-          <div className="flex items-center gap-2">
-            <span className="text-sm text-dash-muted">Status:</span>
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              className="bg-dash-bg border border-dash-border rounded-lg px-3 py-1.5 text-sm text-dash-text"
-            >
-              <option value="all">All</option>
-              <option value="active">Active</option>
-              <option value="suspended">Suspended</option>
-              <option value="banned">Banned</option>
-            </select>
+          <div className="px-3 py-1.5 bg-green-500/10 border border-green-500/30 rounded-lg text-green-500 text-sm font-medium">
+            SUPER ADMIN
           </div>
         </div>
-
-        {/* Data Table */}
-        {selectedTab === 'traders' ? (
-          <DataTable
-            data={statusFilter === 'all' ? mockTraders : mockTraders.filter(t => t.status === statusFilter)}
-            columns={traderColumns}
-            keyField="id"
-            searchable
-            searchPlaceholder="Search by name or phone..."
-            searchFields={['name', 'phoneNumber', 'marketName']}
-            pagination
-            pageSize={10}
-            onRowClick={(row) => console.log('View trader:', row.id)}
-          />
-        ) : (
-          <DataTable
-            data={statusFilter === 'all' ? mockValidators : mockValidators.filter(v => v.status === statusFilter)}
-            columns={validatorColumns}
-            keyField="id"
-            searchable
-            searchPlaceholder="Search by name or phone..."
-            searchFields={['name', 'phoneNumber']}
-            pagination
-            pageSize={10}
-            onRowClick={(row) => console.log('View validator:', row.id)}
-          />
-        )}
       </div>
-    </PageWrapper>
+
+      {/* Stats Cards */}
+      <div className="grid grid-cols-4 gap-4 mb-6">
+        <div className="bg-[#1a1f2e] rounded-xl p-5 border border-gray-800">
+          <div className="flex justify-between items-start mb-3">
+            <span className="text-gray-400 text-sm">TOTAL TRADERS</span>
+            <Users className="w-5 h-5 text-green-500" />
+          </div>
+          <p className="text-3xl font-bold">{traderStats.total.toLocaleString()}</p>
+          <p className="text-sm text-gray-400">{traderStats.active.toLocaleString()} active</p>
+          <div className="flex items-center gap-1 mt-2 text-green-500 text-sm">
+            <TrendingUp className="w-4 h-4" />
+            +12.4%
+            <span className="text-gray-500">+{traderStats.newToday} today</span>
+          </div>
+        </div>
+
+        <div className="bg-[#1a1f2e] rounded-xl p-5 border border-gray-800">
+          <div className="flex justify-between items-start mb-3">
+            <span className="text-gray-400 text-sm">TOTAL VALIDATORS</span>
+            <Shield className="w-5 h-5 text-yellow-500" />
+          </div>
+          <p className="text-3xl font-bold">{validatorStats.total.toLocaleString()}</p>
+          <p className="text-sm text-gray-400">{validatorStats.gold} gold tier</p>
+          <div className="flex items-center gap-1 mt-2 text-green-500 text-sm">
+            <TrendingUp className="w-4 h-4" />
+            +5.2%
+            <span className="text-gray-500">+{validatorStats.newToday} today</span>
+          </div>
+        </div>
+
+        <div className="bg-[#1a1f2e] rounded-xl p-5 border border-gray-800">
+          <div className="flex justify-between items-start mb-3">
+            <span className="text-gray-400 text-sm">AVG TRADER REPUTATION</span>
+            <Star className="w-5 h-5 text-orange-500" />
+          </div>
+          <p className="text-3xl font-bold">{traderStats.avgReputation}</p>
+          <p className="text-sm text-gray-400">out of 100</p>
+        </div>
+
+        <div className="bg-[#1a1f2e] rounded-xl p-5 border border-gray-800">
+          <div className="flex justify-between items-start mb-3">
+            <span className="text-gray-400 text-sm">AVG VALIDATOR ACCURACY</span>
+            <TrendingUp className="w-5 h-5 text-blue-500" />
+          </div>
+          <p className="text-3xl font-bold">{validatorStats.avgAccuracy}%</p>
+          <p className="text-sm text-gray-400">vote accuracy</p>
+        </div>
+      </div>
+
+      {/* Weekly Chart */}
+      <div className="bg-[#1a1f2e] rounded-xl p-5 border border-gray-800 mb-6">
+        <h3 className="text-lg font-semibold mb-4">Weekly Registration Trend</h3>
+        <div className="h-64">
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={weeklyData}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+              <XAxis dataKey="day" stroke="#9ca3af" />
+              <YAxis stroke="#9ca3af" />
+              <Tooltip
+                contentStyle={{ backgroundColor: '#1a1f2e', border: '1px solid #374151' }}
+                labelStyle={{ color: '#fff' }}
+              />
+              <Legend />
+              <Bar dataKey="traders" name="Traders" fill="#22c55e" radius={[4, 4, 0, 0]} />
+              <Bar dataKey="validators" name="Validators" fill="#eab308" radius={[4, 4, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+
+      {/* Tabs */}
+      <div className="flex items-center gap-4 mb-4">
+        <button
+          onClick={() => setActiveTab('traders')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-colors ${
+            activeTab === 'traders'
+              ? 'bg-green-500 text-white'
+              : 'bg-[#1a1f2e] text-gray-400 hover:text-white'
+          }`}
+        >
+          <Users className="w-4 h-4" />
+          Traders ({traderStats.total.toLocaleString()})
+        </button>
+        <button
+          onClick={() => setActiveTab('validators')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-colors ${
+            activeTab === 'validators'
+              ? 'bg-green-500 text-white'
+              : 'bg-[#1a1f2e] text-gray-400 hover:text-white'
+          }`}
+        >
+          <Shield className="w-4 h-4" />
+          Validators ({validatorStats.total.toLocaleString()})
+        </button>
+
+        <div className="flex-1" />
+
+        <div className="flex items-center gap-2">
+          <span className="text-gray-400 text-sm">Status:</span>
+          <select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+            className="bg-[#1a1f2e] border border-gray-700 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-green-500"
+          >
+            <option>All</option>
+            <option>Active</option>
+            <option>Suspended</option>
+            <option>Pending</option>
+          </select>
+        </div>
+      </div>
+
+      {/* Search */}
+      <div className="relative mb-4">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+        <input
+          type="text"
+          placeholder="Search by name or phone..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          className="w-full max-w-md bg-[#1a1f2e] border border-gray-700 rounded-lg pl-10 pr-4 py-2.5 focus:outline-none focus:border-green-500"
+        />
+      </div>
+
+      {/* Table */}
+      <div className="bg-[#1a1f2e] rounded-xl border border-gray-800 overflow-hidden">
+        <table className="w-full">
+          <thead>
+            <tr className="border-b border-gray-800">
+              <th className="text-left text-gray-400 text-sm font-medium p-4">
+                {activeTab === 'traders' ? 'TRADER' : 'VALIDATOR'}
+              </th>
+              <th className="text-left text-gray-400 text-sm font-medium p-4">
+                {activeTab === 'traders' ? 'MARKET' : 'TYPE'}
+              </th>
+              <th className="text-left text-gray-400 text-sm font-medium p-4">
+                {activeTab === 'traders' ? 'Reputation' : 'Accuracy'}
+              </th>
+              <th className="text-left text-gray-400 text-sm font-medium p-4">
+                {activeTab === 'traders' ? 'Submissions' : 'Validations'}
+              </th>
+              <th className="text-left text-gray-400 text-sm font-medium p-4">Balance</th>
+              <th className="text-left text-gray-400 text-sm font-medium p-4">STATUS</th>
+              <th className="text-left text-gray-400 text-sm font-medium p-4">LAST ACTIVE</th>
+              <th className="text-left text-gray-400 text-sm font-medium p-4">ACTIONS</th>
+            </tr>
+          </thead>
+          <tbody>
+            {activeTab === 'traders' ? (
+              filteredTraders.map((trader) => (
+                <tr key={trader.id} className="border-b border-gray-800/50 hover:bg-[#252b3b]/50">
+                  <td className="p-4">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 bg-green-500/20 rounded-full flex items-center justify-center text-green-500 font-medium">
+                        {trader.name.split(' ').map(n => n[0]).join('')}
+                      </div>
+                      <div>
+                        <p className="font-medium">{trader.name}</p>
+                        <p className="text-sm text-gray-400">{trader.phone}</p>
+                      </div>
+                    </div>
+                  </td>
+                  <td className="p-4">
+                    <div className="flex items-center gap-1 text-gray-300">
+                      <MapPin className="w-3 h-3 text-gray-500" />
+                      {trader.market}
+                    </div>
+                  </td>
+                  <td className="p-4">
+                    <div className="flex items-center gap-2">
+                      <span className={`font-medium ${trader.reputation >= 80 ? 'text-green-500' : trader.reputation >= 50 ? 'text-yellow-500' : 'text-red-500'}`}>
+                        {trader.reputation}
+                      </span>
+                      <Star className="w-4 h-4 text-yellow-500" />
+                    </div>
+                  </td>
+                  <td className="p-4">
+                    <span className="text-gray-300">{trader.approved}</span>
+                    <span className="text-gray-500"> / {trader.submissions}</span>
+                  </td>
+                  <td className="p-4 font-medium text-green-500">₦{trader.balance.toLocaleString()}</td>
+                  <td className="p-4">
+                    <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${
+                      trader.status === 'active' 
+                        ? 'bg-green-500/20 text-green-500' 
+                        : 'bg-red-500/20 text-red-500'
+                    }`}>
+                      {trader.status.charAt(0).toUpperCase() + trader.status.slice(1)}
+                    </span>
+                  </td>
+                  <td className="p-4 text-gray-400">{formatTimeAgo(trader.lastActive)}</td>
+                  <td className="p-4">
+                    <div className="flex items-center gap-2">
+                      <button className="p-1.5 hover:bg-gray-700 rounded-lg transition-colors" title="View Profile">
+                        <Eye className="w-4 h-4 text-gray-400" />
+                      </button>
+                      <button className="p-1.5 hover:bg-gray-700 rounded-lg transition-colors" title="Suspend User">
+                        <Ban className="w-4 h-4 text-gray-400" />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))
+            ) : (
+              filteredValidators.map((validator) => (
+                <tr key={validator.id} className="border-b border-gray-800/50 hover:bg-[#252b3b]/50">
+                  <td className="p-4">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 bg-yellow-500/20 rounded-full flex items-center justify-center text-yellow-500 font-medium">
+                        {validator.name.split(' ').map(n => n[0]).join('')}
+                      </div>
+                      <div>
+                        <p className="font-medium">{validator.name}</p>
+                        <p className="text-sm text-gray-400">{validator.phone}</p>
+                      </div>
+                    </div>
+                  </td>
+                  <td className="p-4">
+                    <span className={`px-2 py-1 rounded text-xs font-medium ${
+                      validator.type === 'Expert' ? 'bg-purple-500/20 text-purple-400' :
+                      validator.type === 'Official' ? 'bg-blue-500/20 text-blue-400' :
+                      'bg-gray-500/20 text-gray-400'
+                    }`}>
+                      {validator.type}
+                    </span>
+                  </td>
+                  <td className="p-4">
+                    <span className={`font-medium ${validator.accuracy >= 90 ? 'text-green-500' : validator.accuracy >= 70 ? 'text-yellow-500' : 'text-red-500'}`}>
+                      {validator.accuracy}%
+                    </span>
+                  </td>
+                  <td className="p-4">
+                    <span className="text-gray-300">{validator.correctVotes.toLocaleString()}</span>
+                    <span className="text-gray-500"> / {validator.totalValidations.toLocaleString()}</span>
+                  </td>
+                  <td className="p-4 font-medium text-green-500">₦{validator.balance.toLocaleString()}</td>
+                  <td className="p-4">
+                    <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${
+                      validator.status === 'active' 
+                        ? 'bg-green-500/20 text-green-500' 
+                        : 'bg-red-500/20 text-red-500'
+                    }`}>
+                      {validator.status.charAt(0).toUpperCase() + validator.status.slice(1)}
+                    </span>
+                  </td>
+                  <td className="p-4 text-gray-400">{formatTimeAgo(validator.lastActive)}</td>
+                  <td className="p-4">
+                    <div className="flex items-center gap-2">
+                      <button className="p-1.5 hover:bg-gray-700 rounded-lg transition-colors" title="View Profile">
+                        <Eye className="w-4 h-4 text-gray-400" />
+                      </button>
+                      <button className="p-1.5 hover:bg-gray-700 rounded-lg transition-colors" title="Suspend User">
+                        <Ban className="w-4 h-4 text-gray-400" />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Add User Modal */}
+      <AddUserModal
+        isOpen={showAddModal}
+        onClose={() => setShowAddModal(false)}
+        userType={activeTab === 'traders' ? 'trader' : 'validator'}
+        onSuccess={handleAddUserSuccess}
+      />
+    </div>
   );
 }
