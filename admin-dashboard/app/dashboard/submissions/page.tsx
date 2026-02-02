@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import dynamic from 'next/dynamic';
 import {
   FileText,
@@ -23,6 +23,8 @@ import {
   Navigation,
   Calendar,
   User,
+  FileSpreadsheet,
+  Loader2,
 } from 'lucide-react';
 
 // ============================================
@@ -38,6 +40,26 @@ const ResponsiveContainer = dynamic(() => import('recharts').then(mod => mod.Res
 const PieChart = dynamic(() => import('recharts').then(mod => mod.PieChart), { ssr: false });
 const Pie = dynamic(() => import('recharts').then(mod => mod.Pie), { ssr: false });
 const Cell = dynamic(() => import('recharts').then(mod => mod.Cell), { ssr: false });
+
+// ============================================
+// TYPES
+// ============================================
+interface Submission {
+  id: string;
+  trader: string;
+  phone: string;
+  market: string;
+  item: string;
+  price: number;
+  baseline: number;
+  variance: number;
+  gpsValid: boolean;
+  gpsDistance: number;
+  status: string;
+  fraudFlags: string[];
+  submittedAt: string;
+  reputation: number;
+}
 
 // ============================================
 // MOCK DATA
@@ -59,7 +81,7 @@ const statusData = [
   { name: 'Rejected', value: 14, color: '#ef4444' },
 ];
 
-const submissionsData = [
+const initialSubmissionsData: Submission[] = [
   {
     id: 'SUB-001',
     trader: 'Chidi Okonkwo',
@@ -264,15 +286,80 @@ const getFraudFlagLabel = (flag: string) => {
 };
 
 // ============================================
+// CSV EXPORT FUNCTION
+// ============================================
+const exportToCSV = (data: Submission[], filename: string) => {
+  // Define CSV headers
+  const headers = [
+    'ID',
+    'Trader',
+    'Phone',
+    'Market',
+    'Item',
+    'Price (₦)',
+    'Baseline (₦)',
+    'Variance (%)',
+    'GPS Valid',
+    'GPS Distance (m)',
+    'Status',
+    'Fraud Flags',
+    'Submitted',
+    'Reputation'
+  ];
+
+  // Convert data to CSV rows
+  const csvRows = data.map(sub => [
+    sub.id,
+    sub.trader,
+    sub.phone,
+    sub.market,
+    sub.item,
+    sub.price,
+    sub.baseline,
+    sub.variance.toFixed(2),
+    sub.gpsValid ? 'Yes' : 'No',
+    sub.gpsDistance,
+    sub.status.charAt(0).toUpperCase() + sub.status.slice(1),
+    sub.fraudFlags.length > 0 ? sub.fraudFlags.join('; ') : 'None',
+    sub.submittedAt,
+    sub.reputation
+  ]);
+
+  // Combine headers and rows
+  const csvContent = [
+    headers.join(','),
+    ...csvRows.map(row => row.map(cell => `"${cell}"`).join(','))
+  ].join('\n');
+
+  // Create blob and download
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const link = document.createElement('a');
+  const url = URL.createObjectURL(blob);
+  
+  link.setAttribute('href', url);
+  link.setAttribute('download', `${filename}_${new Date().toISOString().split('T')[0]}.csv`);
+  link.style.visibility = 'hidden';
+  
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  
+  URL.revokeObjectURL(url);
+};
+
+// ============================================
 // MAIN COMPONENT
 // ============================================
 export default function SubmissionsPage() {
+  const [submissionsData, setSubmissionsData] = useState<Submission[]>(initialSubmissionsData);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedMarket, setSelectedMarket] = useState('All Markets');
   const [selectedStatus, setSelectedStatus] = useState('All Status');
   const [currentPage, setCurrentPage] = useState(1);
   const [selectedSubmission, setSelectedSubmission] = useState<string | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
+  const [lastRefreshed, setLastRefreshed] = useState<Date>(new Date());
   const itemsPerPage = 5;
 
   // Filter submissions
@@ -286,7 +373,7 @@ export default function SubmissionsPage() {
       const matchesStatus = selectedStatus === 'All Status' || sub.status === selectedStatus;
       return matchesSearch && matchesMarket && matchesStatus;
     });
-  }, [searchTerm, selectedMarket, selectedStatus]);
+  }, [submissionsData, searchTerm, selectedMarket, selectedStatus]);
 
   // Pagination
   const totalPages = Math.ceil(filteredSubmissions.length / itemsPerPage);
@@ -301,21 +388,141 @@ export default function SubmissionsPage() {
     pending: submissionsData.filter(s => s.status === 'pending').length,
     approved: submissionsData.filter(s => s.status === 'approved').length,
     flagged: submissionsData.filter(s => s.status === 'flagged').length,
-  }), []);
+  }), [submissionsData]);
 
-  const handleRefresh = () => {
+  // ============================================
+  // REFRESH FUNCTION
+  // ============================================
+  const handleRefresh = useCallback(async () => {
     setIsRefreshing(true);
-    setTimeout(() => setIsRefreshing(false), 1000);
-  };
+    
+    try {
+      // Simulate API call - replace with actual API call
+      // const response = await fetch('/api/submissions');
+      // const data = await response.json();
+      // setSubmissionsData(data);
+      
+      // For now, simulate refresh with slight data modification
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
+      // Simulate new data coming in
+      setSubmissionsData(prev => {
+        const updated = [...prev];
+        // Update timestamps to show refresh happened
+        return updated.map(sub => ({
+          ...sub,
+          // In real app, this would be fresh data from API
+        }));
+      });
+      
+      setLastRefreshed(new Date());
+    } catch (error) {
+      console.error('Failed to refresh:', error);
+      // Show error toast in production
+    } finally {
+      setIsRefreshing(false);
+    }
+  }, []);
 
-  const handleApprove = (id: string) => {
-    console.log('Approving submission:', id);
-    // API call would go here
-  };
+  // ============================================
+  // EXPORT FUNCTIONS
+  // ============================================
+  const handleExportFiltered = useCallback(async () => {
+    setIsExporting(true);
+    
+    try {
+      // Small delay for UX feedback
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      const filename = selectedMarket !== 'All Markets' 
+        ? `submissions_${selectedMarket.replace(/\s+/g, '_').toLowerCase()}`
+        : selectedStatus !== 'All Status'
+          ? `submissions_${selectedStatus}`
+          : 'submissions_filtered';
+      
+      exportToCSV(filteredSubmissions, filename);
+    } catch (error) {
+      console.error('Export failed:', error);
+      // Show error toast in production
+    } finally {
+      setIsExporting(false);
+    }
+  }, [filteredSubmissions, selectedMarket, selectedStatus]);
 
-  const handleReject = (id: string) => {
-    console.log('Rejecting submission:', id);
-    // API call would go here
+  const handleExportAll = useCallback(async () => {
+    setIsExporting(true);
+    
+    try {
+      // Small delay for UX feedback
+      await new Promise(resolve => setTimeout(resolve, 500));
+      exportToCSV(submissionsData, 'submissions_all_today');
+    } catch (error) {
+      console.error('Export failed:', error);
+    } finally {
+      setIsExporting(false);
+    }
+  }, [submissionsData]);
+
+  // ============================================
+  // ACTION HANDLERS
+  // ============================================
+  const handleApprove = useCallback((id: string) => {
+    setSubmissionsData(prev => 
+      prev.map(sub => 
+        sub.id === id 
+          ? { ...sub, status: 'approved', fraudFlags: [] }
+          : sub
+      )
+    );
+    // In production: API call to approve
+    // await fetch(`/api/submissions/${id}/approve`, { method: 'POST' });
+  }, []);
+
+  const handleReject = useCallback((id: string) => {
+    setSubmissionsData(prev => 
+      prev.map(sub => 
+        sub.id === id 
+          ? { ...sub, status: 'rejected' }
+          : sub
+      )
+    );
+    // In production: API call to reject
+    // await fetch(`/api/submissions/${id}/reject`, { method: 'POST' });
+  }, []);
+
+  const handleApproveAllPending = useCallback(async () => {
+    const pendingIds = submissionsData.filter(s => s.status === 'pending').map(s => s.id);
+    
+    if (pendingIds.length === 0) return;
+    
+    // Confirm action
+    if (!confirm(`Are you sure you want to approve ${pendingIds.length} pending submissions?`)) {
+      return;
+    }
+    
+    setSubmissionsData(prev => 
+      prev.map(sub => 
+        sub.status === 'pending' 
+          ? { ...sub, status: 'approved' }
+          : sub
+      )
+    );
+    
+    // In production: Bulk API call
+    // await fetch('/api/submissions/bulk-approve', { 
+    //   method: 'POST', 
+    //   body: JSON.stringify({ ids: pendingIds }) 
+    // });
+  }, [submissionsData]);
+
+  // Format last refreshed time
+  const formatLastRefreshed = () => {
+    const now = new Date();
+    const diff = Math.floor((now.getTime() - lastRefreshed.getTime()) / 1000);
+    
+    if (diff < 60) return 'Just now';
+    if (diff < 3600) return `${Math.floor(diff / 60)} min ago`;
+    return lastRefreshed.toLocaleTimeString();
   };
 
   return (
@@ -327,19 +534,46 @@ export default function SubmissionsPage() {
           <p className="text-sm text-dash-muted">Review and approve price submissions from traders</p>
         </div>
         <div className="flex items-center gap-3">
+          {/* Last Refreshed */}
+          <span className="text-xs text-dash-muted hidden sm:block">
+            Updated {formatLastRefreshed()}
+          </span>
+          
+          {/* Refresh Button */}
           <button
             onClick={handleRefresh}
-            className={`p-2 rounded-lg bg-dash-bg border border-dash-border hover:bg-dash-hover transition-colors ${isRefreshing ? 'animate-spin' : ''}`}
+            disabled={isRefreshing}
+            className="p-2 rounded-lg bg-dash-bg border border-dash-border hover:bg-dash-hover transition-colors disabled:opacity-50"
+            title="Refresh data"
           >
-            <RefreshCw className="w-4 h-4 text-dash-muted" />
+            {isRefreshing ? (
+              <Loader2 className="w-4 h-4 text-dash-muted animate-spin" />
+            ) : (
+              <RefreshCw className="w-4 h-4 text-dash-muted" />
+            )}
           </button>
-          <button className="flex items-center gap-2 px-4 py-2 rounded-lg bg-dash-bg border border-dash-border hover:bg-dash-hover transition-colors">
-            <Download className="w-4 h-4 text-dash-muted" />
-            <span className="text-sm text-dash-muted">Export</span>
+          
+          {/* Export Button */}
+          <button 
+            onClick={handleExportFiltered}
+            disabled={isExporting || filteredSubmissions.length === 0}
+            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-dash-bg border border-dash-border hover:bg-dash-hover transition-colors disabled:opacity-50"
+            title={`Export ${filteredSubmissions.length} filtered submissions`}
+          >
+            {isExporting ? (
+              <Loader2 className="w-4 h-4 text-dash-muted animate-spin" />
+            ) : (
+              <Download className="w-4 h-4 text-dash-muted" />
+            )}
+            <span className="text-sm text-dash-muted hidden sm:block">
+              Export ({filteredSubmissions.length})
+            </span>
           </button>
+          
+          {/* Live Indicator */}
           <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-green-500/10 border border-green-500/30">
             <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-            <span className="text-xs font-medium text-green-400">Live Data</span>
+            <span className="text-xs font-medium text-green-400">Live</span>
           </div>
         </div>
       </header>
@@ -585,125 +819,152 @@ export default function SubmissionsPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-dash-border">
-                  {paginatedSubmissions.map((sub) => (
-                    <tr 
-                      key={sub.id} 
-                      className={`hover:bg-dash-hover transition-colors ${sub.fraudFlags.length > 0 ? 'bg-red-500/5' : ''}`}
-                    >
-                      {/* Trader */}
-                      <td className="px-4 py-4">
-                        <div className="flex items-center gap-3">
-                          <div className="w-8 h-8 rounded-full bg-naija-green-500/10 flex items-center justify-center">
-                            <User className="w-4 h-4 text-naija-green-500" />
-                          </div>
-                          <div>
-                            <p className="text-sm font-medium text-dash-text">{sub.trader}</p>
-                            <p className="text-xs text-dash-muted">Rep: {sub.reputation}</p>
-                          </div>
-                        </div>
-                      </td>
-
-                      {/* Market */}
-                      <td className="px-4 py-4">
-                        <div className="flex items-center gap-1">
-                          <MapPin className="w-3 h-3 text-dash-muted" />
-                          <span className="text-sm text-dash-muted">{sub.market}</span>
-                        </div>
-                      </td>
-
-                      {/* Item */}
-                      <td className="px-4 py-4">
-                        <span className="text-sm text-dash-text">{sub.item}</span>
-                      </td>
-
-                      {/* Price */}
-                      <td className="px-4 py-4">
-                        <div>
-                          <p className="text-sm font-medium text-dash-text">{formatCurrency(sub.price)}</p>
-                          <p className="text-xs text-dash-muted">Base: {formatCurrency(sub.baseline)}</p>
-                        </div>
-                      </td>
-
-                      {/* Variance */}
-                      <td className="px-4 py-4">
-                        <div className={`flex items-center gap-1 ${getVarianceColor(sub.variance)}`}>
-                          {sub.variance > 0 ? (
-                            <TrendingUp className="w-3 h-3" />
-                          ) : (
-                            <TrendingDown className="w-3 h-3" />
-                          )}
-                          <span className="text-sm font-medium">{sub.variance.toFixed(1)}%</span>
-                        </div>
-                      </td>
-
-                      {/* GPS */}
-                      <td className="px-4 py-4">
-                        <div className={`flex items-center gap-1 ${sub.gpsValid ? 'text-green-500' : 'text-red-500'}`}>
-                          <Navigation className="w-3 h-3" />
-                          <span className="text-xs">
-                            {sub.gpsValid ? `${sub.gpsDistance}m` : 'Invalid'}
-                          </span>
-                        </div>
-                      </td>
-
-                      {/* Status */}
-                      <td className="px-4 py-4">
-                        <div className="flex flex-col gap-1">
-                          <span className={`inline-flex px-2 py-1 text-xs font-medium rounded-full border ${getStatusBadge(sub.status)}`}>
-                            {sub.status.charAt(0).toUpperCase() + sub.status.slice(1)}
-                          </span>
-                          {sub.fraudFlags.length > 0 && (
-                            <div className="flex flex-wrap gap-1">
-                              {sub.fraudFlags.map(flag => (
-                                <span key={flag} className="text-[10px] text-red-400 bg-red-500/10 px-1.5 py-0.5 rounded">
-                                  {getFraudFlagLabel(flag)}
-                                </span>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      </td>
-
-                      {/* Time */}
-                      <td className="px-4 py-4">
-                        <div className="flex items-center gap-1 text-dash-muted">
-                          <Calendar className="w-3 h-3" />
-                          <span className="text-xs">{sub.submittedAt}</span>
-                        </div>
-                      </td>
-
-                      {/* Actions */}
-                      <td className="px-4 py-4">
-                        <div className="flex items-center justify-end gap-2">
-                          <button
-                            onClick={() => setSelectedSubmission(sub.id)}
-                            className="p-1.5 rounded-lg hover:bg-dash-bg text-dash-muted hover:text-dash-text transition-colors"
-                            title="View Details"
-                          >
-                            <Eye className="w-4 h-4" />
-                          </button>
-                          {sub.status === 'pending' && (
-                            <>
-                              <button
-                                onClick={() => handleApprove(sub.id)}
-                                className="p-1.5 rounded-lg hover:bg-green-500/10 text-dash-muted hover:text-green-500 transition-colors"
-                                title="Approve"
-                              >
-                                <ThumbsUp className="w-4 h-4" />
-                              </button>
-                              <button
-                                onClick={() => handleReject(sub.id)}
-                                className="p-1.5 rounded-lg hover:bg-red-500/10 text-dash-muted hover:text-red-500 transition-colors"
-                                title="Reject"
-                              >
-                                <ThumbsDown className="w-4 h-4" />
-                              </button>
-                            </>
-                          )}
-                        </div>
+                  {paginatedSubmissions.length === 0 ? (
+                    <tr>
+                      <td colSpan={9} className="px-4 py-8 text-center text-dash-muted">
+                        <FileText className="w-12 h-12 mx-auto mb-2 opacity-50" />
+                        <p>No submissions found matching your filters</p>
                       </td>
                     </tr>
-                  ))}
+                  ) : (
+                    paginatedSubmissions.map((sub) => (
+                      <tr 
+                        key={sub.id} 
+                        className={`hover:bg-dash-hover transition-colors ${sub.fraudFlags.length > 0 ? 'bg-red-500/5' : ''}`}
+                      >
+                        {/* Trader */}
+                        <td className="px-4 py-4">
+                          <div className="flex items-center gap-3">
+                            <div className="w-8 h-8 rounded-full bg-naija-green-500/10 flex items-center justify-center">
+                              <User className="w-4 h-4 text-naija-green-500" />
+                            </div>
+                            <div>
+                              <p className="text-sm font-medium text-dash-text">{sub.trader}</p>
+                              <p className="text-xs text-dash-muted">Rep: {sub.reputation}</p>
+                            </div>
+                          </div>
+                        </td>
+
+                        {/* Market */}
+                        <td className="px-4 py-4">
+                          <div className="flex items-center gap-1">
+                            <MapPin className="w-3 h-3 text-dash-muted" />
+                            <span className="text-sm text-dash-muted">{sub.market}</span>
+                          </div>
+                        </td>
+
+                        {/* Item */}
+                        <td className="px-4 py-4">
+                          <span className="text-sm text-dash-text">{sub.item}</span>
+                        </td>
+
+                        {/* Price */}
+                        <td className="px-4 py-4">
+                          <div>
+                            <p className="text-sm font-medium text-dash-text">{formatCurrency(sub.price)}</p>
+                            <p className="text-xs text-dash-muted">Base: {formatCurrency(sub.baseline)}</p>
+                          </div>
+                        </td>
+
+                        {/* Variance */}
+                        <td className="px-4 py-4">
+                          <div className={`flex items-center gap-1 ${getVarianceColor(sub.variance)}`}>
+                            {sub.variance > 0 ? (
+                              <TrendingUp className="w-3 h-3" />
+                            ) : (
+                              <TrendingDown className="w-3 h-3" />
+                            )}
+                            <span className="text-sm font-medium">{sub.variance.toFixed(1)}%</span>
+                          </div>
+                        </td>
+
+                        {/* GPS */}
+                        <td className="px-4 py-4">
+                          <div className={`flex items-center gap-1 ${sub.gpsValid ? 'text-green-500' : 'text-red-500'}`}>
+                            <Navigation className="w-3 h-3" />
+                            <span className="text-xs">
+                              {sub.gpsValid ? `${sub.gpsDistance}m` : 'Invalid'}
+                            </span>
+                          </div>
+                        </td>
+
+                        {/* Status */}
+                        <td className="px-4 py-4">
+                          <div className="flex flex-col gap-1">
+                            <span className={`inline-flex px-2 py-1 text-xs font-medium rounded-full border ${getStatusBadge(sub.status)}`}>
+                              {sub.status.charAt(0).toUpperCase() + sub.status.slice(1)}
+                            </span>
+                            {sub.fraudFlags.length > 0 && (
+                              <div className="flex flex-wrap gap-1">
+                                {sub.fraudFlags.map(flag => (
+                                  <span key={flag} className="text-[10px] text-red-400 bg-red-500/10 px-1.5 py-0.5 rounded">
+                                    {getFraudFlagLabel(flag)}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        </td>
+
+                        {/* Time */}
+                        <td className="px-4 py-4">
+                          <div className="flex items-center gap-1 text-dash-muted">
+                            <Calendar className="w-3 h-3" />
+                            <span className="text-xs">{sub.submittedAt}</span>
+                          </div>
+                        </td>
+
+                        {/* Actions */}
+                        <td className="px-4 py-4">
+                          <div className="flex items-center justify-end gap-2">
+                            <button
+                              onClick={() => setSelectedSubmission(sub.id)}
+                              className="p-1.5 rounded-lg hover:bg-dash-bg text-dash-muted hover:text-dash-text transition-colors"
+                              title="View Details"
+                            >
+                              <Eye className="w-4 h-4" />
+                            </button>
+                            {sub.status === 'pending' && (
+                              <>
+                                <button
+                                  onClick={() => handleApprove(sub.id)}
+                                  className="p-1.5 rounded-lg hover:bg-green-500/10 text-dash-muted hover:text-green-500 transition-colors"
+                                  title="Approve"
+                                >
+                                  <ThumbsUp className="w-4 h-4" />
+                                </button>
+                                <button
+                                  onClick={() => handleReject(sub.id)}
+                                  className="p-1.5 rounded-lg hover:bg-red-500/10 text-dash-muted hover:text-red-500 transition-colors"
+                                  title="Reject"
+                                >
+                                  <ThumbsDown className="w-4 h-4" />
+                                </button>
+                              </>
+                            )}
+                            {sub.status === 'flagged' && (
+                              <>
+                                <button
+                                  onClick={() => handleApprove(sub.id)}
+                                  className="p-1.5 rounded-lg hover:bg-green-500/10 text-dash-muted hover:text-green-500 transition-colors"
+                                  title="Approve (Override)"
+                                >
+                                  <ThumbsUp className="w-4 h-4" />
+                                </button>
+                                <button
+                                  onClick={() => handleReject(sub.id)}
+                                  className="p-1.5 rounded-lg hover:bg-red-500/10 text-dash-muted hover:text-red-500 transition-colors"
+                                  title="Reject"
+                                >
+                                  <ThumbsDown className="w-4 h-4" />
+                                </button>
+                              </>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  )}
                 </tbody>
               </table>
             </div>
@@ -711,7 +972,7 @@ export default function SubmissionsPage() {
             {/* Pagination */}
             <div className="px-4 py-3 border-t border-dash-border flex items-center justify-between">
               <p className="text-sm text-dash-muted">
-                Showing {((currentPage - 1) * itemsPerPage) + 1} to {Math.min(currentPage * itemsPerPage, filteredSubmissions.length)} of {filteredSubmissions.length} submissions
+                Showing {filteredSubmissions.length === 0 ? 0 : ((currentPage - 1) * itemsPerPage) + 1} to {Math.min(currentPage * itemsPerPage, filteredSubmissions.length)} of {filteredSubmissions.length} submissions
               </p>
               <div className="flex items-center gap-2">
                 <button
@@ -736,7 +997,7 @@ export default function SubmissionsPage() {
                 ))}
                 <button
                   onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-                  disabled={currentPage === totalPages}
+                  disabled={currentPage === totalPages || totalPages === 0}
                   className="p-2 rounded-lg border border-dash-border hover:bg-dash-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                 >
                   <ChevronRight className="w-4 h-4 text-dash-muted" />
@@ -745,21 +1006,40 @@ export default function SubmissionsPage() {
             </div>
           </div>
 
-          {/* Quick Actions Card */}
+          {/* Bulk Actions Card */}
           <div className="rounded-xl border border-dash-border bg-dash-card p-5">
             <h3 className="font-semibold text-dash-text mb-4">Bulk Actions</h3>
             <div className="flex flex-wrap gap-3">
-              <button className="flex items-center gap-2 px-4 py-2 rounded-lg bg-green-500/10 border border-green-500/30 text-green-500 hover:bg-green-500/20 transition-colors">
+              <button 
+                onClick={handleApproveAllPending}
+                disabled={stats.pending === 0}
+                className="flex items-center gap-2 px-4 py-2 rounded-lg bg-green-500/10 border border-green-500/30 text-green-500 hover:bg-green-500/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
                 <CheckCircle className="w-4 h-4" />
                 <span className="text-sm font-medium">Approve All Pending ({stats.pending})</span>
               </button>
-              <button className="flex items-center gap-2 px-4 py-2 rounded-lg bg-red-500/10 border border-red-500/30 text-red-500 hover:bg-red-500/20 transition-colors">
+              <button 
+                onClick={() => {
+                  setSelectedStatus('flagged');
+                  setCurrentPage(1);
+                }}
+                disabled={stats.flagged === 0}
+                className="flex items-center gap-2 px-4 py-2 rounded-lg bg-red-500/10 border border-red-500/30 text-red-500 hover:bg-red-500/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
                 <AlertTriangle className="w-4 h-4" />
                 <span className="text-sm font-medium">Review Flagged ({stats.flagged})</span>
               </button>
-              <button className="flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-500/10 border border-blue-500/30 text-blue-500 hover:bg-blue-500/20 transition-colors">
-                <Download className="w-4 h-4" />
-                <span className="text-sm font-medium">Export Today&apos;s Data</span>
+              <button 
+                onClick={handleExportAll}
+                disabled={isExporting || submissionsData.length === 0}
+                className="flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-500/10 border border-blue-500/30 text-blue-500 hover:bg-blue-500/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isExporting ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <FileSpreadsheet className="w-4 h-4" />
+                )}
+                <span className="text-sm font-medium">Export Today&apos;s Data ({submissionsData.length})</span>
               </button>
             </div>
           </div>
