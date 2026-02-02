@@ -17,9 +17,6 @@ import {
   ChevronRight,
   Shield,
   TrendingUp,
-  FileText,
-  MapPin,
-  Package,
 } from 'lucide-react';
 import { signOut, useSession } from 'next-auth/react';
 import { Avatar } from '@/components/ui';
@@ -51,23 +48,8 @@ const navItems = [
     icon: Users,
   },
   {
-    title: 'Submissions',
-    href: '/dashboard/submissions',
-    icon: FileText,
-  },
-  {
-    title: 'Markets',
-    href: '/dashboard/markets',
-    icon: MapPin,
-  },
-  {
-    title: 'Commodities',
-    href: '/dashboard/commodities',
-    icon: Package,
-  },
-  {
     title: 'System Health',
-    href: '/dashboard/system',
+    href: '/dashboard/health',
     icon: Activity,
   },
 ];

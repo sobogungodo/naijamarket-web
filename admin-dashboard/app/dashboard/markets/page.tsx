@@ -3,8 +3,8 @@
 import { useState, useCallback } from 'react';
 import {
   MapPin, Search, RefreshCw, Download, Plus, Edit2, Trash2,
-  Eye, ToggleLeft, ToggleRight, Users, Clock, Navigation,
-  X, Loader2, CheckCircle, AlertTriangle, Building2, Map
+  Eye, ToggleLeft, ToggleRight, Users, Clock,
+  X, Loader2, CheckCircle, Building2, Map
 } from 'lucide-react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
 
@@ -148,6 +148,33 @@ const stateDistribution = [
   { name: 'FCT', value: 12, color: '#a855f7' },
   { name: 'Others', value: 10, color: '#6b7280' },
 ];
+
+// Inline export function
+function exportMarketsToCSV(markets: Market[]) {
+  const headers = ['ID', 'Name', 'State', 'LGA', 'Address', 'Latitude', 'Longitude', 'Radius (m)', 'Traders', 'Validators', 'Active'];
+  const rows = markets.map(m => [
+    m.id,
+    m.name,
+    m.state,
+    m.lga,
+    m.address,
+    m.latitude,
+    m.longitude,
+    m.radiusMeters,
+    m.tradersCount,
+    m.validatorsCount,
+    m.isActive ? 'Yes' : 'No'
+  ]);
+  
+  const csvContent = [headers, ...rows].map(row => row.join(',')).join('\n');
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `markets_${new Date().toISOString().split('T')[0]}.csv`;
+  link.click();
+  URL.revokeObjectURL(url);
+}
 
 export default function MarketsPage() {
   const [markets, setMarkets] = useState<Market[]>(generateMockMarkets());
@@ -358,6 +385,14 @@ export default function MarketsPage() {
             Live Data
             <span className="text-gray-500">Updated {formatTimeAgo(lastUpdated)}</span>
           </div>
+
+          <button
+            onClick={() => exportMarketsToCSV(markets)}
+            className="flex items-center gap-2 px-4 py-2 bg-[#1a1f2e] border border-gray-700 rounded-lg hover:bg-[#252b3b] transition-colors"
+          >
+            <Download className="w-4 h-4" />
+            Export
+          </button>
 
           <button
             onClick={openAddModal}
