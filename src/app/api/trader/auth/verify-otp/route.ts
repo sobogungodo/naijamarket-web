@@ -1,59 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { google } from 'googleapis';
 import { SignJWT } from 'jose';
+import { verifyOTP } from '@/lib/db';
 
-const getSheets = () => {
-  const auth = new google.auth.GoogleAuth({
-    credentials: JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_KEY || '{}'),
-    scopes: ['https://www.googleapis.com/auth/spreadsheets'],
-  });
-  return google.sheets({ version: 'v4', auth });
-};
-
-const SPREADSHEET_ID = process.env.GOOGLE_SPREADSHEET_ID || '1n-7MXdoqvIoSHteBJaUYBmIPLjJBNtrE_jVuUxO5kr8';
-const JWT_SECRET = new TextEncoder().encode(process.env.JWT_SECRET || 'naijamarket-trader-secret-key-2026');
-
-async function verifyOTP(phone: string, otp: string): Promise<{ valid: boolean; traderName?: string }> {
-  const sheets = getSheets();
-  
-  try {
-    const response = await sheets.spreadsheets.values.get({
-      spreadsheetId: SPREADSHEET_ID,
-      range: 'OTP_Sessions!A:E',
-    });
-
-    const rows = response.data.values || [];
-    if (rows.length < 2) return { valid: false };
-
-    const now = new Date();
-
-    for (let i = rows.length - 1; i >= 1; i--) {
-      const row = rows[i];
-      const rowPhone = row[0];
-      const rowOTP = row[1];
-      const expiresAt = new Date(row[2]);
-      const traderName = row[3];
-
-      if (rowPhone === phone && rowOTP === otp) {
-        if (now < expiresAt) {
-          await sheets.spreadsheets.values.update({
-            spreadsheetId: SPREADSHEET_ID,
-            range: `OTP_Sessions!B${i + 1}`,
-            valueInputOption: 'USER_ENTERED',
-            requestBody: { values: [['USED']] }
-          });
-          return { valid: true, traderName };
-        }
-        return { valid: false };
-      }
-    }
-
-    return { valid: false };
-  } catch (error) {
-    console.error('Error verifying OTP:', error);
-    return { valid: false };
-  }
-}
+const JWT_SECRET = new TextEncoder().encode(process.env.JWT_SECRET || '');
 
 async function generateToken(phone: string): Promise<string> {
   const token = await new SignJWT({ phone })
@@ -74,6 +23,8 @@ export async function POST(request: NextRequest) {
     }
 
     const normalizedPhone = phone.replace(/^\+/, '');
+    
+    // Verify OTP in Azure SQL (primary) or Google Sheets (fallback)
     const result = await verifyOTP(normalizedPhone, otp);
 
     if (!result.valid) {

@@ -1,17 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { google } from 'googleapis';
 import { jwtVerify } from 'jose';
+import { checkDuplicate } from '@/lib/db';
 
-const getSheets = () => {
-  const auth = new google.auth.GoogleAuth({
-    credentials: JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_KEY || '{}'),
-    scopes: ['https://www.googleapis.com/auth/spreadsheets.readonly'],
-  });
-  return google.sheets({ version: 'v4', auth });
-};
-
-const SPREADSHEET_ID = process.env.GOOGLE_SPREADSHEET_ID || '1n-7MXdoqvIoSHteBJaUYBmIPLjJBNtrE_jVuUxO5kr8';
-const JWT_SECRET = new TextEncoder().encode(process.env.JWT_SECRET || 'naijamarket-trader-secret-key-2026');
+const JWT_SECRET = new TextEncoder().encode(process.env.JWT_SECRET || '');
 
 async function verifyToken(token: string): Promise<string | null> {
   try {
@@ -41,38 +32,12 @@ export async function GET(request: NextRequest) {
 
     if (!marketId || !itemId) return NextResponse.json({ exists: false });
 
-    const sheets = getSheets();
-    
-    const response = await sheets.spreadsheets.values.get({
-      spreadsheetId: SPREADSHEET_ID,
-      range: 'Submissions!A:Z',
+    const exists = await checkDuplicate(marketId, itemId);
+
+    return NextResponse.json({ 
+      exists, 
+      message: exists ? 'Price already approved today' : '' 
     });
-
-    const rows = response.data.values || [];
-    if (rows.length < 2) return NextResponse.json({ exists: false });
-
-    const headers = rows[0];
-    const marketIdIdx = headers.indexOf('market_id');
-    const itemIdIdx = headers.indexOf('item_id');
-    const statusIdx = headers.indexOf('status');
-    const submittedAtIdx = headers.indexOf('submitted_at');
-
-    const today = new Date().toISOString().split('T')[0];
-
-    for (let i = 1; i < rows.length; i++) {
-      const row = rows[i];
-      if (
-        row[marketIdIdx] === marketId &&
-        row[itemIdIdx] === itemId &&
-        row[statusIdx] === 'APPROVED' &&
-        (row[submittedAtIdx] || '').split('T')[0] === today
-      ) {
-        return NextResponse.json({ exists: true, message: 'Price already approved today' });
-      }
-    }
-
-    return NextResponse.json({ exists: false });
-
   } catch (error) {
     console.error('Check duplicate error:', error);
     return NextResponse.json({ exists: false });
