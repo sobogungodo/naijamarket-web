@@ -64,25 +64,46 @@ export async function findTrader(phone: string) {
   // Try Prisma/Azure SQL first
   try {
     const trader = await prisma.$queryRaw<any[]>`
-      SELECT phone, full_name, status, trader_id, market_id, market_name,
-             market_lat, market_lng, reputation_score, tier
+      SELECT 
+        phone_number,
+        full_name,
+        first_name,
+        registration_status,
+        trader_id,
+        assigned_market_id,
+        assigned_market_name,
+        assigned_state,
+        reputation,
+        tier_name,
+        balance,
+        total_earned,
+        total_submissions,
+        approved_submissions,
+        rejected_submissions
       FROM Traders_register
-      WHERE phone = ${phone} AND status = 'APPROVED'
+      WHERE phone_number = ${phone} AND registration_status = 'APPROVED'
     `;
 
     if (trader && trader.length > 0) {
       const row = trader[0];
       return {
-        phone: row.phone,
-        fullName: row.full_name,
-        status: row.status,
+        phone: row.phone_number,
+        fullName: row.full_name || row.first_name || 'Trader',
+        firstName: row.first_name,
+        status: row.registration_status,
         traderId: row.trader_id,
-        marketId: row.market_id,
-        marketName: row.market_name,
-        marketLat: parseFloat(row.market_lat || '6.4541'),
-        marketLng: parseFloat(row.market_lng || '3.3947'),
-        reputation: parseInt(row.reputation_score || '50'),
-        tier: row.tier || 'STARTER'
+        marketId: row.assigned_market_id,
+        marketName: row.assigned_market_name || 'Unknown Market',
+        marketState: row.assigned_state,
+        marketLat: 6.4541,  // Default Lagos coordinates (market GPS not in table)
+        marketLng: 3.3947,
+        reputation: parseInt(row.reputation || '50'),
+        tier: row.tier_name || 'New',
+        balance: parseFloat(row.balance || '0'),
+        totalEarned: parseFloat(row.total_earned || '0'),
+        totalSubmissions: parseInt(row.total_submissions || '0'),
+        approvedSubmissions: parseInt(row.approved_submissions || '0'),
+        rejectedSubmissions: parseInt(row.rejected_submissions || '0')
       };
     }
   } catch (error) {
@@ -94,7 +115,7 @@ export async function findTrader(phone: string) {
     const sheets = getSheets();
     const response = await sheets.spreadsheets.values.get({
       spreadsheetId: SPREADSHEET_ID,
-      range: 'Traders_register!A:Z',
+      range: 'Traders_register!A:AZ',
     });
 
     const rows = response.data.values || [];
@@ -105,18 +126,25 @@ export async function findTrader(phone: string) {
 
     for (let i = 1; i < rows.length; i++) {
       const row = rows[i];
-      if (row[getIdx('phone')] === phone && row[getIdx('status')] === 'APPROVED') {
+      if (row[getIdx('phone_number')] === phone && row[getIdx('registration_status')] === 'APPROVED') {
         return {
-          phone: row[getIdx('phone')],
-          fullName: row[getIdx('full_name')] || 'Trader',
-          status: row[getIdx('status')],
+          phone: row[getIdx('phone_number')],
+          fullName: row[getIdx('full_name')] || row[getIdx('first_name')] || 'Trader',
+          firstName: row[getIdx('first_name')],
+          status: row[getIdx('registration_status')],
           traderId: row[getIdx('trader_id')],
-          marketId: row[getIdx('market_id')],
-          marketName: row[getIdx('market_name')] || 'Unknown Market',
-          marketLat: parseFloat(row[getIdx('market_lat')] || '6.4541'),
-          marketLng: parseFloat(row[getIdx('market_lng')] || '3.3947'),
-          reputation: parseInt(row[getIdx('reputation_score')] || '50'),
-          tier: row[getIdx('tier')] || 'STARTER'
+          marketId: row[getIdx('assigned_market_id')],
+          marketName: row[getIdx('assigned_market_name')] || 'Unknown Market',
+          marketState: row[getIdx('assigned_state')],
+          marketLat: 6.4541,  // Default Lagos coordinates
+          marketLng: 3.3947,
+          reputation: parseInt(row[getIdx('reputation')] || '50'),
+          tier: row[getIdx('tier_name')] || 'New',
+          balance: parseFloat(row[getIdx('balance')] || '0'),
+          totalEarned: parseFloat(row[getIdx('total_earned')] || '0'),
+          totalSubmissions: parseInt(row[getIdx('total_submissions')] || '0'),
+          approvedSubmissions: parseInt(row[getIdx('approved_submissions')] || '0'),
+          rejectedSubmissions: parseInt(row[getIdx('rejected_submissions')] || '0')
         };
       }
     }
