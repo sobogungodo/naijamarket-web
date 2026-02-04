@@ -2,7 +2,7 @@
 // NaijaMarket Intel - Alert Processing Engine
 // Checks active alerts against current prices and sends WhatsApp notifications
 // Called by Vercel Cron every 15 minutes
-// Updated: 2026-02-04 - Uses Approved_Prices table
+// Updated: 2026-02-03
 
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
@@ -61,7 +61,6 @@ async function sendWhatsAppAlert(
     currentPrice: number;
     priceChange: number;
     priceChangePercent: number;
-    unit?: string;
   }
 ): Promise<{ success: boolean; messageSid?: string; error?: string }> {
   
@@ -72,19 +71,17 @@ async function sendWhatsAppAlert(
   }
 
   const formattedPhone = formatPhoneForWhatsApp(phone);
-  const { itemName, marketName, alertType, targetPrice, currentPrice, priceChange, priceChangePercent, unit } = alertData;
+  const { itemName, marketName, alertType, targetPrice, currentPrice, priceChange, priceChangePercent } = alertData;
   
   // Determine emoji and direction
   const emoji = alertType === "ABOVE" ? "📈" : "📉";
   const direction = alertType === "ABOVE" ? "risen above" : "dropped below";
   const changeEmoji = priceChange > 0 ? "🔺" : "🔻";
-  const unitDisplay = unit ? ` (${unit})` : "";
   
   // Create message
   const message = `🔔 *PRICE ALERT TRIGGERED*
 
-${emoji} *${itemName}*${unitDisplay}
-📍 *${marketName}*
+${emoji} *${itemName}* at *${marketName}*
 
 The price has ${direction} your target!
 
@@ -94,11 +91,11 @@ The price has ${direction} your target!
 │ ${changeEmoji} Change: ${formatPrice(Math.abs(priceChange))} (${priceChangePercent > 0 ? "+" : ""}${priceChangePercent.toFixed(1)}%)
 └─────────────────────────
 
-⏰ ${new Date().toLocaleString("en-NG", { timeZone: "Africa/Lagos", dateStyle: "medium", timeStyle: "short" })}
+⏰ Triggered: ${new Date().toLocaleString("en-NG", { timeZone: "Africa/Lagos" })}
 
-📊 View more: naijamarket-web.vercel.app
+📊 View more prices: naijamarket-web.vercel.app
 
-_Reply STOP to disable alerts_`;
+_Reply STOP to disable this alert_`;
 
   try {
     const response = await fetch(
@@ -210,60 +207,18 @@ export async function GET(request: NextRequest) {
       try {
         console.log(`\n🔍 Checking alert ${alert.alert_id}: ${alert.item_name} @ ${alert.market_name}`);
         
-        // Get current price for this item/market from Approved_Prices
-        // Match by item_id + market_id first, fallback to item_name + market_name
-        let currentPriceResult: any[] = [];
-        
-        // Try matching by ID first
-        if (alert.item_id && alert.market_id) {
-          currentPriceResult = await prisma.$queryRaw`
-            SELECT TOP 1
-              price,
-              validated_at,
-              unit,
-              item_name,
-              market_name
-            FROM Approved_Prices
-            WHERE item_id = ${alert.item_id}
-              AND market_id = ${alert.market_id}
-              AND validation_status = 'APPROVED'
-            ORDER BY validated_at DESC
-          ` as any[];
-        }
-        
-        // Fallback to name matching if no results
-        if (currentPriceResult.length === 0 && alert.item_name && alert.market_name) {
-          currentPriceResult = await prisma.$queryRaw`
-            SELECT TOP 1
-              price,
-              validated_at,
-              unit,
-              item_name,
-              market_name
-            FROM Approved_Prices
-            WHERE item_name = ${alert.item_name}
-              AND market_name = ${alert.market_name}
-              AND validation_status = 'APPROVED'
-            ORDER BY validated_at DESC
-          ` as any[];
-        }
-        
-        // Try partial name match as last resort
-        if (currentPriceResult.length === 0 && alert.item_name) {
-          currentPriceResult = await prisma.$queryRaw`
-            SELECT TOP 1
-              price,
-              validated_at,
-              unit,
-              item_name,
-              market_name
-            FROM Approved_Prices
-            WHERE item_name LIKE ${'%' + alert.item_name + '%'}
-              AND market_name LIKE ${'%' + (alert.market_name || '') + '%'}
-              AND validation_status = 'APPROVED'
-            ORDER BY validated_at DESC
-          ` as any[];
-        }
+        // Get current price for this item/market
+        const currentPriceResult = await prisma.$queryRaw`
+          SELECT TOP 1
+            price_naira,
+            validated_at,
+            price_change_pct,
+            previous_price
+          FROM Validated_Prices
+          WHERE item = ${alert.item_name}
+            AND market = ${alert.market_name}
+          ORDER BY validated_at DESC
+        ` as any[];
 
         if (!currentPriceResult || currentPriceResult.length === 0) {
           console.log(`   ⚠️ No price data found for ${alert.item_name} @ ${alert.market_name}`);
@@ -271,8 +226,7 @@ export async function GET(request: NextRequest) {
           continue;
         }
 
-        const priceData = currentPriceResult[0];
-        const currentPrice = parseFloat(priceData.price);
+        const currentPrice = parseFloat(currentPriceResult[0].price_naira);
         const targetPrice = parseFloat(alert.target_price);
         const alertType = alert.alert_type?.toUpperCase();
 
@@ -301,19 +255,13 @@ export async function GET(request: NextRequest) {
         const cooldownTime = new Date();
         cooldownTime.setHours(cooldownTime.getHours() - ALERT_COOLDOWN_HOURS);
 
-        let recentNotification: any[] = [];
-        try {
-          recentNotification = await prisma.$queryRaw`
-            SELECT notification_id, sent_at
-            FROM Alert_Notifications
-            WHERE alert_id = ${alert.alert_id}
-              AND sent_at > ${cooldownTime.toISOString()}
-            ORDER BY sent_at DESC
-          ` as any[];
-        } catch (e) {
-          // Table might not have sent_at column yet
-          console.log("   ⚠️ Cooldown check skipped - column may not exist");
-        }
+        const recentNotification = await prisma.$queryRaw`
+          SELECT notification_id, sent_at
+          FROM Alert_Notifications
+          WHERE alert_id = ${alert.alert_id}
+            AND sent_at > ${cooldownTime.toISOString()}
+          ORDER BY sent_at DESC
+        ` as any[];
 
         if (recentNotification && recentNotification.length > 0) {
           console.log(`   ⏸️ Skipping - notification sent within ${ALERT_COOLDOWN_HOURS}h cooldown`);
@@ -329,14 +277,13 @@ export async function GET(request: NextRequest) {
         const priceChangePercent = (priceChange / targetPrice) * 100;
 
         const sendResult = await sendWhatsAppAlert(alert.phone_number, {
-          itemName: priceData.item_name || alert.item_name || "Item",
-          marketName: priceData.market_name || alert.market_name || "Market",
+          itemName: alert.item_name || "Item",
+          marketName: alert.market_name || "Market",
           alertType: alertType,
           targetPrice: targetPrice,
           currentPrice: currentPrice,
           priceChange: priceChange,
           priceChangePercent: priceChangePercent,
-          unit: priceData.unit,
         });
 
         if (sendResult.success) {
@@ -347,39 +294,36 @@ export async function GET(request: NextRequest) {
           // STEP 5: Log notification
           // ==================================================================
           
+          const notificationId = generateNotificationId();
           const now = new Date().toISOString();
 
-          try {
-            await prisma.$executeRaw`
-              INSERT INTO Alert_Notifications (
-                alert_id,
-                phone_number,
-                item_name,
-                market_name,
-                target_price,
-                triggered_price,
-                alert_type,
-                message_sid,
-                delivery_status,
-                sent_at,
-                created_at
-              ) VALUES (
-                ${alert.alert_id},
-                ${alert.phone_number},
-                ${priceData.item_name || alert.item_name || 'Item'},
-                ${priceData.market_name || alert.market_name || 'Market'},
-                ${targetPrice},
-                ${currentPrice},
-                ${alertType},
-                ${sendResult.messageSid || null},
-                'SENT',
-                ${now},
-                ${now}
-              )
-            `;
-          } catch (logError) {
-            console.log("   ⚠️ Failed to log notification:", logError);
-          }
+          await prisma.$executeRaw`
+            INSERT INTO Alert_Notifications (
+              alert_id,
+              phone_number,
+              item_name,
+              market_name,
+              target_price,
+              triggered_price,
+              alert_type,
+              message_sid,
+              delivery_status,
+              sent_at,
+              created_at
+            ) VALUES (
+              ${alert.alert_id},
+              ${alert.phone_number},
+              ${alert.item_name || 'Item'},
+              ${alert.market_name || 'Market'},
+              ${targetPrice},
+              ${currentPrice},
+              ${alertType},
+              ${sendResult.messageSid || null},
+              'SENT',
+              ${now},
+              ${now}
+            )
+          `;
 
           // ==================================================================
           // STEP 6: Update alert status to TRIGGERED
@@ -446,44 +390,27 @@ export async function POST(request: NextRequest) {
       // Test mode - just check what would trigger
       const alerts = await prisma.$queryRaw`
         SELECT 
-          pa.alert_id,
-          pa.item_id,
-          pa.item_name,
-          pa.market_id,
-          pa.market_name,
-          pa.target_price,
-          pa.alert_type,
-          pa.phone_number,
-          pa.status
+          pa.*,
+          vp.price_naira as current_price,
+          vp.validated_at as price_updated_at
         FROM Price_Alerts pa
+        LEFT JOIN (
+          SELECT item, market, price_naira, validated_at,
+                 ROW_NUMBER() OVER (PARTITION BY item, market ORDER BY validated_at DESC) as rn
+          FROM Validated_Prices
+        ) vp ON pa.item_name = vp.item AND pa.market_name = vp.market AND vp.rn = 1
         WHERE pa.status = 'ACTIVE'
         ${alertId ? prisma.$queryRaw`AND pa.alert_id = ${alertId}` : prisma.$queryRaw``}
       ` as any[];
 
-      const analysis = await Promise.all(alerts.map(async (alert: any) => {
-        // Get current price
-        let priceResult: any[] = [];
-        
-        if (alert.item_name && alert.market_name) {
-          priceResult = await prisma.$queryRaw`
-            SELECT TOP 1 price, unit, validated_at
-            FROM Approved_Prices
-            WHERE item_name = ${alert.item_name}
-              AND market_name = ${alert.market_name}
-              AND validation_status = 'APPROVED'
-            ORDER BY validated_at DESC
-          ` as any[];
-        }
-        
-        const currentPrice = priceResult.length > 0 ? parseFloat(priceResult[0].price) : null;
+      const analysis = alerts.map((alert: any) => {
+        const currentPrice = parseFloat(alert.current_price || 0);
         const targetPrice = parseFloat(alert.target_price || 0);
         const alertType = alert.alert_type?.toUpperCase();
         
         let wouldTrigger = false;
-        if (currentPrice !== null) {
-          if (alertType === "ABOVE" && currentPrice >= targetPrice) wouldTrigger = true;
-          if (alertType === "BELOW" && currentPrice <= targetPrice) wouldTrigger = true;
-        }
+        if (alertType === "ABOVE" && currentPrice >= targetPrice) wouldTrigger = true;
+        if (alertType === "BELOW" && currentPrice <= targetPrice) wouldTrigger = true;
 
         return {
           alert_id: alert.alert_id,
@@ -493,21 +420,17 @@ export async function POST(request: NextRequest) {
           current_price: currentPrice,
           alert_type: alertType,
           would_trigger: wouldTrigger,
-          price_diff: currentPrice !== null ? currentPrice - targetPrice : null,
+          price_diff: currentPrice - targetPrice,
           phone: alert.phone_number?.slice(-4) ? `***${alert.phone_number.slice(-4)}` : 'N/A',
-          has_price_data: currentPrice !== null,
         };
-      }));
+      });
 
       return NextResponse.json({
         success: true,
         testMode: true,
         alerts: analysis,
-        summary: {
-          total: analysis.length,
-          wouldTrigger: analysis.filter((a: any) => a.would_trigger).length,
-          noPriceData: analysis.filter((a: any) => !a.has_price_data).length,
-        }
+        wouldTrigger: analysis.filter((a: any) => a.would_trigger).length,
+        total: analysis.length,
       });
     }
 
