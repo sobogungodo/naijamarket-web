@@ -1,13 +1,12 @@
 // src/app/layout.tsx
-// NaijaMarket Intel - Root Layout with Single Session Support + AI ChatBot
-// Version: 2.1.0 - Added AI ChatBot
-// Date: 2026-02-04
+// NaijaMarket Intel - Root Layout with Single Session Support
+// Version: 2.0.0 - Added SingleSessionProvider
+// Date: 2026-01-31
 //
 // CHANGES FROM PREVIOUS VERSION:
 // - Added SingleSessionProvider for one-browser-at-a-time enforcement
 // - Added SessionExpiredModal to show when user logged out from another device
 // - Added Suspense boundary for client components using useSearchParams
-// - ✅ NEW: Added AI ChatBot component (Claude-powered)
 
 import type { Metadata, Viewport } from "next";
 import { Suspense } from "react";
@@ -20,9 +19,8 @@ import "@/styles/globals.css";
 import { cn } from "@/lib/utils";
 import Providers from "@/components/Providers";
 import { SessionTimeoutProvider } from "@/components/SessionTimeoutProvider";
-import { SingleSessionProvider } from "@/components/SingleSessionProvider";
-import SessionExpiredModal from "@/components/SessionExpiredModal";
-import ChatBot from "@/components/ChatBot"; // ✅ NEW: AI ChatBot
+import { SingleSessionProvider } from "@/components/SingleSessionProvider"; // ✅ NEW
+import SessionExpiredModal from "@/components/SessionExpiredModal"; // ✅ NEW
 
 // ============================================================================
 // FONTS
@@ -177,14 +175,14 @@ export default function RootLayout({
           "selection:bg-naija-green/30 selection:text-naija-green"
         )}
       >
-        {/* ═══════════════════════════════════════════════════════════════════
+        {/* ════════════════════════════════════════════════════════════════════
             PROVIDER HIERARCHY (order matters!)
             1. Providers (NextAuth SessionProvider) - handles JWT tokens
             2. SingleSessionProvider - validates session against database
             3. SessionTimeoutProvider - auto-logout after inactivity
-            ═══════════════════════════════════════════════════════════════════ */}
+            ════════════════════════════════════════════════════════════════════ */}
         <Providers>
-          {/* Single Session Provider - enforces one-browser-at-a-time */}
+          {/* ✅ NEW: Single Session Provider - enforces one-browser-at-a-time */}
           <SingleSessionProvider>
             {/* Session Timeout Provider - Shows warning at 4 min, auto-logout at 5 min */}
             <SessionTimeoutProvider>
@@ -192,13 +190,10 @@ export default function RootLayout({
               {children}
             </SessionTimeoutProvider>
 
-            {/* Modal that shows when user is logged out from another device */}
+            {/* ✅ NEW: Modal that shows when user is logged out from another device */}
             <Suspense fallback={null}>
               <SessionExpiredModal />
             </Suspense>
-
-            {/* ✅ NEW: AI ChatBot - Floating button on all pages */}
-            <ChatBot />
           </SingleSessionProvider>
 
           {/* Toast Notifications */}
