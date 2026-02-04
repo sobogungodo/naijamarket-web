@@ -1,12 +1,11 @@
 // ============================================================================
 // FILE: src/app/api/trader/auth/send-otp/route.ts
 // PURPOSE: Generate and send OTP to trader's WhatsApp
-// FIX: Properly uses Azure SQL, better error handling
+// FIX: Uses fetch instead of twilio SDK - no extra dependencies needed
 // ============================================================================
 
 import { NextRequest, NextResponse } from 'next/server';
 import { PrismaClient } from '@prisma/client';
-import twilio from 'twilio';
 
 const prisma = new PrismaClient();
 
@@ -208,7 +207,6 @@ async function storeOTP(phone: string, otp: string, traderName: string): Promise
     // Log the specific error for debugging
     if (error instanceof Error) {
       console.error('Error message:', error.message);
-      console.error('Error stack:', error.stack);
     }
     
     return false;
@@ -226,8 +224,7 @@ async function sendWhatsAppOTP(phone: string, otp: string, firstName: string): P
       hasSid: !!accountSid,
       hasToken: !!authToken,
       hasFrom: !!fromNumber,
-      sidPrefix: accountSid?.substring(0, 4),
-      fromNumber: fromNumber
+      sidPrefix: accountSid?.substring(0, 4)
     });
     
     if (!accountSid || !authToken || !fromNumber) {
@@ -240,14 +237,12 @@ async function sendWhatsAppOTP(phone: string, otp: string, firstName: string): P
       return false;
     }
     
-    // Initialize Twilio client
-    const client = twilio(accountSid, authToken);
-    
-    // Format recipient number
+    // Format numbers
     const toNumber = `whatsapp:+${phone}`;
+    const from = fromNumber.startsWith('whatsapp:') ? fromNumber : `whatsapp:${fromNumber}`;
     
     // Compose message
-    const message = `🔐 *NaijaMarket Intel*
+    const messageBody = `🔐 *NaijaMarket Intel*
 
 Hi ${firstName}! Your login code is:
 
@@ -259,12 +254,33 @@ If you didn't request this, please ignore.`;
     
     console.log('Sending WhatsApp message to:', toNumber);
     
-    // Send message
-    const result = await client.messages.create({
-      body: message,
-      from: fromNumber.startsWith('whatsapp:') ? fromNumber : `whatsapp:${fromNumber}`,
-      to: toNumber
+    // Use Twilio REST API directly with fetch
+    const twilioUrl = `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`;
+    
+    const response = await fetch(twilioUrl, {
+      method: 'POST',
+      headers: {
+        'Authorization': 'Basic ' + Buffer.from(`${accountSid}:${authToken}`).toString('base64'),
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: new URLSearchParams({
+        To: toNumber,
+        From: from,
+        Body: messageBody,
+      }).toString(),
     });
+    
+    const result = await response.json();
+    
+    if (!response.ok) {
+      console.error('Twilio API error:', {
+        status: response.status,
+        code: result.code,
+        message: result.message,
+        moreInfo: result.more_info
+      });
+      return false;
+    }
     
     console.log('WhatsApp message sent:', {
       sid: result.sid,
@@ -276,14 +292,6 @@ If you didn't request this, please ignore.`;
     
   } catch (error: any) {
     console.error('Twilio send error:', error);
-    
-    // Log specific Twilio error details
-    if (error.code) {
-      console.error('Twilio error code:', error.code);
-      console.error('Twilio error message:', error.message);
-      console.error('Twilio more info:', error.moreInfo);
-    }
-    
     return false;
   }
 }
