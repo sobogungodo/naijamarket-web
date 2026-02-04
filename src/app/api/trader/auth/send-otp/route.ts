@@ -1,7 +1,7 @@
 // ============================================================================
 // FILE: src/app/api/trader/auth/send-otp/route.ts
 // PURPOSE: Generate and send OTP to trader's WhatsApp
-// FIX: Uses fetch instead of twilio SDK - no extra dependencies needed
+// FIX: Auto-creates OTP_Sessions table, detailed error logging
 // ============================================================================
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -9,7 +9,6 @@ import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
-// Force dynamic rendering (required for POST routes)
 export const dynamic = 'force-dynamic';
 
 export async function POST(request: NextRequest) {
@@ -68,9 +67,12 @@ export async function POST(request: NextRequest) {
     
     // 5. Generate 6-digit OTP
     const otp = generateOTP();
-    console.log('Generated OTP (first 2 digits):', otp.substring(0, 2) + '****');
+    console.log('Generated OTP (masked):', otp.substring(0, 2) + '****');
     
-    // 6. Store OTP in database
+    // 6. Ensure OTP_Sessions table exists
+    await ensureOTPTableExists();
+    
+    // 7. Store OTP in database
     console.log('Storing OTP in database...');
     const stored = await storeOTP(normalizedPhone, otp, trader.fullName);
     
@@ -83,7 +85,7 @@ export async function POST(request: NextRequest) {
     }
     console.log('OTP stored successfully');
     
-    // 7. Send OTP via WhatsApp
+    // 8. Send OTP via WhatsApp
     console.log('Sending OTP via WhatsApp...');
     const sent = await sendWhatsAppOTP(normalizedPhone, otp, trader.firstName);
     
@@ -105,11 +107,11 @@ export async function POST(request: NextRequest) {
       success: true,
       message: 'OTP sent to your WhatsApp',
       traderName: trader.firstName,
-      expiresIn: 300 // 5 minutes
+      expiresIn: 300
     });
     
   } catch (error) {
-    console.error('Send OTP error:', error);
+    console.error('Send OTP unexpected error:', error);
     return NextResponse.json(
       { error: 'An unexpected error occurred. Please try again.' },
       { status: 500 }
@@ -129,6 +131,7 @@ async function findTrader(phone: string): Promise<any | null> {
   try {
     console.log('Prisma: Looking up trader with phone:', phone);
     
+    // Try exact match first
     const result = await prisma.$queryRaw<any[]>`
       SELECT 
         trader_id as traderId,
@@ -145,7 +148,7 @@ async function findTrader(phone: string): Promise<any | null> {
     `;
     
     if (result && result.length > 0) {
-      console.log('Prisma: Trader found');
+      console.log('Prisma: Trader found (exact match)');
       return result[0];
     }
     
@@ -180,35 +183,87 @@ async function findTrader(phone: string): Promise<any | null> {
   }
 }
 
+async function ensureOTPTableExists(): Promise<void> {
+  try {
+    // Check if table exists
+    const tableCheck = await prisma.$queryRaw<any[]>`
+      SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = 'OTP_Sessions'
+    `;
+    
+    if (!tableCheck || tableCheck.length === 0) {
+      console.log('OTP_Sessions table does not exist, creating...');
+      
+      // Create the table
+      await prisma.$executeRawUnsafe(`
+        CREATE TABLE OTP_Sessions (
+          id INT IDENTITY(1,1) PRIMARY KEY,
+          phone VARCHAR(20) NOT NULL,
+          otp VARCHAR(10) NOT NULL,
+          expires_at DATETIME2 NOT NULL,
+          trader_name NVARCHAR(100) NULL,
+          created_at DATETIME2 DEFAULT GETUTCDATE(),
+          verified_at DATETIME2 NULL
+        )
+      `);
+      
+      // Create index
+      await prisma.$executeRawUnsafe(`
+        CREATE INDEX IX_OTP_Sessions_Phone ON OTP_Sessions (phone)
+      `);
+      
+      console.log('OTP_Sessions table created successfully');
+    } else {
+      console.log('OTP_Sessions table exists');
+    }
+  } catch (error) {
+    console.error('Error checking/creating OTP_Sessions table:', error);
+    // Don't throw - try to continue anyway
+  }
+}
+
 async function storeOTP(phone: string, otp: string, traderName: string): Promise<boolean> {
   try {
     // Calculate expiry (5 minutes from now)
     const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
     
-    console.log('Storing OTP:', { phone, otp: '******', expiresAt });
+    console.log('Storing OTP:', { 
+      phone, 
+      otp: '******', 
+      expiresAt: expiresAt.toISOString(),
+      traderName 
+    });
     
     // Delete any existing OTPs for this phone
-    await prisma.$executeRaw`
-      DELETE FROM OTP_Sessions WHERE phone = ${phone}
-    `;
+    try {
+      const deleteResult = await prisma.$executeRaw`
+        DELETE FROM OTP_Sessions WHERE phone = ${phone}
+      `;
+      console.log('Deleted existing OTPs:', deleteResult);
+    } catch (deleteError) {
+      console.log('No existing OTPs to delete or delete failed:', deleteError);
+    }
     
-    // Insert new OTP
-    await prisma.$executeRaw`
-      INSERT INTO OTP_Sessions (phone, otp, expires_at, trader_name, created_at)
-      VALUES (${phone}, ${otp}, ${expiresAt}, ${traderName}, GETUTCDATE())
-    `;
+    // Insert new OTP using executeRawUnsafe for better compatibility
+    const insertResult = await prisma.$executeRawUnsafe(
+      `INSERT INTO OTP_Sessions (phone, otp, expires_at, trader_name, created_at)
+       VALUES ('${phone}', '${otp}', '${expiresAt.toISOString()}', '${traderName.replace(/'/g, "''")}', GETUTCDATE())`
+    );
     
+    console.log('OTP insert result:', insertResult);
     console.log('OTP stored in Azure SQL successfully');
     return true;
     
-  } catch (error) {
-    console.error('Prisma storeOTP error:', error);
+  } catch (error: any) {
+    console.error('=== OTP STORE ERROR DETAILS ===');
+    console.error('Error name:', error.name);
+    console.error('Error message:', error.message);
+    console.error('Error code:', error.code);
     
-    // Log the specific error for debugging
-    if (error instanceof Error) {
-      console.error('Error message:', error.message);
+    if (error.meta) {
+      console.error('Error meta:', JSON.stringify(error.meta));
     }
     
+    console.error('Full error:', error);
     return false;
   }
 }
@@ -252,7 +307,7 @@ This code expires in 5 minutes.
 
 If you didn't request this, please ignore.`;
     
-    console.log('Sending WhatsApp message to:', toNumber);
+    console.log('Sending WhatsApp message:', { to: toNumber, from });
     
     // Use Twilio REST API directly with fetch
     const twilioUrl = `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`;
