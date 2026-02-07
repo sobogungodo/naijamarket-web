@@ -1,12 +1,11 @@
 // ============================================================================
 // middleware.ts 
 // NaijaMarket Intel - Route Protection Middleware + Single Session Validation
-// Version: 2.1.0 - Added trader portal exclusion
-// Date: 2026-02-04
+// Version: 2.0.0 - Added single-session enforcement
+// Date: 2026-01-31
 // 
 // CHANGES FROM PREVIOUS VERSION:
-// - v2.1.0: Added /trader/* exclusion (trader portal uses separate JWT auth)
-// - v2.0.0: Added session token validation against database
+// - Added session token validation against database
 // - Redirects to login if user logged in from another device
 // - Caches validation for 5 minutes to reduce database calls
 // 
@@ -47,14 +46,6 @@ const PROTECTED_API_ROUTES = [
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
-
-  // ============================================================================
-  // TRADER PORTAL - Uses separate JWT auth via localStorage
-  // Skip ALL middleware checks for trader routes
-  // ============================================================================
-  if (pathname.startsWith("/trader") || pathname.startsWith("/api/trader")) {
-    return NextResponse.next();
-  }
 
   // Skip middleware for static files and Next.js internals
   if (
