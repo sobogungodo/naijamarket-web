@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { useTraderAuth } from './layout';
+import { useTraderAuth } from '../layout';
 
 interface Category {
   id: string;

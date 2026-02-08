@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useTraderAuth } from './layout';
+import { useTraderAuth } from '../layout';
 
 interface Payout {
   id: string;
