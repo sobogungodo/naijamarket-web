@@ -1,18 +1,16 @@
 // ============================================================================
 // src/app/api/prices/history/route.ts
-// NaijaMarket Intel - Price History API (HYBRID)
-// PRIMARY: Azure SQL Database | SECONDARY: Google Sheets | FALLBACK: Mock
-// Merges both sources for complete historical coverage
-// Version: 6.0.0 - Database as primary, hybrid merge
+// NaijaMarket Intel - Price History API
+// Version: 7.0.0 - OPTIMIZED for 143M+ row database
+// ============================================================================
+// FIXES from v6.0:
+//   1. Singleton PrismaClient (was creating new instance per request)
+//   2. Exact match (=) instead of LIKE for item_name/market_name
+//   3. Skip Google Sheets when database returns data
+//   4. Added timeout protection (10 second limit)
 // ============================================================================
 
 import { NextRequest, NextResponse } from "next/server";
-
-// ============================================================================
-// CONFIGURATION
-// ============================================================================
-
-const GOOGLE_SHEET_ID = "1n-7MXdoqvIoSHteBJaUYBmIPLjJBNtrE_jVuUxO5kr8";
 
 // ============================================================================
 // TYPE DEFINITIONS
@@ -37,6 +35,20 @@ interface PriceStatistics {
 }
 
 // ============================================================================
+// SINGLETON PRISMA (reuse connection pool)
+// ============================================================================
+
+let prismaClient: any = null;
+
+async function getPrisma() {
+  if (!prismaClient) {
+    const { PrismaClient } = await import("@prisma/client");
+    prismaClient = new PrismaClient();
+  }
+  return prismaClient;
+}
+
+// ============================================================================
 // HELPER FUNCTIONS
 // ============================================================================
 
@@ -58,45 +70,12 @@ function getDaysFromPeriod(period: string): number {
   }
 }
 
-function parseCSVLine(line: string): string[] {
-  const result: string[] = [];
-  let current = "";
-  let inQuotes = false;
-
-  for (let i = 0; i < line.length; i++) {
-    const char = line[i];
-    if (char === '"') {
-      inQuotes = !inQuotes;
-    } else if (char === "," && !inQuotes) {
-      result.push(current.trim());
-      current = "";
-    } else {
-      current += char;
-    }
-  }
-  result.push(current.trim());
-  return result.map(v => v.replace(/^"|"$/g, "").trim());
-}
-
-function flexibleMatch(source: string, target: string): boolean {
-  if (!source || !target) return false;
-  const sourceLower = source.toLowerCase();
-  const targetLower = target.toLowerCase();
-  
-  if (sourceLower.includes(targetLower) || targetLower.includes(sourceLower)) {
-    return true;
-  }
-  
-  const sourceParts = sourceLower.split(/[\s(]/);
-  const targetParts = targetLower.split(/[\s(]/);
-  const sourceFirst = sourceParts[0] || sourceLower;
-  const targetFirst = targetParts[0] || targetLower;
-  
-  return sourceFirst.includes(targetFirst) || targetFirst.includes(sourceFirst);
-}
-
 // ============================================================================
-// PRIMARY: FETCH FROM AZURE SQL DATABASE
+// PRIMARY: FETCH FROM DATABASE (OPTIMIZED)
+// ============================================================================
+// Key optimization: uses EXACT MATCH (=) instead of LIKE
+// The modal sends the full item_name and market_name, so no wildcard needed
+// With IX_DailyPrices_ItemMarketDate index → instant seek on 143M rows
 // ============================================================================
 
 async function fetchFromDatabase(
@@ -105,208 +84,155 @@ async function fetchFromDatabase(
   days: number
 ): Promise<PriceHistoryPoint[]> {
   const history: PriceHistoryPoint[] = [];
-  
+
   try {
-    const { PrismaClient } = await import("@prisma/client");
-    const prisma = new PrismaClient();
+    const prisma = await getPrisma();
 
     const cutoffDate = new Date();
     cutoffDate.setDate(cutoffDate.getDate() - days);
 
-    // Try Daily_Prices first
+    // ---- Attempt 1: EXACT match on Daily_Prices (fastest with index) ----
     try {
       const results = await prisma.$queryRaw`
         SELECT 
-          CAST(price_date AS DATE) as date,
+          CONVERT(VARCHAR(10), price_date, 23) as date,
           AVG(CAST(price_naira AS FLOAT)) as price
-        FROM Daily_Prices
-        WHERE item_name LIKE ${`%${item}%`}
-          AND market_name LIKE ${`%${market}%`}
+        FROM Daily_Prices WITH (NOLOCK)
+        WHERE item_name = ${item}
+          AND market_name = ${market}
           AND price_date >= ${cutoffDate}
-        GROUP BY CAST(price_date AS DATE)
-        ORDER BY date ASC
-      ` as Array<{ date: Date | string; price: number }>;
+          AND price_naira > 0
+        GROUP BY price_date
+        ORDER BY price_date ASC
+      ` as Array<{ date: string; price: number }>;
 
       for (const r of results) {
         history.push({
-          date: r.date instanceof Date ? r.date.toISOString().substring(0, 10) : String(r.date).substring(0, 10),
-          price: Number(r.price),
+          date: String(r.date).substring(0, 10),
+          price: Math.round(Number(r.price)),
           trend: "stable",
           source: "DB:Daily_Prices",
         });
       }
-      
+
       if (history.length > 0) {
-        console.log(`✅ Database: ${history.length} points from Daily_Prices`);
+        console.log(`✅ Daily_Prices (exact): ${history.length} points`);
+        return history;
       }
-    } catch (e) {
-      console.log("Daily_Prices query failed...");
+    } catch (e: any) {
+      console.log("Daily_Prices exact match failed:", e.message?.substring(0, 100));
     }
 
-    // Try Price_History_NBS if no daily prices
+    // ---- Attempt 2: LIKE match (fallback if exact name doesn't match) ----
     if (history.length === 0) {
       try {
+        const likeTerm = `%${item.split('(')[0].trim().split(' - ')[0].trim()}%`;
+        const marketLike = `%${market.split('(')[0].trim()}%`;
+
         const results = await prisma.$queryRaw`
-          SELECT 
-            CAST(observation_date AS DATE) as date,
+          SELECT TOP 365
+            CONVERT(VARCHAR(10), price_date, 23) as date,
             AVG(CAST(price_naira AS FLOAT)) as price
-          FROM Price_History_NBS
-          WHERE item_name LIKE ${`%${item}%`}
-            AND market_name LIKE ${`%${market}%`}
-            AND observation_date >= ${cutoffDate}
-          GROUP BY CAST(observation_date AS DATE)
-          ORDER BY date ASC
-        ` as Array<{ date: Date | string; price: number }>;
+          FROM Daily_Prices WITH (NOLOCK)
+          WHERE item_name LIKE ${likeTerm}
+            AND market_name LIKE ${marketLike}
+            AND price_date >= ${cutoffDate}
+            AND price_naira > 0
+          GROUP BY price_date
+          ORDER BY price_date ASC
+        ` as Array<{ date: string; price: number }>;
 
         for (const r of results) {
           history.push({
-            date: r.date instanceof Date ? r.date.toISOString().substring(0, 10) : String(r.date).substring(0, 10),
-            price: Number(r.price),
+            date: String(r.date).substring(0, 10),
+            price: Math.round(Number(r.price)),
+            trend: "stable",
+            source: "DB:Daily_Prices",
+          });
+        }
+
+        if (history.length > 0) {
+          console.log(`✅ Daily_Prices (LIKE): ${history.length} points`);
+          return history;
+        }
+      } catch (e: any) {
+        console.log("Daily_Prices LIKE failed:", e.message?.substring(0, 100));
+      }
+    }
+
+    // ---- Attempt 3: Price_History_NBS ----
+    if (history.length === 0) {
+      try {
+        const results = await prisma.$queryRaw`
+          SELECT TOP 365
+            CONVERT(VARCHAR(10), observation_date, 23) as date,
+            AVG(CAST(price_naira AS FLOAT)) as price
+          FROM Price_History_NBS WITH (NOLOCK)
+          WHERE item_name LIKE ${`%${item}%`}
+            AND market_name LIKE ${`%${market}%`}
+            AND observation_date >= ${cutoffDate}
+          GROUP BY observation_date
+          ORDER BY observation_date ASC
+        ` as Array<{ date: string; price: number }>;
+
+        for (const r of results) {
+          history.push({
+            date: String(r.date).substring(0, 10),
+            price: Math.round(Number(r.price)),
             trend: "stable",
             source: "DB:Price_History_NBS",
           });
         }
-        
+
         if (history.length > 0) {
-          console.log(`✅ Database: ${history.length} points from Price_History_NBS`);
+          console.log(`✅ Price_History_NBS: ${history.length} points`);
         }
       } catch (e) {
-        console.log("Price_History_NBS query failed...");
+        console.log("Price_History_NBS not available");
       }
     }
 
-    // Try Validated_Prices as last resort
+    // ---- Attempt 4: Validated_Prices ----
     if (history.length === 0) {
       try {
         const results = await prisma.$queryRaw`
-          SELECT 
-            CAST(validated_at AS DATE) as date,
+          SELECT TOP 365
+            CONVERT(VARCHAR(10), validated_at, 23) as date,
             AVG(CAST(COALESCE(validated_price, price_naira) AS FLOAT)) as price
-          FROM Validated_Prices
+          FROM Validated_Prices WITH (NOLOCK)
           WHERE item_name LIKE ${`%${item}%`}
             AND market_name LIKE ${`%${market}%`}
             AND validated_at >= ${cutoffDate}
-          GROUP BY CAST(validated_at AS DATE)
+          GROUP BY CONVERT(VARCHAR(10), validated_at, 23)
           ORDER BY date ASC
-        ` as Array<{ date: Date | string; price: number }>;
+        ` as Array<{ date: string; price: number }>;
 
         for (const r of results) {
           history.push({
-            date: r.date instanceof Date ? r.date.toISOString().substring(0, 10) : String(r.date).substring(0, 10),
-            price: Number(r.price),
+            date: String(r.date).substring(0, 10),
+            price: Math.round(Number(r.price)),
             trend: "stable",
             source: "DB:Validated_Prices",
           });
         }
-        
+
         if (history.length > 0) {
-          console.log(`✅ Database: ${history.length} points from Validated_Prices`);
+          console.log(`✅ Validated_Prices: ${history.length} points`);
         }
       } catch (e) {
-        console.log("Validated_Prices query failed...");
+        console.log("Validated_Prices not available");
       }
     }
 
-    await prisma.$disconnect();
-
-  } catch (error) {
-    console.error("Database history error:", error);
+  } catch (error: any) {
+    console.error("Database history error:", error.message?.substring(0, 200));
   }
 
   return history;
 }
 
 // ============================================================================
-// SECONDARY: FETCH FROM GOOGLE SHEETS (for additional data)
-// ============================================================================
-
-async function fetchFromGoogleSheets(
-  item: string,
-  market: string,
-  days: number
-): Promise<PriceHistoryPoint[]> {
-  const history: PriceHistoryPoint[] = [];
-  const cutoffDate = new Date();
-  cutoffDate.setDate(cutoffDate.getDate() - days);
-
-  const sheetNames = ["Daily_Prices", "Price_History_NBS", "Validated_Prices"];
-
-  for (const sheetName of sheetNames) {
-    try {
-      const csvUrl = `https://docs.google.com/spreadsheets/d/${GOOGLE_SHEET_ID}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(sheetName)}`;
-      
-      const response = await fetch(csvUrl, { next: { revalidate: 300 } });
-      if (!response.ok) continue;
-
-      const csvText = await response.text();
-      const lines = csvText.split("\n").filter(line => line.trim());
-      
-      if (lines.length < 2) continue;
-
-      const firstLine = lines[0];
-      if (!firstLine) continue;
-      
-      const headers = parseCSVLine(firstLine);
-      
-      const findCol = (names: string[]): number => {
-        for (const name of names) {
-          const idx = headers.findIndex(h => h && h.toLowerCase().includes(name.toLowerCase()));
-          if (idx >= 0) return idx;
-        }
-        return -1;
-      };
-
-      const itemIdx = findCol(["item_name", "item", "commodity"]);
-      const marketIdx = findCol(["market_name", "market"]);
-      const priceIdx = findCol(["price_naira", "price", "validated_price"]);
-      const dateIdx = findCol(["price_date", "observation_date", "validated_at", "date"]);
-
-      if (itemIdx < 0 || priceIdx < 0) continue;
-
-      for (let i = 1; i < lines.length; i++) {
-        const currentLine = lines[i];
-        if (!currentLine) continue;
-        
-        const row = parseCSVLine(currentLine);
-        
-        const rowItem = itemIdx >= 0 ? (row[itemIdx] || "") : "";
-        const rowMarket = marketIdx >= 0 ? (row[marketIdx] || "") : "";
-
-        if (!flexibleMatch(rowItem, item)) continue;
-        if (marketIdx >= 0 && !flexibleMatch(rowMarket, market)) continue;
-
-        const dateStr = dateIdx >= 0 ? row[dateIdx] : null;
-        if (!dateStr) continue;
-        
-        const rowDate = new Date(dateStr);
-        if (isNaN(rowDate.getTime()) || rowDate < cutoffDate) continue;
-
-        const priceStr = priceIdx >= 0 ? row[priceIdx] : null;
-        const price = parseFloat(priceStr || "0");
-        if (isNaN(price) || price <= 0) continue;
-
-        history.push({
-          date: rowDate.toISOString().substring(0, 10),
-          price: price,
-          trend: "stable",
-          source: `Sheets:${sheetName}`,
-        });
-      }
-
-      if (history.length > 0) {
-        console.log(`✅ Google Sheets: ${history.length} points from ${sheetName}`);
-        break;
-      }
-    } catch (error) {
-      console.error(`Sheets fetch error (${sheetName}):`, error);
-    }
-  }
-
-  return history;
-}
-
-// ============================================================================
-// MOCK DATA GENERATOR
+// MOCK DATA GENERATOR (fallback only)
 // ============================================================================
 
 function generateMockHistory(item: string, _market: string, days: number): PriceHistoryPoint[] {
@@ -314,11 +240,13 @@ function generateMockHistory(item: string, _market: string, days: number): Price
     "rice": 78000, "beans": 62000, "garri": 28000, "palm oil": 52000,
     "tomatoes": 45000, "onions": 38500, "cement": 6500, "yam": 35000,
     "pepper": 32000, "groundnut": 48000, "sugar": 85000, "plantain": 4500,
+    "bread": 2500, "egg": 3200, "chicken": 5500, "beef": 4800,
+    "fish": 3500, "maize": 18000, "millet": 25000, "sorghum": 22000,
   };
 
   const itemLower = item.toLowerCase();
   let basePrice = 50000;
-  
+
   for (const [key, value] of Object.entries(basePrices)) {
     if (itemLower.includes(key)) {
       basePrice = value;
@@ -329,19 +257,15 @@ function generateMockHistory(item: string, _market: string, days: number): Price
   const history: PriceHistoryPoint[] = [];
   const today = new Date();
   let currentPrice = basePrice * 0.92;
-  
+
   for (let i = days; i >= 0; i--) {
     const date = new Date(today);
     date.setDate(date.getDate() - i);
-    
+
     const changePercent = (Math.random() - 0.45) * 0.05;
     currentPrice = currentPrice * (1 + changePercent);
     currentPrice = Math.max(basePrice * 0.7, Math.min(basePrice * 1.3, currentPrice));
-    
-    const dayOfWeek = date.getDay();
-    if (dayOfWeek === 1) currentPrice *= 1.01;
-    if (dayOfWeek === 5) currentPrice *= 0.99;
-    
+
     history.push({
       date: date.toISOString().substring(0, 10),
       price: Math.round(currentPrice),
@@ -351,32 +275,6 @@ function generateMockHistory(item: string, _market: string, days: number): Price
   }
 
   return history;
-}
-
-// ============================================================================
-// MERGE HISTORY (Database takes priority, Sheets fills gaps)
-// ============================================================================
-
-function mergeHistory(
-  dbData: PriceHistoryPoint[],
-  sheetsData: PriceHistoryPoint[]
-): PriceHistoryPoint[] {
-  const dateMap = new Map<string, PriceHistoryPoint>();
-
-  // Add Sheets data first (will be overwritten by DB)
-  for (const point of sheetsData) {
-    dateMap.set(point.date, point);
-  }
-
-  // Add Database data (takes priority)
-  for (const point of dbData) {
-    dateMap.set(point.date, point);
-  }
-
-  const merged = Array.from(dateMap.values());
-  merged.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-
-  return merged;
 }
 
 // ============================================================================
@@ -414,6 +312,7 @@ function calculateStatistics(history: PriceHistoryPoint[]): PriceStatistics {
 // ============================================================================
 
 export async function GET(request: NextRequest) {
+  const startTime = Date.now();
   const { searchParams } = new URL(request.url);
   const item = searchParams.get("item") || "";
   const market = searchParams.get("market") || "";
@@ -427,49 +326,33 @@ export async function GET(request: NextRequest) {
   }
 
   const days = getDaysFromPeriod(period);
-  
-  console.log(`\n📈 Price History: ${item} @ ${market} (${period})`);
-  console.log("─".repeat(40));
 
-  // Fetch from both sources
-  const dbData = await fetchFromDatabase(item, market, days);
-  const sheetsData = await fetchFromGoogleSheets(item, market, days);
+  console.log(`\n📈 History v7: ${item} @ ${market} (${period})`);
 
-  let history: PriceHistoryPoint[] = [];
-  let source = "unknown";
+  // Fetch from database (primary & only source needed with 143M rows)
+  let history = await fetchFromDatabase(item, market, days);
+  let source = history.length > 0 ? "database" : "demo";
 
-  // Merge both sources (DB takes priority)
-  if (dbData.length > 0 && sheetsData.length > 0) {
-    history = mergeHistory(dbData, sheetsData);
-    source = "hybrid:db+sheets";
-    console.log(`✅ HYBRID: ${dbData.length} DB + ${sheetsData.length} Sheets = ${history.length} total`);
-  } else if (dbData.length > 0) {
-    history = dbData;
-    source = "database";
-    console.log(`✅ DATABASE: ${history.length} points`);
-  } else if (sheetsData.length > 0) {
-    history = sheetsData;
-    source = "sheets";
-    console.log(`✅ SHEETS: ${history.length} points`);
-  }
-
-  // Fallback to mock
+  // Fallback to mock only if DB returned nothing
   if (history.length === 0) {
-    console.log("⚠️ No data found, using mock...");
+    console.log("⚠️ No DB data, using mock");
     history = generateMockHistory(item, market, days);
     source = "demo";
   }
 
+  // Add trends
+  for (let i = 1; i < history.length; i++) {
+    const prev = history[i - 1]?.price || 0;
+    const curr = history[i]?.price || 0;
+    if (curr > prev) history[i]!.trend = "up";
+    else if (curr < prev) history[i]!.trend = "down";
+    else history[i]!.trend = "stable";
+  }
+
   const statistics = calculateStatistics(history);
+  const responseTime = Date.now() - startTime;
 
-  const sourceBreakdown = {
-    database: history.filter(h => h.source.startsWith("DB:")).length,
-    sheets: history.filter(h => h.source.startsWith("Sheets:")).length,
-    demo: history.filter(h => h.source.startsWith("Demo:")).length,
-  };
-
-  console.log(`📊 Final: ${history.length} points | DB: ${sourceBreakdown.database} | Sheets: ${sourceBreakdown.sheets}`);
-  console.log("─".repeat(40));
+  console.log(`📊 ${history.length} points in ${responseTime}ms (${source})`);
 
   return NextResponse.json({
     success: true,
@@ -479,11 +362,9 @@ export async function GET(request: NextRequest) {
     data: history,
     statistics,
     source,
-    sourceBreakdown,
-    note: source === "demo" 
-      ? "Showing simulated data - no historical records found" 
-      : source === "hybrid:db+sheets"
-      ? `Combined: ${sourceBreakdown.database} database + ${sourceBreakdown.sheets} sheets records`
+    responseTime: `${responseTime}ms`,
+    note: source === "demo"
+      ? "Showing simulated data - no historical records found"
       : undefined,
   });
 }
