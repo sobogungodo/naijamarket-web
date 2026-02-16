@@ -589,44 +589,30 @@ export default function PricesPage() {
       {!loading && !error && (
         <div className="bg-terminal-surface border border-terminal-border rounded-xl overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="w-full" style={{ tableLayout: "fixed" }}>
-              <colgroup>
-                <col style={{ width: "36px" }} />       {/* Star */}
-                <col style={{ width: "18%" }} />         {/* Item */}
-                <col style={{ width: "10%" }} />         {/* Category */}
-                <col style={{ width: "15%" }} />         {/* Market */}
-                <col style={{ width: "7%" }} />          {/* State */}
-                <col style={{ width: "12%" }} />         {/* Price */}
-                <col style={{ width: "10%" }} />         {/* Change */}
-                <col style={{ width: "9%" }} />          {/* 24H Range */}
-                <col style={{ width: "11%" }} />         {/* Confidence */}
-                <col style={{ width: "10%" }} />         {/* Updated */}
-                <col style={{ width: "56px" }} />        {/* Actions */}
-              </colgroup>
+            <table className="price-table">
               <thead>
-                <tr className="border-b border-terminal-border">
-                  <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"></th>
-                  <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Item</th>
-                  <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Category</th>
-                  <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Market</th>
-                  <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">State</th>
-                  <th className="px-3 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Price (₦)</th>
-                  <th className="px-3 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Change</th>
-                  <th className="px-3 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">24H Range</th>
-                  <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Confidence</th>
-                  <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Updated</th>
-                  <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"></th>
+                <tr>
+                  <th className="w-10"></th>
+                  <th>ITEM</th>
+                  <th>CATEGORY</th>
+                  <th>MARKET</th>
+                  <th>STATE</th>
+                  <th className="numeric">PRICE (₦)</th>
+                  <th className="numeric">CHANGE</th>
+                  <th className="numeric">24H RANGE</th>
+                  <th>CONFIDENCE</th>
+                  <th>UPDATED</th>
+                  <th className="w-20"></th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-terminal-border/50">
+              <tbody>
                 {prices.map((item) => (
                   <tr 
                     key={item.id} 
-                    className="group cursor-pointer hover:bg-terminal-muted/40 transition-colors"
+                    className="group cursor-pointer"
                     onClick={() => handleRowClick(item)}
                   >
-                    {/* Star */}
-                    <td className="px-2 py-3">
+                    <td>
                       <button 
                         className="opacity-0 group-hover:opacity-100 text-gray-500 hover:text-naija-gold transition-all"
                         onClick={(e) => e.stopPropagation()}
@@ -634,79 +620,53 @@ export default function PricesPage() {
                         <Star className="w-4 h-4" />
                       </button>
                     </td>
-
-                    {/* Item Name */}
-                    <td className="px-3 py-3">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <div className="shrink-0 p-1.5 bg-emerald-500/10 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity">
+                    <td>
+                      <div className="flex items-center gap-2">
+                        <div className="p-1.5 bg-emerald-500/10 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity">
                           <BarChart3 className="w-3.5 h-3.5 text-emerald-400" />
                         </div>
-                        <div className="min-w-0">
-                          <div className="font-medium text-sm text-white group-hover:text-naija-green transition-colors truncate" title={item.item_name}>
+                        <div>
+                          <div className="font-medium text-white group-hover:text-naija-green transition-colors">
                             {item.item_name}
                           </div>
                           {item.item_variant && (
-                            <div className="text-xs text-gray-500 truncate">{item.item_variant}</div>
+                            <div className="text-2xs text-gray-500">{item.item_variant}</div>
                           )}
                         </div>
                       </div>
                     </td>
-
-                    {/* Category */}
-                    <td className="px-3 py-3">
-                      <span className="inline-block px-2 py-0.5 bg-terminal-muted text-gray-400 text-xs rounded truncate max-w-full" title={item.category}>
+                    <td>
+                      <span className="px-2 py-0.5 bg-terminal-muted text-gray-400 text-2xs rounded">
                         {item.category}
                       </span>
                     </td>
-
-                    {/* Market */}
-                    <td className="px-3 py-3">
-                      <span className="text-sm text-gray-400 block truncate" title={item.market_name}>
-                        {item.market_name}
-                      </span>
+                    <td className="text-gray-400">{item.market_name}</td>
+                    <td className="text-gray-500 text-xs">{item.state}</td>
+                    <td className="numeric font-mono text-white text-lg">
+                      {item.price_naira.toLocaleString()}
                     </td>
-
-                    {/* State */}
-                    <td className="px-3 py-3">
-                      <span className="text-xs text-gray-500">{item.state}</span>
-                    </td>
-
-                    {/* Price */}
-                    <td className="px-3 py-3 text-right">
-                      <span className="font-mono text-white text-base font-semibold">
-                        {item.price_naira.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                      </span>
-                    </td>
-
-                    {/* Change */}
-                    <td className="px-3 py-3 text-right">
-                      <div className={`flex items-center justify-end gap-1 text-sm ${
+                    <td className="numeric">
+                      <div className={`flex items-center justify-end gap-1 ${
                         item.change_percent > 0 ? "text-price-up" : 
                         item.change_percent < 0 ? "text-price-down" : "text-gray-500"
                       }`}>
-                        {item.change_percent > 0 ? <TrendingUp className="w-3 h-3 shrink-0" /> : 
-                         item.change_percent < 0 ? <TrendingDown className="w-3 h-3 shrink-0" /> : 
-                         <Minus className="w-3 h-3 shrink-0" />}
-                        <span className="font-mono">{item.change_percent >= 0 ? "+" : ""}{item.change_percent.toFixed(2)}%</span>
+                        {item.change_percent > 0 ? <TrendingUp className="w-3 h-3" /> : 
+                         item.change_percent < 0 ? <TrendingDown className="w-3 h-3" /> : 
+                         <Minus className="w-3 h-3" />}
+                        <span>{item.change_percent >= 0 ? "+" : ""}{item.change_percent.toFixed(2)}%</span>
                       </div>
-                      <div className="text-xs text-gray-500 text-right mt-0.5 font-mono">
+                      <div className="text-2xs text-gray-500 text-right mt-0.5">
                         {item.change_amount >= 0 ? "+" : ""}₦{Math.abs(item.change_amount).toLocaleString()}
                       </div>
                     </td>
-
-                    {/* 24H Range */}
-                    <td className="px-3 py-3 text-right">
-                      <div className="font-mono text-xs text-gray-400 leading-relaxed">
-                        <span>{item.low_24h.toLocaleString()}</span>
-                        <span className="text-gray-600 mx-1">–</span>
-                        <span>{item.high_24h.toLocaleString()}</span>
-                      </div>
+                    <td className="numeric text-gray-400 font-mono text-xs">
+                      <div>{item.low_24h.toLocaleString()}</div>
+                      <div className="text-gray-600">to</div>
+                      <div>{item.high_24h.toLocaleString()}</div>
                     </td>
-
-                    {/* Confidence */}
-                    <td className="px-3 py-3">
+                    <td>
                       <div className="flex items-center gap-2">
-                        <div className="flex-1 h-2 bg-terminal-muted rounded-full overflow-hidden max-w-[80px]">
+                        <div className="w-20 h-2 bg-terminal-muted rounded-full overflow-hidden">
                           <div 
                             className={`h-full rounded-full transition-all ${
                               item.confidence >= 85 ? "bg-price-up" : 
@@ -716,21 +676,17 @@ export default function PricesPage() {
                             style={{ width: `${item.confidence}%` }}
                           />
                         </div>
-                        <span className="text-xs text-gray-500 tabular-nums">{item.confidence}%</span>
+                        <span className="text-2xs text-gray-500 w-8">{item.confidence}%</span>
                       </div>
-                      <div className="text-xs text-gray-600 mt-0.5">
+                      <div className="text-2xs text-gray-600 mt-0.5">
                         {item.validators} validators
                       </div>
                     </td>
-
-                    {/* Updated */}
-                    <td className="px-3 py-3">
-                      <div className="text-xs text-gray-500">{formatTimeAgo(item.updated_at)}</div>
-                      <div className="text-xs text-gray-600">{item.source.replace(/_/g, " ")}</div>
+                    <td className="text-gray-500 text-xs">
+                      <div>{formatTimeAgo(item.updated_at)}</div>
+                      <div className="text-gray-600">{item.source.replace(/_/g, " ")}</div>
                     </td>
-
-                    {/* Actions */}
-                    <td className="px-2 py-3">
+                    <td>
                       <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all">
                         <button 
                           className="p-1 text-gray-500 hover:text-naija-green transition-colors" 
