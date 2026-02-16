@@ -1,148 +1,83 @@
+// ============================================================================
 // src/app/api/items/route.ts
 // NaijaMarket Intel - Items Catalog API
-// FIXED: Correct column names matching Prisma schema exactly
+// Version: 2.0 - Uses $queryRaw for SQL Server (no mode: "insensitive")
+// ============================================================================
 
 import { NextRequest, NextResponse } from "next/server";
-import { PrismaClient } from "@prisma/client";
 
-const prisma = new PrismaClient();
+// Singleton Prisma
+let prismaClient: any = null;
+async function getPrisma() {
+  if (!prismaClient) {
+    const { PrismaClient } = await import("@prisma/client");
+    prismaClient = new PrismaClient();
+  }
+  return prismaClient;
+}
 
-// GET - List items with filters
+const CATEGORY_MAP: Record<string, string> = {
+  "1": "Grains & Cereals", "2": "Tubers", "3": "Vegetables", "4": "Fruits",
+  "5": "Oils & Fats", "6": "Protein", "7": "Dairy", "8": "Sweeteners",
+  "9": "Beverages", "10": "Building Materials", "11": "Livestock",
+  "12": "Fish & Seafood", "13": "Condiments", "14": "Processed Foods",
+};
+
 export async function GET(request: NextRequest) {
   try {
+    const prisma = await getPrisma();
     const { searchParams } = new URL(request.url);
-    
-    // Support multiple parameter names for flexibility
-    const categoryId = searchParams.get("category_id") || searchParams.get("category");
-    const search = searchParams.get("search") || searchParams.get("q");
-    const limit = parseInt(searchParams.get("limit") || "100");
-    const offset = parseInt(searchParams.get("offset") || "0");
 
-    // Build where clause
-    const where: any = {
-      status: "ACTIVE", // Only active items
-    };
+    const search = searchParams.get("search") || searchParams.get("q") || "";
+    const categoryId = searchParams.get("category_id") || searchParams.get("category") || "";
+    const limit = Math.min(parseInt(searchParams.get("limit") || "100"), 500);
 
-    // Filter by category_id (exact match)
-    if (categoryId) {
-      where.category_id = categoryId;
-    }
+    const searchLike = `%${search}%`;
 
-    // Search by item name (contains)
-    if (search) {
-      where.item_name = {
-        contains: search,
-      };
-    }
+    const items = await prisma.$queryRaw`
+      SELECT TOP ${limit}
+        item_id,
+        item_name,
+        category_id,
+        Unit as unit,
+        whole_sale_Price as wholesale_price,
+        Average_Unit_Price as avg_price,
+        min_price,
+        max_price,
+        status
+      FROM Items_Catalog
+      WHERE 1=1
+        AND (${search} = '' OR item_name LIKE ${searchLike})
+        AND (${categoryId} = '' OR CAST(category_id AS VARCHAR(20)) = ${categoryId})
+      ORDER BY item_name ASC
+    ` as any[];
 
-    // Get items from database
-    const items = await prisma.items_Catalog.findMany({
-      where,
-      take: Math.min(limit, 500),
-      skip: offset,
-      orderBy: { item_name: "asc" },
-    });
-
-    // Get total count for pagination
-    const total = await prisma.items_Catalog.count({ where });
-
-    // Format response - USE EXACT COLUMN NAMES FROM PRISMA SCHEMA
-    const formattedItems = items.map((item: any) => ({
+    const formatted = items.map((item: any) => ({
       item_id: item.item_id,
       item_name: item.item_name,
-      category_id: item.category_id,
-      unit: item.Unit,                          // Schema has capital U
-      measurement: item.measurement,
-      wholesale_price: item.whole_sale_Price,   // Schema has capital P
-      avg_measurement_price: item.Ave_Measurement_Price,
-      average_unit_price: item.Average_Unit_Price,
-      min_price: item.min_price,
-      max_price: item.max_price,
-      max_wholesale_price: item.Max_whole_sale_Price,
-      status: item.status,
+      category_id: String(item.category_id || ""),
+      category_name: CATEGORY_MAP[String(item.category_id || "")] || "General",
+      unit: item.unit || "",
+      wholesale_price: parseFloat(item.wholesale_price) || 0,
+      avg_price: parseFloat(item.avg_price) || 0,
+      min_price: parseFloat(item.min_price) || 0,
+      max_price: parseFloat(item.max_price) || 0,
+      status: item.status || "ACTIVE",
     }));
 
     return NextResponse.json({
       success: true,
-      data: formattedItems,
-      count: formattedItems.length,
-      pagination: {
-        total,
-        limit,
-        offset,
-        hasMore: offset + items.length < total,
-      },
+      data: formatted,
+      count: formatted.length,
     });
-  } catch (error) {
+
+  } catch (error: any) {
     console.error("Items API Error:", error);
-    
-    // Return detailed error in development
-    const errorMessage = error instanceof Error ? error.message : "Unknown error";
-    
     return NextResponse.json(
-      { 
-        success: false, 
-        error: "Failed to fetch items",
-        details: process.env.NODE_ENV === "development" ? errorMessage : undefined,
-      },
+      { success: false, error: error.message?.substring(0, 200), data: [] },
       { status: 500 }
     );
   }
 }
 
-// POST - Get single item details
-export async function POST(request: NextRequest) {
-  try {
-    const body = await request.json();
-    const { item_id, item_name } = body;
-
-    let item;
-
-    if (item_id) {
-      item = await prisma.items_Catalog.findFirst({
-        where: { item_id },
-      });
-    } else if (item_name) {
-      item = await prisma.items_Catalog.findFirst({
-        where: { 
-          item_name: { 
-            contains: item_name,
-          } 
-        },
-      });
-    }
-
-    if (!item) {
-      return NextResponse.json(
-        { success: false, error: "Item not found" },
-        { status: 404 }
-      );
-    }
-
-    // Return with correct column mapping
-    return NextResponse.json({
-      success: true,
-      data: {
-        item_id: item.item_id,
-        item_name: item.item_name,
-        category_id: item.category_id,
-        unit: item.Unit,
-        measurement: item.measurement,
-        wholesale_price: item.whole_sale_Price,
-        avg_measurement_price: item.Ave_Measurement_Price,
-        average_unit_price: item.Average_Unit_Price,
-        min_price: item.min_price,
-        max_price: item.max_price,
-        max_wholesale_price: item.Max_whole_sale_Price,
-        status: item.status,
-        created_at: item.created_at,
-      },
-    });
-  } catch (error) {
-    console.error("Item Detail Error:", error);
-    return NextResponse.json(
-      { success: false, error: "Failed to fetch item details" },
-      { status: 500 }
-    );
-  }
-}
+export const dynamic = "force-dynamic";
