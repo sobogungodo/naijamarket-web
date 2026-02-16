@@ -39,7 +39,6 @@ interface FilterOptions {
   categories: string[];
   states: string[];
   markets: string[];
-  stateMarkets: Record<string, string[]>;
 }
 
 // Category ID → Name mapping
@@ -132,7 +131,7 @@ function mapRow(p: any, prefix: string): PriceRecord {
 }
 
 // ============================================================================
-// FETCH FILTER OPTIONS (always full list + state→markets map)
+// FETCH FILTER OPTIONS (always full list)
 // ============================================================================
 
 async function fetchFilterOptions(): Promise<FilterOptions> {
@@ -151,33 +150,18 @@ async function fetchFilterOptions(): Promise<FilterOptions> {
     const categoriesSet = new Set<string>();
     const statesSet = new Set<string>();
     const marketsSet = new Set<string>();
-    const stateMarketsMap: Record<string, string[]> = {};
 
     for (const row of filtersData) {
       const catName = CATEGORY_MAP[String(row.category_id || "")];
       if (catName) categoriesSet.add(catName);
-      if (row.state) {
-        const st = String(row.state);
-        statesSet.add(st);
-        if (row.market_name) {
-          const mk = String(row.market_name);
-          marketsSet.add(mk);
-          if (!stateMarketsMap[st]) stateMarketsMap[st] = [];
-          if (!stateMarketsMap[st].includes(mk)) stateMarketsMap[st].push(mk);
-        }
-      }
-    }
-
-    // Sort markets within each state
-    for (const st of Object.keys(stateMarketsMap)) {
-      stateMarketsMap[st].sort();
+      if (row.state) statesSet.add(String(row.state));
+      if (row.market_name) marketsSet.add(String(row.market_name));
     }
 
     return {
       categories: [...categoriesSet].sort(),
       states: [...statesSet].sort(),
       markets: [...marketsSet].sort(),
-      stateMarkets: stateMarketsMap,
     };
   } catch (error) {
     console.error("Filter options error:", error);
@@ -185,7 +169,6 @@ async function fetchFilterOptions(): Promise<FilterOptions> {
       categories: ["Grains & Cereals", "Tubers", "Vegetables", "Fruits", "Oils & Fats", "Protein", "Fish & Seafood", "Building Materials"],
       states: ["Lagos", "Kano", "FCT", "Rivers", "Oyo", "Anambra", "Kaduna", "Ogun", "Enugu", "Delta"],
       markets: ["Mile 12 Market", "Alaba International Market", "Onitsha Main Market", "Wuse Market", "Bodija Market", "Ariaria Market"],
-      stateMarkets: {},
     };
   }
 }
@@ -374,11 +357,6 @@ function generateMockData(): { prices: PriceRecord[]; filters: FilterOptions } {
       categories: [...new Set(items.map(i => i.category))].sort(),
       states: [...new Set(markets.map(m => m.state))].sort(),
       markets: markets.map(m => m.name).sort(),
-      stateMarkets: markets.reduce((acc, m) => {
-        if (!acc[m.state]) acc[m.state] = [];
-        acc[m.state].push(m.name);
-        return acc;
-      }, {} as Record<string, string[]>),
     },
   };
 }
@@ -404,7 +382,7 @@ export async function GET(request: NextRequest) {
     const categoryId = category ? (CATEGORY_NAME_TO_ID[category.toLowerCase()] || "") : "";
 
     let prices: PriceRecord[] = [];
-    let filters: FilterOptions = { categories: [], states: [], markets: [], stateMarkets: {} };
+    let filters: FilterOptions = { categories: [], states: [], markets: [] };
     let source = "Demo_Data";
 
     // Fetch filter options (always full list)

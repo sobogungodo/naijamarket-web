@@ -63,6 +63,7 @@ interface FilterOptions {
   categories: string[];
   states: string[];
   markets: string[];
+  stateMarkets: Record<string, string[]>;
 }
 
 // ============================================================================
@@ -82,6 +83,7 @@ export default function PricesPage() {
     categories: [],
     states: [],
     markets: [],
+    stateMarkets: {},
   });
 
   // Filter state
@@ -145,6 +147,7 @@ export default function PricesPage() {
             categories: result.filters.categories || [],
             states: result.filters.states || [],
             markets: result.filters.markets || [],
+            stateMarkets: result.filters.stateMarkets || {},
           });
         }
       } else {
@@ -195,6 +198,15 @@ export default function PricesPage() {
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
+
+  // Clear market filter if selected market isn't in the newly selected state
+  useEffect(() => {
+    if (stateFilter && marketFilter && filterOptions.stateMarkets[stateFilter]) {
+      if (!filterOptions.stateMarkets[stateFilter].includes(marketFilter)) {
+        setMarketFilter("");
+      }
+    }
+  }, [stateFilter]);
 
   // ============================================================================
   // HANDLERS
@@ -256,6 +268,11 @@ export default function PricesPage() {
   };
 
   const hasActiveFilters = searchQuery || categoryFilter || stateFilter || marketFilter || trendFilter !== "all";
+
+  // When a state is selected, only show markets from that state
+  const availableMarkets = stateFilter && filterOptions.stateMarkets[stateFilter]
+    ? filterOptions.stateMarkets[stateFilter]
+    : filterOptions.markets;
 
   // Format time ago
   const formatTimeAgo = (dateStr: string): string => {
@@ -465,10 +482,10 @@ export default function PricesPage() {
                   onClick={() => { setMarketFilter(""); setShowMarketDropdown(false); }}
                   className="w-full px-3 py-2 text-left text-sm text-gray-400 hover:bg-terminal-muted hover:text-white border-b border-terminal-border"
                 >
-                  All Markets
+                  {stateFilter ? `All ${stateFilter} Markets` : "All Markets"}
                 </button>
-                {filterOptions.markets.length > 0 ? (
-                  filterOptions.markets.map(m => (
+                {availableMarkets.length > 0 ? (
+                  availableMarkets.map(m => (
                     <button
                       key={m}
                       onClick={() => { setMarketFilter(m); setShowMarketDropdown(false); }}
@@ -481,7 +498,9 @@ export default function PricesPage() {
                     </button>
                   ))
                 ) : (
-                  <div className="px-3 py-2 text-sm text-gray-500">Loading markets...</div>
+                  <div className="px-3 py-2 text-sm text-gray-500">
+                    {stateFilter ? `No markets found in ${stateFilter}` : "Loading markets..."}
+                  </div>
                 )}
               </div>
             )}

@@ -1,13 +1,12 @@
 // ============================================================================
 // src/app/(dashboard)/dashboard/prices/page.tsx
 // NaijaMarket Intel - Live Prices Page
-// Fetches prices and filters from Azure SQL Database
-// Version: 6.0.0 - Database as primary source
+// Version: 6.1.0 - FIXED dropdown click handlers
 // ============================================================================
 
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { 
   Search, 
   Filter, 
@@ -98,6 +97,11 @@ export default function PricesPage() {
   const [showStateDropdown, setShowStateDropdown] = useState(false);
   const [showMarketDropdown, setShowMarketDropdown] = useState(false);
 
+  // Refs for dropdown containers
+  const categoryRef = useRef<HTMLDivElement>(null);
+  const stateRef = useRef<HTMLDivElement>(null);
+  const marketRef = useRef<HTMLDivElement>(null);
+
   // Modal state
   const [selectedPrice, setSelectedPrice] = useState<SelectedPrice | null>(null);
 
@@ -122,7 +126,6 @@ export default function PricesPage() {
       if (trendFilter && trendFilter !== "all") params.append("trend", trendFilter);
       params.append("sort", sortBy);
       params.append("limit", "200");
-      params.append("filters", "true"); // Always request filters
 
       const response = await fetch("/api/prices?" + params.toString());
       
@@ -136,7 +139,7 @@ export default function PricesPage() {
         setPrices(result.data || []);
         setDataSource(result.source || "unknown");
         
-        // Update filter options
+        // Update filter options from API
         if (result.filters) {
           setFilterOptions({
             categories: result.filters.categories || [],
@@ -168,6 +171,30 @@ export default function PricesPage() {
     }, 300);
     return () => clearTimeout(debounce);
   }, [searchQuery, categoryFilter, stateFilter, marketFilter, trendFilter, sortBy]);
+
+  // ============================================================================
+  // CLOSE DROPDOWNS ON OUTSIDE CLICK - FIXED VERSION
+  // ============================================================================
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as Node;
+      
+      // Only close if click is outside all dropdown containers
+      if (categoryRef.current && !categoryRef.current.contains(target)) {
+        setShowCategoryDropdown(false);
+      }
+      if (stateRef.current && !stateRef.current.contains(target)) {
+        setShowStateDropdown(false);
+      }
+      if (marketRef.current && !marketRef.current.contains(target)) {
+        setShowMarketDropdown(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   // ============================================================================
   // HANDLERS
@@ -256,23 +283,13 @@ export default function PricesPage() {
   const getSourceDisplay = (source: string): { text: string; color: string } => {
     if (source === "database") return { text: "Azure SQL", color: "text-blue-400" };
     if (source.includes("Daily")) return { text: "Daily Prices", color: "text-emerald-400" };
+    if (source.includes("Latest")) return { text: "Latest Prices Summary", color: "text-emerald-400" };
     if (source.includes("NBS")) return { text: "NBS Historical", color: "text-cyan-400" };
     if (source.includes("Validated")) return { text: "Validated", color: "text-green-400" };
     if (source.includes("sheets")) return { text: "Google Sheets", color: "text-yellow-400" };
-    if (source.includes("demo") || source.includes("mock")) return { text: "Demo Data", color: "text-orange-400" };
+    if (source.includes("demo") || source.includes("mock") || source.includes("Demo")) return { text: "Demo Data", color: "text-orange-400" };
     return { text: source, color: "text-gray-400" };
   };
-
-  // Close dropdowns when clicking outside
-  useEffect(() => {
-    const handleClick = () => {
-      setShowCategoryDropdown(false);
-      setShowStateDropdown(false);
-      setShowMarketDropdown(false);
-    };
-    document.addEventListener("click", handleClick);
-    return () => document.removeEventListener("click", handleClick);
-  }, []);
 
   // ============================================================================
   // RENDER
@@ -287,7 +304,7 @@ export default function PricesPage() {
         <div>
           <h1 className="text-2xl font-display font-bold text-white">Live Prices</h1>
           <p className="text-sm text-gray-500 mt-1 flex items-center gap-2">
-            Real-time commodity prices from {filterOptions.markets.length || 226} markets
+            Real-time commodity prices from {filterOptions.markets.length || 224} markets
             {dataSource && dataSource !== "loading" && (
               <span className={`flex items-center gap-1 text-xs px-2 py-0.5 rounded bg-terminal-muted ${sourceInfo.color}`}>
                 <Database className="w-3 h-3" />
@@ -336,21 +353,29 @@ export default function PricesPage() {
             )}
           </div>
 
-          {/* Category Filter */}
-          <div className="relative" onClick={(e) => e.stopPropagation()}>
+          {/* Category Filter - FIXED */}
+          <div className="relative" ref={categoryRef}>
             <button 
-              onClick={() => setShowCategoryDropdown(!showCategoryDropdown)}
-              className="flex items-center gap-2 px-3 py-2 bg-terminal-bg border border-terminal-border rounded-lg text-sm text-gray-400 hover:text-white transition-colors"
+              onClick={() => {
+                setShowCategoryDropdown(!showCategoryDropdown);
+                setShowStateDropdown(false);
+                setShowMarketDropdown(false);
+              }}
+              className={`flex items-center gap-2 px-3 py-2 bg-terminal-bg border rounded-lg text-sm transition-colors ${
+                categoryFilter 
+                  ? "border-naija-green text-naija-green" 
+                  : "border-terminal-border text-gray-400 hover:text-white"
+              }`}
             >
               <Filter className="w-4 h-4" />
               {categoryFilter || "Category"}
-              <ChevronDown className="w-4 h-4" />
+              <ChevronDown className={`w-4 h-4 transition-transform ${showCategoryDropdown ? "rotate-180" : ""}`} />
             </button>
             {showCategoryDropdown && (
-              <div className="absolute top-full mt-1 w-48 max-h-64 overflow-y-auto bg-terminal-surface border border-terminal-border rounded-lg shadow-xl z-20">
+              <div className="absolute top-full mt-1 w-56 max-h-64 overflow-y-auto bg-terminal-surface border border-terminal-border rounded-lg shadow-xl z-50">
                 <button
                   onClick={() => { setCategoryFilter(""); setShowCategoryDropdown(false); }}
-                  className="w-full px-3 py-2 text-left text-sm text-gray-400 hover:bg-terminal-muted hover:text-white"
+                  className="w-full px-3 py-2 text-left text-sm text-gray-400 hover:bg-terminal-muted hover:text-white border-b border-terminal-border"
                 >
                   All Categories
                 </button>
@@ -367,26 +392,34 @@ export default function PricesPage() {
                     </button>
                   ))
                 ) : (
-                  <div className="px-3 py-2 text-sm text-gray-500">No categories found</div>
+                  <div className="px-3 py-2 text-sm text-gray-500">Loading categories...</div>
                 )}
               </div>
             )}
           </div>
 
-          {/* State Filter */}
-          <div className="relative" onClick={(e) => e.stopPropagation()}>
+          {/* State Filter - FIXED */}
+          <div className="relative" ref={stateRef}>
             <button 
-              onClick={() => setShowStateDropdown(!showStateDropdown)}
-              className="flex items-center gap-2 px-3 py-2 bg-terminal-bg border border-terminal-border rounded-lg text-sm text-gray-400 hover:text-white transition-colors"
+              onClick={() => {
+                setShowStateDropdown(!showStateDropdown);
+                setShowCategoryDropdown(false);
+                setShowMarketDropdown(false);
+              }}
+              className={`flex items-center gap-2 px-3 py-2 bg-terminal-bg border rounded-lg text-sm transition-colors ${
+                stateFilter 
+                  ? "border-naija-green text-naija-green" 
+                  : "border-terminal-border text-gray-400 hover:text-white"
+              }`}
             >
               {stateFilter || "State"}
-              <ChevronDown className="w-4 h-4" />
+              <ChevronDown className={`w-4 h-4 transition-transform ${showStateDropdown ? "rotate-180" : ""}`} />
             </button>
             {showStateDropdown && (
-              <div className="absolute top-full mt-1 w-40 max-h-64 overflow-y-auto bg-terminal-surface border border-terminal-border rounded-lg shadow-xl z-20">
+              <div className="absolute top-full mt-1 w-48 max-h-64 overflow-y-auto bg-terminal-surface border border-terminal-border rounded-lg shadow-xl z-50">
                 <button
                   onClick={() => { setStateFilter(""); setShowStateDropdown(false); }}
-                  className="w-full px-3 py-2 text-left text-sm text-gray-400 hover:bg-terminal-muted hover:text-white"
+                  className="w-full px-3 py-2 text-left text-sm text-gray-400 hover:bg-terminal-muted hover:text-white border-b border-terminal-border"
                 >
                   All States
                 </button>
@@ -403,26 +436,34 @@ export default function PricesPage() {
                     </button>
                   ))
                 ) : (
-                  <div className="px-3 py-2 text-sm text-gray-500">No states found</div>
+                  <div className="px-3 py-2 text-sm text-gray-500">Loading states...</div>
                 )}
               </div>
             )}
           </div>
 
-          {/* Market Filter */}
-          <div className="relative" onClick={(e) => e.stopPropagation()}>
+          {/* Market Filter - FIXED */}
+          <div className="relative" ref={marketRef}>
             <button 
-              onClick={() => setShowMarketDropdown(!showMarketDropdown)}
-              className="flex items-center gap-2 px-3 py-2 bg-terminal-bg border border-terminal-border rounded-lg text-sm text-gray-400 hover:text-white transition-colors"
+              onClick={() => {
+                setShowMarketDropdown(!showMarketDropdown);
+                setShowCategoryDropdown(false);
+                setShowStateDropdown(false);
+              }}
+              className={`flex items-center gap-2 px-3 py-2 bg-terminal-bg border rounded-lg text-sm transition-colors ${
+                marketFilter 
+                  ? "border-naija-green text-naija-green" 
+                  : "border-terminal-border text-gray-400 hover:text-white"
+              }`}
             >
               {marketFilter || "Market"}
-              <ChevronDown className="w-4 h-4" />
+              <ChevronDown className={`w-4 h-4 transition-transform ${showMarketDropdown ? "rotate-180" : ""}`} />
             </button>
             {showMarketDropdown && (
-              <div className="absolute top-full mt-1 w-56 max-h-64 overflow-y-auto bg-terminal-surface border border-terminal-border rounded-lg shadow-xl z-20">
+              <div className="absolute top-full mt-1 w-64 max-h-64 overflow-y-auto bg-terminal-surface border border-terminal-border rounded-lg shadow-xl z-50">
                 <button
                   onClick={() => { setMarketFilter(""); setShowMarketDropdown(false); }}
-                  className="w-full px-3 py-2 text-left text-sm text-gray-400 hover:bg-terminal-muted hover:text-white"
+                  className="w-full px-3 py-2 text-left text-sm text-gray-400 hover:bg-terminal-muted hover:text-white border-b border-terminal-border"
                 >
                   All Markets
                 </button>
@@ -434,12 +475,13 @@ export default function PricesPage() {
                       className={`w-full px-3 py-2 text-left text-sm hover:bg-terminal-muted hover:text-white truncate ${
                         marketFilter === m ? "text-naija-green bg-naija-green/10" : "text-gray-300"
                       }`}
+                      title={m}
                     >
                       {m}
                     </button>
                   ))
                 ) : (
-                  <div className="px-3 py-2 text-sm text-gray-500">No markets found</div>
+                  <div className="px-3 py-2 text-sm text-gray-500">Loading markets...</div>
                 )}
               </div>
             )}
@@ -547,84 +589,124 @@ export default function PricesPage() {
       {!loading && !error && (
         <div className="bg-terminal-surface border border-terminal-border rounded-xl overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="price-table">
+            <table className="w-full" style={{ tableLayout: "fixed" }}>
+              <colgroup>
+                <col style={{ width: "32px" }} />        {/* Star */}
+                <col style={{ width: "17%" }} />          {/* Item */}
+                <col style={{ width: "11%" }} />          {/* Category */}
+                <col style={{ width: "14%" }} />          {/* Market */}
+                <col style={{ width: "7%" }} />           {/* State */}
+                <col style={{ width: "12%" }} />          {/* Price */}
+                <col style={{ width: "11%" }} />          {/* Change */}
+                <col style={{ width: "11%" }} />          {/* 24H Range */}
+                <col style={{ width: "12%" }} />          {/* Confidence */}
+                <col style={{ width: "10%" }} />          {/* Updated */}
+                <col style={{ width: "48px" }} />         {/* Actions */}
+              </colgroup>
               <thead>
-                <tr>
-                  <th className="w-10"></th>
-                  <th>ITEM</th>
-                  <th>CATEGORY</th>
-                  <th>MARKET</th>
-                  <th>STATE</th>
-                  <th className="numeric">PRICE (₦)</th>
-                  <th className="numeric">CHANGE</th>
-                  <th className="numeric">24H RANGE</th>
-                  <th>CONFIDENCE</th>
-                  <th>UPDATED</th>
-                  <th className="w-20"></th>
+                <tr className="border-b border-terminal-border bg-terminal-bg/50">
+                  <th className="py-3"></th>
+                  <th className="py-3 text-center text-xs font-semibold text-gray-400 uppercase tracking-wider">Item</th>
+                  <th className="py-3 text-center text-xs font-semibold text-gray-400 uppercase tracking-wider">Category</th>
+                  <th className="py-3 text-center text-xs font-semibold text-gray-400 uppercase tracking-wider">Market</th>
+                  <th className="py-3 text-center text-xs font-semibold text-gray-400 uppercase tracking-wider">State</th>
+                  <th className="py-3 text-center text-xs font-semibold text-gray-400 uppercase tracking-wider">Price (₦)</th>
+                  <th className="py-3 text-center text-xs font-semibold text-gray-400 uppercase tracking-wider">Change</th>
+                  <th className="py-3 text-center text-xs font-semibold text-gray-400 uppercase tracking-wider">24H Range</th>
+                  <th className="py-3 text-center text-xs font-semibold text-gray-400 uppercase tracking-wider">Confidence</th>
+                  <th className="py-3 text-center text-xs font-semibold text-gray-400 uppercase tracking-wider">Updated</th>
+                  <th className="py-3"></th>
                 </tr>
               </thead>
-              <tbody>
+              <tbody className="divide-y divide-terminal-border/40">
                 {prices.map((item) => (
                   <tr 
                     key={item.id} 
-                    className="group cursor-pointer"
+                    className="group cursor-pointer hover:bg-terminal-muted/40 transition-colors"
                     onClick={() => handleRowClick(item)}
                   >
-                    <td>
+                    {/* Star */}
+                    <td className="py-3 text-center">
                       <button 
                         className="opacity-0 group-hover:opacity-100 text-gray-500 hover:text-naija-gold transition-all"
                         onClick={(e) => e.stopPropagation()}
                       >
-                        <Star className="w-4 h-4" />
+                        <Star className="w-4 h-4 mx-auto" />
                       </button>
                     </td>
-                    <td>
-                      <div className="flex items-center gap-2">
-                        <div className="p-1.5 bg-emerald-500/10 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity">
+
+                    {/* Item Name */}
+                    <td className="px-3 py-3">
+                      <div className="flex items-center justify-center gap-2 min-w-0">
+                        <div className="shrink-0 p-1.5 bg-emerald-500/10 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity">
                           <BarChart3 className="w-3.5 h-3.5 text-emerald-400" />
                         </div>
-                        <div>
-                          <div className="font-medium text-white group-hover:text-naija-green transition-colors">
+                        <div className="min-w-0 text-center">
+                          <div className="font-medium text-sm text-white group-hover:text-naija-green transition-colors truncate" title={item.item_name}>
                             {item.item_name}
                           </div>
                           {item.item_variant && (
-                            <div className="text-2xs text-gray-500">{item.item_variant}</div>
+                            <div className="text-xs text-gray-500 truncate">{item.item_variant}</div>
                           )}
                         </div>
                       </div>
                     </td>
-                    <td>
-                      <span className="px-2 py-0.5 bg-terminal-muted text-gray-400 text-2xs rounded">
+
+                    {/* Category */}
+                    <td className="px-2 py-3 text-center">
+                      <span className="inline-block px-2.5 py-1 bg-terminal-muted text-gray-400 text-xs rounded-md" title={item.category}>
                         {item.category}
                       </span>
                     </td>
-                    <td className="text-gray-400">{item.market_name}</td>
-                    <td className="text-gray-500 text-xs">{item.state}</td>
-                    <td className="numeric font-mono text-white text-lg">
-                      {item.price_naira.toLocaleString()}
+
+                    {/* Market */}
+                    <td className="px-3 py-3 text-center">
+                      <span className="text-sm text-gray-400 block truncate" title={item.market_name}>
+                        {item.market_name}
+                      </span>
                     </td>
-                    <td className="numeric">
-                      <div className={`flex items-center justify-end gap-1 ${
+
+                    {/* State */}
+                    <td className="py-3 text-center">
+                      <span className="text-xs text-gray-500">{item.state}</span>
+                    </td>
+
+                    {/* Price */}
+                    <td className="px-3 py-3 text-center">
+                      <span className="font-mono text-white text-base font-semibold">
+                        {item.price_naira.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </span>
+                    </td>
+
+                    {/* Change */}
+                    <td className="px-2 py-3 text-center">
+                      <div className={`flex items-center justify-center gap-1 text-sm ${
                         item.change_percent > 0 ? "text-price-up" : 
                         item.change_percent < 0 ? "text-price-down" : "text-gray-500"
                       }`}>
-                        {item.change_percent > 0 ? <TrendingUp className="w-3 h-3" /> : 
-                         item.change_percent < 0 ? <TrendingDown className="w-3 h-3" /> : 
-                         <Minus className="w-3 h-3" />}
-                        <span>{item.change_percent >= 0 ? "+" : ""}{item.change_percent.toFixed(2)}%</span>
+                        {item.change_percent > 0 ? <TrendingUp className="w-3 h-3 shrink-0" /> : 
+                         item.change_percent < 0 ? <TrendingDown className="w-3 h-3 shrink-0" /> : 
+                         <Minus className="w-3 h-3 shrink-0" />}
+                        <span className="font-mono">{item.change_percent >= 0 ? "+" : ""}{item.change_percent.toFixed(2)}%</span>
                       </div>
-                      <div className="text-2xs text-gray-500 text-right mt-0.5">
+                      <div className="text-xs text-gray-500 mt-0.5 font-mono">
                         {item.change_amount >= 0 ? "+" : ""}₦{Math.abs(item.change_amount).toLocaleString()}
                       </div>
                     </td>
-                    <td className="numeric text-gray-400 font-mono text-xs">
-                      <div>{item.low_24h.toLocaleString()}</div>
-                      <div className="text-gray-600">to</div>
-                      <div>{item.high_24h.toLocaleString()}</div>
+
+                    {/* 24H Range */}
+                    <td className="px-2 py-3 text-center">
+                      <div className="font-mono text-xs text-gray-400 leading-relaxed">
+                        <span>{item.low_24h.toLocaleString()}</span>
+                        <span className="text-gray-600 mx-1">–</span>
+                        <span>{item.high_24h.toLocaleString()}</span>
+                      </div>
                     </td>
-                    <td>
-                      <div className="flex items-center gap-2">
-                        <div className="w-20 h-2 bg-terminal-muted rounded-full overflow-hidden">
+
+                    {/* Confidence */}
+                    <td className="px-3 py-3">
+                      <div className="flex items-center justify-center gap-2">
+                        <div className="w-16 h-2 bg-terminal-muted rounded-full overflow-hidden">
                           <div 
                             className={`h-full rounded-full transition-all ${
                               item.confidence >= 85 ? "bg-price-up" : 
@@ -634,18 +716,22 @@ export default function PricesPage() {
                             style={{ width: `${item.confidence}%` }}
                           />
                         </div>
-                        <span className="text-2xs text-gray-500 w-8">{item.confidence}%</span>
+                        <span className="text-xs text-gray-500 tabular-nums">{item.confidence}%</span>
                       </div>
-                      <div className="text-2xs text-gray-600 mt-0.5">
+                      <div className="text-xs text-gray-600 mt-0.5 text-center">
                         {item.validators} validators
                       </div>
                     </td>
-                    <td className="text-gray-500 text-xs">
-                      <div>{formatTimeAgo(item.updated_at)}</div>
-                      <div className="text-gray-600">{item.source.replace(/_/g, " ")}</div>
+
+                    {/* Updated */}
+                    <td className="px-2 py-3 text-center">
+                      <div className="text-xs text-gray-500">{formatTimeAgo(item.updated_at)}</div>
+                      <div className="text-xs text-gray-600">{item.source.replace(/_/g, " ")}</div>
                     </td>
-                    <td>
-                      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all">
+
+                    {/* Actions */}
+                    <td className="py-3 text-center">
+                      <div className="flex items-center justify-center gap-1 opacity-0 group-hover:opacity-100 transition-all">
                         <button 
                           className="p-1 text-gray-500 hover:text-naija-green transition-colors" 
                           title="Set Alert"

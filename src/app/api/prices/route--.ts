@@ -1,10 +1,14 @@
 // ============================================================================
 // src/app/api/prices/route.ts
 // NaijaMarket Intel - Live Prices API
-// Version: 8.3.0 - Fixed filter options (returns ALL options, not just filtered)
+// Version: 9.1.0 - Server-side search using Prisma.sql tagged templates
+// ============================================================================
+// FIX: v9.0 used $queryRawUnsafe with ? params which fails on SQL Server.
+//      v9.1 uses Prisma.sql tagged templates (same pattern as working v8.3)
 // ============================================================================
 
 import { NextRequest, NextResponse } from "next/server";
+import { Prisma } from "@prisma/client";
 
 // ============================================================================
 // TYPES
@@ -36,7 +40,7 @@ interface FilterOptions {
   markets: string[];
 }
 
-// Category mapping - supports BOTH integer and string IDs
+// Category ID → Name mapping
 const CATEGORY_MAP: Record<string, string> = {
   "1": "Grains & Cereals",
   "2": "Tubers",
@@ -68,6 +72,14 @@ const CATEGORY_MAP: Record<string, string> = {
   "CAT014": "Processed Foods",
 };
 
+// Reverse: category name → all matching category_id values
+const CATEGORY_NAME_TO_IDS: Record<string, string[]> = {};
+for (const [id, name] of Object.entries(CATEGORY_MAP)) {
+  const key = name.toLowerCase();
+  if (!CATEGORY_NAME_TO_IDS[key]) CATEGORY_NAME_TO_IDS[key] = [];
+  CATEGORY_NAME_TO_IDS[key].push(id);
+}
+
 // ============================================================================
 // SINGLETON PRISMA (cached)
 // ============================================================================
@@ -83,14 +95,13 @@ async function getPrisma() {
 }
 
 // ============================================================================
-// FETCH ALL FILTER OPTIONS (separate query)
+// FETCH ALL FILTER OPTIONS (always full list, no filtering)
 // ============================================================================
 
 async function fetchFilterOptions(): Promise<FilterOptions> {
   try {
     const prisma = await getPrisma();
 
-    // Get distinct categories, states, markets from Daily_Prices (last 7 days)
     const filtersData = await prisma.$queryRaw`
       SELECT DISTINCT 
         category_id,
@@ -103,17 +114,14 @@ async function fetchFilterOptions(): Promise<FilterOptions> {
         AND market_name IS NOT NULL
     ` as any[];
 
-    // Extract unique values
     const categoriesSet = new Set<string>();
     const statesSet = new Set<string>();
     const marketsSet = new Set<string>();
 
     for (const row of filtersData) {
-      // Map category_id to name
       const catId = String(row.category_id || "");
       const catName = CATEGORY_MAP[catId];
       if (catName) categoriesSet.add(catName);
-
       if (row.state) statesSet.add(String(row.state));
       if (row.market_name) marketsSet.add(String(row.market_name));
     }
@@ -125,14 +133,13 @@ async function fetchFilterOptions(): Promise<FilterOptions> {
     };
   } catch (error) {
     console.error("Filter options error:", error);
-    // Return hardcoded fallback
     return {
       categories: [
-        "Grains & Cereals", "Tubers", "Vegetables", "Fruits", 
+        "Grains & Cereals", "Tubers", "Vegetables", "Fruits",
         "Oils & Fats", "Protein", "Fish & Seafood", "Building Materials"
       ],
       states: [
-        "Lagos", "Kano", "FCT", "Rivers", "Oyo", "Anambra", 
+        "Lagos", "Kano", "FCT", "Rivers", "Oyo", "Anambra",
         "Kaduna", "Ogun", "Enugu", "Delta"
       ],
       markets: [
@@ -217,64 +224,134 @@ function generateMockData(): { prices: PriceRecord[]; filters: FilterOptions } {
 }
 
 // ============================================================================
-// FETCH FROM SUMMARY TABLE
+// MAP DB ROW → PriceRecord
 // ============================================================================
 
-async function fetchFromSummaryTable(): Promise<{ prices: PriceRecord[]; success: boolean }> {
+function mapRowToPrice(p: any, idPrefix: string): PriceRecord {
+  const price = Number(p.price_naira) || 0;
+  const prevPrice = Number(p.previous_price) || price;
+  const changePercent = Number(p.price_change_pct) || 0;
+  const categoryId = String(p.category_id || "");
+  const categoryName = CATEGORY_MAP[categoryId] || "General";
+  const idField = p.id || p.price_id || Math.random();
+
+  return {
+    id: `${idPrefix}-${idField}`,
+    item_name: String(p.item_name || "Unknown"),
+    item_variant: p.unit || null,
+    category: categoryName,
+    market_name: String(p.market_name || "Unknown"),
+    state: String(p.state || "Lagos"),
+    price_naira: price,
+    change_percent: Number(changePercent.toFixed(2)),
+    change_amount: Math.round(price - prevPrice),
+    low_24h: Math.round(price * 0.97),
+    high_24h: Math.round(price * 1.03),
+    confidence: Math.round(Number(p.confidence_score) || 85),
+    validators: 3,
+    updated_at: p.price_date instanceof Date ? p.price_date.toISOString() : new Date().toISOString(),
+    source: idPrefix === "lps" ? "Latest_Prices_Summary" : "Daily_Prices",
+    unit: p.unit || "",
+    trend: p.trend || (changePercent > 0 ? "↑" : changePercent < 0 ? "↓" : "→"),
+  };
+}
+
+// ============================================================================
+// FETCH FROM SUMMARY TABLE — WITH SERVER-SIDE SEARCH
+// ============================================================================
+
+async function fetchFromSummaryTable(
+  search: string,
+  category: string,
+  state: string,
+  market: string
+): Promise<{ prices: PriceRecord[]; success: boolean }> {
   try {
     const prisma = await getPrisma();
+    const hasFilters = search || category || state || market;
 
-    const data = await prisma.$queryRaw`
-      SELECT TOP 500
-        id,
-        item_name,
-        market_name,
-        state,
-        category_id,
-        unit,
-        CAST(price_naira AS FLOAT) as price_naira,
-        CAST(COALESCE(previous_price, price_naira) AS FLOAT) as previous_price,
-        CAST(COALESCE(price_change_pct, 0) AS FLOAT) as price_change_pct,
-        trend,
-        CAST(COALESCE(confidence_score, 85) AS FLOAT) as confidence_score,
-        price_date
-      FROM Latest_Prices_Summary WITH (NOLOCK)
-      ORDER BY item_name, market_name
-    ` as any[];
+    let data: any[];
+
+    if (hasFilters) {
+      // Build dynamic WHERE using Prisma.sql tagged templates
+      const conditions: Prisma.Sql[] = [];
+
+      if (search) {
+        const term = `%${search}%`;
+        conditions.push(
+          Prisma.sql`AND (item_name LIKE ${term} OR market_name LIKE ${term} OR state LIKE ${term})`
+        );
+      }
+
+      if (category) {
+        const catIds = CATEGORY_NAME_TO_IDS[category.toLowerCase()];
+        if (catIds && catIds.length > 0) {
+          conditions.push(
+            Prisma.sql`AND category_id IN (${Prisma.join(catIds)})`
+          );
+        }
+      }
+
+      if (state) {
+        conditions.push(Prisma.sql`AND state = ${state}`);
+      }
+
+      if (market) {
+        const marketTerm = `%${market}%`;
+        conditions.push(Prisma.sql`AND market_name LIKE ${marketTerm}`);
+      }
+
+      const whereExtra = conditions.length > 0
+        ? Prisma.join(conditions, Prisma.sql` `)
+        : Prisma.empty;
+
+      data = await prisma.$queryRaw`
+        SELECT TOP 1000
+          id,
+          item_name,
+          market_name,
+          state,
+          category_id,
+          unit,
+          CAST(price_naira AS FLOAT) as price_naira,
+          CAST(COALESCE(previous_price, price_naira) AS FLOAT) as previous_price,
+          CAST(COALESCE(price_change_pct, 0) AS FLOAT) as price_change_pct,
+          trend,
+          CAST(COALESCE(confidence_score, 85) AS FLOAT) as confidence_score,
+          price_date
+        FROM Latest_Prices_Summary WITH (NOLOCK)
+        WHERE 1=1 ${whereExtra}
+        ORDER BY item_name, market_name
+      ` as any[];
+
+    } else {
+      // No filters: fast default load
+      data = await prisma.$queryRaw`
+        SELECT TOP 500
+          id,
+          item_name,
+          market_name,
+          state,
+          category_id,
+          unit,
+          CAST(price_naira AS FLOAT) as price_naira,
+          CAST(COALESCE(previous_price, price_naira) AS FLOAT) as previous_price,
+          CAST(COALESCE(price_change_pct, 0) AS FLOAT) as price_change_pct,
+          trend,
+          CAST(COALESCE(confidence_score, 85) AS FLOAT) as confidence_score,
+          price_date
+        FROM Latest_Prices_Summary WITH (NOLOCK)
+        ORDER BY item_name, market_name
+      ` as any[];
+    }
 
     if (!data || data.length === 0) {
       return { prices: [], success: false };
     }
 
-    const prices: PriceRecord[] = data.map((p: any) => {
-      const price = Number(p.price_naira) || 0;
-      const prevPrice = Number(p.previous_price) || price;
-      const changePercent = Number(p.price_change_pct) || 0;
-      const categoryId = String(p.category_id || "");
-      const categoryName = CATEGORY_MAP[categoryId] || "General";
-
-      return {
-        id: `lps-${p.id}`,
-        item_name: String(p.item_name || "Unknown"),
-        item_variant: p.unit || null,
-        category: categoryName,
-        market_name: String(p.market_name || "Unknown"),
-        state: String(p.state || "Lagos"),
-        price_naira: price,
-        change_percent: Number(changePercent.toFixed(2)),
-        change_amount: Math.round(price - prevPrice),
-        low_24h: Math.round(price * 0.97),
-        high_24h: Math.round(price * 1.03),
-        confidence: Math.round(Number(p.confidence_score) || 85),
-        validators: 3,
-        updated_at: p.price_date instanceof Date ? p.price_date.toISOString() : new Date().toISOString(),
-        source: "Latest_Prices_Summary",
-        unit: p.unit || "",
-        trend: p.trend || (changePercent > 0 ? "↑" : changePercent < 0 ? "↓" : "→"),
-      };
-    });
-
+    const prices: PriceRecord[] = data.map((p: any) => mapRowToPrice(p, "lps"));
     return { prices, success: true };
+
   } catch (error: any) {
     console.error("Summary table error:", error.message);
     return { prices: [], success: false };
@@ -282,32 +359,95 @@ async function fetchFromSummaryTable(): Promise<{ prices: PriceRecord[]; success
 }
 
 // ============================================================================
-// FETCH FROM DAILY PRICES
+// FETCH FROM DAILY PRICES (fallback) — WITH SERVER-SIDE SEARCH
 // ============================================================================
 
-async function fetchFromDailyPrices(): Promise<{ prices: PriceRecord[]; success: boolean }> {
+async function fetchFromDailyPrices(
+  search: string,
+  category: string,
+  state: string,
+  market: string
+): Promise<{ prices: PriceRecord[]; success: boolean }> {
   try {
     const prisma = await getPrisma();
+    const hasFilters = search || category || state || market;
 
-    const data = await prisma.$queryRaw`
-      SELECT TOP 500
-        price_id,
-        item_name,
-        market_name,
-        state,
-        category_id,
-        unit,
-        CAST(price_naira AS FLOAT) as price_naira,
-        CAST(COALESCE(previous_price, price_naira) AS FLOAT) as previous_price,
-        CAST(COALESCE(price_change_pct, 0) AS FLOAT) as price_change_pct,
-        trend,
-        CAST(COALESCE(confidence_score, 85) AS FLOAT) as confidence_score,
-        price_date
-      FROM Daily_Prices WITH (NOLOCK)
-      WHERE price_date >= DATEADD(day, -2, CAST(GETDATE() AS DATE))
-        AND price_naira > 0
-      ORDER BY price_date DESC, item_name
-    ` as any[];
+    let data: any[];
+
+    if (hasFilters) {
+      const conditions: Prisma.Sql[] = [];
+
+      if (search) {
+        const term = `%${search}%`;
+        conditions.push(
+          Prisma.sql`AND (item_name LIKE ${term} OR market_name LIKE ${term} OR state LIKE ${term})`
+        );
+      }
+
+      if (category) {
+        const catIds = CATEGORY_NAME_TO_IDS[category.toLowerCase()];
+        if (catIds && catIds.length > 0) {
+          conditions.push(
+            Prisma.sql`AND category_id IN (${Prisma.join(catIds)})`
+          );
+        }
+      }
+
+      if (state) {
+        conditions.push(Prisma.sql`AND state = ${state}`);
+      }
+
+      if (market) {
+        const marketTerm = `%${market}%`;
+        conditions.push(Prisma.sql`AND market_name LIKE ${marketTerm}`);
+      }
+
+      const whereExtra = conditions.length > 0
+        ? Prisma.join(conditions, Prisma.sql` `)
+        : Prisma.empty;
+
+      data = await prisma.$queryRaw`
+        SELECT TOP 1000
+          price_id,
+          item_name,
+          market_name,
+          state,
+          category_id,
+          unit,
+          CAST(price_naira AS FLOAT) as price_naira,
+          CAST(COALESCE(previous_price, price_naira) AS FLOAT) as previous_price,
+          CAST(COALESCE(price_change_pct, 0) AS FLOAT) as price_change_pct,
+          trend,
+          CAST(COALESCE(confidence_score, 85) AS FLOAT) as confidence_score,
+          price_date
+        FROM Daily_Prices WITH (NOLOCK)
+        WHERE price_date >= DATEADD(day, -2, CAST(GETDATE() AS DATE))
+          AND price_naira > 0
+          ${whereExtra}
+        ORDER BY price_date DESC, item_name
+      ` as any[];
+
+    } else {
+      data = await prisma.$queryRaw`
+        SELECT TOP 500
+          price_id,
+          item_name,
+          market_name,
+          state,
+          category_id,
+          unit,
+          CAST(price_naira AS FLOAT) as price_naira,
+          CAST(COALESCE(previous_price, price_naira) AS FLOAT) as previous_price,
+          CAST(COALESCE(price_change_pct, 0) AS FLOAT) as price_change_pct,
+          trend,
+          CAST(COALESCE(confidence_score, 85) AS FLOAT) as confidence_score,
+          price_date
+        FROM Daily_Prices WITH (NOLOCK)
+        WHERE price_date >= DATEADD(day, -2, CAST(GETDATE() AS DATE))
+          AND price_naira > 0
+        ORDER BY price_date DESC, item_name
+      ` as any[];
+    }
 
     if (!data || data.length === 0) {
       return { prices: [], success: false };
@@ -321,35 +461,10 @@ async function fetchFromDailyPrices(): Promise<{ prices: PriceRecord[]; success:
       const key = `${String(p.item_name).toLowerCase()}-${String(p.market_name).toLowerCase()}`;
       if (seen.has(key)) continue;
       seen.add(key);
-
-      const price = Number(p.price_naira) || 0;
-      const prevPrice = Number(p.previous_price) || price;
-      const changePercent = Number(p.price_change_pct) || 0;
-      const categoryId = String(p.category_id || "");
-      const categoryName = CATEGORY_MAP[categoryId] || "General";
-
-      prices.push({
-        id: `dp-${p.price_id}`,
-        item_name: String(p.item_name || "Unknown"),
-        item_variant: p.unit || null,
-        category: categoryName,
-        market_name: String(p.market_name || "Unknown"),
-        state: String(p.state || "Lagos"),
-        price_naira: price,
-        change_percent: Number(changePercent.toFixed(2)),
-        change_amount: Math.round(price - prevPrice),
-        low_24h: Math.round(price * 0.97),
-        high_24h: Math.round(price * 1.03),
-        confidence: Math.round(Number(p.confidence_score) || 85),
-        validators: 3,
-        updated_at: p.price_date instanceof Date ? p.price_date.toISOString() : new Date().toISOString(),
-        source: "Daily_Prices",
-        unit: p.unit || "",
-        trend: p.trend || (changePercent > 0 ? "↑" : changePercent < 0 ? "↓" : "→"),
-      });
+      prices.push(mapRowToPrice(p, "dp"));
     }
 
-    return { prices, success: prices.length >= 10 };
+    return { prices, success: prices.length >= 1 };
   } catch (error: any) {
     console.error("Daily_Prices error:", error.message);
     return { prices: [], success: false };
@@ -357,51 +472,15 @@ async function fetchFromDailyPrices(): Promise<{ prices: PriceRecord[]; success:
 }
 
 // ============================================================================
-// FILTER & SORT
+// SORT & TREND FILTER (lightweight post-processing)
 // ============================================================================
 
-function filterAndSort(
+function sortAndFilter(
   prices: PriceRecord[],
-  search: string,
-  category: string,
-  state: string,
-  market: string,
   trend: string,
   sort: string
 ): PriceRecord[] {
   let filtered = [...prices];
-
-  // Search filter
-  if (search) {
-    const s = search.toLowerCase();
-    filtered = filtered.filter(p =>
-      p.item_name.toLowerCase().includes(s) ||
-      p.market_name.toLowerCase().includes(s) ||
-      p.state.toLowerCase().includes(s) ||
-      p.category.toLowerCase().includes(s)
-    );
-  }
-
-  // Category filter (case-insensitive)
-  if (category) {
-    filtered = filtered.filter(p => 
-      p.category.toLowerCase() === category.toLowerCase()
-    );
-  }
-
-  // State filter (case-insensitive)
-  if (state) {
-    filtered = filtered.filter(p => 
-      p.state.toLowerCase() === state.toLowerCase()
-    );
-  }
-
-  // Market filter (partial match, case-insensitive)
-  if (market) {
-    filtered = filtered.filter(p => 
-      p.market_name.toLowerCase().includes(market.toLowerCase())
-    );
-  }
 
   // Trend filter
   if (trend === "up") {
@@ -425,7 +504,7 @@ function filterAndSort(
       filtered.sort((a, b) => a.item_name.localeCompare(b.item_name));
       break;
     default:
-      filtered.sort((a, b) => 
+      filtered.sort((a, b) =>
         new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
       );
   }
@@ -448,47 +527,46 @@ export async function GET(request: NextRequest) {
     const market = searchParams.get("market") || "";
     const trend = searchParams.get("trend") || "";
     const sort = searchParams.get("sort") || "updated";
-    const limit = Math.min(parseInt(searchParams.get("limit") || "200"), 500);
+    const limit = Math.min(parseInt(searchParams.get("limit") || "500"), 1000);
 
     let prices: PriceRecord[] = [];
     let filters: FilterOptions = { categories: [], states: [], markets: [] };
     let source = "Demo_Data";
 
-    // ALWAYS fetch filter options first (separate query)
-    // This ensures dropdowns always have options regardless of current filter
+    // ALWAYS fetch full filter options (no search applied to dropdowns)
     filters = await fetchFilterOptions();
-    console.log(`[Prices API] Filter options: ${filters.categories.length} categories, ${filters.states.length} states, ${filters.markets.length} markets`);
+    console.log(`[Prices API v9.1] Filters: ${filters.categories.length} cats, ${filters.states.length} states, ${filters.markets.length} markets`);
 
-    // Try Summary Table first (fastest)
-    const summaryResult = await fetchFromSummaryTable();
-    if (summaryResult.success && summaryResult.prices.length >= 10) {
+    // Try Summary Table first — search/filters go INTO the SQL WHERE clause
+    const summaryResult = await fetchFromSummaryTable(search, category, state, market);
+    if (summaryResult.success && summaryResult.prices.length > 0) {
       prices = summaryResult.prices;
       source = "Latest_Prices_Summary";
-      console.log(`[Prices API] Loaded ${prices.length} from Latest_Prices_Summary`);
+      console.log(`[Prices API v9.1] ${prices.length} from Summary (search="${search}", cat="${category}", state="${state}", market="${market}")`);
     }
 
-    // Fallback to Daily_Prices
-    if (prices.length < 10) {
-      const dailyResult = await fetchFromDailyPrices();
+    // Fallback to Daily_Prices — also with SQL-level filtering
+    if (prices.length === 0) {
+      const dailyResult = await fetchFromDailyPrices(search, category, state, market);
       if (dailyResult.success) {
         prices = dailyResult.prices;
         source = "Daily_Prices";
-        console.log(`[Prices API] Loaded ${prices.length} from Daily_Prices`);
+        console.log(`[Prices API v9.1] ${prices.length} from Daily_Prices`);
       }
     }
 
-    // Final fallback to mock data
-    if (prices.length < 10) {
+    // Final fallback to mock data (only if NO filters active and DB empty)
+    if (prices.length === 0 && !search && !category && !state && !market) {
       const mock = generateMockData();
       prices = mock.prices;
-      filters = mock.filters; // Use mock filters too
+      filters = mock.filters;
       source = "Demo_Data";
-      console.log(`[Prices API] Using mock data`);
+      console.log(`[Prices API v9.1] Using mock data`);
     }
 
-    // Apply filters and sorting
-    const filtered = filterAndSort(prices, search, category, state, market, trend, sort);
-    const limited = filtered.slice(0, limit);
+    // Apply trend filter and sorting (lightweight)
+    const sorted = sortAndFilter(prices, trend, sort);
+    const limited = sorted.slice(0, limit);
 
     const responseTime = Date.now() - startTime;
 
@@ -496,21 +574,20 @@ export async function GET(request: NextRequest) {
       success: true,
       data: limited,
       pagination: {
-        total: filtered.length,
+        total: sorted.length,
         limit,
         offset: 0,
-        hasMore: filtered.length > limit,
+        hasMore: sorted.length > limit,
       },
-      filters, // Always return full filter options
+      filters,
       source,
       responseTime: `${responseTime}ms`,
       timestamp: new Date().toISOString(),
     });
 
   } catch (error: any) {
-    console.error("[Prices API] Error:", error);
-    
-    // Even on error, return mock data
+    console.error("[Prices API v9.1] Error:", error);
+
     const mock = generateMockData();
     return NextResponse.json({
       success: true,
