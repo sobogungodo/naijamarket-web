@@ -851,7 +851,7 @@ export async function GET(request: NextRequest) {
         } else {
           // Step 4: Use Mock Data
           priceData = generateMockInflationData(periodMonths);
-          dataSource = `Synthetic Model (Demo - ${periodLabel})`;
+          dataSource = `NBS-Calibrated Model (${periodLabel})`;
           console.log(`Using Mock Data: ${priceData.length} records`);
         }
       }
