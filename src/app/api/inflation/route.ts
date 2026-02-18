@@ -2,8 +2,8 @@
 // src/app/api/inflation/route.ts
 // NaijaMarket Intel - Inflation Tracker API
 // Bloomberg Equivalent: ECST <GO> (Economic Statistics)
-// Version: 2.0.0 - Hybrid Data (Daily_Prices → Validated_Prices → Mock)
-// Date: 2026-01-25
+// Version: 3.0.0 - NBS Jan 2026 post-rebase CPI, proper YoY calculation, fixed time_slot
+// Date: 2026-02-18
 // ============================================================================
 
 import { NextRequest, NextResponse } from "next/server";
@@ -18,7 +18,7 @@ const GOOGLE_API_KEY = process.env.GOOGLE_SHEETS_API_KEY || "";
 
 const SQL_CONFIG: sql.config = {
   server: process.env.AZURE_SQL_SERVER || "naijafood.database.windows.net",
-  database: process.env.AZURE_SQL_DATABASE || "NaijaMarketIntel",
+  database: process.env.AZURE_SQL_DATABASE || "naijafoodmarket",
   user: process.env.AZURE_SQL_USER || "",
   password: process.env.AZURE_SQL_PASSWORD || "",
   options: {
@@ -38,14 +38,19 @@ const TIME_PERIODS: Record<string, { months: number; label: string }> = {
 };
 
 // NBS Official Food Inflation Data (Monthly YoY %)
+// REBASED: NBS switched from 2009 to 2024 base year in mid-2025
+// Pre-rebase rates were 29-40%, post-rebase rates are 8-29%
 const NBS_OFFICIAL_INFLATION: Record<string, number> = {
+  // 2024 rates (pre-rebase methodology, kept for historical reference)
   "2024-01": 29.5, "2024-02": 30.1, "2024-03": 30.8, "2024-04": 31.2,
   "2024-05": 31.8, "2024-06": 32.4, "2024-07": 32.8, "2024-08": 33.1,
   "2024-09": 33.4, "2024-10": 33.6, "2024-11": 33.5, "2024-12": 33.6,
-  "2025-01": 33.7, "2025-02": 34.2, "2025-03": 33.9, "2025-04": 33.5,
-  "2025-05": 33.1, "2025-06": 32.8, "2025-07": 32.5, "2025-08": 32.2,
-  "2025-09": 31.9, "2025-10": 31.5, "2025-11": 31.2, "2025-12": 30.8,
-  "2026-01": 30.5,
+  // 2025 rates (REBASED to 2024 base year)
+  "2025-01": 29.63, "2025-02": 27.50, "2025-03": 25.22, "2025-04": 24.80,
+  "2025-05": 24.55, "2025-06": 23.50, "2025-07": 22.80, "2025-08": 21.50,
+  "2025-09": 20.16, "2025-10": 16.30, "2025-11": 14.21, "2025-12": 10.84,
+  // 2026 rates (post-rebase)
+  "2026-01": 8.89, "2026-02": 8.89,  // Feb uses Jan until NBS publishes
 };
 
 // NFPI Basket weights (must sum to 100)
@@ -216,47 +221,46 @@ async function fetchFromDailyPrices(months: number): Promise<{ data: PriceRecord
         DECLARE @EndDate DATE = (SELECT MAX(price_date) FROM dbo.Daily_Prices WHERE price_naira > 0);
         DECLARE @StartDate DATE = DATEADD(month, -@months - 12, @EndDate);
 
+        -- Aggregate in SQL: ~15K rows instead of millions
         SELECT 
-          item_id, item_name, market_id, market_name, state, category_id,
-          price_naira, price_date,
+          item_name,
+          state,
+          category_id,
           YEAR(price_date) as price_year,
-          MONTH(price_date) as price_month
-        FROM dbo.Daily_Prices
+          MONTH(price_date) as price_month,
+          AVG(CAST(price_naira AS FLOAT)) as avg_price,
+          COUNT(*) as record_count
+        FROM dbo.Daily_Prices WITH (NOLOCK)
         WHERE price_date >= @StartDate 
           AND price_date <= @EndDate
           AND price_naira > 0
-          AND time_slot = 2  -- Use midday prices for consistency
-        ORDER BY price_date, item_name, market_name
+          AND time_slot = '13:00'
+        GROUP BY item_name, state, category_id, 
+          YEAR(price_date), MONTH(price_date)
+        ORDER BY price_year, price_month, item_name
       `);
     
-    console.log(`Daily_Prices returned ${result.recordset.length} records for inflation`);
+    console.log(`Daily_Prices returned ${result.recordset.length} aggregated records for inflation`);
     
     const data: PriceRecord[] = result.recordset.map((row: {
-      item_id: number;
       item_name: string;
-      market_id: number;
-      market_name: string;
       state: string;
       category_id: number;
-      price_naira: number;
-      price_date: Date;
+      avg_price: number;
       price_year: number;
       price_month: number;
+      record_count: number;
     }) => {
-      const dateStr = row.price_date instanceof Date 
-        ? row.price_date.toISOString().split("T")[0] ?? "" 
-        : String(row.price_date);
-      
       return {
-        itemId: row.item_id || 0,
+        itemId: 0,
         itemName: row.item_name || "",
-        marketId: row.market_id || 0,
-        marketName: row.market_name || "",
+        marketId: 0,
+        marketName: "",
         state: row.state || "",
         region: getRegionFromState(row.state || ""),
         category: String(row.category_id || ""),
-        price: row.price_naira || 0,
-        date: dateStr,
+        price: row.avg_price || 0,
+        date: `${row.price_year}-${String(row.price_month).padStart(2, "0")}-15`,
         year: row.price_year || 0,
         month: row.price_month || 0,
       };
@@ -463,7 +467,7 @@ function generateMockInflationData(months: number): PriceRecord[] {
     
     // Inflation factor: prices increase over time
     const monthsAgo = m;
-    const inflationFactor = Math.pow(1.025, monthsAgo); // ~30% annual inflation
+    const inflationFactor = Math.pow(1.0071, monthsAgo); // ~8.89% annual inflation (post-rebase)
     
     for (const market of markets) {
       for (const item of items) {
@@ -508,22 +512,11 @@ function calculateMonthlyInflation(data: PriceRecord[], months: number): Monthly
     monthlyData.set(key, existing);
   }
   
-  // Sort keys and get last N months
-  const sortedKeys = [...monthlyData.keys()].sort().slice(-months);
-  
-  const result: MonthlyInflation[] = [];
-  let prevAvgPrice = 0;
-  
-  for (const key of sortedKeys) {
-    const records = monthlyData.get(key) || [];
-    const [yearStr, monthStr] = key.split("-");
-    const year = parseInt(yearStr || "2026");
-    const month = parseInt(monthStr || "1");
-    
-    // Calculate average price for basket items
+  // Calculate weighted average price per month
+  const monthlyAvg = new Map<string, number>();
+  for (const [key, records] of monthlyData) {
     let totalWeightedPrice = 0;
     let totalWeight = 0;
-    
     for (const record of records) {
       const keyword = getBasketKeyword(record.itemName);
       if (keyword && BASKET_WEIGHTS[keyword]) {
@@ -532,31 +525,51 @@ function calculateMonthlyInflation(data: PriceRecord[], months: number): Monthly
         totalWeight += weight;
       }
     }
-    
-    const avgPrice = totalWeight > 0 ? totalWeightedPrice / totalWeight : 0;
-    
-    // Calculate MoM inflation
-    let momInflation = 0;
-    if (prevAvgPrice > 0) {
-      momInflation = ((avgPrice - prevAvgPrice) / prevAvgPrice) * 100;
+    if (totalWeight > 0) {
+      monthlyAvg.set(key, totalWeightedPrice / totalWeight);
     }
+  }
+  
+  // Sort keys and get last N months (display period)
+  const allKeys = [...monthlyAvg.keys()].sort();
+  const displayKeys = allKeys.slice(-months);
+  
+  const result: MonthlyInflation[] = [];
+  let prevAvgPrice = 0;
+  
+  for (const key of displayKeys) {
+    const [yearStr, monthStr] = key.split("-");
+    const year = parseInt(yearStr || "2026");
+    const month = parseInt(monthStr || "1");
+    const avgPrice = monthlyAvg.get(key) || 0;
+    
+    // YoY: compare to same month last year
+    const yearAgoKey = `${year - 1}-${monthStr}`;
+    const yearAgoPrice = monthlyAvg.get(yearAgoKey) || 0;
+    
+    // Proper YoY inflation rate
+    const yoyRate = yearAgoPrice > 0 
+      ? ((avgPrice - yearAgoPrice) / yearAgoPrice) * 100 
+      : 0;
+    
+    // MoM change (for trend direction)
+    const momChange = prevAvgPrice > 0 
+      ? ((avgPrice - prevAvgPrice) / prevAvgPrice) * 100 
+      : 0;
     
     // Get NBS rate for this month
     const nbsRate = NBS_OFFICIAL_INFLATION[key] ?? null;
-    
-    // Annualize monthly rate for comparison
-    const annualizedRate = momInflation * 12;
     
     result.push({
       month: key,
       monthName: `${getMonthName(month)} ${year}`,
       year,
-      naijaMarketRate: Math.round(annualizedRate * 10) / 10,
+      naijaMarketRate: Math.round(yoyRate * 10) / 10,
       nbsRate,
-      difference: nbsRate !== null ? Math.round((annualizedRate - nbsRate) * 10) / 10 : null,
+      difference: nbsRate !== null ? Math.round((yoyRate - nbsRate) * 10) / 10 : null,
       avgPrice: Math.round(avgPrice),
-      prevAvgPrice: Math.round(prevAvgPrice),
-      priceChange: Math.round(avgPrice - prevAvgPrice),
+      prevAvgPrice: Math.round(yearAgoPrice > 0 ? yearAgoPrice : prevAvgPrice),
+      priceChange: Math.round(avgPrice - (yearAgoPrice > 0 ? yearAgoPrice : prevAvgPrice)),
     });
     
     prevAvgPrice = avgPrice;
@@ -868,14 +881,16 @@ export async function GET(request: NextRequest) {
     const currentMonthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
     const latestNBS = NBS_OFFICIAL_INFLATION[currentMonthKey] ?? 
                       NBS_OFFICIAL_INFLATION[`${now.getFullYear()}-${String(now.getMonth()).padStart(2, "0")}`] ?? 
-                      30.5;
+                      8.89;  // NBS Jan 2026 food inflation (post-rebase)
     
     const nbsDifference = currentRate - latestNBS;
-    let interpretation = "NaijaMarket data aligns with official statistics";
-    if (nbsDifference > 3) {
-      interpretation = "NaijaMarket shows higher inflation than official NBS data - real-time market prices may be rising faster";
-    } else if (nbsDifference < -3) {
-      interpretation = "NaijaMarket shows lower inflation than official NBS data - market prices may be stabilizing";
+    let interpretation = "NaijaMarket data closely aligns with official NBS statistics";
+    if (nbsDifference > 2) {
+      interpretation = `NaijaMarket shows ${Math.abs(nbsDifference).toFixed(1)}pp higher inflation than NBS - real-time market prices may be rising faster than official surveys capture`;
+    } else if (nbsDifference < -2) {
+      interpretation = `NaijaMarket shows ${Math.abs(nbsDifference).toFixed(1)}pp lower inflation than NBS - market prices may be stabilizing faster than official data reflects`;
+    } else {
+      interpretation = `NaijaMarket and NBS data are within ${Math.abs(nbsDifference).toFixed(1)}pp - strong alignment between real-time and official statistics`;
     }
     
     const response: InflationResponse = {

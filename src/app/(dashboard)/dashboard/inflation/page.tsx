@@ -4,8 +4,8 @@
 // src/app/(dashboard)/dashboard/inflation/page.tsx
 // NaijaMarket Intel - Inflation Tracker Page
 // Bloomberg Equivalent: ECST <GO> (Economic Statistics)
-// Version: 2.0.0 - With Time Period Tabs and NBS Comparison
-// Date: 2026-01-25
+// Version: 3.0.0 - Adjusted thresholds for NBS post-rebase CPI (8.89% food YoY)
+// Date: 2026-02-18
 // ============================================================================
 
 import { useState, useEffect, useCallback } from "react";
@@ -533,8 +533,8 @@ export default function InflationPage() {
               >
                 <div className="flex items-center gap-3">
                   <div className={`w-10 h-10 rounded-lg flex items-center justify-center text-sm font-bold ${
-                    region.inflationRate > 35 ? "bg-red-900/50 text-red-400" :
-                    region.inflationRate < 25 ? "bg-emerald-900/50 text-emerald-400" :
+                    region.inflationRate > 15 ? "bg-red-900/50 text-red-400" :
+                    region.inflationRate < 8 ? "bg-emerald-900/50 text-emerald-400" :
                     "bg-orange-900/50 text-orange-400"
                   }`}>
                     {region.region}
@@ -546,8 +546,8 @@ export default function InflationPage() {
                 </div>
                 <div className="text-right">
                   <p className={`font-bold ${
-                    region.inflationRate > 35 ? "text-red-400" :
-                    region.inflationRate < 25 ? "text-emerald-400" : "text-orange-400"
+                    region.inflationRate > 15 ? "text-red-400" :
+                    region.inflationRate < 8 ? "text-emerald-400" : "text-orange-400"
                   }`}>
                     {formatPercent(region.inflationRate, false)}
                   </p>
@@ -575,8 +575,8 @@ export default function InflationPage() {
                 <div className="flex items-center justify-between mb-2">
                   <p className="font-medium">{cat.category}</p>
                   <p className={`font-bold ${
-                    cat.inflationRate > 30 ? "text-red-400" :
-                    cat.inflationRate < 20 ? "text-emerald-400" : "text-orange-400"
+                    cat.inflationRate > 12 ? "text-red-400" :
+                    cat.inflationRate < 5 ? "text-emerald-400" : "text-orange-400"
                   }`}>
                     {formatPercent(cat.inflationRate, false)}
                   </p>
@@ -585,8 +585,8 @@ export default function InflationPage() {
                   <div className="flex-1 h-2 bg-gray-700 rounded-full overflow-hidden">
                     <div 
                       className={`h-full rounded-full ${
-                        cat.inflationRate > 30 ? "bg-red-500" :
-                        cat.inflationRate < 20 ? "bg-emerald-500" : "bg-orange-500"
+                        cat.inflationRate > 12 ? "bg-red-500" :
+                        cat.inflationRate < 5 ? "bg-emerald-500" : "bg-orange-500"
                       }`}
                       style={{ width: `${Math.min(cat.weight, 100)}%` }}
                     />
@@ -633,7 +633,7 @@ export default function InflationPage() {
                   <td className="py-2 px-3 text-right">{formatPrice(item.currentPrice)}</td>
                   <td className="py-2 px-3 text-right text-gray-500">{formatPrice(item.previousPrice)}</td>
                   <td className={`py-2 px-3 text-right font-medium ${
-                    item.inflationRate > 30 ? "text-red-400" :
+                    item.inflationRate > 12 ? "text-red-400" :
                     item.inflationRate < 0 ? "text-emerald-400" : "text-orange-400"
                   }`}>
                     {formatPercent(item.inflationRate)}
