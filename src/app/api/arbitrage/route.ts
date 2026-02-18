@@ -260,11 +260,30 @@ async function findArbitrageOpportunities(
   for (const [itemName, itemPrices] of Object.entries(pricesByItem)) {
     if (itemPrices.length < 2) continue;
 
+    // OUTLIER FILTER: Calculate median price, exclude markets >40% away
+    // This removes simulation artifacts where base prices diverged wildly
+    const allPricesForItem = itemPrices.map(p => parseFloat(p.price) || 0).filter(p => p > 0).sort((a, b) => a - b);
+    if (allPricesForItem.length < 2) continue;
+    
+    const medianPrice = allPricesForItem[Math.floor(allPricesForItem.length / 2)] || 0;
+    if (medianPrice <= 0) continue;
+    
+    const lowerBound = medianPrice * 0.75;  // 25% below median
+    const upperBound = medianPrice * 1.25;  // 25% above median
+    
+    // Only keep markets with prices within reasonable range of median
+    const validPrices = itemPrices.filter(p => {
+      const price = parseFloat(p.price) || 0;
+      return price >= lowerBound && price <= upperBound;
+    });
+    
+    if (validPrices.length < 2) continue;
+
     // Compare every pair of markets for this item
-    for (let i = 0; i < itemPrices.length; i++) {
-      for (let j = i + 1; j < itemPrices.length; j++) {
-        const a = itemPrices[i];
-        const b = itemPrices[j];
+    for (let i = 0; i < validPrices.length; i++) {
+      for (let j = i + 1; j < validPrices.length; j++) {
+        const a = validPrices[i];
+        const b = validPrices[j];
         
         const priceA = parseFloat(a.price) || 0;
         const priceB = parseFloat(b.price) || 0;
@@ -293,9 +312,9 @@ async function findArbitrageOpportunities(
         
         if (profitPct < minProfitPct) continue;
         
-        // Cap: anything over 50% is a data anomaly, not real arbitrage
-        // Real Nigerian commodity arbitrage maxes out at ~30% inter-state
-        if (profitPct > 50) continue;
+        // Cap: anything over 30% is still a data anomaly
+        // Real Nigerian commodity arbitrage: 2-15% same state, up to 25% inter-state
+        if (profitPct > 30) continue;
 
         const buyConf = calculateConfidence(buyRec.price_date);
         const sellConf = calculateConfidence(sellRec.price_date);
