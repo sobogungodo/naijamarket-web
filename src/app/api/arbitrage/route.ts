@@ -90,10 +90,17 @@ interface ArbitrageOpportunity {
 // ============================================================================
 
 const CATEGORY_MAP: Record<string, string> = {
-  "1": "Grains & Cereals", "2": "Tubers", "3": "Vegetables", "4": "Fruits",
-  "5": "Oils & Fats", "6": "Protein", "7": "Dairy", "8": "Sweeteners",
-  "9": "Beverages", "10": "Building Materials", "11": "Livestock",
-  "12": "Fish & Seafood", "13": "Condiments", "14": "Processed Foods",
+  "CAT001": "Grains & Cereals", "CAT002": "Tubers", "CAT003": "Vegetables",
+  "CAT004": "Fruits", "CAT005": "Oils & Fats", "CAT006": "Protein",
+  "CAT007": "Dairy", "CAT008": "Sweeteners", "CAT009": "Beverages",
+  "CAT010": "Building Materials", "CAT011": "Livestock",
+  "CAT012": "Fish & Seafood", "CAT013": "Condiments", "CAT014": "Processed Foods",
+  "CAT015": "Personal Care", "CAT016": "Baby Products", "CAT017": "Health",
+  "CAT018": "Household", "CAT019": "Electronics", "CAT020": "Fashion",
+  "CAT021": "Fabrics & Textiles", "CAT022": "Stationery", "CAT023": "Auto Parts",
+  "CAT024": "Poultry & Feed", "CAT025": "Agricultural Inputs",
+  "CAT030": "Electrical", "CAT069": "Seeds & Seedlings",
+  "CAT092": "Appliances", "CAT099": "Feminine Care",
 };
 
 // ── NIGERIAN TRANSPORT COST MODEL (Feb 2026) ───────────────────────────
@@ -424,7 +431,7 @@ async function findArbitrageOpportunities(
           id: `${itemName}-${buyMarket}-${sellMarket}`.replace(/\s+/g, "-").toLowerCase(),
           itemId: catId,
           itemName,
-          categoryName: CATEGORY_MAP[catId] || `Category ${catId}`,
+          categoryName: CATEGORY_MAP[catId] || "Other",
           unit: buyRec.unit || "unit",
           buyMarket: {
             id: buyMarket, name: buyMarket, state: buyRec.state || "",
