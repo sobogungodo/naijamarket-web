@@ -2,11 +2,25 @@
 // NAIJAMARKET INTEL - ARBITRAGE OPPORTUNITIES API
 // File: src/app/api/arbitrage/route.ts
 // Bloomberg Equivalent: ARBI <GO>
-// Version: 2.0 - Fully Type-Safe
+// Version: 3.0 - Uses Latest_Prices_Summary, user-configurable profit margin
+// Date: 2026-02-18
 // ============================================================================
 
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
+
+// ============================================================================
+// SINGLETON PRISMA
+// ============================================================================
+
+let prismaClient: any = null;
+
+async function getPrisma() {
+  if (!prismaClient) {
+    const { PrismaClient } = await import("@prisma/client");
+    prismaClient = new PrismaClient();
+  }
+  return prismaClient;
+}
 
 // ============================================================================
 // TYPES
@@ -14,7 +28,7 @@ import { prisma } from "@/lib/prisma";
 
 interface TierConfig {
   hasAccess: boolean;
-  minProfitPct: number;
+  minProfitFloor: number;  // Absolute minimum the tier allows
   maxResults: number;
 }
 
@@ -67,6 +81,13 @@ interface ArbitrageOpportunity {
 // CONFIGURATION
 // ============================================================================
 
+const CATEGORY_MAP: Record<string, string> = {
+  "1": "Grains & Cereals", "2": "Tubers", "3": "Vegetables", "4": "Fruits",
+  "5": "Oils & Fats", "6": "Protein", "7": "Dairy", "8": "Sweeteners",
+  "9": "Beverages", "10": "Building Materials", "11": "Livestock",
+  "12": "Fish & Seafood", "13": "Condiments", "14": "Processed Foods",
+};
+
 const MARKET_COORDINATES: Record<string, MarketCoordinate> = {
   "Mile 12 Market": { lat: 6.5833, lon: 3.3833, state: "Lagos" },
   "Alaba International Market": { lat: 6.4631, lon: 3.1937, state: "Lagos" },
@@ -111,17 +132,20 @@ const ROUTE_RISKS: Record<string, number> = {
   "DEFAULT": 0,
 };
 
-const DEFAULT_TIER_CONFIG: TierConfig = { hasAccess: false, minProfitPct: 100, maxResults: 0 };
+const DEFAULT_TIER_CONFIG: TierConfig = { hasAccess: false, minProfitFloor: 100, maxResults: 0 };
 
+// Users can set ANY minimum profit %, but tier sets the floor
+// GOLD: can see down to 2% | BUSINESS: down to 1% | ENTERPRISE: down to 0%
 const TIER_ACCESS: Record<string, TierConfig> = {
-  FREE: { hasAccess: false, minProfitPct: 100, maxResults: 0 },
-  SILVER: { hasAccess: false, minProfitPct: 100, maxResults: 0 },
-  GOLD: { hasAccess: true, minProfitPct: 5, maxResults: 10 },
-  BUSINESS: { hasAccess: true, minProfitPct: 10, maxResults: 25 },
-  CORPORATE: { hasAccess: true, minProfitPct: 15, maxResults: 50 },
-  ENTERPRISE: { hasAccess: true, minProfitPct: 0, maxResults: 100 },
-  OGA_BOSS: { hasAccess: true, minProfitPct: 0, maxResults: 100 },
-  GOVERNMENT: { hasAccess: true, minProfitPct: 0, maxResults: 100 },
+  FREE: { hasAccess: false, minProfitFloor: 100, maxResults: 0 },
+  SILVER: { hasAccess: false, minProfitFloor: 100, maxResults: 0 },
+  GOLD: { hasAccess: true, minProfitFloor: 2, maxResults: 25 },
+  BUSINESS: { hasAccess: true, minProfitFloor: 1, maxResults: 50 },
+  BUSINESS_PLUS: { hasAccess: true, minProfitFloor: 0, maxResults: 75 },
+  CORPORATE: { hasAccess: true, minProfitFloor: 0, maxResults: 100 },
+  ENTERPRISE: { hasAccess: true, minProfitFloor: 0, maxResults: 200 },
+  OGA_BOSS: { hasAccess: true, minProfitFloor: 0, maxResults: 200 },
+  GOVERNMENT: { hasAccess: true, minProfitFloor: 0, maxResults: 200 },
 };
 
 // ============================================================================
@@ -129,23 +153,17 @@ const TIER_ACCESS: Record<string, TierConfig> = {
 // ============================================================================
 
 function getTierConfig(tier: string): TierConfig {
-  const config = TIER_ACCESS[tier];
-  if (config) return config;
-  const freeConfig = TIER_ACCESS["FREE"];
-  if (freeConfig) return freeConfig;
-  return DEFAULT_TIER_CONFIG;
+  return TIER_ACCESS[tier] || TIER_ACCESS["FREE"] || DEFAULT_TIER_CONFIG;
 }
 
 function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
   const R = 6371;
   const dLat = (lat2 - lat1) * (Math.PI / 180);
   const dLon = (lon2 - lon1) * (Math.PI / 180);
-  
   const a = 
     Math.sin(dLat / 2) * Math.sin(dLat / 2) +
     Math.cos(lat1 * (Math.PI / 180)) * Math.cos(lat2 * (Math.PI / 180)) *
     Math.sin(dLon / 2) * Math.sin(dLon / 2);
-  
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   return R * c;
 }
@@ -184,129 +202,133 @@ function getTransportCost(fromMarket: string, toMarket: string): TransportResult
   };
 }
 
-function calculateConfidence(validatedAt: Date | null): ConfidenceResult {
-  if (!validatedAt) return { score: 50, label: "Unknown", color: "gray" };
+function calculateConfidence(priceDate: string | Date | null): ConfidenceResult {
+  if (!priceDate) return { score: 50, label: "Unknown", color: "gray" };
   
   const now = new Date();
-  const hoursOld = (now.getTime() - validatedAt.getTime()) / (1000 * 60 * 60);
-  const daysOld = hoursOld / 24;
+  const date = priceDate instanceof Date ? priceDate : new Date(priceDate);
+  const daysOld = (now.getTime() - date.getTime()) / (1000 * 60 * 60 * 24);
   
-  if (daysOld < 1) {
-    return { score: 100 - Math.floor(hoursOld * 2), label: "Very Fresh", color: "green" };
-  } else if (daysOld < 3) {
-    return { score: 85 - Math.floor((daysOld - 1) * 5), label: "Fresh", color: "green" };
-  } else if (daysOld < 7) {
-    return { score: 65 - Math.floor((daysOld - 3) * 5), label: "Recent", color: "yellow" };
-  } else if (daysOld < 14) {
-    return { score: 50 - Math.floor((daysOld - 7) * 2), label: "Moderate", color: "orange" };
-  } else if (daysOld < 30) {
-    return { score: 35 - Math.floor((daysOld - 14) * 1), label: "Stale", color: "red" };
-  } else {
-    return { score: 20, label: "Very Stale", color: "red" };
-  }
+  if (daysOld < 1) return { score: 95, label: "Very Fresh", color: "green" };
+  if (daysOld < 3) return { score: 85, label: "Fresh", color: "green" };
+  if (daysOld < 7) return { score: 65, label: "Recent", color: "yellow" };
+  if (daysOld < 14) return { score: 45, label: "Moderate", color: "orange" };
+  return { score: 25, label: "Stale", color: "red" };
 }
 
 // ============================================================================
-// ARBITRAGE FINDER
+// ARBITRAGE FINDER - Uses Latest_Prices_Summary (fast, ~137K rows)
 // ============================================================================
 
 async function findArbitrageOpportunities(
-  minProfitPct: number = 0,
-  maxResults: number = 50,
+  minProfitPct: number,
+  maxResults: number,
   filterItem?: string,
   filterCategory?: string
 ): Promise<ArbitrageOpportunity[]> {
-  const prices = await prisma.approved_Prices.findMany({
-    where: {
-      validation_status: "APPROVED",
-      price: { not: null },
-      ...(filterItem && {
-        item_name: { contains: filterItem },
-      }),
-      ...(filterCategory && {
-        category_name: { contains: filterCategory },
-      }),
-    },
-  });
-
-  const pricesByItem: Record<string, typeof prices> = {};
+  const prisma = await getPrisma();
   
-  for (const price of prices) {
-    const itemId = price.item_id || price.item_name || "unknown";
-    if (!pricesByItem[itemId]) {
-      pricesByItem[itemId] = [];
-    }
-    pricesByItem[itemId].push(price);
+  // Build filter conditions
+  const itemFilter = filterItem ? `AND item_name LIKE '%${filterItem.replace(/'/g, "''")}%'` : "";
+  const categoryFilter = filterCategory ? `AND category_id = '${filterCategory.replace(/'/g, "''")}'` : "";
+  
+  // Get latest prices grouped by item+market from Summary table
+  const prices = await prisma.$queryRawUnsafe(`
+    SELECT 
+      item_name, market_name, state, category_id, unit,
+      CAST(price_naira AS FLOAT) as price,
+      price_date
+    FROM Latest_Prices_Summary WITH (NOLOCK)
+    WHERE price_naira > 0
+      ${itemFilter}
+      ${categoryFilter}
+    ORDER BY item_name, market_name
+  `) as any[];
+
+  if (prices.length === 0) return [];
+
+  // Group by item
+  const pricesByItem: Record<string, typeof prices> = {};
+  for (const p of prices) {
+    const key = p.item_name || "unknown";
+    if (!pricesByItem[key]) pricesByItem[key] = [];
+    pricesByItem[key].push(p);
   }
 
   const opportunities: ArbitrageOpportunity[] = [];
 
-  for (const [itemId, itemPrices] of Object.entries(pricesByItem)) {
+  for (const [itemName, itemPrices] of Object.entries(pricesByItem)) {
     if (itemPrices.length < 2) continue;
 
-    const sorted = [...itemPrices].sort((a, b) => 
-      Number(a.price || 0) - Number(b.price || 0)
-    );
+    // Compare every pair of markets for this item
+    for (let i = 0; i < itemPrices.length; i++) {
+      for (let j = i + 1; j < itemPrices.length; j++) {
+        const a = itemPrices[i];
+        const b = itemPrices[j];
+        
+        const priceA = parseFloat(a.price) || 0;
+        const priceB = parseFloat(b.price) || 0;
+        
+        if (priceA <= 0 || priceB <= 0) continue;
+        if (Math.abs(priceA - priceB) < 10) continue; // Skip negligible differences
 
-    for (let i = 0; i < Math.min(3, sorted.length); i++) {
-      for (let j = sorted.length - 1; j > i && j >= sorted.length - 3; j--) {
-        const buyPrice = sorted[i];
-        const sellPrice = sorted[j];
-        
-        if (!buyPrice || !sellPrice) continue;
-        
-        const buyPriceNum = Number(buyPrice.price || 0);
-        const sellPriceNum = Number(sellPrice.price || 0);
-        
-        if (buyPriceNum <= 0 || sellPriceNum <= buyPriceNum) continue;
+        // Determine buy (lower) and sell (higher)
+        const [buyRec, sellRec, buyPrice, sellPrice] = priceA < priceB 
+          ? [a, b, priceA, priceB] 
+          : [b, a, priceB, priceA];
 
-        const buyMarketName = buyPrice.market_name || "Unknown";
-        const sellMarketName = sellPrice.market_name || "Unknown";
+        const buyMarketName = buyRec.market_name || "";
+        const sellMarketName = sellRec.market_name || "";
         
+        // Skip same market
+        if (buyMarketName === sellMarketName) continue;
+
         const transport = getTransportCost(buyMarketName, sellMarketName);
-        
-        const grossProfit = sellPriceNum - buyPriceNum;
+        const grossProfit = sellPrice - buyPrice;
         const netProfit = grossProfit - transport.totalCost;
-        const profitPct = (netProfit / buyPriceNum) * 100;
+        
+        if (netProfit <= 0) continue;
+        
+        const profitPct = (netProfit / buyPrice) * 100;
         
         if (profitPct < minProfitPct) continue;
+
+        const buyConf = calculateConfidence(buyRec.price_date);
+        const sellConf = calculateConfidence(sellRec.price_date);
+        const avgScore = Math.round((buyConf.score + sellConf.score) / 2);
         
-        const buyConfidence = calculateConfidence(buyPrice.validated_at);
-        const sellConfidence = calculateConfidence(sellPrice.validated_at);
-        const avgConfidence = Math.round((buyConfidence.score + sellConfidence.score) / 2);
-        
-        const confidenceLabel = avgConfidence >= 75 ? "High" : avgConfidence >= 50 ? "Medium" : "Low";
-        const confidenceColor = avgConfidence >= 75 ? "green" : avgConfidence >= 50 ? "yellow" : "red";
+        const catId = String(buyRec.category_id || "");
+        const categoryName = CATEGORY_MAP[catId] || `Category ${catId}`;
 
         opportunities.push({
-          id: `${itemId}-${buyPrice.market_id || i}-${sellPrice.market_id || j}`,
-          itemId: buyPrice.item_id || "",
-          itemName: buyPrice.item_name || "Unknown",
-          categoryName: buyPrice.category_name || "Unknown",
-          unit: buyPrice.unit || "unit",
+          id: `${itemName}-${buyMarketName}-${sellMarketName}`.replace(/\s+/g, "-").toLowerCase(),
+          itemId: catId,
+          itemName,
+          categoryName,
+          unit: buyRec.unit || "unit",
           buyMarket: {
-            id: buyPrice.market_id || "",
+            id: buyMarketName,
             name: buyMarketName,
-            state: buyPrice.state || "",
-            price: buyPriceNum,
-            updatedAt: buyPrice.validated_at?.toISOString() || "",
+            state: buyRec.state || "",
+            price: Math.round(buyPrice),
+            updatedAt: buyRec.price_date?.toISOString?.() || String(buyRec.price_date || ""),
           },
           sellMarket: {
-            id: sellPrice.market_id || "",
+            id: sellMarketName,
             name: sellMarketName,
-            state: sellPrice.state || "",
-            price: sellPriceNum,
-            updatedAt: sellPrice.validated_at?.toISOString() || "",
+            state: sellRec.state || "",
+            price: Math.round(sellPrice),
+            updatedAt: sellRec.price_date?.toISOString?.() || String(sellRec.price_date || ""),
           },
-          grossProfit,
+          grossProfit: Math.round(grossProfit),
           transportCost: transport.totalCost,
-          netProfit,
+          netProfit: Math.round(netProfit),
           profitPercentage: Math.round(profitPct * 10) / 10,
           distance: transport.distance,
           confidence: {
-            score: avgConfidence,
-            label: confidenceLabel,
-            color: confidenceColor,
+            score: avgScore,
+            label: avgScore >= 75 ? "High" : avgScore >= 50 ? "Medium" : "Low",
+            color: avgScore >= 75 ? "green" : avgScore >= 50 ? "yellow" : "red",
           },
           transportLabel: transport.label,
         });
@@ -314,13 +336,14 @@ async function findArbitrageOpportunities(
     }
   }
 
+  // Sort by profit percentage descending
   opportunities.sort((a, b) => b.profitPercentage - a.profitPercentage);
 
   return opportunities.slice(0, maxResults);
 }
 
 // ============================================================================
-// API ROUTE HANDLERS
+// GET - List arbitrage opportunities
 // ============================================================================
 
 export async function GET(request: NextRequest) {
@@ -332,6 +355,9 @@ export async function GET(request: NextRequest) {
     const category = searchParams.get("category") || undefined;
     const page = parseInt(searchParams.get("page") || "1");
     const limit = parseInt(searchParams.get("limit") || "20");
+    
+    // User-configurable minimum profit (query param)
+    const userMinProfit = searchParams.get("minProfit");
     
     const tierConfig = getTierConfig(tier);
     
@@ -345,8 +371,13 @@ export async function GET(request: NextRequest) {
       }, { status: 403 });
     }
     
+    // User can set their own min profit, but not below tier floor
+    const minProfit = userMinProfit !== null 
+      ? Math.max(parseFloat(userMinProfit) || 0, tierConfig.minProfitFloor)
+      : tierConfig.minProfitFloor;
+    
     const allOpportunities = await findArbitrageOpportunities(
-      tierConfig.minProfitPct,
+      minProfit,
       tierConfig.maxResults,
       item,
       category
@@ -369,12 +400,14 @@ export async function GET(request: NextRequest) {
         },
         tierInfo: {
           tier,
-          minProfitPct: tierConfig.minProfitPct,
+          minProfitFloor: tierConfig.minProfitFloor,
+          appliedMinProfit: minProfit,
           maxResults: tierConfig.maxResults,
         },
         meta: {
           generatedAt: new Date().toISOString(),
           transportCostBasis: "2024-2025 Nigeria logistics rates",
+          dataSource: "Latest_Prices_Summary",
         },
       },
     });
@@ -389,10 +422,15 @@ export async function GET(request: NextRequest) {
   }
 }
 
+// ============================================================================
+// POST - Detailed arbitrage analysis for specific pair
+// ============================================================================
+
 export async function POST(request: NextRequest) {
   try {
+    const prisma = await getPrisma();
     const body = await request.json();
-    const { buyMarketId, sellMarketId, itemId, tier = "FREE" } = body;
+    const { buyMarket, sellMarket, itemName, tier = "FREE" } = body;
     
     const tierConfig = getTierConfig(tier.toUpperCase());
     
@@ -403,22 +441,22 @@ export async function POST(request: NextRequest) {
         message: "Arbitrage feature requires GOLD tier or higher",
       }, { status: 403 });
     }
+
+    const itemSearch = (itemName || "").replace(/'/g, "''");
+    const buySearch = (buyMarket || "").replace(/'/g, "''");
+    const sellSearch = (sellMarket || "").replace(/'/g, "''");
     
-    const buyPrice = await prisma.approved_Prices.findFirst({
-      where: {
-        item_id: itemId,
-        market_id: buyMarketId,
-        validation_status: "APPROVED",
-      },
-    });
+    const results = await prisma.$queryRawUnsafe(`
+      SELECT item_name, market_name, state, category_id, unit,
+        CAST(price_naira AS FLOAT) as price, price_date
+      FROM Latest_Prices_Summary WITH (NOLOCK)
+      WHERE item_name LIKE '%${itemSearch}%'
+        AND (market_name = '${buySearch}' OR market_name = '${sellSearch}')
+        AND price_naira > 0
+    `) as any[];
     
-    const sellPrice = await prisma.approved_Prices.findFirst({
-      where: {
-        item_id: itemId,
-        market_id: sellMarketId,
-        validation_status: "APPROVED",
-      },
-    });
+    const buyPrice = results.find((r: any) => r.market_name === buyMarket);
+    const sellPrice = results.find((r: any) => r.market_name === sellMarket);
     
     if (!buyPrice || !sellPrice) {
       return NextResponse.json({
@@ -428,12 +466,10 @@ export async function POST(request: NextRequest) {
       }, { status: 404 });
     }
     
-    const buyPriceNum = Number(buyPrice.price || 0);
-    const sellPriceNum = Number(sellPrice.price || 0);
-    const buyMarketName = buyPrice.market_name || "";
-    const sellMarketName = sellPrice.market_name || "";
+    const buyPriceNum = parseFloat(buyPrice.price) || 0;
+    const sellPriceNum = parseFloat(sellPrice.price) || 0;
     
-    const transport = getTransportCost(buyMarketName, sellMarketName);
+    const transport = getTransportCost(buyMarket, sellMarket);
     
     const quantities = [1, 5, 10, 25, 50, 100];
     const profitBreakdown = quantities.map(qty => {
@@ -441,45 +477,39 @@ export async function POST(request: NextRequest) {
       const totalSellRevenue = sellPriceNum * qty;
       const totalTransport = transport.totalCost * qty;
       const totalNetProfit = totalSellRevenue - totalBuyCost - totalTransport;
-      const roi = (totalNetProfit / (totalBuyCost + totalTransport)) * 100;
+      const roi = totalBuyCost + totalTransport > 0 
+        ? (totalNetProfit / (totalBuyCost + totalTransport)) * 100 
+        : 0;
       
       return {
         quantity: qty,
-        buyCost: totalBuyCost,
-        sellRevenue: totalSellRevenue,
-        transportCost: totalTransport,
-        netProfit: totalNetProfit,
+        buyCost: Math.round(totalBuyCost),
+        sellRevenue: Math.round(totalSellRevenue),
+        transportCost: Math.round(totalTransport),
+        netProfit: Math.round(totalNetProfit),
         roi: Math.round(roi * 10) / 10,
       };
     });
-    
-    const buyConfidence = calculateConfidence(buyPrice.validated_at);
-    const sellConfidence = calculateConfidence(sellPrice.validated_at);
     
     return NextResponse.json({
       success: true,
       data: {
         item: {
-          id: itemId,
           name: buyPrice.item_name,
-          category: buyPrice.category_name,
+          category: CATEGORY_MAP[String(buyPrice.category_id)] || "Other",
           unit: buyPrice.unit,
         },
         buyMarket: {
-          id: buyMarketId,
-          name: buyMarketName,
+          name: buyMarket,
           state: buyPrice.state,
-          price: buyPriceNum,
-          updatedAt: buyPrice.validated_at,
-          confidence: buyConfidence,
+          price: Math.round(buyPriceNum),
+          confidence: calculateConfidence(buyPrice.price_date),
         },
         sellMarket: {
-          id: sellMarketId,
-          name: sellMarketName,
+          name: sellMarket,
           state: sellPrice.state,
-          price: sellPriceNum,
-          updatedAt: sellPrice.validated_at,
-          confidence: sellConfidence,
+          price: Math.round(sellPriceNum),
+          confidence: calculateConfidence(sellPrice.price_date),
         },
         transport: {
           distance: transport.distance,
@@ -489,8 +519,8 @@ export async function POST(request: NextRequest) {
           label: transport.label,
         },
         profitAnalysis: {
-          unitPriceSpread: sellPriceNum - buyPriceNum,
-          unitNetProfit: sellPriceNum - buyPriceNum - transport.totalCost,
+          unitPriceSpread: Math.round(sellPriceNum - buyPriceNum),
+          unitNetProfit: Math.round(sellPriceNum - buyPriceNum - transport.totalCost),
           unitProfitPct: Math.round(((sellPriceNum - buyPriceNum - transport.totalCost) / buyPriceNum) * 1000) / 10,
           breakdown: profitBreakdown,
         },
@@ -506,3 +536,5 @@ export async function POST(request: NextRequest) {
     }, { status: 500 });
   }
 }
+
+export const dynamic = "force-dynamic";

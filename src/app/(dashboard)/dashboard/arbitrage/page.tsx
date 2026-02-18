@@ -76,13 +76,14 @@ function ConfidenceBadge({ score, label }: { score: number; label: string }) {
 }
 
 function ProfitBadge({ percentage }: { percentage: number }) {
-  const isGood = percentage >= 15;
-  const isGreat = percentage >= 25;
+  const isGreat = percentage >= 10;
+  const isGood = percentage >= 5;
+  const isFair = percentage >= 2;
   
   return (
     <span className={`
       px-3 py-1 text-sm font-bold rounded-md
-      ${isGreat ? "bg-emerald-500 text-black" : isGood ? "bg-emerald-500/20 text-emerald-400" : "bg-amber-500/20 text-amber-400"}
+      ${isGreat ? "bg-emerald-500 text-black" : isGood ? "bg-emerald-500/20 text-emerald-400" : isFair ? "bg-amber-500/20 text-amber-400" : "bg-gray-700/50 text-gray-300"}
     `}>
       +{percentage}%
     </span>
@@ -247,11 +248,13 @@ export default function ArbitragePage() {
   // Filters
   const [itemFilter, setItemFilter] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("");
+  const [minProfit, setMinProfit] = useState(1);
   
   // Tier info
   const [tierInfo, setTierInfo] = useState<{
     tier: string;
-    minProfitPct: number;
+    minProfitFloor: number;
+    appliedMinProfit: number;
     maxResults: number;
   } | null>(null);
 
@@ -264,6 +267,7 @@ export default function ArbitragePage() {
       const tier = (session?.user as { tier?: string })?.tier || "FREE";
       const params = new URLSearchParams({
         tier,
+        minProfit: String(minProfit),
         ...(itemFilter && { item: itemFilter }),
         ...(categoryFilter && { category: categoryFilter }),
       });
@@ -321,7 +325,7 @@ export default function ArbitragePage() {
               <ul className="text-left space-y-3 text-gray-300">
                 <li className="flex items-center gap-2">
                   <TrendingUp className="w-4 h-4 text-emerald-400" />
-                  View 5%+ profit opportunities
+                  View 2%+ profit opportunities (set your own minimum)
                 </li>
                 <li className="flex items-center gap-2">
                   <MapPin className="w-4 h-4 text-emerald-400" />
@@ -366,7 +370,7 @@ export default function ArbitragePage() {
             <div className="flex items-center gap-3">
               {tierInfo && (
                 <span className="text-xs bg-gray-800 text-gray-400 px-3 py-1 rounded-full">
-                  {tierInfo.tier} • {tierInfo.minProfitPct}%+ profits • {opportunities.length} found
+                  {tierInfo.tier} • {tierInfo.appliedMinProfit}%+ profits • {opportunities.length} found
                 </span>
               )}
               <button
@@ -381,7 +385,7 @@ export default function ArbitragePage() {
           </div>
 
           {/* Filters */}
-          <div className="flex flex-wrap gap-3 mt-4">
+          <div className="flex flex-wrap items-center gap-3 mt-4">
             <div className="flex items-center gap-2 bg-[#1a1a1a] rounded-lg px-3 py-2">
               <Filter className="w-4 h-4 text-gray-500" />
               <input
@@ -401,6 +405,27 @@ export default function ArbitragePage() {
                 className="bg-transparent border-none outline-none text-sm w-40"
               />
             </div>
+            
+            {/* Min Profit Margin Selector */}
+            <div className="flex items-center gap-2 bg-[#1a1a1a] rounded-lg px-3 py-2">
+              <Percent className="w-4 h-4 text-gray-500" />
+              <span className="text-gray-500 text-sm">Min Profit:</span>
+              <select
+                value={minProfit}
+                onChange={(e) => setMinProfit(Number(e.target.value))}
+                className="bg-transparent border-none outline-none text-sm text-emerald-400 font-mono cursor-pointer"
+              >
+                <option value={0} className="bg-[#1a1a1a]">0% (All)</option>
+                <option value={1} className="bg-[#1a1a1a]">1%+</option>
+                <option value={2} className="bg-[#1a1a1a]">2%+</option>
+                <option value={3} className="bg-[#1a1a1a]">3%+</option>
+                <option value={5} className="bg-[#1a1a1a]">5%+</option>
+                <option value={10} className="bg-[#1a1a1a]">10%+</option>
+                <option value={15} className="bg-[#1a1a1a]">15%+</option>
+                <option value={20} className="bg-[#1a1a1a]">20%+</option>
+              </select>
+            </div>
+            
             <button
               onClick={fetchOpportunities}
               className="bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30 px-4 py-2 rounded-lg text-sm transition-colors"
