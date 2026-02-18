@@ -1,8 +1,8 @@
 // src/app/api/nfpi/route.ts
 // NaijaMarket Intel - NFPI (NaijaFood Price Index) API
 // Tier-gated access to food price index data
-// Version: 1.3.0 - Updated mock data with NBS Jan 2026 post-rebase CPI (8.89% food YoY)
-// Date: 2026-02-17
+// Version: 1.2.0 - Fixed all TypeScript issues
+// Date: 2026-01-24
 
 import { NextRequest, NextResponse } from "next/server";
 import sql from "mssql";
@@ -151,52 +151,49 @@ const DEFAULT_ACCESS: TierAccess = {
 // =============================================================================
 // MOCK DATA (Used when database is unavailable)
 // =============================================================================
-// Mock data aligned with NBS Jan 2026 post-rebase CPI:
-// Food inflation: 8.89% YoY, -6.02% MoM | Headline: 15.10% YoY, -2.88% MoM
-// Base year: 2024 = 100 (NBS rebased from 2009 in mid-2025)
 const MOCK_NFPI_DATA: NFPIRecord = {
-  week_id: "2026-W07",
-  week_start: "2026-02-10",
-  week_end: "2026-02-16",
-  national_index: 108.9,   // ~8.89% above 2024 base of 100
-  wow_change: -0.4,        // slight weekly decline (post-harvest easing)
-  mom_change: -6.02,       // NBS Jan 2026 MoM food deflation
-  yoy_change: 8.89,        // NBS Jan 2026 YoY food inflation (rebased)
-  grains_index: 112.4,     // grains above average (rice/beans pressure)
-  proteins_index: 106.2,   // proteins moderate
-  vegetables_index: 115.8, // vegetables seasonal highs
-  oils_index: 105.3,       // oils relatively stable
-  tubers_index: 103.7,     // tubers post-harvest decline
-  nw_index: 106.5,         // NW: Kano 7.20%, Katsina 4.50%
-  ne_index: 112.8,         // NE: Adamawa 17.29% pulling up
-  nc_index: 114.2,         // NC: Kogi 19.84%, Benue 18.38% hotspots
-  sw_index: 107.5,         // SW: Lagos 7.50%, moderate
-  se_index: 103.2,         // SE: Ebonyi 1.69%, Abia 3.23% - lowest nationally
-  ss_index: 108.5,         // SS: Rivers 8.50%, Edo 9.50%
-  top_gainers: "Tomatoes (+4.2%), Pepper (+2.8%), Rice Local (+1.5%)",
-  top_losers: "Yam (-3.1%), Garri (-2.5%), Plantain (-1.8%)",
-  insight: "Food prices declining MoM (-6.02%) driven by post-harvest supply. SE states show near-zero inflation (Ebonyi 1.69%). NC remains hotspot with Kogi at 19.84% food inflation.",
+  week_id: "2026-W04",
+  week_start: "2026-01-20",
+  week_end: "2026-01-26",
+  national_index: 156.8,
+  wow_change: 2.3,
+  mom_change: 5.7,
+  yoy_change: 18.4,
+  grains_index: 162.4,
+  proteins_index: 148.9,
+  vegetables_index: 171.2,
+  oils_index: 145.6,
+  tubers_index: 138.7,
+  nw_index: 149.2,
+  ne_index: 152.8,
+  nc_index: 155.4,
+  sw_index: 168.3,
+  se_index: 161.7,
+  ss_index: 158.9,
+  top_gainers: "Tomatoes (+8.2%), Pepper (+5.1%), Rice Local (+3.4%)",
+  top_losers: "Yam (-2.1%), Garri (-1.8%)",
+  insight: "Food prices continue upward trend driven by seasonal vegetable shortages",
   basket_details: JSON.stringify({
-    rice_local: { price: 82000, weight: 0.18, index: 112.0 },
-    rice_foreign: { price: 95000, weight: 0.07, index: 110.5 },
-    garri: { price: 42000, weight: 0.12, index: 104.5 },
-    beans: { price: 70000, weight: 0.10, index: 111.0 },
-    fish_dried: { price: 8200, weight: 0.07, index: 106.8 },
-    beef: { price: 6200, weight: 0.05, index: 107.5 },
-    tomatoes: { price: 78000, weight: 0.08, index: 118.2 },
-    pepper: { price: 62000, weight: 0.05, index: 113.5 },
-    onions: { price: 50000, weight: 0.05, index: 108.7 },
-    palm_oil: { price: 50000, weight: 0.10, index: 105.3 },
-    groundnut_oil: { price: 65000, weight: 0.05, index: 104.8 },
-    yam: { price: 4000, weight: 0.08, index: 101.2 }
+    rice_local: { price: 82000, weight: 0.18, index: 164.0 },
+    rice_foreign: { price: 95000, weight: 0.07, index: 158.3 },
+    garri: { price: 45000, weight: 0.12, index: 150.0 },
+    beans: { price: 72000, weight: 0.10, index: 160.0 },
+    fish_dried: { price: 8500, weight: 0.07, index: 141.7 },
+    beef: { price: 6500, weight: 0.05, index: 162.5 },
+    tomatoes: { price: 85000, weight: 0.08, index: 188.9 },
+    pepper: { price: 65000, weight: 0.05, index: 162.5 },
+    onions: { price: 55000, weight: 0.05, index: 157.1 },
+    palm_oil: { price: 52000, weight: 0.10, index: 148.6 },
+    groundnut_oil: { price: 68000, weight: 0.05, index: 141.7 },
+    yam: { price: 4500, weight: 0.08, index: 128.6 }
   })
 };
 
 const MOCK_TREND_DATA: TrendRecord[] = [
-  { week_id: "2026-W04", national_index: 110.2, grains_index: 113.8, proteins_index: 107.5, vegetables_index: 118.4, oils_index: 106.1 },
-  { week_id: "2026-W05", national_index: 109.8, grains_index: 113.2, proteins_index: 107.0, vegetables_index: 117.5, oils_index: 105.8 },
-  { week_id: "2026-W06", national_index: 109.4, grains_index: 112.8, proteins_index: 106.5, vegetables_index: 116.5, oils_index: 105.5 },
-  { week_id: "2026-W07", national_index: 108.9, grains_index: 112.4, proteins_index: 106.2, vegetables_index: 115.8, oils_index: 105.3 },
+  { week_id: "2026-W01", national_index: 149.2, grains_index: 155.1, proteins_index: 142.3, vegetables_index: 158.4, oils_index: 140.2 },
+  { week_id: "2026-W02", national_index: 151.8, grains_index: 157.8, proteins_index: 144.1, vegetables_index: 162.7, oils_index: 141.8 },
+  { week_id: "2026-W03", national_index: 153.4, grains_index: 159.6, proteins_index: 146.2, vegetables_index: 166.9, oils_index: 143.1 },
+  { week_id: "2026-W04", national_index: 156.8, grains_index: 162.4, proteins_index: 148.9, vegetables_index: 171.2, oils_index: 145.6 },
 ];
 
 // =============================================================================
