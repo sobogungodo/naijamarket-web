@@ -17,10 +17,10 @@ const GOOGLE_SHEETS_ID = "1n-7MXdoqvIoSHteBJaUYBmIPLjJBNtrE_jVuUxO5kr8";
 const GOOGLE_API_KEY = process.env.GOOGLE_SHEETS_API_KEY || "";
 
 const SQL_CONFIG: sql.config = {
-  server: process.env.AZURE_SQL_SERVER || "naijafood.database.windows.net",
-  database: process.env.AZURE_SQL_DATABASE || "naijafoodmarket",
-  user: process.env.AZURE_SQL_USER || "",
-  password: process.env.AZURE_SQL_PASSWORD || "",
+  server: process.env.AZURE_SQL_SERVER || process.env.DATABASE_SERVER || "naijafood.database.windows.net",
+  database: process.env.AZURE_SQL_DATABASE || process.env.DATABASE_NAME || "naijafoodmarket",
+  user: process.env.AZURE_SQL_USER || process.env.DATABASE_USER || "",
+  password: process.env.AZURE_SQL_PASSWORD || process.env.DATABASE_PASSWORD || "",
   options: {
     encrypt: true,
     trustServerCertificate: false,
@@ -205,7 +205,7 @@ function getBasketKeyword(itemName: string): string | null {
 
 async function fetchFromDailyPrices(months: number): Promise<{ data: PriceRecord[]; success: boolean }> {
   if (!SQL_CONFIG.user || !SQL_CONFIG.password) {
-    console.log("Azure SQL credentials not configured, skipping Daily_Prices...");
+    console.log("Azure SQL credentials not configured. Checked: AZURE_SQL_USER, DATABASE_USER, AZURE_SQL_PASSWORD, DATABASE_PASSWORD");
     return { data: [], success: false };
   }
 
@@ -213,6 +213,7 @@ async function fetchFromDailyPrices(months: number): Promise<{ data: PriceRecord
   
   try {
     console.log(`Connecting to Azure SQL for inflation data (${months} months)...`);
+    console.log(`SQL Config: server=${SQL_CONFIG.server}, db=${SQL_CONFIG.database}, user=${SQL_CONFIG.user ? 'SET' : 'EMPTY'}`);
     pool = await sql.connect(SQL_CONFIG);
     
     const result = await pool.request()
@@ -467,14 +468,15 @@ function generateMockInflationData(months: number): PriceRecord[] {
     
     // Inflation factor: prices increase over time
     const monthsAgo = m;
-    const inflationFactor = Math.pow(1.0071, monthsAgo); // ~8.89% annual inflation (post-rebase)
+    const inflationFactor = 1.0 / Math.pow(1.0071, monthsAgo); // Older months had LOWER prices (8.89% annual inflation)
     
     for (const market of markets) {
       for (const item of items) {
-        // Add some randomness and seasonal variation
+        // Deterministic variation based on item+market+month (no random fluctuation on refresh)
+        const seed = (item.id * 31 + market.id * 17 + month * 7 + year) % 100;
         const seasonalFactor = 1 + 0.1 * Math.sin((month - 1) * Math.PI / 6);
-        const randomFactor = 0.95 + Math.random() * 0.1;
-        const price = Math.round(item.basePrice * inflationFactor * seasonalFactor * randomFactor);
+        const variationFactor = 0.95 + (seed / 1000); // 0.95 to 1.05 deterministic
+        const price = Math.round(item.basePrice * inflationFactor * seasonalFactor * variationFactor);
         
         data.push({
           itemId: item.id,
