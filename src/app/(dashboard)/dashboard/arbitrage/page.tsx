@@ -397,13 +397,28 @@ export default function ArbitragePage() {
               />
             </div>
             <div className="flex items-center gap-2 bg-[#1a1a1a] rounded-lg px-3 py-2">
-              <input
-                type="text"
-                placeholder="Filter by category..."
+              <select
                 value={categoryFilter}
                 onChange={(e) => setCategoryFilter(e.target.value)}
-                className="bg-transparent border-none outline-none text-sm w-40"
-              />
+                className="bg-transparent border-none outline-none text-sm text-gray-300"
+              >
+                <option value="" className="bg-[#1a1a1a]">All Food Categories</option>
+                <option value="CAT001" className="bg-[#1a1a1a]">Grains & Cereals</option>
+                <option value="CAT002" className="bg-[#1a1a1a]">Vegetables & Peppers</option>
+                <option value="CAT003" className="bg-[#1a1a1a]">Oils & Fats</option>
+                <option value="CAT004" className="bg-[#1a1a1a]">Frozen Foods & Poultry</option>
+                <option value="CAT005" className="bg-[#1a1a1a]">Beverages</option>
+                <option value="CAT006" className="bg-[#1a1a1a]">Plantain</option>
+                <option value="CAT007" className="bg-[#1a1a1a]">Seasoning & Spices</option>
+                <option value="CAT008" className="bg-[#1a1a1a]">Dried Fish & Stockfish</option>
+                <option value="CAT009" className="bg-[#1a1a1a]">Flour & Bakery</option>
+                <option value="CAT010" className="bg-[#1a1a1a]">Bread</option>
+                <option value="CAT013" className="bg-[#1a1a1a]">Dairy & Milk</option>
+                <option value="CAT014" className="bg-[#1a1a1a]">Tubers & Yam</option>
+                <option value="CAT015" className="bg-[#1a1a1a]">Beans & Legumes</option>
+                <option value="CAT070" className="bg-[#1a1a1a]">Poultry & Livestock</option>
+                <option value="CAT103" className="bg-[#1a1a1a]">Fish (NBS)</option>
+              </select>
             </div>
             
             {/* Min Profit Margin Selector */}
