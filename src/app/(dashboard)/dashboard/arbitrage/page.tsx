@@ -423,6 +423,7 @@ export default function ArbitragePage() {
                 <option value={10} className="bg-[#1a1a1a]">10%+</option>
                 <option value={15} className="bg-[#1a1a1a]">15%+</option>
                 <option value={20} className="bg-[#1a1a1a]">20%+</option>
+                <option value={30} className="bg-[#1a1a1a]">30%+</option>
               </select>
             </div>
             

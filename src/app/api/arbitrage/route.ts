@@ -292,6 +292,10 @@ async function findArbitrageOpportunities(
         const profitPct = (netProfit / buyPrice) * 100;
         
         if (profitPct < minProfitPct) continue;
+        
+        // Cap: anything over 50% is a data anomaly, not real arbitrage
+        // Real Nigerian commodity arbitrage maxes out at ~30% inter-state
+        if (profitPct > 50) continue;
 
         const buyConf = calculateConfidence(buyRec.price_date);
         const sellConf = calculateConfidence(sellRec.price_date);
