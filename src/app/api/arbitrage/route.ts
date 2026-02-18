@@ -2,8 +2,18 @@
 // NAIJAMARKET INTEL - ARBITRAGE OPPORTUNITIES API
 // File: src/app/api/arbitrage/route.ts
 // Bloomberg Equivalent: ARBI <GO>
-// Version: 3.0 - Uses Latest_Prices_Summary, user-configurable profit margin
+// Version: 4.0 - Real GPS from Markets table, Nigerian transport cost model
 // Date: 2026-02-18
+//
+// TRANSPORT COST MODEL (Feb 2026):
+//   Diesel: ₦907.5/litre | Truck: ~3km/litre | ~₦302/km fuel cost
+//   30-ton truck total cost: ~₦450/km (fuel + driver + maintenance)
+//   Per 50kg bag shared-truck rate: ₦3-5/km (fragmentation premium)
+//   Fixed costs: loading ₦800 + offloading ₦700 = ₦1,500/bag
+//   Checkpoint levies: ₦50,000-100,000/trip spread across cargo
+//
+// Sources: NBS Transport Fare Watch, NARTO, Nigerian Shippers Council,
+//   Mordor Intelligence Nigeria Freight Report 2025-2030
 // ============================================================================
 
 import { NextRequest, NextResponse } from "next/server";
@@ -28,11 +38,11 @@ async function getPrisma() {
 
 interface TierConfig {
   hasAccess: boolean;
-  minProfitFloor: number;  // Absolute minimum the tier allows
+  minProfitFloor: number;
   maxResults: number;
 }
 
-interface MarketCoordinate {
+interface MarketGPS {
   lat: number;
   lon: number;
   state: string;
@@ -40,10 +50,12 @@ interface MarketCoordinate {
 
 interface TransportResult {
   distance: number;
-  baseCost: number;
-  riskPremium: number;
+  fuelCost: number;
+  loadingCost: number;
+  checkpointCost: number;
   totalCost: number;
   label: string;
+  ratePerKm: number;
 }
 
 interface ConfidenceResult {
@@ -52,22 +64,18 @@ interface ConfidenceResult {
   color: string;
 }
 
-interface MarketInfo {
-  id: string;
-  name: string;
-  state: string;
-  price: number;
-  updatedAt: string;
-}
-
 interface ArbitrageOpportunity {
   id: string;
   itemId: string;
   itemName: string;
   categoryName: string;
   unit: string;
-  buyMarket: MarketInfo;
-  sellMarket: MarketInfo;
+  buyMarket: {
+    id: string; name: string; state: string; price: number; updatedAt: string;
+  };
+  sellMarket: {
+    id: string; name: string; state: string; price: number; updatedAt: string;
+  };
   grossProfit: number;
   transportCost: number;
   netProfit: number;
@@ -88,54 +96,79 @@ const CATEGORY_MAP: Record<string, string> = {
   "12": "Fish & Seafood", "13": "Condiments", "14": "Processed Foods",
 };
 
-const MARKET_COORDINATES: Record<string, MarketCoordinate> = {
-  "Mile 12 Market": { lat: 6.5833, lon: 3.3833, state: "Lagos" },
-  "Alaba International Market": { lat: 6.4631, lon: 3.1937, state: "Lagos" },
-  "Oyingbo Market": { lat: 6.4778, lon: 3.3894, state: "Lagos" },
-  "Balogun Market": { lat: 6.4539, lon: 3.3944, state: "Lagos" },
-  "Computer Village": { lat: 6.6018, lon: 3.3515, state: "Lagos" },
-  "Iddo Market": { lat: 6.4647, lon: 3.3847, state: "Lagos" },
-  "Onitsha Main Market": { lat: 6.1456, lon: 6.7856, state: "Anambra" },
-  "Ariaria Market": { lat: 5.1167, lon: 7.3667, state: "Abia" },
-  "Ogbete Market": { lat: 6.4411, lon: 7.4939, state: "Enugu" },
-  "Kano Main Market": { lat: 12.0022, lon: 8.5167, state: "Kano" },
-  "Dawanau Market": { lat: 11.9467, lon: 8.4961, state: "Kano" },
-  "Kurmi Market": { lat: 12.0000, lon: 8.5167, state: "Kano" },
-  "Jos Main Market": { lat: 9.8965, lon: 8.8583, state: "Plateau" },
-  "Kaduna Central Market": { lat: 10.5222, lon: 7.4403, state: "Kaduna" },
-  "Bodija Market": { lat: 7.4167, lon: 3.9000, state: "Oyo" },
-  "Dugbe Market": { lat: 7.3833, lon: 3.8833, state: "Oyo" },
-  "Oja Oba Market": { lat: 7.6292, lon: 4.7433, state: "Osun" },
-  "Watt Market": { lat: 4.9333, lon: 8.3333, state: "Cross River" },
-  "Oil Mill Market": { lat: 4.7833, lon: 7.0167, state: "Rivers" },
-  "Wuse Market": { lat: 9.0765, lon: 7.4898, state: "FCT" },
-  "Utako Market": { lat: 9.0667, lon: 7.4333, state: "FCT" },
-  "Garki Market": { lat: 9.0167, lon: 7.4833, state: "FCT" },
-  "Nyanya Market": { lat: 9.0167, lon: 7.5667, state: "FCT" },
-};
+// ── NIGERIAN TRANSPORT COST MODEL (Feb 2026) ───────────────────────────
+// Based on: Diesel ₦907.5/L, truck ~3km/L, shared truck rates from NARTO
+//
+// COST PER 50KG BAG = Fixed + Variable
+//   Fixed: ₦1,500 (loading ₦800 + offloading ₦700)
+//   Variable: distance × rate_per_km
+//
+// Rate tiers (₦/km per 50kg bag) - decreasing with distance (economies of scale)
+// Short haul trucks charge more per-km, long haul spread costs better
+const TRANSPORT_RATE_TIERS = [
+  { maxKm: 30,   ratePerKm: 25,  label: "Same City (Danfo/Keke)" },
+  { maxKm: 80,   ratePerKm: 15,  label: "Same State" },
+  { maxKm: 200,  ratePerKm: 10,  label: "Neighboring State" },
+  { maxKm: 400,  ratePerKm: 8,   label: "Regional" },
+  { maxKm: 700,  ratePerKm: 6,   label: "Long Distance" },
+  { maxKm: 1200, ratePerKm: 5,   label: "Cross Country" },
+  { maxKm: 99999, ratePerKm: 4.5, label: "Extreme Distance" },
+];
 
-const TRANSPORT_COSTS = {
-  SAME_CITY: { maxKm: 50, costPer50kg: 500, label: "Same City" },
-  SAME_STATE: { maxKm: 100, costPer50kg: 1000, label: "Same State" },
-  NEIGHBORING: { maxKm: 300, costPer50kg: 2500, label: "Neighboring State" },
-  REGIONAL: { maxKm: 500, costPer50kg: 4000, label: "Regional" },
-  LONG_DISTANCE: { maxKm: 800, costPer50kg: 6000, label: "Long Distance" },
-  VERY_LONG: { maxKm: 1200, costPer50kg: 8000, label: "Very Long" },
-  CROSS_COUNTRY: { maxKm: 99999, costPer50kg: 10000, label: "Cross Country" },
-};
+// Fixed costs per 50kg bag
+const LOADING_COST = 800;     // Loading at origin market
+const OFFLOADING_COST = 700;  // Offloading at destination market
+const FIXED_COST = LOADING_COST + OFFLOADING_COST; // ₦1,500
 
-const ROUTE_RISKS: Record<string, number> = {
-  "Lagos-Kano": 1500,
-  "Lagos-Kaduna": 1500,
-  "Abuja-Kano": 1000,
-  "Abuja-Kaduna": 500,
-  "DEFAULT": 0,
+// Checkpoint/security levy per km (spread per bag)
+// Based on Mordor Intelligence: ₦50K-100K per trip / ~600 bags = ₦83-167/bag
+// We model as per-km since longer routes = more checkpoints
+const CHECKPOINT_RATE_PER_KM = 0.5; // ₦0.50/km per bag
+
+// Road condition multiplier by region (bad roads = slower = more expensive)
+const ROAD_QUALITY: Record<string, number> = {
+  "Lagos": 1.15,      // Apapa gridlock, heavy traffic
+  "Ogun": 1.05,
+  "Oyo": 1.0,
+  "Osun": 1.0,
+  "Ondo": 1.05,
+  "Ekiti": 1.10,
+  "FCT": 0.95,        // Best roads in Nigeria
+  "Abuja": 0.95,
+  "Kano": 1.0,
+  "Kaduna": 1.05,
+  "Katsina": 1.10,
+  "Sokoto": 1.15,
+  "Kebbi": 1.15,
+  "Zamfara": 1.20,     // Security premium
+  "Jigawa": 1.10,
+  "Borno": 1.30,       // Security premium (insurgency corridor)
+  "Yobe": 1.25,
+  "Adamawa": 1.20,
+  "Bauchi": 1.10,
+  "Gombe": 1.10,
+  "Taraba": 1.15,
+  "Niger": 1.15,       // Banditry corridor
+  "Kwara": 1.0,
+  "Kogi": 1.05,
+  "Benue": 1.10,
+  "Plateau": 1.10,
+  "Nasarawa": 1.05,
+  "Anambra": 1.0,
+  "Enugu": 1.0,
+  "Ebonyi": 1.10,
+  "Imo": 1.05,
+  "Abia": 1.05,
+  "Rivers": 1.10,
+  "Delta": 1.05,
+  "Bayelsa": 1.15,
+  "Akwa Ibom": 1.10,
+  "Cross River": 1.10,
+  "Edo": 1.0,
 };
 
 const DEFAULT_TIER_CONFIG: TierConfig = { hasAccess: false, minProfitFloor: 100, maxResults: 0 };
 
-// Users can set ANY minimum profit %, but tier sets the floor
-// GOLD: can see down to 2% | BUSINESS: down to 1% | ENTERPRISE: down to 0%
 const TIER_ACCESS: Record<string, TierConfig> = {
   FREE: { hasAccess: false, minProfitFloor: 100, maxResults: 0 },
   SILVER: { hasAccess: false, minProfitFloor: 100, maxResults: 0 },
@@ -149,15 +182,55 @@ const TIER_ACCESS: Record<string, TierConfig> = {
 };
 
 // ============================================================================
-// HELPER FUNCTIONS
+// GPS CACHE — loaded once from Markets table (226 markets)
 // ============================================================================
 
-function getTierConfig(tier: string): TierConfig {
-  return TIER_ACCESS[tier] || TIER_ACCESS["FREE"] || DEFAULT_TIER_CONFIG;
+let gpsCache: Record<string, MarketGPS> | null = null;
+let gpsCacheTime = 0;
+const GPS_CACHE_TTL = 3600000; // 1 hour
+
+async function getMarketCoordinates(prisma: any): Promise<Record<string, MarketGPS>> {
+  const now = Date.now();
+  if (gpsCache && (now - gpsCacheTime) < GPS_CACHE_TTL) {
+    return gpsCache;
+  }
+
+  try {
+    const markets = await prisma.$queryRaw`
+      SELECT market_name, state, latitude, longitude
+      FROM Markets WITH (NOLOCK)
+      WHERE latitude IS NOT NULL AND longitude IS NOT NULL
+        AND latitude != 0 AND longitude != 0
+    ` as any[];
+
+    const coords: Record<string, MarketGPS> = {};
+    for (const m of markets) {
+      const lat = parseFloat(m.latitude);
+      const lon = parseFloat(m.longitude);
+      if (lat && lon && lat > 3 && lat < 15 && lon > 2 && lon < 16) {
+        coords[m.market_name] = { lat, lon, state: m.state || "" };
+      }
+    }
+
+    if (Object.keys(coords).length > 0) {
+      gpsCache = coords;
+      gpsCacheTime = now;
+      console.log(`[Arbitrage] GPS cache loaded: ${Object.keys(coords).length} markets`);
+    }
+
+    return coords;
+  } catch (e: any) {
+    console.warn("[Arbitrage] Failed to load GPS from Markets table:", e.message?.substring(0, 100));
+    return gpsCache || {};
+  }
 }
 
+// ============================================================================
+// TRANSPORT COST CALCULATOR
+// ============================================================================
+
 function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
-  const R = 6371;
+  const R = 6371; // Earth radius in km
   const dLat = (lat2 - lat1) * (Math.PI / 180);
   const dLon = (lon2 - lon1) * (Math.PI / 180);
   const a = 
@@ -165,50 +238,74 @@ function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: numbe
     Math.cos(lat1 * (Math.PI / 180)) * Math.cos(lat2 * (Math.PI / 180)) *
     Math.sin(dLon / 2) * Math.sin(dLon / 2);
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  return R * c;
+  // Multiply by 1.3 for road distance (roads aren't straight lines)
+  return Math.round(R * c * 1.3);
 }
 
-function getTransportCost(fromMarket: string, toMarket: string): TransportResult {
-  const from = MARKET_COORDINATES[fromMarket];
-  const to = MARKET_COORDINATES[toMarket];
-  
+function getTransportCost(
+  fromMarket: string, 
+  toMarket: string,
+  fromState: string,
+  toState: string,
+  coords: Record<string, MarketGPS>
+): TransportResult {
+  const from = coords[fromMarket];
+  const to = coords[toMarket];
+
   if (!from || !to) {
-    return { distance: 0, baseCost: 2500, riskPremium: 0, totalCost: 2500, label: "Estimated" };
+    // Fallback: estimate from state if we know them
+    const estDistance = fromState === toState ? 50 : 400;
+    return estimateTransport(estDistance, fromState, toState);
   }
-  
+
   const distance = calculateDistance(from.lat, from.lon, to.lat, to.lon);
-  
-  let baseCost = TRANSPORT_COSTS.CROSS_COUNTRY.costPer50kg;
-  let label = TRANSPORT_COSTS.CROSS_COUNTRY.label;
-  
-  for (const tier of Object.values(TRANSPORT_COSTS)) {
+  return estimateTransport(distance, from.state || fromState, to.state || toState);
+}
+
+function estimateTransport(distance: number, fromState: string, toState: string): TransportResult {
+  // Find rate tier
+  let ratePerKm = 5;
+  let label = "Estimated";
+
+  for (const tier of TRANSPORT_RATE_TIERS) {
     if (distance <= tier.maxKm) {
-      baseCost = tier.costPer50kg;
+      ratePerKm = tier.ratePerKm;
       label = tier.label;
       break;
     }
   }
-  
-  const routeKey1 = `${from.state}-${to.state}`;
-  const routeKey2 = `${to.state}-${from.state}`;
-  const riskPremium: number = ROUTE_RISKS[routeKey1] ?? ROUTE_RISKS[routeKey2] ?? ROUTE_RISKS["DEFAULT"] ?? 0;
-  
+
+  // Road quality multiplier (average of origin and destination)
+  const fromMultiplier = ROAD_QUALITY[fromState] || 1.05;
+  const toMultiplier = ROAD_QUALITY[toState] || 1.05;
+  const roadMultiplier = (fromMultiplier + toMultiplier) / 2;
+
+  // Calculate costs
+  const fuelAndHaulage = Math.round(distance * ratePerKm * roadMultiplier);
+  const checkpointCost = Math.round(distance * CHECKPOINT_RATE_PER_KM);
+  const totalCost = FIXED_COST + fuelAndHaulage + checkpointCost;
+
   return {
-    distance: Math.round(distance),
-    baseCost,
-    riskPremium,
-    totalCost: baseCost + riskPremium,
+    distance,
+    fuelCost: fuelAndHaulage,
+    loadingCost: FIXED_COST,
+    checkpointCost,
+    totalCost,
     label,
+    ratePerKm: Math.round(ratePerKm * roadMultiplier * 10) / 10,
   };
 }
 
+// ============================================================================
+// CONFIDENCE SCORER
+// ============================================================================
+
 function calculateConfidence(priceDate: string | Date | null): ConfidenceResult {
   if (!priceDate) return { score: 50, label: "Unknown", color: "gray" };
-  
   const now = new Date();
   const date = priceDate instanceof Date ? priceDate : new Date(priceDate);
   const daysOld = (now.getTime() - date.getTime()) / (1000 * 60 * 60 * 24);
-  
+
   if (daysOld < 1) return { score: 95, label: "Very Fresh", color: "green" };
   if (daysOld < 3) return { score: 85, label: "Fresh", color: "green" };
   if (daysOld < 7) return { score: 65, label: "Recent", color: "yellow" };
@@ -217,22 +314,32 @@ function calculateConfidence(priceDate: string | Date | null): ConfidenceResult 
 }
 
 // ============================================================================
-// ARBITRAGE FINDER - Uses Latest_Prices_Summary (fast, ~137K rows)
+// TIER HELPERS
+// ============================================================================
+
+function getTierConfig(tier: string): TierConfig {
+  return TIER_ACCESS[tier] || TIER_ACCESS["FREE"] || DEFAULT_TIER_CONFIG;
+}
+
+// ============================================================================
+// ARBITRAGE FINDER
 // ============================================================================
 
 async function findArbitrageOpportunities(
+  prisma: any,
   minProfitPct: number,
   maxResults: number,
   filterItem?: string,
   filterCategory?: string
 ): Promise<ArbitrageOpportunity[]> {
-  const prisma = await getPrisma();
-  
-  // Build filter conditions
+  // Load GPS coordinates from Markets table (cached 1hr)
+  const coords = await getMarketCoordinates(prisma);
+
+  // Build SQL filters
   const itemFilter = filterItem ? `AND item_name LIKE '%${filterItem.replace(/'/g, "''")}%'` : "";
   const categoryFilter = filterCategory ? `AND category_id = '${filterCategory.replace(/'/g, "''")}'` : "";
-  
-  // Get latest prices grouped by item+market from Summary table
+
+  // Get latest prices from Summary table
   const prices = await prisma.$queryRawUnsafe(`
     SELECT 
       item_name, market_name, state, category_id, unit,
@@ -260,86 +367,72 @@ async function findArbitrageOpportunities(
   for (const [itemName, itemPrices] of Object.entries(pricesByItem)) {
     if (itemPrices.length < 2) continue;
 
-    // OUTLIER FILTER: Calculate median price, exclude markets >40% away
-    // This removes simulation artifacts where base prices diverged wildly
-    const allPricesForItem = itemPrices.map(p => parseFloat(p.price) || 0).filter(p => p > 0).sort((a, b) => a - b);
-    if (allPricesForItem.length < 2) continue;
-    
-    const medianPrice = allPricesForItem[Math.floor(allPricesForItem.length / 2)] || 0;
-    if (medianPrice <= 0) continue;
-    
-    const lowerBound = medianPrice * 0.75;  // 25% below median
-    const upperBound = medianPrice * 1.25;  // 25% above median
-    
-    // Only keep markets with prices within reasonable range of median
-    const validPrices = itemPrices.filter(p => {
-      const price = parseFloat(p.price) || 0;
-      return price >= lowerBound && price <= upperBound;
-    });
-    
-    if (validPrices.length < 2) continue;
+    // OUTLIER FILTER: median ±25%
+    const sorted = itemPrices.map(p => parseFloat(p.price) || 0).filter(p => p > 0).sort((a, b) => a - b);
+    if (sorted.length < 2) continue;
+    const median = sorted[Math.floor(sorted.length / 2)];
+    if (median <= 0) continue;
+    const lower = median * 0.75;
+    const upper = median * 1.25;
 
-    // Compare every pair of markets for this item
-    for (let i = 0; i < validPrices.length; i++) {
-      for (let j = i + 1; j < validPrices.length; j++) {
-        const a = validPrices[i];
-        const b = validPrices[j];
-        
+    const valid = itemPrices.filter(p => {
+      const price = parseFloat(p.price) || 0;
+      return price >= lower && price <= upper;
+    });
+    if (valid.length < 2) continue;
+
+    // Compare pairs
+    for (let i = 0; i < valid.length; i++) {
+      for (let j = i + 1; j < valid.length; j++) {
+        const a = valid[i];
+        const b = valid[j];
         const priceA = parseFloat(a.price) || 0;
         const priceB = parseFloat(b.price) || 0;
-        
         if (priceA <= 0 || priceB <= 0) continue;
-        if (Math.abs(priceA - priceB) < 10) continue; // Skip negligible differences
+        if (Math.abs(priceA - priceB) < 50) continue;
 
-        // Determine buy (lower) and sell (higher)
-        const [buyRec, sellRec, buyPrice, sellPrice] = priceA < priceB 
-          ? [a, b, priceA, priceB] 
+        const [buyRec, sellRec, buyPrice, sellPrice] = priceA < priceB
+          ? [a, b, priceA, priceB]
           : [b, a, priceB, priceA];
 
-        const buyMarketName = buyRec.market_name || "";
-        const sellMarketName = sellRec.market_name || "";
-        
-        // Skip same market
-        if (buyMarketName === sellMarketName) continue;
+        const buyMarket = buyRec.market_name || "";
+        const sellMarket = sellRec.market_name || "";
+        if (buyMarket === sellMarket) continue;
 
-        const transport = getTransportCost(buyMarketName, sellMarketName);
+        // Calculate real transport cost
+        const transport = getTransportCost(
+          buyMarket, sellMarket,
+          buyRec.state || "", sellRec.state || "",
+          coords
+        );
+
         const grossProfit = sellPrice - buyPrice;
         const netProfit = grossProfit - transport.totalCost;
-        
         if (netProfit <= 0) continue;
-        
+
         const profitPct = (netProfit / buyPrice) * 100;
-        
         if (profitPct < minProfitPct) continue;
-        
-        // Cap: anything over 30% is still a data anomaly
-        // Real Nigerian commodity arbitrage: 2-15% same state, up to 25% inter-state
-        if (profitPct > 30) continue;
+        if (profitPct > 30) continue; // Data anomaly cap
 
         const buyConf = calculateConfidence(buyRec.price_date);
         const sellConf = calculateConfidence(sellRec.price_date);
         const avgScore = Math.round((buyConf.score + sellConf.score) / 2);
-        
+
         const catId = String(buyRec.category_id || "");
-        const categoryName = CATEGORY_MAP[catId] || `Category ${catId}`;
 
         opportunities.push({
-          id: `${itemName}-${buyMarketName}-${sellMarketName}`.replace(/\s+/g, "-").toLowerCase(),
+          id: `${itemName}-${buyMarket}-${sellMarket}`.replace(/\s+/g, "-").toLowerCase(),
           itemId: catId,
           itemName,
-          categoryName,
+          categoryName: CATEGORY_MAP[catId] || `Category ${catId}`,
           unit: buyRec.unit || "unit",
           buyMarket: {
-            id: buyMarketName,
-            name: buyMarketName,
-            state: buyRec.state || "",
+            id: buyMarket, name: buyMarket, state: buyRec.state || "",
             price: Math.round(buyPrice),
             updatedAt: buyRec.price_date?.toISOString?.() || String(buyRec.price_date || ""),
           },
           sellMarket: {
-            id: sellMarketName,
-            name: sellMarketName,
-            state: sellRec.state || "",
+            id: sellMarket, name: sellMarket, state: sellRec.state || "",
             price: Math.round(sellPrice),
             updatedAt: sellRec.price_date?.toISOString?.() || String(sellRec.price_date || ""),
           },
@@ -359,31 +452,28 @@ async function findArbitrageOpportunities(
     }
   }
 
-  // Sort by profit percentage descending
   opportunities.sort((a, b) => b.profitPercentage - a.profitPercentage);
-
   return opportunities.slice(0, maxResults);
 }
 
 // ============================================================================
-// GET - List arbitrage opportunities
+// GET — List arbitrage opportunities
 // ============================================================================
 
 export async function GET(request: NextRequest) {
   try {
+    const prisma = await getPrisma();
     const { searchParams } = new URL(request.url);
-    
+
     const tier = (searchParams.get("tier") || "FREE").toUpperCase();
     const item = searchParams.get("item") || undefined;
     const category = searchParams.get("category") || undefined;
     const page = parseInt(searchParams.get("page") || "1");
     const limit = parseInt(searchParams.get("limit") || "20");
-    
-    // User-configurable minimum profit (query param)
     const userMinProfit = searchParams.get("minProfit");
-    
+
     const tierConfig = getTierConfig(tier);
-    
+
     if (!tierConfig.hasAccess) {
       return NextResponse.json({
         success: false,
@@ -393,30 +483,25 @@ export async function GET(request: NextRequest) {
         currentTier: tier,
       }, { status: 403 });
     }
-    
-    // User can set their own min profit, but not below tier floor
-    const minProfit = userMinProfit !== null 
+
+    const minProfit = userMinProfit !== null
       ? Math.max(parseFloat(userMinProfit) || 0, tierConfig.minProfitFloor)
       : tierConfig.minProfitFloor;
-    
+
     const allOpportunities = await findArbitrageOpportunities(
-      minProfit,
-      tierConfig.maxResults,
-      item,
-      category
+      prisma, minProfit, tierConfig.maxResults, item, category
     );
-    
+
     const startIdx = (page - 1) * limit;
     const endIdx = startIdx + limit;
     const opportunities = allOpportunities.slice(startIdx, endIdx);
-    
+
     return NextResponse.json({
       success: true,
       data: {
         opportunities,
         pagination: {
-          page,
-          limit,
+          page, limit,
           total: allOpportunities.length,
           totalPages: Math.ceil(allOpportunities.length / limit),
           hasMore: endIdx < allOpportunities.length,
@@ -429,24 +514,25 @@ export async function GET(request: NextRequest) {
         },
         meta: {
           generatedAt: new Date().toISOString(),
-          transportCostBasis: "2024-2025 Nigeria logistics rates",
+          transportModel: "Nigerian Logistics Feb 2026",
+          dieselPrice: "₦907.5/litre",
+          gpsSource: "Markets table (226 markets)",
           dataSource: "Latest_Prices_Summary",
         },
       },
     });
-    
+
   } catch (error) {
     console.error("[Arbitrage API Error]", error);
     return NextResponse.json({
-      success: false,
-      error: "server_error",
+      success: false, error: "server_error",
       message: "Failed to fetch arbitrage opportunities",
     }, { status: 500 });
   }
 }
 
 // ============================================================================
-// POST - Detailed arbitrage analysis for specific pair
+// POST — Detailed arbitrage analysis for a specific pair
 // ============================================================================
 
 export async function POST(request: NextRequest) {
@@ -454,21 +540,21 @@ export async function POST(request: NextRequest) {
     const prisma = await getPrisma();
     const body = await request.json();
     const { buyMarket, sellMarket, itemName, tier = "FREE" } = body;
-    
+
     const tierConfig = getTierConfig(tier.toUpperCase());
-    
     if (!tierConfig.hasAccess) {
       return NextResponse.json({
-        success: false,
-        error: "upgrade_required",
+        success: false, error: "upgrade_required",
         message: "Arbitrage feature requires GOLD tier or higher",
       }, { status: 403 });
     }
 
+    const coords = await getMarketCoordinates(prisma);
+
     const itemSearch = (itemName || "").replace(/'/g, "''");
     const buySearch = (buyMarket || "").replace(/'/g, "''");
     const sellSearch = (sellMarket || "").replace(/'/g, "''");
-    
+
     const results = await prisma.$queryRawUnsafe(`
       SELECT item_name, market_name, state, category_id, unit,
         CAST(price_naira AS FLOAT) as price, price_date
@@ -477,43 +563,45 @@ export async function POST(request: NextRequest) {
         AND (market_name = '${buySearch}' OR market_name = '${sellSearch}')
         AND price_naira > 0
     `) as any[];
-    
+
     const buyPrice = results.find((r: any) => r.market_name === buyMarket);
     const sellPrice = results.find((r: any) => r.market_name === sellMarket);
-    
+
     if (!buyPrice || !sellPrice) {
       return NextResponse.json({
-        success: false,
-        error: "not_found",
+        success: false, error: "not_found",
         message: "Price data not found for specified markets/item",
       }, { status: 404 });
     }
-    
-    const buyPriceNum = parseFloat(buyPrice.price) || 0;
-    const sellPriceNum = parseFloat(sellPrice.price) || 0;
-    
-    const transport = getTransportCost(buyMarket, sellMarket);
-    
+
+    const buyNum = parseFloat(buyPrice.price) || 0;
+    const sellNum = parseFloat(sellPrice.price) || 0;
+
+    const transport = getTransportCost(
+      buyMarket, sellMarket,
+      buyPrice.state || "", sellPrice.state || "",
+      coords
+    );
+
     const quantities = [1, 5, 10, 25, 50, 100];
     const profitBreakdown = quantities.map(qty => {
-      const totalBuyCost = buyPriceNum * qty;
-      const totalSellRevenue = sellPriceNum * qty;
+      const totalBuy = buyNum * qty;
+      const totalSell = sellNum * qty;
       const totalTransport = transport.totalCost * qty;
-      const totalNetProfit = totalSellRevenue - totalBuyCost - totalTransport;
-      const roi = totalBuyCost + totalTransport > 0 
-        ? (totalNetProfit / (totalBuyCost + totalTransport)) * 100 
+      const totalNet = totalSell - totalBuy - totalTransport;
+      const roi = (totalBuy + totalTransport) > 0
+        ? (totalNet / (totalBuy + totalTransport)) * 100
         : 0;
-      
       return {
         quantity: qty,
-        buyCost: Math.round(totalBuyCost),
-        sellRevenue: Math.round(totalSellRevenue),
+        buyCost: Math.round(totalBuy),
+        sellRevenue: Math.round(totalSell),
         transportCost: Math.round(totalTransport),
-        netProfit: Math.round(totalNetProfit),
+        netProfit: Math.round(totalNet),
         roi: Math.round(roi * 10) / 10,
       };
     });
-    
+
     return NextResponse.json({
       success: true,
       data: {
@@ -523,38 +611,38 @@ export async function POST(request: NextRequest) {
           unit: buyPrice.unit,
         },
         buyMarket: {
-          name: buyMarket,
-          state: buyPrice.state,
-          price: Math.round(buyPriceNum),
+          name: buyMarket, state: buyPrice.state,
+          price: Math.round(buyNum),
           confidence: calculateConfidence(buyPrice.price_date),
         },
         sellMarket: {
-          name: sellMarket,
-          state: sellPrice.state,
-          price: Math.round(sellPriceNum),
+          name: sellMarket, state: sellPrice.state,
+          price: Math.round(sellNum),
           confidence: calculateConfidence(sellPrice.price_date),
         },
         transport: {
           distance: transport.distance,
-          baseCost: transport.baseCost,
-          riskPremium: transport.riskPremium,
+          fuelCost: transport.fuelCost,
+          loadingCost: transport.loadingCost,
+          checkpointCost: transport.checkpointCost,
           totalCostPerUnit: transport.totalCost,
           label: transport.label,
+          ratePerKm: transport.ratePerKm,
+          model: "Nigerian Logistics Feb 2026 (Diesel ₦907.5/L)",
         },
         profitAnalysis: {
-          unitPriceSpread: Math.round(sellPriceNum - buyPriceNum),
-          unitNetProfit: Math.round(sellPriceNum - buyPriceNum - transport.totalCost),
-          unitProfitPct: Math.round(((sellPriceNum - buyPriceNum - transport.totalCost) / buyPriceNum) * 1000) / 10,
+          unitPriceSpread: Math.round(sellNum - buyNum),
+          unitNetProfit: Math.round(sellNum - buyNum - transport.totalCost),
+          unitProfitPct: Math.round(((sellNum - buyNum - transport.totalCost) / buyNum) * 1000) / 10,
           breakdown: profitBreakdown,
         },
       },
     });
-    
+
   } catch (error) {
     console.error("[Arbitrage Detail API Error]", error);
     return NextResponse.json({
-      success: false,
-      error: "server_error",
+      success: false, error: "server_error",
       message: "Failed to analyze arbitrage opportunity",
     }, { status: 500 });
   }
