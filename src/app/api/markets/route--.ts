@@ -1,7 +1,7 @@
 // ============================================================================
 // src/app/api/markets/route.ts
-// NaijaMarket Intel - Markets API v3.1
-// FIXES: latitude/longitude columns, $queryRawUnsafe for SQL Server TOP
+// NaijaMarket Intel - Markets API v3.0
+// Enhanced: Returns market data + price summaries for map popups
 // ============================================================================
 
 import { NextRequest, NextResponse } from "next/server";
@@ -16,7 +16,7 @@ async function getPrisma() {
 }
 
 // ============================================================================
-// CATEGORY MAP
+// CATEGORY MAP for human-readable names
 // ============================================================================
 const CATEGORY_MAP: Record<string, string> = {
   CAT001: "Grains & Cereals",
@@ -56,7 +56,7 @@ const CATEGORY_MAP: Record<string, string> = {
 };
 
 // ============================================================================
-// REGION MAP
+// REGION MAP - Nigerian geopolitical zones
 // ============================================================================
 const STATE_REGION: Record<string, string> = {
   Lagos: "South West",
@@ -99,55 +99,43 @@ const STATE_REGION: Record<string, string> = {
   "FCT - Abuja": "North Central",
 };
 
-// Simple SQL string escape
-function esc(s: string): string {
-  return s.replace(/'/g, "''");
-}
-
 export async function GET(request: NextRequest) {
   try {
     const prisma = await getPrisma();
     const { searchParams } = new URL(request.url);
 
-    const search = (searchParams.get("search") || searchParams.get("q") || "").trim();
-    const state = (searchParams.get("state") || "").trim();
-    const region = (searchParams.get("region") || "").trim();
+    const search = searchParams.get("search") || searchParams.get("q") || "";
+    const state = searchParams.get("state") || "";
+    const region = searchParams.get("region") || "";
     const withPrices = searchParams.get("with_prices") === "true";
-    const limit = Math.min(parseInt(searchParams.get("limit") || "300") || 300, 500);
+    const limit = Math.min(parseInt(searchParams.get("limit") || "300"), 500);
 
     // -------------------------------------------------------------------
-    // 1. Fetch markets - using $queryRawUnsafe for dynamic TOP + WHERE
-    //    Column names: latitude, longitude (NOT gps_lat/gps_lng)
+    // 1. Fetch all markets
     // -------------------------------------------------------------------
-    let whereClause = "WHERE 1=1";
-    if (search) {
-      whereClause += ` AND market_name LIKE '%${esc(search)}%'`;
-    }
-    if (state) {
-      whereClause += ` AND state = '${esc(state)}'`;
-    }
+    const searchLike = `%${search}%`;
 
-    const marketsQuery = `
+    const markets = (await prisma.$queryRaw`
       SELECT TOP ${limit}
         market_id,
         market_name,
         state,
-        latitude,
-        longitude,
+        gps_lat,
+        gps_lng,
         status
-      FROM Markets WITH (NOLOCK)
-      ${whereClause}
+      FROM Markets
+      WHERE 1=1
+        AND (${search} = '' OR market_name LIKE ${searchLike})
+        AND (${state} = '' OR state = ${state})
       ORDER BY market_name ASC
-    `;
-
-    const markets = (await prisma.$queryRawUnsafe(marketsQuery)) as any[];
+    `) as any[];
 
     // -------------------------------------------------------------------
-    // 2. Price summary per market
+    // 2. Fetch price summary per market (items tracked + avg change)
     // -------------------------------------------------------------------
     let marketStats: any[] = [];
     try {
-      marketStats = (await prisma.$queryRawUnsafe(`
+      marketStats = (await prisma.$queryRaw`
         SELECT
           market_name,
           COUNT(DISTINCT item_name) AS items_tracked,
@@ -155,15 +143,25 @@ export async function GET(request: NextRequest) {
           MIN(CAST(price_naira AS FLOAT)) AS min_price,
           MAX(CAST(price_naira AS FLOAT)) AS max_price,
           COUNT(*) AS total_prices
-        FROM Latest_Prices_Summary WITH (NOLOCK)
+        FROM Latest_Prices_Summary
         WHERE price_naira > 0
         GROUP BY market_name
-      `)) as any[];
+      `) as any[];
     } catch (e) {
-      console.warn("Latest_Prices_Summary stats failed:", e);
+      console.warn("Latest_Prices_Summary not available:", e);
     }
 
-    const statsMap = new Map<string, any>();
+    // Build lookup
+    const statsMap = new Map<
+      string,
+      {
+        items_tracked: number;
+        avg_change: number;
+        min_price: number;
+        max_price: number;
+        total_prices: number;
+      }
+    >();
     for (const s of marketStats) {
       statsMap.set(s.market_name, {
         items_tracked: Number(s.items_tracked) || 0,
@@ -175,37 +173,53 @@ export async function GET(request: NextRequest) {
     }
 
     // -------------------------------------------------------------------
-    // 3. Top 5 prices per market (only if requested)
+    // 3. Optionally fetch top 5 prices per market for popup display
     // -------------------------------------------------------------------
-    const topPricesMap = new Map<string, any[]>();
+    let topPricesMap = new Map<
+      string,
+      Array<{
+        item_name: string;
+        price_naira: number;
+        price_change_pct: number;
+        category_id: string;
+        unit: string;
+      }>
+    >();
 
     if (withPrices) {
       try {
-        const topPrices = (await prisma.$queryRawUnsafe(`
+        const topPrices = (await prisma.$queryRaw`
           SELECT
-            market_name, item_name,
+            market_name,
+            item_name,
             CAST(price_naira AS FLOAT) AS price_naira,
             CAST(COALESCE(price_change_pct, 0) AS FLOAT) AS price_change_pct,
             COALESCE(category_id, '') AS category_id,
             COALESCE(unit, '') AS unit
           FROM (
             SELECT
-              market_name, item_name, price_naira, price_change_pct,
-              category_id, unit,
+              market_name,
+              item_name,
+              price_naira,
+              price_change_pct,
+              category_id,
+              unit,
               ROW_NUMBER() OVER (
                 PARTITION BY market_name
                 ORDER BY price_naira DESC
               ) AS rn
-            FROM Latest_Prices_Summary WITH (NOLOCK)
+            FROM Latest_Prices_Summary
             WHERE price_naira > 0
           ) ranked
           WHERE rn <= 5
           ORDER BY market_name, rn
-        `)) as any[];
+        `) as any[];
 
         for (const tp of topPrices) {
           const key = tp.market_name;
-          if (!topPricesMap.has(key)) topPricesMap.set(key, []);
+          if (!topPricesMap.has(key)) {
+            topPricesMap.set(key, []);
+          }
           topPricesMap.get(key)!.push({
             item_name: tp.item_name,
             price_naira: Number(tp.price_naira),
@@ -220,28 +234,20 @@ export async function GET(request: NextRequest) {
     }
 
     // -------------------------------------------------------------------
-    // 4. Format response  (output gps_lat/gps_lng for frontend compat)
+    // 4. Format response
     // -------------------------------------------------------------------
     let formatted = markets.map((m: any) => {
       const stats = statsMap.get(m.market_name);
-      const mState = m.state || "";
-      const mRegion = STATE_REGION[mState] || "";
-
-      // Parse GPS safely
-      let lat: number | null = null;
-      let lng: number | null = null;
-      if (m.latitude != null) lat = parseFloat(String(m.latitude));
-      if (m.longitude != null) lng = parseFloat(String(m.longitude));
-      if (lat !== null && isNaN(lat)) lat = null;
-      if (lng !== null && isNaN(lng)) lng = null;
+      const mRegion =
+        STATE_REGION[m.state] || region || "";
 
       const result: any = {
-        market_id: m.market_id || "",
-        market_name: m.market_name || "",
-        state: mState,
+        market_id: m.market_id || String(m.market_id),
+        market_name: m.market_name,
+        state: m.state || "",
         region: mRegion,
-        gps_lat: lat,
-        gps_lng: lng,
+        gps_lat: m.gps_lat ? parseFloat(m.gps_lat) : null,
+        gps_lng: m.gps_lng ? parseFloat(m.gps_lng) : null,
         status: m.status || "ACTIVE",
         items_tracked: stats?.items_tracked || 0,
         avg_change: stats ? parseFloat(stats.avg_change.toFixed(2)) : 0,
@@ -250,8 +256,9 @@ export async function GET(request: NextRequest) {
         total_prices: stats?.total_prices || 0,
       };
 
+      // Attach top prices if requested
       if (withPrices && topPricesMap.has(m.market_name)) {
-        result.top_prices = topPricesMap.get(m.market_name)!.map((tp: any) => ({
+        result.top_prices = topPricesMap.get(m.market_name)!.map((tp) => ({
           ...tp,
           category_name: CATEGORY_MAP[tp.category_id] || "Other",
         }));
@@ -260,7 +267,7 @@ export async function GET(request: NextRequest) {
       return result;
     });
 
-    // Region filter (post-query since region is derived from state)
+    // Region filter (client-side since region is derived)
     if (region) {
       formatted = formatted.filter(
         (m: any) => m.region.toLowerCase() === region.toLowerCase()
@@ -268,27 +275,35 @@ export async function GET(request: NextRequest) {
     }
 
     // -------------------------------------------------------------------
-    // 5. Aggregates
+    // 5. Aggregate stats for the response
     // -------------------------------------------------------------------
     const states = [...new Set(formatted.map((m: any) => m.state).filter(Boolean))].sort();
-    const regions = [...new Set(formatted.map((m: any) => m.region).filter(Boolean))].sort();
+    const regions = [
+      ...new Set(formatted.map((m: any) => m.region).filter(Boolean)),
+    ].sort();
 
     return NextResponse.json({
       success: true,
       data: formatted,
       count: formatted.length,
-      filters: { states, regions },
+      filters: {
+        states,
+        regions,
+      },
       stats: {
         total_markets: formatted.length,
         active_markets: formatted.filter((m: any) => m.status === "ACTIVE").length,
         markets_with_data: formatted.filter((m: any) => m.items_tracked > 0).length,
-        total_items_tracked: formatted.reduce((sum: number, m: any) => sum + m.items_tracked, 0),
+        total_items_tracked: formatted.reduce(
+          (sum: number, m: any) => sum + m.items_tracked,
+          0
+        ),
       },
     });
   } catch (error: any) {
     console.error("Markets API Error:", error);
     return NextResponse.json(
-      { success: false, error: error.message?.substring(0, 300) || "Internal server error", data: [] },
+      { success: false, error: error.message?.substring(0, 200), data: [] },
       { status: 500 }
     );
   }
