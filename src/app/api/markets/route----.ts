@@ -1,7 +1,7 @@
 // ============================================================================
 // src/app/api/markets/route.ts
-// NaijaFood Intel - Markets API v3.2
-// FOOD-ONLY price summaries, correct lat/lng columns, $queryRawUnsafe
+// NaijaMarket Intel - Markets API v3.1
+// FIXES: latitude/longitude columns, $queryRawUnsafe for SQL Server TOP
 // ============================================================================
 
 import { NextRequest, NextResponse } from "next/server";
@@ -16,7 +16,7 @@ async function getPrisma() {
 }
 
 // ============================================================================
-// FOOD-ONLY CATEGORY MAP
+// CATEGORY MAP
 // ============================================================================
 const CATEGORY_MAP: Record<string, string> = {
   CAT001: "Grains & Cereals",
@@ -32,31 +32,74 @@ const CATEGORY_MAP: Record<string, string> = {
   CAT013: "Dairy & Milk",
   CAT014: "Tubers & Yam",
   CAT015: "Beans & Legumes",
+  CAT016: "Fabrics & Textiles",
+  CAT020: "Footwear",
+  CAT028: "Body Care & Cosmetics",
+  CAT029: "Hair Care",
+  CAT036: "Cement & Building",
+  CAT037: "Electrical Cables",
+  CAT039: "Paints & Finishes",
+  CAT048: "Kitchen & Cookware",
+  CAT052: "Mattresses & Bedding",
+  CAT059: "Tires & Auto Parts",
+  CAT066: "Generators & Power",
+  CAT069: "Fertilizers & Agro-Inputs",
   CAT070: "Poultry & Livestock",
+  CAT078: "Pharmaceuticals",
+  CAT083: "Baby Products & Diapers",
+  CAT085: "Feminine Care",
+  CAT087: "Smartphones",
+  CAT089: "Phone Accessories",
+  CAT092: "Appliances & Electronics",
   CAT103: "Fish (NBS)",
+  CAT123: "Stationery & Office",
 };
-
-const FOOD_SQL = `AND category_id IN ('CAT001','CAT002','CAT003','CAT004','CAT005','CAT006','CAT007','CAT008','CAT009','CAT010','CAT013','CAT014','CAT015','CAT070','CAT103')`;
 
 // ============================================================================
 // REGION MAP
 // ============================================================================
 const STATE_REGION: Record<string, string> = {
-  Lagos: "South West", Ogun: "South West", Oyo: "South West",
-  Osun: "South West", Ondo: "South West", Ekiti: "South West",
-  Rivers: "South South", Bayelsa: "South South", "Cross River": "South South",
-  "Akwa Ibom": "South South", Delta: "South South", Edo: "South South",
-  Anambra: "South East", Enugu: "South East", Imo: "South East",
-  Abia: "South East", Ebonyi: "South East",
-  Kano: "North West", Kaduna: "North West", Katsina: "North West",
-  Jigawa: "North West", Sokoto: "North West", Zamfara: "North West", Kebbi: "North West",
-  Borno: "North East", Yobe: "North East", Adamawa: "North East",
-  Bauchi: "North East", Gombe: "North East", Taraba: "North East",
-  Plateau: "North Central", Nasarawa: "North Central", Niger: "North Central",
-  Benue: "North Central", Kogi: "North Central", Kwara: "North Central",
-  FCT: "North Central", "FCT - Abuja": "North Central",
+  Lagos: "South West",
+  Ogun: "South West",
+  Oyo: "South West",
+  Osun: "South West",
+  Ondo: "South West",
+  Ekiti: "South West",
+  Rivers: "South South",
+  Bayelsa: "South South",
+  "Cross River": "South South",
+  "Akwa Ibom": "South South",
+  Delta: "South South",
+  Edo: "South South",
+  Anambra: "South East",
+  Enugu: "South East",
+  Imo: "South East",
+  Abia: "South East",
+  Ebonyi: "South East",
+  Kano: "North West",
+  Kaduna: "North West",
+  Katsina: "North West",
+  Jigawa: "North West",
+  Sokoto: "North West",
+  Zamfara: "North West",
+  Kebbi: "North West",
+  Borno: "North East",
+  Yobe: "North East",
+  Adamawa: "North East",
+  Bauchi: "North East",
+  Gombe: "North East",
+  Taraba: "North East",
+  Plateau: "North Central",
+  Nasarawa: "North Central",
+  Niger: "North Central",
+  Benue: "North Central",
+  Kogi: "North Central",
+  Kwara: "North Central",
+  FCT: "North Central",
+  "FCT - Abuja": "North Central",
 };
 
+// Simple SQL string escape
 function esc(s: string): string {
   return s.replace(/'/g, "''");
 }
@@ -73,23 +116,34 @@ export async function GET(request: NextRequest) {
     const limit = Math.min(parseInt(searchParams.get("limit") || "300") || 300, 500);
 
     // -------------------------------------------------------------------
-    // 1. Fetch markets (latitude/longitude — NOT gps_lat/gps_lng)
+    // 1. Fetch markets - using $queryRawUnsafe for dynamic TOP + WHERE
+    //    Column names: latitude, longitude (NOT gps_lat/gps_lng)
     // -------------------------------------------------------------------
     let whereClause = "WHERE 1=1";
-    if (search) whereClause += ` AND market_name LIKE '%${esc(search)}%'`;
-    if (state) whereClause += ` AND state = '${esc(state)}'`;
+    if (search) {
+      whereClause += ` AND market_name LIKE '%${esc(search)}%'`;
+    }
+    if (state) {
+      whereClause += ` AND state = '${esc(state)}'`;
+    }
 
     const marketsQuery = `
       SELECT TOP ${limit}
-        market_id, market_name, state, latitude, longitude, status
+        market_id,
+        market_name,
+        state,
+        latitude,
+        longitude,
+        status
       FROM Markets WITH (NOLOCK)
       ${whereClause}
       ORDER BY market_name ASC
     `;
+
     const markets = (await prisma.$queryRawUnsafe(marketsQuery)) as any[];
 
     // -------------------------------------------------------------------
-    // 2. Price stats per market — FOOD ONLY
+    // 2. Price summary per market
     // -------------------------------------------------------------------
     let marketStats: any[] = [];
     try {
@@ -103,11 +157,10 @@ export async function GET(request: NextRequest) {
           COUNT(*) AS total_prices
         FROM Latest_Prices_Summary WITH (NOLOCK)
         WHERE price_naira > 0
-          ${FOOD_SQL}
         GROUP BY market_name
       `)) as any[];
     } catch (e) {
-      console.warn("Market stats failed:", e);
+      console.warn("Latest_Prices_Summary stats failed:", e);
     }
 
     const statsMap = new Map<string, any>();
@@ -122,7 +175,7 @@ export async function GET(request: NextRequest) {
     }
 
     // -------------------------------------------------------------------
-    // 3. Top 5 food prices per market
+    // 3. Top 5 prices per market (only if requested)
     // -------------------------------------------------------------------
     const topPricesMap = new Map<string, any[]>();
 
@@ -140,11 +193,11 @@ export async function GET(request: NextRequest) {
               market_name, item_name, price_naira, price_change_pct,
               category_id, unit,
               ROW_NUMBER() OVER (
-                PARTITION BY market_name ORDER BY price_naira DESC
+                PARTITION BY market_name
+                ORDER BY price_naira DESC
               ) AS rn
             FROM Latest_Prices_Summary WITH (NOLOCK)
             WHERE price_naira > 0
-              AND category_id IN ('CAT001','CAT002','CAT003','CAT004','CAT005','CAT006','CAT007','CAT008','CAT009','CAT010','CAT013','CAT014','CAT015','CAT070','CAT103')
           ) ranked
           WHERE rn <= 5
           ORDER BY market_name, rn
@@ -162,18 +215,19 @@ export async function GET(request: NextRequest) {
           });
         }
       } catch (e) {
-        console.warn("Top prices failed:", e);
+        console.warn("Top prices query failed:", e);
       }
     }
 
     // -------------------------------------------------------------------
-    // 4. Format (output gps_lat/gps_lng for frontend compat)
+    // 4. Format response  (output gps_lat/gps_lng for frontend compat)
     // -------------------------------------------------------------------
     let formatted = markets.map((m: any) => {
       const stats = statsMap.get(m.market_name);
       const mState = m.state || "";
       const mRegion = STATE_REGION[mState] || "";
 
+      // Parse GPS safely
       let lat: number | null = null;
       let lng: number | null = null;
       if (m.latitude != null) lat = parseFloat(String(m.latitude));
@@ -199,13 +253,14 @@ export async function GET(request: NextRequest) {
       if (withPrices && topPricesMap.has(m.market_name)) {
         result.top_prices = topPricesMap.get(m.market_name)!.map((tp: any) => ({
           ...tp,
-          category_name: CATEGORY_MAP[tp.category_id] || "Food",
+          category_name: CATEGORY_MAP[tp.category_id] || "Other",
         }));
       }
 
       return result;
     });
 
+    // Region filter (post-query since region is derived from state)
     if (region) {
       formatted = formatted.filter(
         (m: any) => m.region.toLowerCase() === region.toLowerCase()

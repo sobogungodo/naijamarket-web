@@ -1,15 +1,44 @@
 // ============================================================================
 // src/app/api/prices/route.ts
-// NaijaMarket Intel - Live Prices API
-// Version: 9.2.0 - Single tagged template (no Prisma.join/Prisma.empty)
+// NaijaFood Intel - Live Prices API
+// Version: 9.3.0 - FOOD-ONLY filter on all queries
 // ============================================================================
-// v9.1 crashed because Prisma.join/Prisma.empty aren't reliable on all
-// Prisma versions with SQL Server. v9.2 uses a SINGLE $queryRaw tagged
-// template with "OR @param = ''" pattern to disable unused filters.
-// Zero dynamic SQL building = zero crash risk.
+// Changes from v9.2:
+// - Added FOOD FILTER clause to Summary + Daily + Filters queries
+// - Fixed CATEGORY_MAP to use CAT### keys with correct names
+// - Removed non-food items from mock data + fallback filters
+// - Only 15 food categories visible to consumers
 // ============================================================================
 
 import { NextRequest, NextResponse } from "next/server";
+
+// ============================================================================
+// FOOD-ONLY CATEGORY MAP (15 categories)
+// ============================================================================
+
+const CATEGORY_MAP: Record<string, string> = {
+  CAT001: "Grains & Cereals",
+  CAT002: "Vegetables & Peppers",
+  CAT003: "Oils & Fats",
+  CAT004: "Frozen Foods & Poultry",
+  CAT005: "Beverages",
+  CAT006: "Plantain",
+  CAT007: "Seasoning & Spices",
+  CAT008: "Dried Fish & Stockfish",
+  CAT009: "Flour & Bakery",
+  CAT010: "Bread",
+  CAT013: "Dairy & Milk",
+  CAT014: "Tubers & Yam",
+  CAT015: "Beans & Legumes",
+  CAT070: "Poultry & Livestock",
+  CAT103: "Fish (NBS)",
+};
+
+// Reverse: display name → category_id
+const CATEGORY_NAME_TO_ID: Record<string, string> = {};
+for (const [id, name] of Object.entries(CATEGORY_MAP)) {
+  CATEGORY_NAME_TO_ID[name.toLowerCase()] = id;
+}
 
 // ============================================================================
 // TYPES
@@ -42,54 +71,11 @@ interface FilterOptions {
   stateMarkets: Record<string, string[]>;
 }
 
-// Category ID → Name mapping
-const CATEGORY_MAP: Record<string, string> = {
-  "1": "Grains & Cereals",
-  "2": "Tubers",
-  "3": "Vegetables",
-  "4": "Fruits",
-  "5": "Oils & Fats",
-  "6": "Protein",
-  "7": "Dairy",
-  "8": "Sweeteners",
-  "9": "Beverages",
-  "10": "Building Materials",
-  "11": "Livestock",
-  "12": "Fish & Seafood",
-  "13": "Condiments",
-  "14": "Processed Foods",
-  "CAT001": "Grains & Cereals",
-  "CAT002": "Tubers",
-  "CAT003": "Vegetables",
-  "CAT004": "Fruits",
-  "CAT005": "Oils & Fats",
-  "CAT006": "Protein",
-  "CAT007": "Dairy",
-  "CAT008": "Sweeteners",
-  "CAT009": "Beverages",
-  "CAT010": "Building Materials",
-  "CAT011": "Livestock",
-  "CAT012": "Fish & Seafood",
-  "CAT013": "Condiments",
-  "CAT014": "Processed Foods",
-};
-
-// Reverse: category display name → first matching category_id
-const CATEGORY_NAME_TO_ID: Record<string, string> = {};
-for (const [id, name] of Object.entries(CATEGORY_MAP)) {
-  const key = name.toLowerCase();
-  // Only store the first (numeric) ID for each name
-  if (!CATEGORY_NAME_TO_ID[key]) {
-    CATEGORY_NAME_TO_ID[key] = id;
-  }
-}
-
 // ============================================================================
 // SINGLETON PRISMA
 // ============================================================================
 
 let prismaClient: any = null;
-
 async function getPrisma() {
   if (!prismaClient) {
     const { PrismaClient } = await import("@prisma/client");
@@ -107,7 +93,7 @@ function mapRow(p: any, prefix: string): PriceRecord {
   const prevPrice = Number(p.previous_price) || price;
   const changePercent = Number(p.price_change_pct) || 0;
   const categoryId = String(p.category_id || "");
-  const categoryName = CATEGORY_MAP[categoryId] || "General";
+  const categoryName = CATEGORY_MAP[categoryId] || "Food";
   const idVal = p.id || p.price_id || Math.random();
 
   return {
@@ -132,7 +118,7 @@ function mapRow(p: any, prefix: string): PriceRecord {
 }
 
 // ============================================================================
-// FETCH FILTER OPTIONS (always full list + state→markets map)
+// FETCH FILTER OPTIONS — FOOD ONLY
 // ============================================================================
 
 async function fetchFilterOptions(): Promise<FilterOptions> {
@@ -141,11 +127,11 @@ async function fetchFilterOptions(): Promise<FilterOptions> {
 
     const filtersData = await prisma.$queryRaw`
       SELECT DISTINCT category_id, state, market_name
-      FROM Daily_Prices WITH (NOLOCK)
-      WHERE price_date >= DATEADD(day, -7, CAST(GETDATE() AS DATE))
-        AND price_naira > 0
+      FROM Latest_Prices_Summary WITH (NOLOCK)
+      WHERE price_naira > 0
         AND state IS NOT NULL
         AND market_name IS NOT NULL
+        AND category_id IN ('CAT001','CAT002','CAT003','CAT004','CAT005','CAT006','CAT007','CAT008','CAT009','CAT010','CAT013','CAT014','CAT015','CAT070','CAT103')
     ` as any[];
 
     const categoriesSet = new Set<string>();
@@ -168,7 +154,6 @@ async function fetchFilterOptions(): Promise<FilterOptions> {
       }
     }
 
-    // Sort markets within each state
     for (const st of Object.keys(stateMarketsMap)) {
       stateMarketsMap[st].sort();
     }
@@ -182,20 +167,16 @@ async function fetchFilterOptions(): Promise<FilterOptions> {
   } catch (error) {
     console.error("Filter options error:", error);
     return {
-      categories: ["Grains & Cereals", "Tubers", "Vegetables", "Fruits", "Oils & Fats", "Protein", "Fish & Seafood", "Building Materials"],
+      categories: Object.values(CATEGORY_MAP).sort(),
       states: ["Lagos", "Kano", "FCT", "Rivers", "Oyo", "Anambra", "Kaduna", "Ogun", "Enugu", "Delta"],
-      markets: ["Mile 12 Market", "Alaba International Market", "Onitsha Main Market", "Wuse Market", "Bodija Market", "Ariaria Market"],
+      markets: ["Mile 12 Market", "Onitsha Main Market", "Wuse Market", "Bodija Market"],
       stateMarkets: {},
     };
   }
 }
 
 // ============================================================================
-// FETCH FROM SUMMARY TABLE — SINGLE TAGGED TEMPLATE
-// ============================================================================
-// KEY: All filters baked into ONE query. Empty string = filter disabled.
-// Pattern: (${param} = '' OR column LIKE ${paramLike})
-// This avoids ALL dynamic SQL, Prisma.join, Prisma.empty, $queryRawUnsafe
+// FETCH FROM SUMMARY TABLE — FOOD ONLY
 // ============================================================================
 
 async function fetchFromSummaryTable(
@@ -206,18 +187,12 @@ async function fetchFromSummaryTable(
 ): Promise<{ prices: PriceRecord[]; success: boolean }> {
   try {
     const prisma = await getPrisma();
-
     const searchLike = `%${search}%`;
     const marketLike = `%${market}%`;
 
     const data = await prisma.$queryRaw`
       SELECT TOP 1000
-        id,
-        item_name,
-        market_name,
-        state,
-        category_id,
-        unit,
+        id, item_name, market_name, state, category_id, unit,
         CAST(price_naira AS FLOAT) as price_naira,
         CAST(COALESCE(previous_price, price_naira) AS FLOAT) as previous_price,
         CAST(COALESCE(price_change_pct, 0) AS FLOAT) as price_change_pct,
@@ -225,7 +200,8 @@ async function fetchFromSummaryTable(
         CAST(COALESCE(confidence_score, 85) AS FLOAT) as confidence_score,
         price_date
       FROM Latest_Prices_Summary WITH (NOLOCK)
-      WHERE 1=1
+      WHERE price_naira > 0
+        AND category_id IN ('CAT001','CAT002','CAT003','CAT004','CAT005','CAT006','CAT007','CAT008','CAT009','CAT010','CAT013','CAT014','CAT015','CAT070','CAT103')
         AND (${search} = '' OR item_name LIKE ${searchLike} OR market_name LIKE ${searchLike} OR state LIKE ${searchLike})
         AND (${categoryId} = '' OR category_id = ${categoryId})
         AND (${state} = '' OR state = ${state})
@@ -239,7 +215,6 @@ async function fetchFromSummaryTable(
 
     const prices = data.map((p: any) => mapRow(p, "lps"));
     return { prices, success: true };
-
   } catch (error: any) {
     console.error("Summary table error:", error.message?.substring(0, 300));
     return { prices: [], success: false };
@@ -247,7 +222,7 @@ async function fetchFromSummaryTable(
 }
 
 // ============================================================================
-// FETCH FROM DAILY PRICES (fallback) — SINGLE TAGGED TEMPLATE
+// FETCH FROM DAILY PRICES (fallback) — FOOD ONLY
 // ============================================================================
 
 async function fetchFromDailyPrices(
@@ -258,18 +233,12 @@ async function fetchFromDailyPrices(
 ): Promise<{ prices: PriceRecord[]; success: boolean }> {
   try {
     const prisma = await getPrisma();
-
     const searchLike = `%${search}%`;
     const marketLike = `%${market}%`;
 
     const data = await prisma.$queryRaw`
       SELECT TOP 1000
-        price_id,
-        item_name,
-        market_name,
-        state,
-        category_id,
-        unit,
+        price_id, item_name, market_name, state, category_id, unit,
         CAST(price_naira AS FLOAT) as price_naira,
         CAST(COALESCE(previous_price, price_naira) AS FLOAT) as previous_price,
         CAST(COALESCE(price_change_pct, 0) AS FLOAT) as price_change_pct,
@@ -279,6 +248,7 @@ async function fetchFromDailyPrices(
       FROM Daily_Prices WITH (NOLOCK)
       WHERE price_date >= DATEADD(day, -2, CAST(GETDATE() AS DATE))
         AND price_naira > 0
+        AND category_id IN ('CAT001','CAT002','CAT003','CAT004','CAT005','CAT006','CAT007','CAT008','CAT009','CAT010','CAT013','CAT014','CAT015','CAT070','CAT103')
         AND (${search} = '' OR item_name LIKE ${searchLike} OR market_name LIKE ${searchLike} OR state LIKE ${searchLike})
         AND (${categoryId} = '' OR category_id = ${categoryId})
         AND (${state} = '' OR state = ${state})
@@ -290,7 +260,6 @@ async function fetchFromDailyPrices(
       return { prices: [], success: false };
     }
 
-    // Deduplicate
     const seen = new Set<string>();
     const prices: PriceRecord[] = [];
     for (const p of data) {
@@ -308,31 +277,28 @@ async function fetchFromDailyPrices(
 }
 
 // ============================================================================
-// MOCK DATA
+// MOCK DATA — FOOD ONLY
 // ============================================================================
 
 function generateMockData(): { prices: PriceRecord[]; filters: FilterOptions } {
   const items = [
-    { name: "Rice", variant: "Foreign 50kg", category: "Grains & Cereals", basePrice: 82000 },
-    { name: "Rice", variant: "Local 50kg", category: "Grains & Cereals", basePrice: 65000 },
-    { name: "Beans", variant: "Brown 50kg", category: "Grains & Cereals", basePrice: 120000 },
-    { name: "Garri", variant: "White 50kg", category: "Tubers", basePrice: 45000 },
-    { name: "Yam", variant: "Single Tuber", category: "Tubers", basePrice: 2500 },
+    { name: "Rice (50kg) - Foreign", variant: "50kg bag", category: "Grains & Cereals", basePrice: 82000 },
+    { name: "Rice (50kg) - Local", variant: "50kg bag", category: "Grains & Cereals", basePrice: 65000 },
+    { name: "Beans - Brown", variant: "per kg", category: "Beans & Legumes", basePrice: 2800 },
+    { name: "Garri - White", variant: "50kg bag", category: "Grains & Cereals", basePrice: 45000 },
+    { name: "Yam - Large Tuber", variant: "each", category: "Tubers & Yam", basePrice: 2500 },
     { name: "Palm Oil", variant: "25 Litres", category: "Oils & Fats", basePrice: 45000 },
-    { name: "Groundnut Oil", variant: "25 Litres", category: "Oils & Fats", basePrice: 55000 },
-    { name: "Tomatoes", variant: "Big Basket", category: "Vegetables", basePrice: 35000 },
-    { name: "Pepper", variant: "Big Basket", category: "Vegetables", basePrice: 28000 },
-    { name: "Onions", variant: "Big Bag", category: "Vegetables", basePrice: 85000 },
-    { name: "Chicken", variant: "Whole (1kg)", category: "Protein", basePrice: 5500 },
-    { name: "Beef", variant: "1kg", category: "Protein", basePrice: 4800 },
-    { name: "Fish (Catfish)", variant: "1kg", category: "Fish & Seafood", basePrice: 3500 },
-    { name: "Cement", variant: "Dangote 50kg", category: "Building Materials", basePrice: 6500 },
-    { name: "Eggs", variant: "1 Crate", category: "Protein", basePrice: 3200 },
+    { name: "Tomatoes", variant: "Big Basket", category: "Vegetables & Peppers", basePrice: 35000 },
+    { name: "Pepper - Rodo", variant: "Big Basket", category: "Vegetables & Peppers", basePrice: 28000 },
+    { name: "Frozen Chicken", variant: "Full Carton", category: "Frozen Foods & Poultry", basePrice: 55000 },
+    { name: "Plantain - Unripe", variant: "per kg", category: "Plantain", basePrice: 1200 },
+    { name: "Stockfish Head", variant: "Bundle", category: "Dried Fish & Stockfish", basePrice: 18000 },
+    { name: "Evaporated Milk - Peak", variant: "170g", category: "Dairy & Milk", basePrice: 450 },
+    { name: "Bread - Sliced", variant: "500g", category: "Bread", basePrice: 1800 },
   ];
 
   const markets = [
     { name: "Mile 12 Market", state: "Lagos" },
-    { name: "Alaba International Market", state: "Lagos" },
     { name: "Kano Main Market", state: "Kano" },
     { name: "Onitsha Main Market", state: "Anambra" },
     { name: "Wuse Market", state: "FCT" },
@@ -400,45 +366,41 @@ export async function GET(request: NextRequest) {
     const sort = searchParams.get("sort") || "updated";
     const limit = Math.min(parseInt(searchParams.get("limit") || "500"), 1000);
 
-    // Map category display name → category_id for SQL
-    const categoryId = category ? (CATEGORY_NAME_TO_ID[category.toLowerCase()] || "") : "";
+    // Map category display name → category_id
+    const categoryId = category ? (CATEGORY_NAME_TO_ID[category.toLowerCase()] || category) : "";
 
     let prices: PriceRecord[] = [];
     let filters: FilterOptions = { categories: [], states: [], markets: [], stateMarkets: {} };
     let source = "Demo_Data";
 
-    // Fetch filter options (always full list)
     filters = await fetchFilterOptions();
-    console.log(`[v9.2] Filters loaded: ${filters.categories.length} cats, ${filters.states.length} states, ${filters.markets.length} markets`);
+    console.log(`[v9.3] Filters: ${filters.categories.length} food cats, ${filters.states.length} states`);
 
-    // Try Summary Table (search/state/category/market in SQL WHERE)
+    // Summary table (food-filtered)
     const summaryResult = await fetchFromSummaryTable(search, categoryId, state, market);
     if (summaryResult.success && summaryResult.prices.length > 0) {
       prices = summaryResult.prices;
       source = "Latest_Prices_Summary";
-      console.log(`[v9.2] Summary: ${prices.length} results (search="${search}" cat="${categoryId}" state="${state}" market="${market}")`);
     }
 
-    // Fallback: Daily_Prices
+    // Fallback: Daily_Prices (food-filtered)
     if (prices.length === 0) {
       const dailyResult = await fetchFromDailyPrices(search, categoryId, state, market);
       if (dailyResult.success) {
         prices = dailyResult.prices;
         source = "Daily_Prices";
-        console.log(`[v9.2] Daily: ${prices.length} results`);
       }
     }
 
-    // Final fallback: mock (only when no filters and DB empty)
+    // Final fallback: mock (food-only)
     if (prices.length === 0 && !search && !category && !state && !market) {
       const mock = generateMockData();
       prices = mock.prices;
       filters = mock.filters;
       source = "Demo_Data";
-      console.log(`[v9.2] Mock data`);
     }
 
-    // Trend filter + sort (lightweight, post-fetch)
+    // Trend filter + sort
     let filtered = [...prices];
     if (trend === "up") filtered = filtered.filter(p => p.change_percent > 0);
     if (trend === "down") filtered = filtered.filter(p => p.change_percent < 0);
@@ -465,7 +427,7 @@ export async function GET(request: NextRequest) {
     });
 
   } catch (error: any) {
-    console.error("[v9.2] Error:", error);
+    console.error("[v9.3] Error:", error);
     const mock = generateMockData();
     return NextResponse.json({
       success: true,

@@ -1,9 +1,8 @@
 // ============================================================================
 // src/app/api/analytics/route.ts
-// NaijaMarket Intel - Analytics API (Performance Optimized)
-// Version: 3.0 - ALL queries use Latest_Prices_Summary (137K rows)
-// ZERO queries against Daily_Prices (143M rows) — sub-second response
-// Date: 2026-02-18
+// NaijaFood Intel - Analytics API (Performance Optimized)
+// Version: 3.1 - FOOD-ONLY filter on ALL queries
+// ALL queries use Latest_Prices_Summary (137K rows) — sub-second response
 // ============================================================================
 
 import { NextRequest, NextResponse } from "next/server";
@@ -13,7 +12,6 @@ import { NextRequest, NextResponse } from "next/server";
 // ============================================================================
 
 let prismaClient: any = null;
-
 async function getPrisma() {
   if (!prismaClient) {
     const { PrismaClient } = await import("@prisma/client");
@@ -23,15 +21,29 @@ async function getPrisma() {
 }
 
 // ============================================================================
-// CONSTANTS
+// CONSTANTS — FOOD ONLY
 // ============================================================================
 
 const CATEGORY_MAP: Record<string, string> = {
-  "1": "Grains & Cereals", "2": "Tubers", "3": "Vegetables", "4": "Fruits",
-  "5": "Oils & Fats", "6": "Protein", "7": "Dairy", "8": "Sweeteners",
-  "9": "Beverages", "10": "Building Materials", "11": "Livestock",
-  "12": "Fish & Seafood", "13": "Condiments", "14": "Processed Foods",
+  CAT001: "Grains & Cereals",
+  CAT002: "Vegetables & Peppers",
+  CAT003: "Oils & Fats",
+  CAT004: "Frozen Foods & Poultry",
+  CAT005: "Beverages",
+  CAT006: "Plantain",
+  CAT007: "Seasoning & Spices",
+  CAT008: "Dried Fish & Stockfish",
+  CAT009: "Flour & Bakery",
+  CAT010: "Bread",
+  CAT013: "Dairy & Milk",
+  CAT014: "Tubers & Yam",
+  CAT015: "Beans & Legumes",
+  CAT070: "Poultry & Livestock",
+  CAT103: "Fish (NBS)",
 };
+
+// Hardcoded SQL fragment for food filter
+const FOOD_SQL = `category_id IN ('CAT001','CAT002','CAT003','CAT004','CAT005','CAT006','CAT007','CAT008','CAT009','CAT010','CAT013','CAT014','CAT015','CAT070','CAT103')`;
 
 const STATE_TO_REGION: Record<string, string> = {
   "Lagos": "SW", "Ogun": "SW", "Oyo": "SW", "Osun": "SW", "Ondo": "SW", "Ekiti": "SW",
@@ -74,7 +86,6 @@ export async function GET(request: NextRequest) {
     const now = new Date();
     const daysBack = period === "7d" ? 7 : period === "90d" ? 90 : 30;
 
-    // ALL queries use Latest_Prices_Summary (137K rows) — run in PARALLEL
     const [
       platformStats,
       priceTrends,
@@ -112,7 +123,7 @@ export async function GET(request: NextRequest) {
         startDate: new Date(now.getTime() - daysBack * 86400000).toISOString().slice(0, 10),
         endDate: now.toISOString(),
         generatedAt: new Date().toISOString(),
-        dataSource: "Latest_Prices_Summary (137K rows)",
+        dataSource: "Latest_Prices_Summary (food only)",
         responseTime: `${responseTime}ms`,
       },
     });
@@ -127,7 +138,7 @@ export async function GET(request: NextRequest) {
 }
 
 // ============================================================================
-// 1. PLATFORM STATS — Latest_Prices_Summary only (no Daily_Prices)
+// 1. PLATFORM STATS — FOOD ONLY
 // ============================================================================
 
 async function fetchPlatformStats(prisma: any) {
@@ -135,35 +146,34 @@ async function fetchPlatformStats(prisma: any) {
     const stats = await prisma.$queryRaw`
       SELECT
         (SELECT COUNT(*) FROM Markets) as total_markets,
-        (SELECT COUNT(*) FROM Items_Catalog) as total_items,
-        (SELECT COUNT(DISTINCT market_name) FROM Latest_Prices_Summary WITH (NOLOCK)) as active_markets,
-        (SELECT COUNT(*) FROM Latest_Prices_Summary WITH (NOLOCK)) as total_prices,
-        (SELECT COUNT(DISTINCT item_name) FROM Latest_Prices_Summary WITH (NOLOCK)) as active_items
+        (SELECT COUNT(*) FROM Items_Catalog WHERE category_id IN ('CAT001','CAT002','CAT003','CAT004','CAT005','CAT006','CAT007','CAT008','CAT009','CAT010','CAT013','CAT014','CAT015','CAT070','CAT103')) as total_items,
+        (SELECT COUNT(DISTINCT market_name) FROM Latest_Prices_Summary WITH (NOLOCK) WHERE category_id IN ('CAT001','CAT002','CAT003','CAT004','CAT005','CAT006','CAT007','CAT008','CAT009','CAT010','CAT013','CAT014','CAT015','CAT070','CAT103')) as active_markets,
+        (SELECT COUNT(*) FROM Latest_Prices_Summary WITH (NOLOCK) WHERE category_id IN ('CAT001','CAT002','CAT003','CAT004','CAT005','CAT006','CAT007','CAT008','CAT009','CAT010','CAT013','CAT014','CAT015','CAT070','CAT103')) as total_prices,
+        (SELECT COUNT(DISTINCT item_name) FROM Latest_Prices_Summary WITH (NOLOCK) WHERE category_id IN ('CAT001','CAT002','CAT003','CAT004','CAT005','CAT006','CAT007','CAT008','CAT009','CAT010','CAT013','CAT014','CAT015','CAT070','CAT103')) as active_items
     ` as any[];
 
     return {
       totalMarkets: parseInt(stats[0]?.total_markets) || 226,
       activeMarkets: parseInt(stats[0]?.active_markets) || 0,
-      totalItems: parseInt(stats[0]?.total_items) || 610,
+      totalItems: parseInt(stats[0]?.total_items) || 274,
       activeItems: parseInt(stats[0]?.active_items) || 0,
-      totalCategories: 14,
+      totalCategories: 15,
       priceUpdates24h: parseInt(stats[0]?.total_prices) || 0,
       totalPrices: parseInt(stats[0]?.total_prices) || 0,
     };
   } catch (e: any) {
     console.warn("Stats error:", e.message?.substring(0, 150));
-    return { totalMarkets: 226, activeMarkets: 0, totalItems: 610, activeItems: 0, totalCategories: 14, priceUpdates24h: 0, totalPrices: 0 };
+    return { totalMarkets: 226, activeMarkets: 0, totalItems: 274, activeItems: 0, totalCategories: 15, priceUpdates24h: 0, totalPrices: 0 };
   }
 }
 
 // ============================================================================
-// 2. PRICE TRENDS — from Latest_Prices_Summary snapshot (no Daily_Prices)
+// 2. PRICE TRENDS — FOOD ONLY
 // ============================================================================
 
 async function fetchPriceTrends(prisma: any, daysBack: number, now: Date) {
   const trends: any[] = [];
   try {
-    // Get current snapshot stats from Summary
     const summaryStats = await prisma.$queryRaw`
       SELECT 
         COUNT(*) as total_records,
@@ -171,22 +181,18 @@ async function fetchPriceTrends(prisma: any, daysBack: number, now: Date) {
         AVG(CAST(COALESCE(price_change_pct, 0) AS FLOAT)) as avg_daily_change
       FROM Latest_Prices_Summary WITH (NOLOCK)
       WHERE price_naira > 0
+        AND category_id IN ('CAT001','CAT002','CAT003','CAT004','CAT005','CAT006','CAT007','CAT008','CAT009','CAT010','CAT013','CAT014','CAT015','CAT070','CAT103')
     ` as any[];
 
     const currentAvgPrice = parseFloat(summaryStats[0]?.avg_price) || 5000;
     const dailyChangePct = parseFloat(summaryStats[0]?.avg_daily_change) || -0.05;
-    const totalRecords = parseInt(summaryStats[0]?.total_records) || 136640;
+    const totalRecords = parseInt(summaryStats[0]?.total_records) || 60000;
 
-    // Build trend: work backwards from current price using daily change rate
     for (let i = daysBack - 1; i >= 0; i--) {
       const date = new Date(now.getTime() - i * 86400000);
       const dateStr = date.toISOString().slice(0, 10);
-      
-      // Estimate price i days ago
       const priceAdjust = Math.pow(1 + dailyChangePct / 100, -i);
       const estimatedPrice = currentAvgPrice * priceAdjust;
-      
-      // Deterministic submission count variation
       const seed = (date.getDate() * 7 + date.getMonth() * 31) % 100;
       const submissions = Math.round(totalRecords * (0.95 + seed / 1000));
 
@@ -214,8 +220,7 @@ async function fetchPriceTrends(prisma: any, daysBack: number, now: Date) {
 }
 
 // ============================================================================
-// 3. NFPI — weighted basket from Latest_Prices_Summary (instant)
-//    No Daily_Prices scan. NBS-calibrated base index.
+// 3. NFPI — weighted basket (already food by nature)
 // ============================================================================
 
 async function calculateNFPI(prisma: any) {
@@ -223,7 +228,6 @@ async function calculateNFPI(prisma: any) {
   let currentNFPI = { value: 108.9, weeklyChange: -0.1 };
 
   try {
-    // Current basket prices from Summary (instant)
     const basketPrices = await prisma.$queryRaw`
       SELECT 
         item_name,
@@ -231,6 +235,7 @@ async function calculateNFPI(prisma: any) {
         AVG(CAST(COALESCE(price_change_pct, 0) AS FLOAT)) as avg_change
       FROM Latest_Prices_Summary WITH (NOLOCK)
       WHERE price_naira > 0
+        AND category_id IN ('CAT001','CAT002','CAT003','CAT004','CAT005','CAT006','CAT007','CAT008','CAT009','CAT010','CAT013','CAT014','CAT015','CAT070','CAT103')
         AND (item_name LIKE '%Rice%' OR item_name LIKE '%Beans%' OR item_name LIKE '%Garri%'
           OR item_name LIKE '%Yam%' OR item_name LIKE '%Tomato%' OR item_name LIKE '%Pepper%'
           OR item_name LIKE '%Onion%' OR item_name LIKE '%Palm Oil%' OR item_name LIKE '%Groundnut%'
@@ -239,7 +244,6 @@ async function calculateNFPI(prisma: any) {
       GROUP BY item_name
     ` as any[];
 
-    // Calculate weighted daily change from basket
     let weightedChange = 0;
     let totalWeight = 0;
 
@@ -256,17 +260,12 @@ async function calculateNFPI(prisma: any) {
     }
 
     const avgDailyChange = totalWeight > 0 ? weightedChange / totalWeight : -0.02;
-
-    // Build 30-day NFPI history
-    // Current NFPI: ~108.9 (NBS Jan 2026: 8.89% above 2024 base = 100)
     const currentNFPIValue = 108.9;
     const now = new Date();
 
     for (let i = 29; i >= 0; i--) {
       const date = new Date(now.getTime() - i * 86400000);
       const dateStr = date.toISOString().slice(0, 10);
-      
-      // Work backwards from current: older days slightly different
       const adjustment = avgDailyChange * i * -1;
       const nfpi = parseFloat((currentNFPIValue + adjustment).toFixed(1));
 
@@ -304,7 +303,7 @@ async function calculateNFPI(prisma: any) {
 }
 
 // ============================================================================
-// 4. CATEGORY BREAKDOWN — Items_Catalog only (610 rows, instant)
+// 4. CATEGORY BREAKDOWN — FOOD ONLY from Items_Catalog
 // ============================================================================
 
 async function fetchCategoryBreakdown(prisma: any) {
@@ -312,13 +311,13 @@ async function fetchCategoryBreakdown(prisma: any) {
     const catData = await prisma.$queryRaw`
       SELECT category_id, COUNT(*) as item_count
       FROM Items_Catalog
-      WHERE category_id IS NOT NULL
+      WHERE category_id IN ('CAT001','CAT002','CAT003','CAT004','CAT005','CAT006','CAT007','CAT008','CAT009','CAT010','CAT013','CAT014','CAT015','CAT070','CAT103')
       GROUP BY category_id
       ORDER BY item_count DESC
     ` as any[];
 
     return catData.map((c: any) => ({
-      category_name: CATEGORY_MAP[String(c.category_id)] || `Category ${c.category_id}`,
+      category_name: CATEGORY_MAP[String(c.category_id)] || "Food",
       item_count: parseInt(c.item_count) || 0,
       price_updates: parseInt(c.item_count) * 226,
     }));
@@ -329,7 +328,7 @@ async function fetchCategoryBreakdown(prisma: any) {
 }
 
 // ============================================================================
-// 5. REGIONAL INDICES — Latest_Prices_Summary (137K rows, instant)
+// 5. REGIONAL INDICES — FOOD ONLY from Latest_Prices_Summary
 // ============================================================================
 
 async function fetchRegionalIndices(prisma: any) {
@@ -341,6 +340,7 @@ async function fetchRegionalIndices(prisma: any) {
         AVG(CAST(COALESCE(price_change_pct, 0) AS FLOAT)) as avg_change
       FROM Latest_Prices_Summary WITH (NOLOCK)
       WHERE state IS NOT NULL AND price_naira > 0
+        AND category_id IN ('CAT001','CAT002','CAT003','CAT004','CAT005','CAT006','CAT007','CAT008','CAT009','CAT010','CAT013','CAT014','CAT015','CAT070','CAT103')
       GROUP BY state
     ` as any[];
 
@@ -373,7 +373,7 @@ async function fetchRegionalIndices(prisma: any) {
 }
 
 // ============================================================================
-// 6. TOP MOVERS — Latest_Prices_Summary (137K rows, instant)
+// 6. TOP MOVERS — FOOD ONLY
 // ============================================================================
 
 async function fetchTopMovers(prisma: any) {
@@ -385,6 +385,7 @@ async function fetchTopMovers(prisma: any) {
           CAST(COALESCE(price_change_pct, 0) AS FLOAT) as change_pct
         FROM Latest_Prices_Summary WITH (NOLOCK)
         WHERE price_change_pct > 0.5 AND price_naira > 0
+          AND category_id IN ('CAT001','CAT002','CAT003','CAT004','CAT005','CAT006','CAT007','CAT008','CAT009','CAT010','CAT013','CAT014','CAT015','CAT070','CAT103')
         ORDER BY price_change_pct DESC
       `,
       prisma.$queryRaw`
@@ -393,6 +394,7 @@ async function fetchTopMovers(prisma: any) {
           CAST(COALESCE(price_change_pct, 0) AS FLOAT) as change_pct
         FROM Latest_Prices_Summary WITH (NOLOCK)
         WHERE price_change_pct < -0.5 AND price_naira > 0
+          AND category_id IN ('CAT001','CAT002','CAT003','CAT004','CAT005','CAT006','CAT007','CAT008','CAT009','CAT010','CAT013','CAT014','CAT015','CAT070','CAT103')
         ORDER BY price_change_pct ASC
       `,
     ]) as [any[], any[]];
@@ -419,7 +421,7 @@ async function fetchTopMovers(prisma: any) {
 }
 
 // ============================================================================
-// 7. MARKET STATS — Latest_Prices_Summary (137K rows, instant)
+// 7. MARKET STATS — FOOD ONLY
 // ============================================================================
 
 async function fetchMarketStats(prisma: any) {
@@ -431,6 +433,7 @@ async function fetchMarketStats(prisma: any) {
         AVG(CAST(price_naira AS FLOAT)) as avg_price
       FROM Latest_Prices_Summary WITH (NOLOCK)
       WHERE price_naira > 0
+        AND category_id IN ('CAT001','CAT002','CAT003','CAT004','CAT005','CAT006','CAT007','CAT008','CAT009','CAT010','CAT013','CAT014','CAT015','CAT070','CAT103')
       GROUP BY market_name, state
       ORDER BY price_count DESC
     ` as any[];
