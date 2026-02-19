@@ -895,6 +895,70 @@ const REPORT_NAMES: Record<string, string> = {
 };
 
 // ============================================================================
+// USAGE TRACKING - Persist report count in database
+// ============================================================================
+
+const TIER_MONTHLY_LIMITS: Record<string, number> = {
+  BUSINESS: 20,
+  BUSINESS_PLUS: 30,
+  CORPORATE: 50,
+  ENTERPRISE: 9999,
+  OGA_BOSS: 9999,
+  GOVERNMENT: 9999,
+};
+
+async function ensureUsageTable(): Promise<void> {
+  try {
+    await prisma.$executeRawUnsafe(`
+      IF NOT EXISTS (SELECT * FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = 'Report_Usage')
+      BEGIN
+        CREATE TABLE Report_Usage (
+          id INT IDENTITY(1,1) PRIMARY KEY,
+          user_email NVARCHAR(255) NOT NULL DEFAULT 'anonymous',
+          user_tier NVARCHAR(50) NOT NULL DEFAULT 'FREE',
+          report_type NVARCHAR(100) NOT NULL,
+          output_format NVARCHAR(20) NOT NULL DEFAULT 'pdf',
+          file_size_bytes INT NOT NULL DEFAULT 0,
+          generated_at DATETIME2 NOT NULL DEFAULT GETDATE()
+        );
+        CREATE INDEX IX_ReportUsage_Email_Date ON Report_Usage(user_email, generated_at);
+      END
+    `);
+  } catch (e: any) {
+    console.log("[Reports] Usage table check:", e.message);
+  }
+}
+
+async function getMonthlyUsageCount(userEmail: string): Promise<number> {
+  try {
+    await ensureUsageTable();
+    const result = await prisma.$queryRawUnsafe<{ cnt: number }[]>(`
+      SELECT COUNT(*) AS cnt FROM Report_Usage
+      WHERE user_email = '${userEmail.replace(/'/g, "''")}'
+        AND generated_at >= DATEADD(month, DATEDIFF(month, 0, GETDATE()), 0)
+    `);
+    return result?.[0]?.cnt || 0;
+  } catch {
+    return 0;
+  }
+}
+
+async function logReportUsage(
+  userEmail: string, userTier: string, reportType: string,
+  outputFormat: string, fileSizeBytes: number
+): Promise<void> {
+  try {
+    await ensureUsageTable();
+    await prisma.$executeRawUnsafe(`
+      INSERT INTO Report_Usage (user_email, user_tier, report_type, output_format, file_size_bytes)
+      VALUES ('${userEmail.replace(/'/g, "''")}', '${userTier}', '${reportType}', '${outputFormat}', ${fileSizeBytes})
+    `);
+  } catch (e: any) {
+    console.error("[Reports] Usage log failed:", e.message);
+  }
+}
+
+// ============================================================================
 // POST HANDLER
 // ============================================================================
 
@@ -902,11 +966,22 @@ export async function POST(request: NextRequest) {
   try {
     const session = await getServerSession();
     const userTier = await getUserTier(session);
+    const userEmail = (session?.user as any)?.email || "anonymous";
 
     if (!hasTierAccess(userTier, "BUSINESS")) {
       return NextResponse.json(
         { success: false, error: "Reports require BUSINESS tier or higher", currentTier: userTier },
         { status: 403 }
+      );
+    }
+
+    // ---- MONTHLY LIMIT CHECK ----
+    const monthlyLimit = TIER_MONTHLY_LIMITS[userTier] || 0;
+    const usedThisMonth = await getMonthlyUsageCount(userEmail);
+    if (usedThisMonth >= monthlyLimit) {
+      return NextResponse.json(
+        { success: false, error: `Monthly report limit reached (${usedThisMonth}/${monthlyLimit}). Upgrade for more.`, currentTier: userTier },
+        { status: 429 }
       );
     }
 
@@ -926,7 +1001,7 @@ export async function POST(request: NextRequest) {
     }
 
     const reportName = REPORT_NAMES[reportType] || reportType;
-    console.log("[Reports Generate] Type:", reportType, "Format:", outputFormat, "Tier:", userTier);
+    console.log("[Reports Generate] Type:", reportType, "Format:", outputFormat, "Tier:", userTier, "Used:", usedThisMonth, "/", monthlyLimit);
 
     const data = await fetchReportData(reportType, parameters);
 
@@ -937,18 +1012,23 @@ export async function POST(request: NextRequest) {
     const format = (outputFormat || "pdf").toLowerCase();
 
     if (format === "html") {
+      // HTML preview does NOT count against quota
       return NextResponse.json(generateHTMLData(reportType, reportName, data));
     }
 
     if (format === "excel") {
       const excelBuffer = await generateExcel(reportType, reportName, data);
       const filename = "NaijaFood_" + reportName.replace(/\s+/g, "_") + "_" + new Date().toISOString().split("T")[0] + ".xlsx";
+      // Log usage AFTER successful generation
+      await logReportUsage(userEmail, userTier, reportType, "excel", excelBuffer.length);
       return new NextResponse(excelBuffer, {
         status: 200,
         headers: {
           "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
           "Content-Disposition": 'attachment; filename="' + filename + '"',
           "Content-Length": String(excelBuffer.length),
+          "X-Reports-Used": String(usedThisMonth + 1),
+          "X-Reports-Limit": String(monthlyLimit),
         },
       });
     }
@@ -956,12 +1036,16 @@ export async function POST(request: NextRequest) {
     // Default: PDF
     const pdfBytes = await generatePDF(reportType, reportName, data);
     const filename = "NaijaFood_" + reportName.replace(/\s+/g, "_") + "_" + new Date().toISOString().split("T")[0] + ".pdf";
+    // Log usage AFTER successful generation
+    await logReportUsage(userEmail, userTier, reportType, "pdf", pdfBytes.length);
     return new NextResponse(pdfBytes, {
       status: 200,
       headers: {
         "Content-Type": "application/pdf",
         "Content-Disposition": 'attachment; filename="' + filename + '"',
         "Content-Length": String(pdfBytes.length),
+        "X-Reports-Used": String(usedThisMonth + 1),
+        "X-Reports-Limit": String(monthlyLimit),
       },
     });
   } catch (error: any) {

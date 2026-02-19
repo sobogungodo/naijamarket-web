@@ -1,6 +1,6 @@
 // ============================================================================
 // src/app/(dashboard)/dashboard/reports/page.tsx
-// NaijaFood Intel - Market Intelligence Reports Dashboard
+// NaijaMarket Intel - Market Intelligence Reports Dashboard
 // Version: 2.0.0 - Fixed report generation with real API integration
 // Bloomberg Equivalent: NI <GO>
 // ============================================================================
@@ -275,8 +275,7 @@ export default function ReportsPage() {
   const [reportTypes, setReportTypes] = useState<ReportType[]>(STATIC_REPORT_TYPES);
   const [generatedReports, setGeneratedReports] = useState<GeneratedReport[]>([]);
   const [scheduledReports, setScheduledReports] = useState<ScheduledReport[]>([]);
-  const [reportsRemaining, setReportsRemaining] = useState(-1); // -1 = loading
-  const [reportsLimit, setReportsLimit] = useState(0);
+  const [reportsRemaining, setReportsRemaining] = useState(10);
   const [canSchedule, setCanSchedule] = useState(false);
   const [userTier, setUserTier] = useState("FREE");
   const [error, setError] = useState<string | null>(null);
@@ -317,34 +316,19 @@ export default function ReportsPage() {
       // Check if tier can schedule
       const tierIndex = TIER_HIERARCHY.indexOf(tier.toUpperCase());
       setCanSchedule(tierIndex >= TIER_HIERARCHY.indexOf("CORPORATE"));
+      
+      // Set reports remaining based on tier
+      if (tierIndex >= TIER_HIERARCHY.indexOf("ENTERPRISE")) {
+        setReportsRemaining(999);
+      } else if (tierIndex >= TIER_HIERARCHY.indexOf("CORPORATE")) {
+        setReportsRemaining(50);
+      } else if (tierIndex >= TIER_HIERARCHY.indexOf("BUSINESS")) {
+        setReportsRemaining(20);
+      } else {
+        setReportsRemaining(0);
+      }
     }
     setLoading(false);
-  }, [session]);
-
-  // Fetch report usage from database (persists across deploys)
-  useEffect(() => {
-    const fetchUsage = async () => {
-      try {
-        const res = await fetch("/api/reports/usage", { credentials: "include" });
-        if (res.ok) {
-          const data = await res.json();
-          setReportsRemaining(data.remaining ?? 0);
-          setReportsLimit(data.limit ?? 0);
-          // Also update tier from server if available
-          if (data.tier && data.tier !== "FREE") {
-            setUserTier(data.tier);
-          }
-        }
-      } catch {
-        // Fallback: use tier-based defaults
-        const tierIndex = TIER_HIERARCHY.indexOf(userTier);
-        if (tierIndex >= TIER_HIERARCHY.indexOf("ENTERPRISE")) setReportsRemaining(999);
-        else if (tierIndex >= TIER_HIERARCHY.indexOf("CORPORATE")) setReportsRemaining(50);
-        else if (tierIndex >= TIER_HIERARCHY.indexOf("BUSINESS")) setReportsRemaining(20);
-        else setReportsRemaining(0);
-      }
-    };
-    fetchUsage();
   }, [session]);
 
   // Check if user has access to a report
@@ -423,7 +407,7 @@ export default function ReportsPage() {
         // PDF/Excel returns blob for download
         const blob = await response.blob();
         const contentDisposition = response.headers.get("Content-Disposition");
-        let filename = `NaijaFood_${selectedReport.name.replace(/\s+/g, "_")}_${new Date().toISOString().split("T")[0]}`;
+        let filename = `NaijaMarket_${selectedReport.name.replace(/\s+/g, "_")}_${new Date().toISOString().split("T")[0]}`;
         filename += selectedFormat === "pdf" ? ".pdf" : ".xlsx";
 
         // Try to extract filename from header
@@ -446,18 +430,8 @@ export default function ReportsPage() {
 
         toast.success(`Report downloaded: ${filename}`);
         
-        // Update reports remaining from server headers (persisted in DB)
-        const usedHeader = response.headers.get("X-Reports-Used");
-        const limitHeader = response.headers.get("X-Reports-Limit");
-        if (usedHeader && limitHeader) {
-          const used = parseInt(usedHeader);
-          const limit = parseInt(limitHeader);
-          setReportsRemaining(Math.max(0, limit - used));
-          setReportsLimit(limit);
-        } else {
-          // Fallback: decrement locally
-          setReportsRemaining(prev => Math.max(0, prev - 1));
-        }
+        // Update reports remaining
+        setReportsRemaining(prev => Math.max(0, prev - 1));
 
         // Add to history (simplified)
         const newReport: GeneratedReport = {
@@ -644,12 +618,7 @@ export default function ReportsPage() {
         <div className="flex items-center gap-4">
           <div className="text-right">
             <p className="text-sm text-gray-400">Reports Remaining</p>
-            <p className="text-xl font-bold text-naija-gold">
-              {reportsRemaining === -1 ? "..." : reportsRemaining >= 999 ? "Unlimited" : reportsRemaining}
-            </p>
-            {reportsLimit > 0 && reportsLimit < 9999 && reportsRemaining >= 0 && (
-              <p className="text-xs text-gray-600">of {reportsLimit}/month</p>
-            )}
+            <p className="text-xl font-bold text-naija-gold">{reportsRemaining === 999 ? "Unlimited" : reportsRemaining}</p>
           </div>
           <div className={`px-4 py-2 rounded-lg ${TIER_COLORS[userTier] || TIER_COLORS.FREE}`}>
             <span className="font-medium">{userTier}</span>
@@ -837,7 +806,7 @@ export default function ReportsPage() {
             <div className="bg-terminal-surface border border-terminal-border rounded-xl p-6">
               <button
                 onClick={handleGenerateReport}
-                disabled={generating || !selectedReportType || reportsRemaining === 0}
+                disabled={generating || !selectedReportType || (reportsRemaining <= 0 && reportsRemaining !== 999)}
                 className="w-full py-4 bg-gradient-to-r from-naija-green to-emerald-600 hover:from-naija-green/90 hover:to-emerald-600/90 disabled:from-gray-600 disabled:to-gray-700 text-white font-semibold rounded-xl transition-all flex items-center justify-center gap-2"
               >
                 {generating ? (
@@ -852,7 +821,7 @@ export default function ReportsPage() {
                   </>
                 )}
               </button>
-              {reportsRemaining === 0 && (
+              {reportsRemaining <= 0 && reportsRemaining !== 999 && (
                 <p className="text-center text-orange-400 text-sm mt-3">
                   Monthly limit reached.{" "}
                   <button onClick={() => router.push("/dashboard/subscription")} className="underline">
