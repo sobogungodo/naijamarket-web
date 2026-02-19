@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <rect width="512" height="512" rx="92" fill="#0a0a0a"/>
+  <rect x="77" y="41" width="358" height="31" rx="15" fill="#10b981"/>
+  <text x="256" y="290" text-anchor="middle" dominant-baseline="central" font-family="Arial Black, Impact, sans-serif" font-weight="900" font-size="200">
+    <tspan fill="#ffffff">N</tspan><tspan fill="#10b981">M</tspan>
+  </text>
+  <text x="256" y="385" text-anchor="middle" font-family="Arial, sans-serif" font-weight="600" font-size="46" fill="#6b7280" letter-spacing="16">INTEL</text>
+  <circle cx="256" cy="451" r="13" fill="#10b981"/>
+</svg>
