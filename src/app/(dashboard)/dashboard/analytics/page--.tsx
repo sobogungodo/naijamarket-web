@@ -205,12 +205,12 @@ function MoverItem({ mover, type }: { mover: Mover; type: "gainer" | "loser" }) 
     <div className="flex items-center justify-between py-2 border-b border-gray-800 last:border-0">
       <div className="flex items-center gap-3">
         <div className={`w-8 h-8 rounded-lg flex items-center justify-center ${
-          type === "gainer" ? "bg-emerald-500/10" : "bg-red-500/10"
+          type === "gainer" ? "bg-red-500/10" : "bg-emerald-500/10"
         }`}>
           {type === "gainer" ? (
-            <TrendingUp className="w-4 h-4 text-emerald-400" />
+            <TrendingUp className="w-4 h-4 text-red-400" />
           ) : (
-            <TrendingDown className="w-4 h-4 text-red-400" />
+            <TrendingDown className="w-4 h-4 text-emerald-400" />
           )}
         </div>
         <div>
@@ -220,7 +220,7 @@ function MoverItem({ mover, type }: { mover: Mover; type: "gainer" | "loser" }) 
       </div>
       <div className="text-right">
         <div className="text-sm text-white">{formatPrice(mover.price)}</div>
-        <div className={`text-xs ${type === "gainer" ? "text-emerald-400" : "text-red-400"}`}>
+        <div className={`text-xs ${type === "gainer" ? "text-red-400" : "text-emerald-400"}`}>
           {mover.change > 0 ? "+" : ""}{mover.change.toFixed(1)}%
         </div>
       </div>
@@ -479,7 +479,7 @@ export default function AnalyticsPage() {
       <div className="grid lg:grid-cols-3 gap-6 mb-6">
         <div className="bg-[#1a1a1a] border border-gray-800 rounded-xl p-4">
           <div className="flex items-center gap-2 mb-4">
-            <TrendingUp className="w-5 h-5 text-emerald-400" />
+            <TrendingUp className="w-5 h-5 text-red-400" />
             <h3 className="text-white font-semibold">Top Gainers</h3>
           </div>
           {data.topMovers.gainers.length > 0 ? (
@@ -495,7 +495,7 @@ export default function AnalyticsPage() {
 
         <div className="bg-[#1a1a1a] border border-gray-800 rounded-xl p-4">
           <div className="flex items-center gap-2 mb-4">
-            <TrendingDown className="w-5 h-5 text-red-400" />
+            <TrendingDown className="w-5 h-5 text-emerald-400" />
             <h3 className="text-white font-semibold">Top Losers</h3>
           </div>
           {data.topMovers.losers.length > 0 ? (
