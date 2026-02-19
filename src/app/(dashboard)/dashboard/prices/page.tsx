@@ -6,7 +6,8 @@
 
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, Suspense } from "react";
+import { useSearchParams } from "next/navigation";
 import { 
   Search, 
   Filter, 
@@ -70,7 +71,14 @@ interface FilterOptions {
 // PRICES PAGE
 // ============================================================================
 
-export default function PricesPage() {
+function PricesPageContent() {
+  // Read URL query params (from Screener, Watchlist, etc.)
+  const searchParams = useSearchParams();
+  const urlItem = searchParams.get("item") || "";
+  const urlCategory = searchParams.get("category") || "";
+  const urlState = searchParams.get("state") || "";
+  const urlMarket = searchParams.get("market") || "";
+
   // Data state
   const [prices, setPrices] = useState<PriceItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -86,11 +94,11 @@ export default function PricesPage() {
     stateMarkets: {},
   });
 
-  // Filter state
-  const [searchQuery, setSearchQuery] = useState("");
-  const [categoryFilter, setCategoryFilter] = useState("");
-  const [stateFilter, setStateFilter] = useState("");
-  const [marketFilter, setMarketFilter] = useState("");
+  // Filter state — pre-filled from URL if navigating from Screener/Watchlist
+  const [searchQuery, setSearchQuery] = useState(urlItem);
+  const [categoryFilter, setCategoryFilter] = useState(urlCategory);
+  const [stateFilter, setStateFilter] = useState(urlState);
+  const [marketFilter, setMarketFilter] = useState(urlMarket);
   const [trendFilter, setTrendFilter] = useState("all");
   const [sortBy, setSortBy] = useState("updated");
 
@@ -166,6 +174,14 @@ export default function PricesPage() {
   useEffect(() => {
     fetchPrices(false);
   }, []);
+
+  // Sync URL params when navigating from other pages (Screener, Watchlist, etc.)
+  useEffect(() => {
+    if (urlItem) setSearchQuery(urlItem);
+    if (urlCategory) setCategoryFilter(urlCategory);
+    if (urlState) setStateFilter(urlState);
+    if (urlMarket) setMarketFilter(urlMarket);
+  }, [urlItem, urlCategory, urlState, urlMarket]);
 
   // Re-fetch when filters change (debounced)
   useEffect(() => {
@@ -819,5 +835,24 @@ export default function PricesPage() {
         />
       )}
     </div>
+  );
+}
+
+// ============================================================================
+// SUSPENSE WRAPPER (required for useSearchParams in Next.js App Router)
+// ============================================================================
+
+export default function PricesPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-8 h-8 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+          <p className="text-gray-400 text-sm">Loading prices...</p>
+        </div>
+      </div>
+    }>
+      <PricesPageContent />
+    </Suspense>
   );
 }

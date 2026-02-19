@@ -63,6 +63,7 @@ interface FilterOptions {
   categories: string[];
   states: string[];
   markets: string[];
+  stateMarkets: Record<string, string[]>;
 }
 
 // ============================================================================
@@ -82,6 +83,7 @@ export default function PricesPage() {
     categories: [],
     states: [],
     markets: [],
+    stateMarkets: {},
   });
 
   // Filter state
@@ -145,6 +147,7 @@ export default function PricesPage() {
             categories: result.filters.categories || [],
             states: result.filters.states || [],
             markets: result.filters.markets || [],
+            stateMarkets: result.filters.stateMarkets || {},
           });
         }
       } else {
@@ -195,6 +198,15 @@ export default function PricesPage() {
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
+
+  // Clear market filter if selected market isn't in the newly selected state
+  useEffect(() => {
+    if (stateFilter && marketFilter && filterOptions.stateMarkets[stateFilter]) {
+      if (!filterOptions.stateMarkets[stateFilter].includes(marketFilter)) {
+        setMarketFilter("");
+      }
+    }
+  }, [stateFilter]);
 
   // ============================================================================
   // HANDLERS
@@ -256,6 +268,11 @@ export default function PricesPage() {
   };
 
   const hasActiveFilters = searchQuery || categoryFilter || stateFilter || marketFilter || trendFilter !== "all";
+
+  // When a state is selected, only show markets from that state
+  const availableMarkets = stateFilter && filterOptions.stateMarkets[stateFilter]
+    ? filterOptions.stateMarkets[stateFilter]
+    : filterOptions.markets;
 
   // Format time ago
   const formatTimeAgo = (dateStr: string): string => {
@@ -465,10 +482,10 @@ export default function PricesPage() {
                   onClick={() => { setMarketFilter(""); setShowMarketDropdown(false); }}
                   className="w-full px-3 py-2 text-left text-sm text-gray-400 hover:bg-terminal-muted hover:text-white border-b border-terminal-border"
                 >
-                  All Markets
+                  {stateFilter ? `All ${stateFilter} Markets` : "All Markets"}
                 </button>
-                {filterOptions.markets.length > 0 ? (
-                  filterOptions.markets.map(m => (
+                {availableMarkets.length > 0 ? (
+                  availableMarkets.map(m => (
                     <button
                       key={m}
                       onClick={() => { setMarketFilter(m); setShowMarketDropdown(false); }}
@@ -481,7 +498,9 @@ export default function PricesPage() {
                     </button>
                   ))
                 ) : (
-                  <div className="px-3 py-2 text-sm text-gray-500">Loading markets...</div>
+                  <div className="px-3 py-2 text-sm text-gray-500">
+                    {stateFilter ? `No markets found in ${stateFilter}` : "Loading markets..."}
+                  </div>
                 )}
               </div>
             )}
@@ -591,34 +610,34 @@ export default function PricesPage() {
           <div className="overflow-x-auto">
             <table className="w-full" style={{ tableLayout: "fixed" }}>
               <colgroup>
-                <col style={{ width: "36px" }} />       {/* Star */}
-                <col style={{ width: "18%" }} />         {/* Item */}
-                <col style={{ width: "10%" }} />         {/* Category */}
-                <col style={{ width: "15%" }} />         {/* Market */}
-                <col style={{ width: "7%" }} />          {/* State */}
-                <col style={{ width: "12%" }} />         {/* Price */}
-                <col style={{ width: "10%" }} />         {/* Change */}
-                <col style={{ width: "9%" }} />          {/* 24H Range */}
-                <col style={{ width: "11%" }} />         {/* Confidence */}
-                <col style={{ width: "10%" }} />         {/* Updated */}
-                <col style={{ width: "56px" }} />        {/* Actions */}
+                <col style={{ width: "32px" }} />        {/* Star */}
+                <col style={{ width: "17%" }} />          {/* Item */}
+                <col style={{ width: "11%" }} />          {/* Category */}
+                <col style={{ width: "14%" }} />          {/* Market */}
+                <col style={{ width: "7%" }} />           {/* State */}
+                <col style={{ width: "12%" }} />          {/* Price */}
+                <col style={{ width: "11%" }} />          {/* Change */}
+                <col style={{ width: "11%" }} />          {/* 24H Range */}
+                <col style={{ width: "12%" }} />          {/* Confidence */}
+                <col style={{ width: "10%" }} />          {/* Updated */}
+                <col style={{ width: "48px" }} />         {/* Actions */}
               </colgroup>
               <thead>
-                <tr className="border-b border-terminal-border">
-                  <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"></th>
-                  <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Item</th>
-                  <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Category</th>
-                  <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Market</th>
-                  <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">State</th>
-                  <th className="px-3 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Price (₦)</th>
-                  <th className="px-3 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Change</th>
-                  <th className="px-3 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">24H Range</th>
-                  <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Confidence</th>
-                  <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Updated</th>
-                  <th className="px-2 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"></th>
+                <tr className="border-b border-terminal-border bg-terminal-bg/50">
+                  <th className="py-3"></th>
+                  <th className="py-3 text-center text-xs font-semibold text-gray-400 uppercase tracking-wider">Item</th>
+                  <th className="py-3 text-center text-xs font-semibold text-gray-400 uppercase tracking-wider">Category</th>
+                  <th className="py-3 text-center text-xs font-semibold text-gray-400 uppercase tracking-wider">Market</th>
+                  <th className="py-3 text-center text-xs font-semibold text-gray-400 uppercase tracking-wider">State</th>
+                  <th className="py-3 text-center text-xs font-semibold text-gray-400 uppercase tracking-wider">Price (₦)</th>
+                  <th className="py-3 text-center text-xs font-semibold text-gray-400 uppercase tracking-wider">Change</th>
+                  <th className="py-3 text-center text-xs font-semibold text-gray-400 uppercase tracking-wider">24H Range</th>
+                  <th className="py-3 text-center text-xs font-semibold text-gray-400 uppercase tracking-wider">Confidence</th>
+                  <th className="py-3 text-center text-xs font-semibold text-gray-400 uppercase tracking-wider">Updated</th>
+                  <th className="py-3"></th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-terminal-border/50">
+              <tbody className="divide-y divide-terminal-border/40">
                 {prices.map((item) => (
                   <tr 
                     key={item.id} 
@@ -626,22 +645,22 @@ export default function PricesPage() {
                     onClick={() => handleRowClick(item)}
                   >
                     {/* Star */}
-                    <td className="px-2 py-3">
+                    <td className="py-3 text-center">
                       <button 
                         className="opacity-0 group-hover:opacity-100 text-gray-500 hover:text-naija-gold transition-all"
                         onClick={(e) => e.stopPropagation()}
                       >
-                        <Star className="w-4 h-4" />
+                        <Star className="w-4 h-4 mx-auto" />
                       </button>
                     </td>
 
                     {/* Item Name */}
                     <td className="px-3 py-3">
-                      <div className="flex items-center gap-2 min-w-0">
+                      <div className="flex items-center justify-center gap-2 min-w-0">
                         <div className="shrink-0 p-1.5 bg-emerald-500/10 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity">
                           <BarChart3 className="w-3.5 h-3.5 text-emerald-400" />
                         </div>
-                        <div className="min-w-0">
+                        <div className="min-w-0 text-center">
                           <div className="font-medium text-sm text-white group-hover:text-naija-green transition-colors truncate" title={item.item_name}>
                             {item.item_name}
                           </div>
@@ -653,34 +672,34 @@ export default function PricesPage() {
                     </td>
 
                     {/* Category */}
-                    <td className="px-3 py-3">
-                      <span className="inline-block px-2 py-0.5 bg-terminal-muted text-gray-400 text-xs rounded truncate max-w-full" title={item.category}>
+                    <td className="px-2 py-3 text-center">
+                      <span className="inline-block px-2.5 py-1 bg-terminal-muted text-gray-400 text-xs rounded-md" title={item.category}>
                         {item.category}
                       </span>
                     </td>
 
                     {/* Market */}
-                    <td className="px-3 py-3">
+                    <td className="px-3 py-3 text-center">
                       <span className="text-sm text-gray-400 block truncate" title={item.market_name}>
                         {item.market_name}
                       </span>
                     </td>
 
                     {/* State */}
-                    <td className="px-3 py-3">
+                    <td className="py-3 text-center">
                       <span className="text-xs text-gray-500">{item.state}</span>
                     </td>
 
                     {/* Price */}
-                    <td className="px-3 py-3 text-right">
+                    <td className="px-3 py-3 text-center">
                       <span className="font-mono text-white text-base font-semibold">
                         {item.price_naira.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </span>
                     </td>
 
                     {/* Change */}
-                    <td className="px-3 py-3 text-right">
-                      <div className={`flex items-center justify-end gap-1 text-sm ${
+                    <td className="px-2 py-3 text-center">
+                      <div className={`flex items-center justify-center gap-1 text-sm ${
                         item.change_percent > 0 ? "text-price-up" : 
                         item.change_percent < 0 ? "text-price-down" : "text-gray-500"
                       }`}>
@@ -689,13 +708,13 @@ export default function PricesPage() {
                          <Minus className="w-3 h-3 shrink-0" />}
                         <span className="font-mono">{item.change_percent >= 0 ? "+" : ""}{item.change_percent.toFixed(2)}%</span>
                       </div>
-                      <div className="text-xs text-gray-500 text-right mt-0.5 font-mono">
+                      <div className="text-xs text-gray-500 mt-0.5 font-mono">
                         {item.change_amount >= 0 ? "+" : ""}₦{Math.abs(item.change_amount).toLocaleString()}
                       </div>
                     </td>
 
                     {/* 24H Range */}
-                    <td className="px-3 py-3 text-right">
+                    <td className="px-2 py-3 text-center">
                       <div className="font-mono text-xs text-gray-400 leading-relaxed">
                         <span>{item.low_24h.toLocaleString()}</span>
                         <span className="text-gray-600 mx-1">–</span>
@@ -705,8 +724,8 @@ export default function PricesPage() {
 
                     {/* Confidence */}
                     <td className="px-3 py-3">
-                      <div className="flex items-center gap-2">
-                        <div className="flex-1 h-2 bg-terminal-muted rounded-full overflow-hidden max-w-[80px]">
+                      <div className="flex items-center justify-center gap-2">
+                        <div className="w-16 h-2 bg-terminal-muted rounded-full overflow-hidden">
                           <div 
                             className={`h-full rounded-full transition-all ${
                               item.confidence >= 85 ? "bg-price-up" : 
@@ -718,20 +737,20 @@ export default function PricesPage() {
                         </div>
                         <span className="text-xs text-gray-500 tabular-nums">{item.confidence}%</span>
                       </div>
-                      <div className="text-xs text-gray-600 mt-0.5">
+                      <div className="text-xs text-gray-600 mt-0.5 text-center">
                         {item.validators} validators
                       </div>
                     </td>
 
                     {/* Updated */}
-                    <td className="px-3 py-3">
+                    <td className="px-2 py-3 text-center">
                       <div className="text-xs text-gray-500">{formatTimeAgo(item.updated_at)}</div>
                       <div className="text-xs text-gray-600">{item.source.replace(/_/g, " ")}</div>
                     </td>
 
                     {/* Actions */}
-                    <td className="px-2 py-3">
-                      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all">
+                    <td className="py-3 text-center">
+                      <div className="flex items-center justify-center gap-1 opacity-0 group-hover:opacity-100 transition-all">
                         <button 
                           className="p-1 text-gray-500 hover:text-naija-green transition-colors" 
                           title="Set Alert"
