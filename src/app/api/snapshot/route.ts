@@ -2,12 +2,14 @@
 // src/app/api/snapshot/route.ts
 // NaijaFood Intel - Market Snapshot API
 // Bloomberg Equivalent: TOP <GO> (Top News/Overview)
-// Version: 2.0.0 - Hybrid Data with Time Period Support
-// Date: 2026-01-25
+// Version: 3.0.0 - Uses Prisma (same as all other working routes)
+// Updated: 2026-02-19
 // ============================================================================
 
 import { NextRequest, NextResponse } from "next/server";
-import sql from "mssql";
+import { PrismaClient } from "@prisma/client";
+
+const prisma = new PrismaClient();
 
 // ============================================================================
 // CONFIGURATION
@@ -15,19 +17,6 @@ import sql from "mssql";
 
 const GOOGLE_SHEETS_ID = "1n-7MXdoqvIoSHteBJaUYBmIPLjJBNtrE_jVuUxO5kr8";
 const GOOGLE_API_KEY = process.env.GOOGLE_SHEETS_API_KEY || "";
-
-const SQL_CONFIG: sql.config = {
-  server: process.env.AZURE_SQL_SERVER || "naijafood.database.windows.net",
-  database: process.env.AZURE_SQL_DATABASE || "NaijaMarketIntel",
-  user: process.env.AZURE_SQL_USER || "",
-  password: process.env.AZURE_SQL_PASSWORD || "",
-  options: {
-    encrypt: true,
-    trustServerCertificate: false,
-  },
-  connectionTimeout: 30000,
-  requestTimeout: 30000,
-};
 
 // Time period configurations
 const TIME_PERIODS: Record<string, { days: number; label: string }> = {
@@ -138,84 +127,56 @@ interface SnapshotResponse {
 // ============================================================================
 
 async function fetchFromDailyPrices(periodDays: number): Promise<{ data: PriceRecord[]; success: boolean }> {
-  if (!SQL_CONFIG.user || !SQL_CONFIG.password) {
-    console.log("Azure SQL credentials not configured, skipping Daily_Prices...");
-    return { data: [], success: false };
-  }
-
-  let pool: sql.ConnectionPool | null = null;
-  
   try {
-    console.log(`Connecting to Azure SQL for Daily_Prices (${periodDays} days)...`);
-    pool = await sql.connect(SQL_CONFIG);
+    console.log(`Fetching Daily_Prices via Prisma (${periodDays} days)...`);
     
-    // Query to get latest prices and compare with prices from X days ago
-    const result = await pool.request()
-      .input('periodDays', sql.Int, periodDays)
-      .query(`
-        -- Get the most recent date in the data
-        DECLARE @LatestDate DATE = (SELECT MAX(price_date) FROM dbo.Daily_Prices WHERE price_naira > 0);
-        DECLARE @CompareDate DATE = DATEADD(day, -@periodDays, @LatestDate);
+    // Single query: get latest prices + historical comparison
+    const result = await prisma.$queryRawUnsafe<any[]>(`
+      DECLARE @LatestDate DATE = (SELECT MAX(price_date) FROM Daily_Prices WHERE price_naira > 0);
+      DECLARE @CompareDate DATE = DATEADD(day, -${periodDays}, @LatestDate);
 
-        -- Get current prices (latest date)
-        WITH CurrentPrices AS (
-          SELECT 
-            item_id, item_name, market_id, market_name, state, category_id, unit,
-            price_naira, previous_price, price_change_pct, trend, confidence_score,
-            price_date, time_slot, time_slot_name,
-            ROW_NUMBER() OVER (PARTITION BY item_id, market_id ORDER BY price_date DESC, time_slot DESC) as rn
-          FROM dbo.Daily_Prices
-          WHERE price_date = @LatestDate AND price_naira > 0
-        ),
-        -- Get historical prices for comparison
-        HistoricalPrices AS (
-          SELECT 
-            item_id, market_id, price_naira as historical_price,
-            ROW_NUMBER() OVER (PARTITION BY item_id, market_id ORDER BY ABS(DATEDIFF(day, price_date, @CompareDate)), time_slot DESC) as rn
-          FROM dbo.Daily_Prices
-          WHERE price_date BETWEEN DATEADD(day, -2, @CompareDate) AND DATEADD(day, 2, @CompareDate)
-            AND price_naira > 0
-        )
+      WITH CurrentPrices AS (
         SELECT 
-          c.item_id, c.item_name, c.market_id, c.market_name, c.state, 
-          c.category_id, c.unit, c.price_naira as current_price,
-          COALESCE(h.historical_price, c.previous_price, c.price_naira) as compare_price,
-          c.price_change_pct, c.trend, c.confidence_score,
-          c.price_date, c.time_slot, c.time_slot_name,
-          CASE 
-            WHEN COALESCE(h.historical_price, c.previous_price, c.price_naira) > 0 
-            THEN ((c.price_naira - COALESCE(h.historical_price, c.previous_price, c.price_naira)) / 
-                  COALESCE(h.historical_price, c.previous_price, c.price_naira)) * 100
-            ELSE 0 
-          END as calculated_change_pct
-        FROM CurrentPrices c
-        LEFT JOIN HistoricalPrices h ON c.item_id = h.item_id AND c.market_id = h.market_id AND h.rn = 1
-        WHERE c.rn = 1
-        ORDER BY c.market_name, c.item_name
-      `);
+          item_id, item_name, market_id, market_name, state, category_id, unit,
+          price_naira, previous_price, price_change_pct, trend, confidence_score,
+          price_date, time_slot, time_slot_name,
+          ROW_NUMBER() OVER (PARTITION BY item_id, market_id ORDER BY price_date DESC, time_slot DESC) as rn
+        FROM Daily_Prices
+        WHERE price_date = @LatestDate AND price_naira > 0
+      ),
+      HistoricalPrices AS (
+        SELECT 
+          item_id, market_id, price_naira as historical_price,
+          ROW_NUMBER() OVER (PARTITION BY item_id, market_id ORDER BY ABS(DATEDIFF(day, price_date, @CompareDate)), time_slot DESC) as rn
+        FROM Daily_Prices
+        WHERE price_date BETWEEN DATEADD(day, -2, @CompareDate) AND DATEADD(day, 2, @CompareDate)
+          AND price_naira > 0
+      )
+      SELECT 
+        c.item_id, c.item_name, c.market_id, c.market_name, c.state, 
+        c.category_id, c.unit, c.price_naira as current_price,
+        COALESCE(h.historical_price, c.previous_price, c.price_naira) as compare_price,
+        c.price_change_pct, c.trend, c.confidence_score,
+        c.price_date, c.time_slot, c.time_slot_name,
+        CASE 
+          WHEN COALESCE(h.historical_price, c.previous_price, c.price_naira) > 0 
+          THEN ((c.price_naira - COALESCE(h.historical_price, c.previous_price, c.price_naira)) / 
+                COALESCE(h.historical_price, c.previous_price, c.price_naira)) * 100
+          ELSE 0 
+        END as calculated_change_pct
+      FROM CurrentPrices c
+      LEFT JOIN HistoricalPrices h ON c.item_id = h.item_id AND c.market_id = h.market_id AND h.rn = 1
+      WHERE c.rn = 1
+      ORDER BY c.market_name, c.item_name
+    `);
     
-    console.log(`Daily_Prices returned ${result.recordset.length} records`);
+    console.log(`Daily_Prices returned ${result.length} records`);
     
-    const data: PriceRecord[] = result.recordset.map((row: {
-      item_id: number;
-      item_name: string;
-      market_id: number;
-      market_name: string;
-      state: string;
-      category_id: number;
-      unit: string;
-      current_price: number;
-      compare_price: number;
-      price_change_pct: number;
-      trend: string;
-      confidence_score: number;
-      price_date: Date;
-      time_slot: string;
-      time_slot_name: string;
-      calculated_change_pct: number;
-    }) => {
-      const change = row.current_price - row.compare_price;
-      const changePercent = row.calculated_change_pct || 0;
+    const data: PriceRecord[] = result.map((row: any) => {
+      const currentPrice = parseFloat(row.current_price) || 0;
+      const comparePrice = parseFloat(row.compare_price) || currentPrice;
+      const change = currentPrice - comparePrice;
+      const changePercent = parseFloat(row.calculated_change_pct) || 0;
       
       let trendValue: "up" | "down" | "stable" = "stable";
       if (row.trend === "↑" || row.trend === "up" || changePercent > 1) {
@@ -226,7 +187,7 @@ async function fetchFromDailyPrices(periodDays: number): Promise<{ data: PriceRe
       
       const dateStr = row.price_date instanceof Date 
         ? row.price_date.toISOString().split("T")[0] ?? "" 
-        : String(row.price_date);
+        : String(row.price_date || "");
       
       return {
         item: row.item_name || "",
@@ -237,102 +198,74 @@ async function fetchFromDailyPrices(periodDays: number): Promise<{ data: PriceRe
         region: getRegionFromState(row.state || ""),
         category: String(row.category_id || ""),
         unit: row.unit || "",
-        price: row.current_price || 0,
-        previousPrice: row.compare_price || 0,
+        price: currentPrice,
+        previousPrice: comparePrice,
         change: change,
         changePercent: changePercent,
         trend: trendValue,
         date: dateStr,
         timeSlot: row.time_slot_name || row.time_slot || "",
-        confidenceScore: row.confidence_score || 0,
+        confidenceScore: parseFloat(row.confidence_score) || 0,
       };
     });
     
     return { data, success: data.length >= 10 };
   } catch (error) {
-    console.error("Daily_Prices query error:", error);
+    console.error("Daily_Prices Prisma query error:", error);
     return { data: [], success: false };
-  } finally {
-    if (pool) {
-      try {
-        await pool.close();
-      } catch (closeError) {
-        console.error("Error closing pool:", closeError);
-      }
-    }
   }
 }
 
 async function fetchFromValidatedPrices(periodDays: number): Promise<{ data: PriceRecord[]; success: boolean }> {
-  if (!SQL_CONFIG.user || !SQL_CONFIG.password) {
-    console.log("Azure SQL credentials not configured, skipping Validated_Prices...");
-    return { data: [], success: false };
-  }
-
-  let pool: sql.ConnectionPool | null = null;
-  
   try {
-    console.log(`Connecting to Azure SQL for Validated_Prices (${periodDays} days)...`);
-    pool = await sql.connect(SQL_CONFIG);
+    console.log(`Fetching Validated_Prices via Prisma (${periodDays} days)...`);
     
-    const result = await pool.request()
-      .input('periodDays', sql.Int, periodDays)
-      .query(`
-        DECLARE @LatestDate DATETIME2 = (SELECT MAX(validated_at) FROM dbo.Validated_Prices);
-        DECLARE @StartDate DATETIME2 = DATEADD(day, -@periodDays, @LatestDate);
+    const result = await prisma.$queryRawUnsafe<any[]>(`
+      DECLARE @LatestDate DATETIME2 = (SELECT MAX(validated_at) FROM Validated_Prices);
+      DECLARE @StartDate DATETIME2 = DATEADD(day, -${periodDays}, @LatestDate);
 
-        WITH CurrentPrices AS (
-          SELECT 
-            item_id, item_name, market_id, market_name, state,
-            price_naira, unit,
-            validated_at,
-            ROW_NUMBER() OVER (PARTITION BY item_id, market_id ORDER BY validated_at DESC) as rn
-          FROM dbo.Validated_Prices
-          WHERE validation_status = 'APPROVED' AND price_naira > 0
-        ),
-        HistoricalPrices AS (
-          SELECT 
-            item_id, market_id, price_naira as historical_price,
-            ROW_NUMBER() OVER (PARTITION BY item_id, market_id ORDER BY validated_at) as rn
-          FROM dbo.Validated_Prices
-          WHERE validated_at <= @StartDate AND validation_status = 'APPROVED' AND price_naira > 0
-        )
+      WITH CurrentPrices AS (
         SELECT 
-          c.item_id, c.item_name, c.market_id, c.market_name, c.state,
-          c.price_naira as current_price, c.unit, c.validated_at,
-          COALESCE(h.historical_price, c.price_naira) as compare_price,
-          CASE 
-            WHEN COALESCE(h.historical_price, c.price_naira) > 0 
-            THEN ((c.price_naira - COALESCE(h.historical_price, c.price_naira)) / 
-                  COALESCE(h.historical_price, c.price_naira)) * 100
-            ELSE 0 
-          END as calculated_change_pct
-        FROM CurrentPrices c
-        LEFT JOIN HistoricalPrices h ON c.item_id = h.item_id AND c.market_id = h.market_id AND h.rn = 1
-        WHERE c.rn = 1
-        ORDER BY c.market_name, c.item_name
-      `);
+          item_id, item_name, market_id, market_name, state,
+          price_naira, unit, validated_at,
+          ROW_NUMBER() OVER (PARTITION BY item_id, market_id ORDER BY validated_at DESC) as rn
+        FROM Validated_Prices
+        WHERE validation_status = 'APPROVED' AND price_naira > 0
+      ),
+      HistoricalPrices AS (
+        SELECT 
+          item_id, market_id, price_naira as historical_price,
+          ROW_NUMBER() OVER (PARTITION BY item_id, market_id ORDER BY validated_at) as rn
+        FROM Validated_Prices
+        WHERE validated_at <= @StartDate AND validation_status = 'APPROVED' AND price_naira > 0
+      )
+      SELECT 
+        c.item_id, c.item_name, c.market_id, c.market_name, c.state,
+        c.price_naira as current_price, c.unit, c.validated_at,
+        COALESCE(h.historical_price, c.price_naira) as compare_price,
+        CASE 
+          WHEN COALESCE(h.historical_price, c.price_naira) > 0 
+          THEN ((c.price_naira - COALESCE(h.historical_price, c.price_naira)) / 
+                COALESCE(h.historical_price, c.price_naira)) * 100
+          ELSE 0 
+        END as calculated_change_pct
+      FROM CurrentPrices c
+      LEFT JOIN HistoricalPrices h ON c.item_id = h.item_id AND c.market_id = h.market_id AND h.rn = 1
+      WHERE c.rn = 1
+      ORDER BY c.market_name, c.item_name
+    `);
     
-    console.log(`Validated_Prices returned ${result.recordset.length} records`);
+    console.log(`Validated_Prices returned ${result.length} records`);
     
-    const data: PriceRecord[] = result.recordset.map((row: {
-      item_id: number;
-      item_name: string;
-      market_id: number;
-      market_name: string;
-      state: string;
-      current_price: number;
-      compare_price: number;
-      unit: string;
-      validated_at: Date;
-      calculated_change_pct: number;
-    }) => {
-      const change = row.current_price - row.compare_price;
-      const changePercent = row.calculated_change_pct || 0;
+    const data: PriceRecord[] = result.map((row: any) => {
+      const currentPrice = parseFloat(row.current_price) || 0;
+      const comparePrice = parseFloat(row.compare_price) || currentPrice;
+      const change = currentPrice - comparePrice;
+      const changePercent = parseFloat(row.calculated_change_pct) || 0;
       
       const dateStr = row.validated_at instanceof Date 
         ? row.validated_at.toISOString().split("T")[0] ?? "" 
-        : String(row.validated_at);
+        : String(row.validated_at || "");
       
       return {
         item: row.item_name || "",
@@ -343,8 +276,8 @@ async function fetchFromValidatedPrices(periodDays: number): Promise<{ data: Pri
         region: getRegionFromState(row.state || ""),
         category: "",
         unit: row.unit || "",
-        price: row.current_price || 0,
-        previousPrice: row.compare_price || 0,
+        price: currentPrice,
+        previousPrice: comparePrice,
         change: change,
         changePercent: changePercent,
         trend: changePercent > 1 ? "up" : changePercent < -1 ? "down" : "stable",
@@ -356,16 +289,8 @@ async function fetchFromValidatedPrices(periodDays: number): Promise<{ data: Pri
     
     return { data, success: data.length >= 10 };
   } catch (error) {
-    console.error("Validated_Prices query error:", error);
+    console.error("Validated_Prices Prisma query error:", error);
     return { data: [], success: false };
-  } finally {
-    if (pool) {
-      try {
-        await pool.close();
-      } catch (closeError) {
-        console.error("Error closing pool:", closeError);
-      }
-    }
   }
 }
 
@@ -619,12 +544,11 @@ export async function GET(request: NextRequest) {
     if (region !== "ALL") {
       priceData = priceData.filter(p => p.region === region);
     }
-
-    // Filter by market name if specified (from ?market= param)
+    
+    // Filter by market if specified (from URL params)
     if (market) {
       const marketLower = market.toLowerCase();
       priceData = priceData.filter(p => p.market.toLowerCase().includes(marketLower));
-      console.log(`Market filter "${market}": ${priceData.length} records after filter`);
     }
     
     // Calculate metrics
@@ -819,3 +743,6 @@ export async function GET(request: NextRequest) {
     );
   }
 }
+
+export const dynamic = "force-dynamic";
+export const maxDuration = 30;
