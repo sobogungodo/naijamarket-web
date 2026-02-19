@@ -86,6 +86,27 @@ interface ArbitrageOpportunity {
 // CATEGORY CONFIGURATION
 // ============================================================================
 
+// Food-related categories ONLY (NaijaFood Intel = food price platform)
+const FOOD_CATEGORIES = new Set([
+  "CAT001",  // Grains & Cereals
+  "CAT002",  // Vegetables & Peppers
+  "CAT003",  // Oils & Fats
+  "CAT004",  // Frozen Foods & Poultry
+  "CAT005",  // Beverages
+  "CAT006",  // Plantain & Protein
+  "CAT007",  // Seasoning & Spices
+  "CAT008",  // Dried Fish & Stockfish
+  "CAT009",  // Flour & Bakery
+  "CAT010",  // Bread
+  "CAT013",  // Dairy & Milk
+  "CAT014",  // Tubers & Yam
+  "CAT015",  // Beans & Legumes
+  "CAT070",  // Poultry & Livestock
+  "CAT103",  // Fish (NBS)
+]);
+
+const FOOD_CAT_SQL = Array.from(FOOD_CATEGORIES).map(c => `'${c}'`).join(",");
+
 const CATEGORY_MAP: Record<string, string> = {
   "CAT001": "Grains & Cereals", "CAT002": "Tubers", "CAT003": "Vegetables",
   "CAT004": "Fruits", "CAT005": "Oils & Fats", "CAT006": "Protein",
@@ -227,6 +248,7 @@ async function findArbitrageOpportunities(
       JOIN dbo.Markets m ON dp.market_id = m.market_id
       WHERE dp.price_naira > 0
         AND dp.price_date >= DATEADD(DAY, -7, CAST(GETDATE() AS DATE))
+        AND ic.category_id IN (${FOOD_CAT_SQL})
         ${extraWhere}
     )
     SELECT TOP ${Math.min(maxResults * 3, 300)}
@@ -455,6 +477,7 @@ export async function POST(request: NextRequest) {
           AND (m.market_name LIKE '%${buySearch}%' OR m.market_name LIKE '%${sellSearch}%')
           AND dp.price_naira > 0
           AND dp.price_date >= DATEADD(DAY, -7, CAST(GETDATE() AS DATE))
+          AND ic.category_id IN (${FOOD_CAT_SQL})
       ) sub
       WHERE rn = 1
     `) as any[];
