@@ -7,7 +7,6 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
-import { useRouter } from "next/navigation";
 import {
   Search,
   MapPin,
@@ -361,10 +360,6 @@ function MarketsMap({ markets, selectedMarket, onMarketClick }: MapProps) {
             </div>
           </div>
           ${pricesHtml}
-          <a href="/dashboard/snapshot?market=${encodeURIComponent(m.market_name)}" 
-             style="display:block;text-align:center;margin-top:10px;padding:6px 12px;background:#10b981;color:white;border-radius:6px;font-size:12px;font-weight:600;text-decoration:none;cursor:pointer;">
-            View Market Details →
-          </a>
         </div>
       `;
 
@@ -598,7 +593,6 @@ function MarketCard({ market, isSelected, onClick }: MarketCardProps) {
 // ============================================================================
 
 export default function MarketsPage() {
-  const router = useRouter();
   const [markets, setMarkets] = useState<Market[]>([]);
   const [filters, setFilters] = useState<MarketFilters>({
     states: [],
@@ -710,8 +704,7 @@ export default function MarketsPage() {
 
   const handleMarketClick = useCallback((market: Market) => {
     setSelectedMarket(market.market_id);
-    router.push(`/dashboard/snapshot?market=${encodeURIComponent(market.market_name)}`);
-  }, [router]);
+  }, []);
 
   const clearFilters = () => {
     setSearch("");
