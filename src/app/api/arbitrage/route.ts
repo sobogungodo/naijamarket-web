@@ -212,18 +212,30 @@ async function findArbitrageOpportunities(
   minProfitPct: number,
   maxResults: number,
   filterItem?: string,
-  filterCategory?: string
+  filterCategory?: string,
+  filterBuyState?: string,
+  filterSellState?: string
 ): Promise<ArbitrageOpportunity[]> {
 
   // Build dynamic WHERE filters
   const conditions: string[] = [];
   if (filterItem) {
-    conditions.push(`AND p1.item_name LIKE '%${filterItem.replace(/'/g, "''")}%'`);
+    conditions.push(`AND ic.item_name LIKE '%${filterItem.replace(/'/g, "''")}%'`);
   }
   if (filterCategory) {
-    conditions.push(`AND ic1.category_id = '${filterCategory.replace(/'/g, "''")}'`);
+    conditions.push(`AND ic.category_id = '${filterCategory.replace(/'/g, "''")}'`);
   }
   const extraWhere = conditions.join(" ");
+
+  // State filters applied in outer WHERE (after JOIN)
+  const stateConditions: string[] = [];
+  if (filterBuyState) {
+    stateConditions.push(`AND p1.state = '${filterBuyState.replace(/'/g, "''")}'`);
+  }
+  if (filterSellState) {
+    stateConditions.push(`AND p2.state = '${filterSellState.replace(/'/g, "''")}'`);
+  }
+  const stateWhere = stateConditions.join(" ");
 
   // Single SQL: latest prices × latest prices × precomputed transport
   const sql = `
@@ -296,6 +308,7 @@ async function findArbitrageOpportunities(
       ON  t.market_a_id = p1.market_id 
       AND t.market_b_id = p2.market_id
     WHERE (CAST(p2.price_naira AS FLOAT) - CAST(p1.price_naira AS FLOAT) - CAST(t.total_cost_per_bag AS FLOAT)) > 0
+      ${stateWhere}
     ORDER BY 
       ((CAST(p2.price_naira AS FLOAT) - CAST(p1.price_naira AS FLOAT) - CAST(t.total_cost_per_bag AS FLOAT)) 
        / CAST(p1.price_naira AS FLOAT)) DESC
@@ -375,6 +388,8 @@ export async function GET(request: NextRequest) {
     const limit = Math.min(50, Math.max(1, parseInt(url.searchParams.get("limit") || "20")));
     const item = url.searchParams.get("item") || undefined;
     const category = url.searchParams.get("category") || undefined;
+    const buyState = url.searchParams.get("buyState") || undefined;
+    const sellState = url.searchParams.get("sellState") || undefined;
     const userMinProfit = url.searchParams.get("minProfit");
 
     const tierConfig = getTierConfig(tier);
@@ -393,7 +408,7 @@ export async function GET(request: NextRequest) {
       : tierConfig.minProfitFloor;
 
     const allOpportunities = await findArbitrageOpportunities(
-      prisma, minProfit, tierConfig.maxResults, item, category
+      prisma, minProfit, tierConfig.maxResults, item, category, buyState, sellState
     );
 
     const startIdx = (page - 1) * limit;

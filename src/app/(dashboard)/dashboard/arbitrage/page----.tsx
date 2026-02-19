@@ -21,18 +21,6 @@ import {
 } from "lucide-react";
 
 // ============================================================================
-// CONSTANTS
-// ============================================================================
-
-const NIGERIAN_STATES = [
-  "Abia","Adamawa","Akwa Ibom","Anambra","Bauchi","Bayelsa","Benue","Borno",
-  "Cross River","Delta","Ebonyi","Edo","Ekiti","Enugu","FCT","Gombe","Imo",
-  "Jigawa","Kaduna","Kano","Katsina","Kebbi","Kogi","Kwara","Lagos",
-  "Nasarawa","Niger","Ogun","Ondo","Osun","Oyo","Plateau","Rivers",
-  "Sokoto","Taraba","Yobe","Zamfara"
-];
-
-// ============================================================================
 // TYPES
 // ============================================================================
 
@@ -261,8 +249,6 @@ export default function ArbitragePage() {
   const [itemFilter, setItemFilter] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("");
   const [minProfit, setMinProfit] = useState(1);
-  const [buyStateFilter, setBuyStateFilter] = useState("");
-  const [sellStateFilter, setSellStateFilter] = useState("");
   
   // Tier info
   const [tierInfo, setTierInfo] = useState<{
@@ -284,8 +270,6 @@ export default function ArbitragePage() {
         minProfit: String(minProfit),
         ...(itemFilter && { item: itemFilter }),
         ...(categoryFilter && { category: categoryFilter }),
-        ...(buyStateFilter && { buyState: buyStateFilter }),
-        ...(sellStateFilter && { sellState: sellStateFilter }),
       });
       
       const response = await fetch(`/api/arbitrage?${params}`);
@@ -387,8 +371,6 @@ export default function ArbitragePage() {
               {tierInfo && (
                 <span className="text-xs bg-gray-800 text-gray-400 px-3 py-1 rounded-full">
                   {tierInfo.tier} • {tierInfo.appliedMinProfit}%+ profits • {opportunities.length} found
-                  {buyStateFilter && <span className="text-emerald-400"> • from {buyStateFilter}</span>}
-                  {sellStateFilter && <span className="text-amber-400"> • to {sellStateFilter}</span>}
                 </span>
               )}
               <button
@@ -456,36 +438,6 @@ export default function ArbitragePage() {
                 <option value={10} className="bg-[#1a1a1a]">10%+</option>
                 <option value={15} className="bg-[#1a1a1a]">15%+</option>
                 <option value={20} className="bg-[#1a1a1a]">20%+</option>
-              </select>
-            </div>
-
-            {/* Buy From State */}
-            <div className="flex items-center gap-2 bg-[#1a1a1a] rounded-lg px-3 py-2">
-              <TrendingDown className="w-4 h-4 text-emerald-500/60" />
-              <select
-                value={buyStateFilter}
-                onChange={(e) => setBuyStateFilter(e.target.value)}
-                className="bg-transparent border-none outline-none text-sm text-gray-300 cursor-pointer"
-              >
-                <option value="" className="bg-[#1a1a1a]">Buy from: Any State</option>
-                {NIGERIAN_STATES.map(s => (
-                  <option key={`buy-${s}`} value={s} className="bg-[#1a1a1a]">{s}</option>
-                ))}
-              </select>
-            </div>
-
-            {/* Sell To State */}
-            <div className="flex items-center gap-2 bg-[#1a1a1a] rounded-lg px-3 py-2">
-              <TrendingUp className="w-4 h-4 text-amber-500/60" />
-              <select
-                value={sellStateFilter}
-                onChange={(e) => setSellStateFilter(e.target.value)}
-                className="bg-transparent border-none outline-none text-sm text-gray-300 cursor-pointer"
-              >
-                <option value="" className="bg-[#1a1a1a]">Sell to: Any State</option>
-                {NIGERIAN_STATES.map(s => (
-                  <option key={`sell-${s}`} value={s} className="bg-[#1a1a1a]">{s}</option>
-                ))}
               </select>
             </div>
             
