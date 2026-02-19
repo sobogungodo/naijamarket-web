@@ -2,15 +2,15 @@
 
 // ============================================================================
 // src/app/(dashboard)/dashboard/snapshot/page.tsx
-// NaijaFood Intel - Market Snapshot Page
+// NaijaMarket Intel - Market Snapshot Page
 // Bloomberg Equivalent: TOP <GO> (Market Overview)
 // Version: 2.0.0 - With Time Period Tabs (24h, 7d, 30d)
 // Date: 2026-01-25
 // ============================================================================
 
-import { useState, useEffect, useCallback, Suspense } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useSession } from "next-auth/react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import {
   TrendingUp,
   TrendingDown,
@@ -109,40 +109,18 @@ const TIME_PERIODS = [
 ];
 
 // ============================================================================
-// COMPONENT (wrapped in Suspense for useSearchParams)
+// COMPONENT
 // ============================================================================
 
 export default function SnapshotPage() {
-  return (
-    <Suspense fallback={
-      <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center">
-        <div className="text-center">
-          <RefreshCw className="w-12 h-12 text-emerald-500 animate-spin mx-auto mb-4" />
-          <p className="text-gray-400">Loading market snapshot...</p>
-        </div>
-      </div>
-    }>
-      <SnapshotPageInner />
-    </Suspense>
-  );
-}
-
-function SnapshotPageInner() {
   const { status } = useSession();
   const router = useRouter();
-  const searchParams = useSearchParams();
-  
-  // Read URL params: ?market=Mile+12&region=SW&period=7d
-  const urlMarket = searchParams.get("market") || "";
-  const urlRegion = searchParams.get("region") || "ALL";
-  const urlPeriod = searchParams.get("period") || "24h";
   
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [snapshotData, setSnapshotData] = useState<SnapshotData | null>(null);
-  const [selectedRegion, setSelectedRegion] = useState(urlRegion);
-  const [selectedPeriod, setSelectedPeriod] = useState(urlPeriod);
-  const [selectedMarket, setSelectedMarket] = useState(urlMarket);
+  const [selectedRegion, setSelectedRegion] = useState("ALL");
+  const [selectedPeriod, setSelectedPeriod] = useState("24h");
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [lastUpdate, setLastUpdate] = useState<Date>(new Date());
   
@@ -157,9 +135,7 @@ function SnapshotPageInner() {
     setError(null);
     
     try {
-      let url = `/api/snapshot?region=${selectedRegion}&period=${selectedPeriod}`;
-      if (selectedMarket) url += `&market=${encodeURIComponent(selectedMarket)}`;
-      const response = await fetch(url);
+      const response = await fetch(`/api/snapshot?region=${selectedRegion}&period=${selectedPeriod}`);
       const data = await response.json();
       
       if (data.success) {
@@ -174,7 +150,7 @@ function SnapshotPageInner() {
     } finally {
       setLoading(false);
     }
-  }, [selectedRegion, selectedPeriod, selectedMarket]);
+  }, [selectedRegion, selectedPeriod]);
   
   useEffect(() => {
     if (status === "authenticated") {
@@ -312,25 +288,6 @@ function SnapshotPageInner() {
           </div>
         </div>
       </div>
-
-      {/* Market Filter Banner - shown when ?market= param is present */}
-      {selectedMarket && (
-        <div className="mb-4 p-3 bg-emerald-900/30 border border-emerald-700/50 rounded-xl flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <MapPin className="w-5 h-5 text-emerald-400" />
-            <span className="text-emerald-300 font-medium">Filtered to: {selectedMarket}</span>
-          </div>
-          <button
-            onClick={() => {
-              setSelectedMarket("");
-              router.replace("/dashboard/snapshot");
-            }}
-            className="text-sm text-gray-400 hover:text-white px-3 py-1 bg-gray-800 rounded-lg"
-          >
-            Clear Filter
-          </button>
-        </div>
-      )}
       
       {/* NFPI Index Hero */}
       <div className="bg-gradient-to-br from-blue-900/30 to-indigo-900/20 border border-blue-700/50 rounded-xl p-6 mb-6">

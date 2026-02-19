@@ -1,6 +1,6 @@
 // ============================================================================
 // src/app/api/settings/route.ts
-// NaijaFood Intel - User Settings API
+// NaijaMarket Intel - User Settings API
 // Version: 2.0.0 - Database persistence via Prisma
 // ============================================================================
 
@@ -149,27 +149,6 @@ function getDefaultSettings(user?: any): UserSettings {
 }
 
 // ============================================================================
-// ENSURE SETTINGS COLUMN EXISTS
-// ============================================================================
-
-async function ensureSettingsColumn(): Promise<void> {
-  try {
-    await prisma.$executeRawUnsafe(`
-      IF NOT EXISTS (
-        SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS 
-        WHERE TABLE_NAME = 'Consumers' AND COLUMN_NAME = 'settings_json'
-      )
-      BEGIN
-        ALTER TABLE Consumers ADD settings_json NVARCHAR(MAX) NULL;
-        PRINT 'Added settings_json column to Consumers table';
-      END
-    `);
-  } catch (e: any) {
-    console.log("[Settings] Column check:", e.message);
-  }
-}
-
-// ============================================================================
 // USER LOOKUP HELPER - HANDLES ALL SESSION SCENARIOS
 // ============================================================================
 
@@ -237,11 +216,11 @@ async function findUserFromSession(session: any) {
 
 export async function GET(): Promise<NextResponse> {
   try {
-    await ensureSettingsColumn();
     const session = await getServerSession();
     const user = await findUserFromSession(session);
 
     if (!user) {
+      // Return default settings for unauthenticated users
       return NextResponse.json({
         success: true,
         data: getDefaultSettings(),
@@ -249,18 +228,18 @@ export async function GET(): Promise<NextResponse> {
       });
     }
 
-    // Read settings_json via raw SQL (bypasses Prisma schema mismatch)
+    // Try to get saved settings from database
     let savedSettings: any = null;
+    
     try {
-      const rows = await prisma.$queryRawUnsafe<any[]>(
-        `SELECT settings_json FROM Consumers WHERE consumer_id = ${user.consumer_id}`
-      );
-      const raw = rows?.[0]?.settings_json;
-      if (raw) {
-        savedSettings = typeof raw === "string" ? JSON.parse(raw) : raw;
+      // Check if settings_json column exists and has data
+      if (user.settings_json) {
+        savedSettings = typeof user.settings_json === "string" 
+          ? JSON.parse(user.settings_json) 
+          : user.settings_json;
       }
-    } catch (e: any) {
-      console.log("[Settings] Read settings_json:", e.message);
+    } catch (parseError) {
+      console.error("[Settings] Failed to parse saved settings:", parseError);
     }
 
     // Merge saved settings with defaults (in case new fields were added)
@@ -307,7 +286,6 @@ export async function GET(): Promise<NextResponse> {
 
 export async function PUT(request: NextRequest): Promise<NextResponse> {
   try {
-    await ensureSettingsColumn();
     const session = await getServerSession();
     const user = await findUserFromSession(session);
 
@@ -321,15 +299,11 @@ export async function PUT(request: NextRequest): Promise<NextResponse> {
     const body = await request.json();
     const { section, data } = body;
 
-    // Get existing settings via raw SQL
+    // Get existing settings
     let existingSettings: UserSettings;
     try {
-      const rows = await prisma.$queryRawUnsafe<any[]>(
-        `SELECT settings_json FROM Consumers WHERE consumer_id = ${user.consumer_id}`
-      );
-      const raw = rows?.[0]?.settings_json;
-      existingSettings = raw 
-        ? (typeof raw === "string" ? JSON.parse(raw) : raw) 
+      existingSettings = user.settings_json 
+        ? (typeof user.settings_json === "string" ? JSON.parse(user.settings_json) : user.settings_json)
         : getDefaultSettings(user);
     } catch {
       existingSettings = getDefaultSettings(user);
@@ -352,11 +326,13 @@ export async function PUT(request: NextRequest): Promise<NextResponse> {
       );
     }
 
-    // Save to database via raw SQL (bypasses Prisma schema mismatch)
-    const settingsJson = JSON.stringify(updatedSettings).replace(/'/g, "''");
-    await prisma.$executeRawUnsafe(
-      `UPDATE Consumers SET settings_json = '${settingsJson}' WHERE consumer_id = ${user.consumer_id}`
-    );
+    // Save to database
+    await prisma.consumers.update({
+      where: { consumer_id: user.consumer_id },
+      data: {
+        settings_json: JSON.stringify(updatedSettings),
+      },
+    });
 
     // Refresh subscription info from database
     updatedSettings.subscription.tier = user.subscription_tier?.toUpperCase() || "FREE";
@@ -372,7 +348,7 @@ export async function PUT(request: NextRequest): Promise<NextResponse> {
   } catch (error: any) {
     console.error("[Settings] PUT error:", error);
     return NextResponse.json(
-      { success: false, error: "Failed to save settings: " + error.message },
+      { success: false, error: "Failed to save settings" },
       { status: 500 }
     );
   }
@@ -384,7 +360,6 @@ export async function PUT(request: NextRequest): Promise<NextResponse> {
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
   try {
-    await ensureSettingsColumn();
     const session = await getServerSession();
     const user = await findUserFromSession(session);
 
@@ -397,27 +372,6 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
     const body = await request.json();
     const { action, data } = body;
-
-    // Helper: read current settings_json via raw SQL
-    const readSettings = async () => {
-      try {
-        const rows = await prisma.$queryRawUnsafe<any[]>(
-          `SELECT settings_json FROM Consumers WHERE consumer_id = ${user.consumer_id}`
-        );
-        const raw = rows?.[0]?.settings_json;
-        return raw ? (typeof raw === "string" ? JSON.parse(raw) : raw) : getDefaultSettings(user);
-      } catch {
-        return getDefaultSettings(user);
-      }
-    };
-
-    // Helper: write settings_json via raw SQL
-    const writeSettings = async (settings: any) => {
-      const json = JSON.stringify(settings).replace(/'/g, "''");
-      await prisma.$executeRawUnsafe(
-        `UPDATE Consumers SET settings_json = '${json}' WHERE consumer_id = ${user.consumer_id}`
-      );
-    };
 
     switch (action) {
       case "changePassword": {
@@ -444,10 +398,19 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           );
         }
 
-        const settings = await readSettings();
+        // In production: verify current password hash, then hash and save new password
+        // For now, just update last change date in settings
+        const settings = user.settings_json 
+          ? JSON.parse(user.settings_json) 
+          : getDefaultSettings(user);
+        
         settings.security = settings.security || {};
         settings.security.lastPasswordChange = new Date().toISOString();
-        await writeSettings(settings);
+
+        await prisma.consumers.update({
+          where: { consumer_id: user.consumer_id },
+          data: { settings_json: JSON.stringify(settings) },
+        });
 
         return NextResponse.json({
           success: true,
@@ -474,7 +437,15 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           );
         }
 
-        await writeSettings({ deleted: true, deletedAt: new Date().toISOString() });
+        // Mark account for deletion (soft delete)
+        // Note: Update settings_json to mark as deleted since status column may not exist
+        await prisma.consumers.update({
+          where: { consumer_id: user.consumer_id },
+          data: { 
+            // Clear sensitive data
+            settings_json: JSON.stringify({ deleted: true, deletedAt: new Date().toISOString() }),
+          },
+        });
 
         return NextResponse.json({
           success: true,
@@ -483,10 +454,18 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       }
 
       case "logoutAllSessions": {
-        const settings = await readSettings();
+        // In production: invalidate all session tokens except current
+        const settings = user.settings_json 
+          ? JSON.parse(user.settings_json) 
+          : getDefaultSettings(user);
+        
         settings.security = settings.security || {};
         settings.security.activeSessions = 1;
-        await writeSettings(settings);
+
+        await prisma.consumers.update({
+          where: { consumer_id: user.consumer_id },
+          data: { settings_json: JSON.stringify(settings) },
+        });
 
         return NextResponse.json({
           success: true,
@@ -504,7 +483,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   } catch (error: any) {
     console.error("[Settings] POST error:", error);
     return NextResponse.json(
-      { success: false, error: "Failed to perform action: " + error.message },
+      { success: false, error: "Failed to perform action" },
       { status: 500 }
     );
   }

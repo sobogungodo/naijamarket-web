@@ -1,6 +1,6 @@
 // ============================================================================
 // src/app/api/snapshot/route.ts
-// NaijaFood Intel - Market Snapshot API
+// NaijaMarket Intel - Market Snapshot API
 // Bloomberg Equivalent: TOP <GO> (Top News/Overview)
 // Version: 2.0.0 - Hybrid Data with Time Period Support
 // Date: 2026-01-25
@@ -573,7 +573,6 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const region = searchParams.get("region") || "ALL";
     const period = searchParams.get("period") || "24h";
-    const market = searchParams.get("market") || "";
     
     // Validate period
     const periodConfig = TIME_PERIODS[period] || TIME_PERIODS["24h"];
@@ -618,13 +617,6 @@ export async function GET(request: NextRequest) {
     // Filter by region if specified
     if (region !== "ALL") {
       priceData = priceData.filter(p => p.region === region);
-    }
-
-    // Filter by market name if specified (from ?market= param)
-    if (market) {
-      const marketLower = market.toLowerCase();
-      priceData = priceData.filter(p => p.market.toLowerCase().includes(marketLower));
-      console.log(`Market filter "${market}": ${priceData.length} records after filter`);
     }
     
     // Calculate metrics
