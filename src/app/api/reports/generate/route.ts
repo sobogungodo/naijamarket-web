@@ -1,6 +1,6 @@
 // ============================================================================
 // src/app/api/reports/generate/route.ts
-// NaijaMarket Intel - Report Generation Engine
+// NaijaFood Intel - Report Generation Engine
 // Version: 1.1.0 - Vercel-compatible (pdf-lib + exceljs, no filesystem fonts)
 //
 // DEPENDENCIES:
@@ -184,6 +184,14 @@ async function fetchReportData(reportType: string, params?: any): Promise<any> {
       return { prices: [], summary: getEmptySummary(), isEmpty: true };
     }
 
+    // ---- FOOD-ONLY FILTER: NaijaFood Intel focuses on food & beverages ----
+    prices = prices.filter(p => isFoodItem(p.item_name));
+    console.log(`[Reports Generate] After food filter: ${prices.length} food items from original data`);
+
+    if (prices.length === 0) {
+      return { prices: [], summary: getEmptySummary(), isEmpty: true };
+    }
+
     return {
       prices,
       summary: computeSummary(prices),
@@ -252,7 +260,7 @@ function getTopMovers(prices: PriceRow[], direction: "up" | "down", limit: numbe
 function getCategoryBreakdown(prices: PriceRow[]) {
   const cats: Record<string, { prices: number[]; changes: number[]; items: Set<string> }> = {};
   for (const p of prices) {
-    const cat = p.category_id || "Uncategorized";
+    const cat = getCategoryName(p.category_id || "Uncategorized");
     if (!cats[cat]) cats[cat] = { prices: [], changes: [], items: new Set() };
     cats[cat].prices.push(Number(p.price_naira));
     cats[cat].changes.push(Number(p.price_change_pct) || 0);
@@ -318,6 +326,114 @@ function getMarketComparison(prices: PriceRow[]) {
 }
 
 // ============================================================================
+// FOOD-ONLY FILTER - NaijaFood Intel focuses exclusively on food & beverages
+// Non-food items (electronics, fashion, building, health, beauty etc.) excluded
+// ============================================================================
+
+const NON_FOOD_PATTERNS = [
+  // Electronics & Phones
+  'iphone', 'samsung galaxy', 'samsung tab', 'ipad', 'tecno ', 'infinix', 'itel ',
+  'oppo ', 'redmi', 'airpods', 'power bank', 'earbuds', 'earphones', 'ring light',
+  'selfie stick', 'screen protector', 'usb cable', 'oraimo', 'charger', 'phone case',
+  'phone holder', 'phone charger',
+  // Appliances
+  'air conditioner', 'generator', 'inverter', 'stabilizer', 'ups ', 'refrigerator',
+  'deep freezer', 'washing machine', 'standing fan', 'ceiling fan', 'microwave',
+  'blender', 'iron box', 'water dispenser', 'gas cooker', 'solar panel',
+  'electric kettle', 'kettle - electric', 'kettle - stainless',
+  // Building Materials
+  'cement', 'iron rod', 'blocks 6', 'blocks 9', 'tiles -', 'tiles (', 'granite',
+  'sharp sand', 'plaster sand', 'zinc roofing', 'aluminum roofing', 'long span',
+  'step tiles', 'pop (plaster', 'putty', 'sandpaper',
+  'paint -', 'paint brush', 'paint roller', 'primer -', 'thinner -', 'varnish',
+  'wood finish',
+  // Electrical
+  'armoured cable', 'flexible cable', 'single cable', 'circuit breaker',
+  'distribution board', 'socket outlet', 'switch (box', 'led bulb', 'fluorescent',
+  'extension box', 'binding wire',
+  // Automotive
+  'tire -', 'tire (', 'brake pad', 'brake fluid', 'engine oil', 'wiper blade',
+  'headlight', 'spark plug', 'oil filter', 'air filter', 'radiator', 'car seat cover',
+  'car mat', 'car phone', 'battery - car', 'battery -',
+  // Fashion & Textiles
+  'ankara', 'lace -', 'lace (', 'wig -', 'wig (', 'weave -', 'weave (', 'braids',
+  'frontal -', 'closure -', 'hair attachment', 'adire', 'guinea brocade', 'aso-oke',
+  'atiku/', 'kente', 'silk (yard', 'satin (yard', 'velvet (yard', 'chiffon (yard',
+  'cotton - printed', 'cotton - plain', 'hair bonding',
+  // Footwear
+  'sneakers', 'heels (pair', "women's heels", 'sandals (pair', "women's sandals",
+  'slippers', 'crocs (pair', 'boots', 'shoes (pair', 'shoes -', 'canvas shoes',
+  "children's shoes", 'school shoes', 'palm sandals', 'timberland',
+  "men's leather shoes", "women's flat", "men's canvas", "women's sneakers",
+  // Beauty & Personal Care
+  'body cream', 'body lotion', 'body spray', 'deodorant', 'roll-on', 'perfume',
+  'shampoo', 'relaxer -', 'edge control', 'eco styler', 'got2b', 'hair oil',
+  'hair food', 'coconut oil - tresemme',
+  'toothpaste', 'conditioner - tresemme',
+  // Soap (non-food)
+  'soap -',
+  // Health & Medicine
+  'paracetamol', 'ibuprofen', 'amoxicillin', 'antimalarial', 'cough syrup',
+  'antacid', 'metronidazole', 'blood tonic', 'multivitamins', 'vitamin c',
+  'iron supplement', 'cranberry supplement', 'evening primrose', 'hand sanitizer',
+  'face mask', 'surgical gloves', 'cotton wool', 'bandage', 'mosquito net',
+  'ors - oral',
+  // Baby Non-Food (baby FOOD like Cerelac/Nutrend stays)
+  'diapers', 'baby wipes', 'baby lotion', 'baby oil (', 'baby powder', 'baby soap',
+  'baby stroller', 'baby car seat', 'baby walker', 'baby carrier', 'baby breast pump',
+  'baby feeding bottle', 'baby cot', 'baby bathtub', 'gripe water', 'calpol', 'nurofen',
+  "johnson's baby lotion", "johnson's baby oil", "johnson's baby powder", "johnson's baby soap",
+  // Women's Health
+  'sanitary pad', 'tampon', 'panty liner', 'feminine wash', 'nursing bra',
+  'maternity wear', 'prenatal', 'nipple cream', 'bio-oil', "palmer's cocoa butter",
+  'folic acid', 'lansinoh', 'kotex', 'stayfree', 'always sanitary', 'always ultra',
+  'always (', 'lady care', 'lactacyd', 'vagisil', "summer's eve", 'molfix',
+  // Stationery
+  'exercise book', 'biro pen', 'pencil ', 'marker pen', 'highlighter', 'scissors',
+  'stapler', 'staple pin', 'paper clip', 'file folder', 'envelope', 'a4 paper',
+  'correction', 'glue stick', 'calculator', 'printer paper',
+  // Household Non-Food
+  'bucket -', 'basin -', 'broom', 'mop &', 'dust pan', 'cloth drying',
+  'plastic container', 'mattress', 'pillow', 'duvet', 'bedspread', 'bed sheet',
+  'blanket', 'gas cylinder',
+  'cooking pot', 'frying pan', 'pressure cooker', 'cooler -', 'food flask',
+  // Agriculture (farming inputs, NOT food products)
+  'fertilizer', 'herbicide', 'insecticide', 'fungicide', 'knapsack', 'hoe (',
+  'cutlass', 'shovel', 'wheelbarrow',
+  'pepper seeds', 'tomato seeds', 'maize seeds', 'rice seeds',
+  'poultry feed', 'fish feed', 'day-old chick', 'fingerling', 'point of lay',
+  'turkey poult', 'piglet', 'spent layer', 'broiler - 6',
+  'safety boots',
+];
+
+function isFoodItem(itemName: string): boolean {
+  const name = itemName.toLowerCase();
+  return !NON_FOOD_PATTERNS.some(pattern => name.includes(pattern));
+}
+
+// ============================================================================
+// CATEGORY NAME MAPPING - Human-readable names for category codes
+// ============================================================================
+
+const CATEGORY_NAMES: Record<string, string> = {
+  CAT001: "Grains & Cereals", CAT002: "Tubers & Roots", CAT003: "Legumes & Beans",
+  CAT004: "Cooking Oils", CAT005: "Beverages", CAT006: "Dairy & Eggs",
+  CAT007: "Meat & Poultry", CAT008: "Fish & Seafood", CAT009: "Vegetables",
+  CAT010: "Fruits", CAT011: "Spices & Seasonings", CAT012: "Processed Foods",
+  CAT013: "Flour & Baking", CAT014: "Sugar & Sweeteners", CAT015: "Snacks",
+  CAT016: "Pharmaceuticals", CAT017: "Dried Fish", CAT018: "Frozen Foods",
+  CAT019: "Baby Food", CAT020: "Condiments",
+  CAT036: "Textile & Fashion", CAT059: "Household Items",
+  CAT078: "Health & Beauty", CAT085: "Fashion Accessories",
+  CAT089: "Electronics", CAT092: "Appliances", CAT123: "Food Staples",
+  Food: "Food Items", Uncategorized: "Other Food Items",
+};
+
+function getCategoryName(catId: string): string {
+  return CATEGORY_NAMES[catId] || catId.replace(/^CAT0*/, "Category ");
+}
+
+// ============================================================================
 // PDF GENERATION using pdf-lib (Vercel-safe, zero filesystem deps)
 // ============================================================================
 
@@ -376,7 +492,7 @@ async function generatePDF(reportType: string, reportName: string, data: any): P
 
   // ---- HEADER BAR ----
   page.drawRectangle({ x: 0, y: PAGE_H - 90, width: PAGE_W, height: 90, color: bgC });
-  drawText("NaijaMarket Intel", MARGIN, PAGE_H - 40, { font: helveticaBold, size: 24, color: whiteC });
+  drawText("NaijaFood Intel", MARGIN, PAGE_H - 40, { font: helveticaBold, size: 24, color: whiteC });
   drawText(reportName, MARGIN, PAGE_H - 60, { font: helveticaBold, size: 13, color: greenC });
   const dateStr = new Date().toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit" });
   drawText("Generated: " + dateStr, MARGIN, PAGE_H - 78, { size: 9, color: grayC });
@@ -534,24 +650,33 @@ async function generatePDF(reportType: string, reportName: string, data: any): P
     page = pdfDoc.addPage([PAGE_W, PAGE_H]);
     y = PAGE_H - MARGIN;
 
+    // Smart sampling: max 2 markets per item to show variety across all commodities
+    const itemCounts: Record<string, number> = {};
+    const sampledPrices = data.prices.filter((p: any) => {
+      const count = itemCounts[p.item_name] || 0;
+      if (count >= 2) return false;
+      itemCounts[p.item_name] = count + 1;
+      return true;
+    }).slice(0, 200);
+
     const hdrs = [
       { label: "Item", width: 80 }, { label: "Market", width: 90 }, { label: "State", width: 55 },
       { label: "Unit", width: 45 }, { label: "Price", width: 65 }, { label: "Prev", width: 65 },
       { label: "Change %", width: 55 },
     ];
-    const rows = data.prices.slice(0, 200).map((p: any) => {
+    const rows = sampledPrices.map((p: any) => {
       const change = Number(p.price_change_pct) || 0;
       return [
         p.item_name, p.market_name, p.state, p.unit || "-",
         fmtN(Number(p.price_naira)), fmtN(Number(p.previous_price)), fmtPct(change),
       ];
     });
-    const colors = data.prices.slice(0, 200).map((p: any) => {
+    const colors = sampledPrices.map((p: any) => {
       const c = Number(p.price_change_pct) || 0;
       const col = c > 0 ? "green" : c < 0 ? "red" : null;
       return [null, null, null, null, null, null, col];
     });
-    drawTable("Complete Price Table (Top 200)", hdrs, rows, colors);
+    drawTable("Price Samples (2 markets per commodity)", hdrs, rows, colors);
   }
 
   // ---- DISCLAIMER / FOOTER ----
@@ -561,12 +686,12 @@ async function generatePDF(reportType: string, reportName: string, data: any): P
   drawSectionTitle("Disclaimer");
 
   const disclaimerLines = [
-    "This report is generated by NaijaMarket Intel based on crowdsourced and validated",
+    "This report is generated by NaijaFood Intel based on crowdsourced and validated",
     "commodity price data from markets across Nigeria. While we strive for accuracy through",
     "GPS verification, community validation, and fraud detection, prices may vary.",
     "",
     "This report should not be used as the sole basis for financial decisions.",
-    "NaijaMarket Intel is a product of Giggababytes Oy.",
+    "NaijaFood Intel is a product of Giggababytes Oy.",
   ];
   for (const line of disclaimerLines) {
     drawText(line, MARGIN, y, { size: 9, color: grayC });
@@ -574,9 +699,9 @@ async function generatePDF(reportType: string, reportName: string, data: any): P
   }
 
   y -= 20;
-  drawText("www.naijamarket.com  |  support@naijamarket.ng", MARGIN, y, { font: helveticaBold, size: 10, color: greenC });
+  drawText("www.naijafood.com  |  support@naijafood.ng", MARGIN, y, { font: helveticaBold, size: 10, color: greenC });
   y -= 18;
-  drawText("Report ID: RPT-" + Date.now() + "  |  (c) " + new Date().getFullYear() + " NaijaMarket Intel", MARGIN, y, { size: 8, color: grayC });
+  drawText("Report ID: RPT-" + Date.now() + "  |  (c) " + new Date().getFullYear() + " NaijaFood Intel", MARGIN, y, { size: 8, color: grayC });
 
   return await pdfDoc.save();
 }
@@ -588,7 +713,7 @@ async function generatePDF(reportType: string, reportName: string, data: any): P
 async function generateExcel(reportType: string, reportName: string, data: any): Promise<Buffer> {
   const ExcelJS = (await import("exceljs")).default;
   const workbook = new ExcelJS.Workbook();
-  workbook.creator = "NaijaMarket Intel";
+  workbook.creator = "NaijaFood Intel";
   workbook.created = new Date();
 
   const headerFill: any = { type: "pattern", pattern: "solid", fgColor: { argb: "FF0A0A0A" } };
@@ -818,7 +943,7 @@ export async function POST(request: NextRequest) {
 
     if (format === "excel") {
       const excelBuffer = await generateExcel(reportType, reportName, data);
-      const filename = "NaijaMarket_" + reportName.replace(/\s+/g, "_") + "_" + new Date().toISOString().split("T")[0] + ".xlsx";
+      const filename = "NaijaFood_" + reportName.replace(/\s+/g, "_") + "_" + new Date().toISOString().split("T")[0] + ".xlsx";
       return new NextResponse(excelBuffer, {
         status: 200,
         headers: {
@@ -831,7 +956,7 @@ export async function POST(request: NextRequest) {
 
     // Default: PDF
     const pdfBytes = await generatePDF(reportType, reportName, data);
-    const filename = "NaijaMarket_" + reportName.replace(/\s+/g, "_") + "_" + new Date().toISOString().split("T")[0] + ".pdf";
+    const filename = "NaijaFood_" + reportName.replace(/\s+/g, "_") + "_" + new Date().toISOString().split("T")[0] + ".pdf";
     return new NextResponse(pdfBytes, {
       status: 200,
       headers: {
