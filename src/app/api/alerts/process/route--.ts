@@ -1,13 +1,8 @@
 // src/app/api/alerts/process/route.ts
-// NaijaFood Intel - Alert Processing Engine v3.1
+// NaijaMarket Intel - Alert Processing Engine
 // Checks active alerts against current prices and sends WhatsApp notifications
 // Called by Vercel Cron every 15 minutes
-// Updated: 2026-02-19 - PRIMARY: Daily_Prices (143M rows) | FALLBACK: Approved_Prices
-//
-// Endpoints:
-//   GET /api/alerts/process?test=true          → Live run (manual)
-//   GET /api/alerts/process?test=true&dry=true → Dry run (no sends)
-//   GET /api/alerts/process?diagnose=true      → Full system diagnostics
+// Updated: 2026-02-04 - Uses Approved_Prices table
 
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
@@ -23,8 +18,8 @@ const TWILIO_WHATSAPP_NUMBER = process.env.TWILIO_WHATSAPP_NUMBER || "whatsapp:+
 // Cooldown period - don't send same alert type within this period (in hours)
 const ALERT_COOLDOWN_HOURS = 6;
 
-// Maximum alerts to process per run (prevent Vercel 60s timeout)
-const MAX_ALERTS_PER_RUN = 50;
+// Maximum alerts to process per run (prevent timeout)
+const MAX_ALERTS_PER_RUN = 100;
 
 // ============================================================================
 // HELPER FUNCTIONS
@@ -71,8 +66,9 @@ async function sendWhatsAppAlert(
 ): Promise<{ success: boolean; messageSid?: string; error?: string }> {
   
   if (!TWILIO_ACCOUNT_SID || !TWILIO_AUTH_TOKEN) {
-    console.error("❌ Twilio not configured - TWILIO_ACCOUNT_SID or TWILIO_AUTH_TOKEN missing");
-    return { success: false, error: "Twilio credentials not set in environment variables" };
+    console.log("⚠️ Twilio not configured. Alert message would be:");
+    console.log(alertData);
+    return { success: true, messageSid: "TEST-MODE" };
   }
 
   const formattedPhone = formatPhoneForWhatsApp(phone);
@@ -100,7 +96,7 @@ The price has ${direction} your target!
 
 ⏰ ${new Date().toLocaleString("en-NG", { timeZone: "Africa/Lagos", dateStyle: "medium", timeStyle: "short" })}
 
-📊 View more: naijamarket-web.vercel.app/dashboard/prices
+📊 View more: naijamarket-web.vercel.app
 
 _Reply STOP to disable alerts_`;
 
@@ -158,156 +154,14 @@ export async function GET(request: NextRequest) {
   console.log("🔔 ALERT PROCESSOR STARTED:", new Date().toISOString());
   console.log("🔔 ═══════════════════════════════════════════════════════════");
 
-  // ========================================================================
-  // DIAGNOSTICS MODE: /api/alerts/process?diagnose=true
-  // ========================================================================
-  
-  const { searchParams: params } = new URL(request.url);
-  const isDiagnose = params.get("diagnose") === "true";
-  const isDryRun = params.get("dry") === "true";
-
-  if (isDiagnose) {
-    const checks: Record<string, any> = {};
-
-    // Check environment variables
-    checks.env = {
-      TWILIO_ACCOUNT_SID: TWILIO_ACCOUNT_SID ? `✅ Set (${TWILIO_ACCOUNT_SID.substring(0, 10)}...)` : "❌ MISSING",
-      TWILIO_AUTH_TOKEN: TWILIO_AUTH_TOKEN ? "✅ Set (hidden)" : "❌ MISSING",
-      TWILIO_WHATSAPP_NUMBER: TWILIO_WHATSAPP_NUMBER,
-      CRON_SECRET: cronSecret ? "✅ Set" : "⚠️ Not set (optional)",
-    };
-
-    // Check Price_Alerts table
-    try {
-      const rows = await prisma.$queryRaw`
-        SELECT 
-          COUNT(*) AS total,
-          SUM(CASE WHEN status = 'ACTIVE' THEN 1 ELSE 0 END) AS active,
-          SUM(CASE WHEN status = 'TRIGGERED' THEN 1 ELSE 0 END) AS triggered
-        FROM Price_Alerts
-      ` as any[];
-      checks.price_alerts = { status: "✅ Table exists", ...rows[0] };
-    } catch (e: any) {
-      checks.price_alerts = { status: "❌ " + e.message?.substring(0, 100) };
-    }
-
-    // Check Daily_Prices (PRIMARY - should have 143M+ rows)
-    try {
-      const rows = await prisma.$queryRaw`
-        SELECT COUNT(*) AS total_rows,
-          MAX(price_date) AS latest_date,
-          COUNT(DISTINCT item_name) AS unique_items,
-          COUNT(DISTINCT market_name) AS unique_markets
-        FROM Daily_Prices WHERE price_naira > 0
-      ` as any[];
-      checks.daily_prices = { status: "✅ PRIMARY data source", ...rows[0] };
-    } catch (e: any) {
-      checks.daily_prices = { status: "❌ " + e.message?.substring(0, 100) };
-    }
-
-    // Check Approved_Prices (FALLBACK)
-    try {
-      const rows = await prisma.$queryRaw`
-        SELECT COUNT(*) AS total_rows FROM Approved_Prices WHERE validation_status = 'APPROVED'
-      ` as any[];
-      checks.approved_prices = { status: "⚠️ FALLBACK only", ...rows[0] };
-    } catch (e: any) {
-      checks.approved_prices = { status: "⚠️ " + e.message?.substring(0, 80) };
-    }
-
-    // Check Alert_Notifications table
-    try {
-      const rows = await prisma.$queryRaw`
-        SELECT COUNT(*) AS total,
-          SUM(CASE WHEN status = 'SENT' THEN 1 ELSE 0 END) AS sent,
-          SUM(CASE WHEN status = 'FAILED' THEN 1 ELSE 0 END) AS failed,
-          MAX(sent_at) AS last_sent
-        FROM Alert_Notifications
-      ` as any[];
-      checks.alert_notifications = { status: "✅ Table exists", ...rows[0] };
-    } catch {
-      checks.alert_notifications = { status: "⚠️ Table missing (notifications will still be logged on first send)" };
-    }
-
-    // Sample: check price lookup for first 3 active alerts
-    try {
-      const sampleAlerts = await prisma.$queryRaw`
-        SELECT TOP 3 alert_id, item_id, item_name, market_id, market_name, 
-          target_price, alert_type, phone_number
-        FROM Price_Alerts WHERE status = 'ACTIVE'
-      ` as any[];
-
-      const samples = [];
-      for (const alert of sampleAlerts) {
-        // Try Daily_Prices first
-        let priceRows: any[] = [];
-        let source = "NOT FOUND";
-        
-        if (alert.item_id && alert.market_id) {
-          priceRows = await prisma.$queryRaw`
-            SELECT TOP 1 price_naira AS price, price_date FROM Daily_Prices
-            WHERE item_id = ${alert.item_id} AND market_id = ${alert.market_id} AND price_naira > 0
-            ORDER BY price_date DESC, time_slot DESC
-          ` as any[];
-          if (priceRows.length > 0) source = "Daily_Prices (by ID)";
-        }
-        if (priceRows.length === 0 && alert.item_name) {
-          priceRows = await prisma.$queryRaw`
-            SELECT TOP 1 price_naira AS price, price_date FROM Daily_Prices
-            WHERE item_name = ${alert.item_name} AND price_naira > 0
-            ORDER BY price_date DESC, time_slot DESC
-          ` as any[];
-          if (priceRows.length > 0) source = "Daily_Prices (by name)";
-        }
-        if (priceRows.length === 0 && alert.item_name) {
-          priceRows = await prisma.$queryRaw`
-            SELECT TOP 1 price FROM Approved_Prices
-            WHERE item_name = ${alert.item_name} AND validation_status = 'APPROVED'
-            ORDER BY validated_at DESC
-          ` as any[];
-          if (priceRows.length > 0) source = "Approved_Prices (fallback)";
-        }
-
-        const currentPrice = priceRows.length > 0 ? parseFloat(priceRows[0].price) : null;
-        const targetPrice = parseFloat(alert.target_price);
-        const alertType = (alert.alert_type || "").toUpperCase();
-        
-        samples.push({
-          alert_id: alert.alert_id,
-          item: `${alert.item_name} @ ${alert.market_name}`,
-          target: targetPrice,
-          alert_type: alertType,
-          current_price: currentPrice ?? "NO DATA",
-          price_source: source,
-          would_trigger: currentPrice !== null && (
-            (alertType === "ABOVE" && currentPrice >= targetPrice) ||
-            (alertType === "BELOW" && currentPrice <= targetPrice)
-          ),
-        });
-      }
-      checks.sample_alert_checks = samples.length > 0 ? samples : "No active alerts found";
-    } catch (e: any) {
-      checks.sample_alert_checks = "Error: " + e.message?.substring(0, 100);
-    }
-
-    return NextResponse.json({
-      success: true,
-      mode: "diagnostics",
-      timestamp: new Date().toISOString(),
-      checks,
-    });
-  }
-
   const stats = {
     startTime: new Date().toISOString(),
-    dryRun: isDryRun,
     alertsChecked: 0,
     alertsTriggered: 0,
     notificationsSent: 0,
     notificationsFailed: 0,
     alertsSkippedCooldown: 0,
     alertsNoPriceData: 0,
-    priceDataFound: 0,
     errors: [] as string[],
   };
 
@@ -356,120 +210,63 @@ export async function GET(request: NextRequest) {
       try {
         console.log(`\n🔍 Checking alert ${alert.alert_id}: ${alert.item_name} @ ${alert.market_name}`);
         
-        // Get current price: Daily_Prices FIRST (143M rows), Approved_Prices FALLBACK
+        // Get current price for this item/market from Approved_Prices
+        // Match by item_id + market_id first, fallback to item_name + market_name
         let currentPriceResult: any[] = [];
-        let priceSource = "";
         
-        // ---- Strategy 1: Daily_Prices by item_id + market_id (fastest) ----
+        // Try matching by ID first
         if (alert.item_id && alert.market_id) {
-          try {
-            currentPriceResult = await prisma.$queryRaw`
-              SELECT TOP 1
-                price_naira AS price,
-                price_date AS validated_at,
-                unit,
-                item_name,
-                market_name
-              FROM Daily_Prices
-              WHERE item_id = ${alert.item_id}
-                AND market_id = ${alert.market_id}
-                AND price_naira > 0
-              ORDER BY price_date DESC, time_slot DESC
-            ` as any[];
-            if (currentPriceResult.length > 0) priceSource = "Daily_Prices (by ID)";
-          } catch (e: any) {
-            console.log(`   ⚠️ Daily_Prices ID lookup: ${e.message?.substring(0, 60)}`);
-          }
+          currentPriceResult = await prisma.$queryRaw`
+            SELECT TOP 1
+              price,
+              validated_at,
+              unit,
+              item_name,
+              market_name
+            FROM Approved_Prices
+            WHERE item_id = ${alert.item_id}
+              AND market_id = ${alert.market_id}
+              AND validation_status = 'APPROVED'
+            ORDER BY validated_at DESC
+          ` as any[];
         }
         
-        // ---- Strategy 2: Daily_Prices by item_name + market_name ----
+        // Fallback to name matching if no results
         if (currentPriceResult.length === 0 && alert.item_name && alert.market_name) {
-          try {
-            currentPriceResult = await prisma.$queryRaw`
-              SELECT TOP 1
-                price_naira AS price,
-                price_date AS validated_at,
-                unit,
-                item_name,
-                market_name
-              FROM Daily_Prices
-              WHERE item_name = ${alert.item_name}
-                AND market_name = ${alert.market_name}
-                AND price_naira > 0
-              ORDER BY price_date DESC, time_slot DESC
-            ` as any[];
-            if (currentPriceResult.length > 0) priceSource = "Daily_Prices (by name)";
-          } catch (e: any) {
-            console.log(`   ⚠️ Daily_Prices name lookup: ${e.message?.substring(0, 60)}`);
-          }
+          currentPriceResult = await prisma.$queryRaw`
+            SELECT TOP 1
+              price,
+              validated_at,
+              unit,
+              item_name,
+              market_name
+            FROM Approved_Prices
+            WHERE item_name = ${alert.item_name}
+              AND market_name = ${alert.market_name}
+              AND validation_status = 'APPROVED'
+            ORDER BY validated_at DESC
+          ` as any[];
         }
         
-        // ---- Strategy 3: Daily_Prices by item_name only (any market) ----
+        // Try partial name match as last resort
         if (currentPriceResult.length === 0 && alert.item_name) {
-          try {
-            currentPriceResult = await prisma.$queryRaw`
-              SELECT TOP 1
-                price_naira AS price,
-                price_date AS validated_at,
-                unit,
-                item_name,
-                market_name
-              FROM Daily_Prices
-              WHERE item_name = ${alert.item_name}
-                AND price_naira > 0
-              ORDER BY price_date DESC, time_slot DESC
-            ` as any[];
-            if (currentPriceResult.length > 0) priceSource = `Daily_Prices (any market: ${currentPriceResult[0].market_name})`;
-          } catch (e: any) {
-            console.log(`   ⚠️ Daily_Prices item-only: ${e.message?.substring(0, 60)}`);
-          }
-        }
-
-        // ---- Strategy 4: Approved_Prices by ID (fallback) ----
-        if (currentPriceResult.length === 0 && alert.item_id && alert.market_id) {
-          try {
-            currentPriceResult = await prisma.$queryRaw`
-              SELECT TOP 1
-                price,
-                validated_at,
-                unit,
-                item_name,
-                market_name
-              FROM Approved_Prices
-              WHERE item_id = ${alert.item_id}
-                AND market_id = ${alert.market_id}
-                AND validation_status = 'APPROVED'
-              ORDER BY validated_at DESC
-            ` as any[];
-            if (currentPriceResult.length > 0) priceSource = "Approved_Prices (fallback by ID)";
-          } catch (e: any) {
-            console.log(`   ⚠️ Approved_Prices fallback: ${e.message?.substring(0, 60)}`);
-          }
-        }
-        
-        // ---- Strategy 5: Approved_Prices by name (last resort) ----
-        if (currentPriceResult.length === 0 && alert.item_name) {
-          try {
-            currentPriceResult = await prisma.$queryRaw`
-              SELECT TOP 1
-                price,
-                validated_at,
-                unit,
-                item_name,
-                market_name
-              FROM Approved_Prices
-              WHERE item_name LIKE ${'%' + alert.item_name + '%'}
-                AND validation_status = 'APPROVED'
-              ORDER BY validated_at DESC
-            ` as any[];
-            if (currentPriceResult.length > 0) priceSource = "Approved_Prices (fallback by name)";
-          } catch (e: any) {
-            console.log(`   ⚠️ Approved_Prices name fallback: ${e.message?.substring(0, 60)}`);
-          }
+          currentPriceResult = await prisma.$queryRaw`
+            SELECT TOP 1
+              price,
+              validated_at,
+              unit,
+              item_name,
+              market_name
+            FROM Approved_Prices
+            WHERE item_name LIKE ${'%' + alert.item_name + '%'}
+              AND market_name LIKE ${'%' + (alert.market_name || '') + '%'}
+              AND validation_status = 'APPROVED'
+            ORDER BY validated_at DESC
+          ` as any[];
         }
 
         if (!currentPriceResult || currentPriceResult.length === 0) {
-          console.log(`   ⚠️ No price data found in Daily_Prices OR Approved_Prices for ${alert.item_name} @ ${alert.market_name}`);
+          console.log(`   ⚠️ No price data found for ${alert.item_name} @ ${alert.market_name}`);
           stats.alertsNoPriceData++;
           continue;
         }
@@ -478,9 +275,8 @@ export async function GET(request: NextRequest) {
         const currentPrice = parseFloat(priceData.price);
         const targetPrice = parseFloat(alert.target_price);
         const alertType = alert.alert_type?.toUpperCase();
-        stats.priceDataFound++;
 
-        console.log(`   📊 Current: ${formatPrice(currentPrice)} | Target: ${formatPrice(targetPrice)} | Type: ${alertType} | Source: ${priceSource}`);
+        console.log(`   📊 Current: ${formatPrice(currentPrice)} | Target: ${formatPrice(targetPrice)} | Type: ${alertType}`);
 
         // Check if alert should trigger
         let shouldTrigger = false;
@@ -526,14 +322,8 @@ export async function GET(request: NextRequest) {
         }
 
         // ====================================================================
-        // STEP 4: Send WhatsApp notification (skip if dry run)
+        // STEP 4: Send WhatsApp notification
         // ====================================================================
-
-        if (isDryRun) {
-          stats.alertsTriggered++;
-          console.log(`   🧪 DRY RUN — would send WhatsApp to ${alert.phone_number} | Source: ${priceSource}`);
-          continue;
-        }
 
         const priceChange = currentPrice - targetPrice;
         const priceChangePercent = (priceChange / targetPrice) * 100;
@@ -569,11 +359,8 @@ export async function GET(request: NextRequest) {
                 target_price,
                 triggered_price,
                 alert_type,
-                price_source,
-                channel,
-                recipient,
                 message_sid,
-                status,
+                delivery_status,
                 sent_at,
                 created_at
               ) VALUES (
@@ -584,35 +371,14 @@ export async function GET(request: NextRequest) {
                 ${targetPrice},
                 ${currentPrice},
                 ${alertType},
-                ${priceSource},
-                'WHATSAPP',
-                ${alert.phone_number},
                 ${sendResult.messageSid || null},
                 'SENT',
                 ${now},
                 ${now}
               )
             `;
-          } catch (logError: any) {
-            // If INSERT fails (missing columns), try minimal insert
-            console.log("   ⚠️ Full insert failed, trying minimal:", logError.message?.substring(0, 80));
-            try {
-              await prisma.$executeRaw`
-                INSERT INTO Alert_Notifications (
-                  alert_id, phone_number, item_name, market_name,
-                  target_price, triggered_price, alert_type,
-                  status, sent_at, created_at
-                ) VALUES (
-                  ${alert.alert_id}, ${alert.phone_number},
-                  ${priceData.item_name || alert.item_name || 'Item'},
-                  ${priceData.market_name || alert.market_name || 'Market'},
-                  ${targetPrice}, ${currentPrice}, ${alertType},
-                  'SENT', ${now}, ${now}
-                )
-              `;
-            } catch (minError) {
-              console.log("   ⚠️ Minimal insert also failed:", minError);
-            }
+          } catch (logError) {
+            console.log("   ⚠️ Failed to log notification:", logError);
           }
 
           // ==================================================================
@@ -649,9 +415,7 @@ export async function GET(request: NextRequest) {
     
     console.log("\n🔔 ═══════════════════════════════════════════════════════════");
     console.log("🔔 ALERT PROCESSOR COMPLETED");
-    console.log(`🔔 Checked: ${stats.alertsChecked} | PriceFound: ${stats.priceDataFound} | NoPriceData: ${stats.alertsNoPriceData}`);
-    console.log(`🔔 Triggered: ${stats.alertsTriggered} | Sent: ${stats.notificationsSent} | Failed: ${stats.notificationsFailed} | Cooldown: ${stats.alertsSkippedCooldown}`);
-    if (isDryRun) console.log(`🔔 MODE: DRY RUN (no messages sent)`);
+    console.log(`🔔 Checked: ${stats.alertsChecked} | Triggered: ${stats.alertsTriggered} | Sent: ${stats.notificationsSent}`);
     console.log("🔔 ═══════════════════════════════════════════════════════════\n");
 
     return NextResponse.json({
@@ -697,61 +461,18 @@ export async function POST(request: NextRequest) {
       ` as any[];
 
       const analysis = await Promise.all(alerts.map(async (alert: any) => {
-        // Get current price — Daily_Prices FIRST, Approved_Prices FALLBACK
+        // Get current price
         let priceResult: any[] = [];
-        let source = "NOT FOUND";
         
-        // Try Daily_Prices by ID
-        if (alert.item_id && alert.market_id) {
-          try {
-            priceResult = await prisma.$queryRaw`
-              SELECT TOP 1 price_naira AS price, unit, price_date AS validated_at
-              FROM Daily_Prices
-              WHERE item_id = ${alert.item_id} AND market_id = ${alert.market_id} AND price_naira > 0
-              ORDER BY price_date DESC, time_slot DESC
-            ` as any[];
-            if (priceResult.length > 0) source = "Daily_Prices (by ID)";
-          } catch { /* continue to next strategy */ }
-        }
-        
-        // Try Daily_Prices by name
-        if (priceResult.length === 0 && alert.item_name && alert.market_name) {
-          try {
-            priceResult = await prisma.$queryRaw`
-              SELECT TOP 1 price_naira AS price, unit, price_date AS validated_at
-              FROM Daily_Prices
-              WHERE item_name = ${alert.item_name} AND market_name = ${alert.market_name} AND price_naira > 0
-              ORDER BY price_date DESC, time_slot DESC
-            ` as any[];
-            if (priceResult.length > 0) source = "Daily_Prices (by name)";
-          } catch { /* continue */ }
-        }
-
-        // Try Daily_Prices item only (any market)
-        if (priceResult.length === 0 && alert.item_name) {
-          try {
-            priceResult = await prisma.$queryRaw`
-              SELECT TOP 1 price_naira AS price, unit, price_date AS validated_at
-              FROM Daily_Prices
-              WHERE item_name = ${alert.item_name} AND price_naira > 0
-              ORDER BY price_date DESC, time_slot DESC
-            ` as any[];
-            if (priceResult.length > 0) source = "Daily_Prices (any market)";
-          } catch { /* continue */ }
-        }
-        
-        // Approved_Prices fallback
-        if (priceResult.length === 0 && alert.item_name) {
-          try {
-            priceResult = await prisma.$queryRaw`
-              SELECT TOP 1 price, unit, validated_at
-              FROM Approved_Prices
-              WHERE item_name = ${alert.item_name}
-                AND validation_status = 'APPROVED'
-              ORDER BY validated_at DESC
-            ` as any[];
-            if (priceResult.length > 0) source = "Approved_Prices (fallback)";
-          } catch { /* no data */ }
+        if (alert.item_name && alert.market_name) {
+          priceResult = await prisma.$queryRaw`
+            SELECT TOP 1 price, unit, validated_at
+            FROM Approved_Prices
+            WHERE item_name = ${alert.item_name}
+              AND market_name = ${alert.market_name}
+              AND validation_status = 'APPROVED'
+            ORDER BY validated_at DESC
+          ` as any[];
         }
         
         const currentPrice = priceResult.length > 0 ? parseFloat(priceResult[0].price) : null;
@@ -775,7 +496,6 @@ export async function POST(request: NextRequest) {
           price_diff: currentPrice !== null ? currentPrice - targetPrice : null,
           phone: alert.phone_number?.slice(-4) ? `***${alert.phone_number.slice(-4)}` : 'N/A',
           has_price_data: currentPrice !== null,
-          price_source: source,
         };
       }));
 
@@ -799,6 +519,3 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
-
-export const dynamic = "force-dynamic";
-export const maxDuration = 60; // Vercel Pro allows 60s
