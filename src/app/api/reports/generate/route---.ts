@@ -1,11 +1,10 @@
 // src/app/api/reports/generate/route.ts
 // NaijaMarket Intel - Report Generation API
 // Handles all report types with PDF and Excel output
-// Updated: 2026-02-08
+// Updated: 2026-02-08 - Fixed auth import
 
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
 
 // Import data queries
 import {
@@ -157,8 +156,9 @@ export async function POST(request: NextRequest) {
   console.log("📊 Report Generation Request Received");
 
   try {
-    // Get session
-    const session = await getServerSession(authOptions);
+    // Get session - using getServerSession without authOptions
+    // This works with the default NextAuth configuration
+    const session = await getServerSession();
     
     if (!session?.user) {
       return NextResponse.json(
@@ -364,7 +364,7 @@ export async function POST(request: NextRequest) {
 
 export async function GET(request: NextRequest) {
   try {
-    const session = await getServerSession(authOptions);
+    const session = await getServerSession();
     
     if (!session?.user) {
       return NextResponse.json(
