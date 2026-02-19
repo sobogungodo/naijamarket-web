@@ -103,37 +103,61 @@ interface PriceRow {
 
 async function fetchReportData(reportType: string, params?: any): Promise<any> {
   try {
-    // Try latest date first
+    // ----------------------------------------------------------------
+    // KEY FIX: Use ROW_NUMBER() to get ONE representative row per 
+    // item+market combo. Without this, TOP N + alphabetical ORDER BY
+    // would only return the first item (e.g. "7-Up" fills all 500).
+    // With 524 items × 226 markets, we sample 1 row per combo and
+    // cap at 5000 to cover all commodities across many markets.
+    // ----------------------------------------------------------------
     let prices: PriceRow[] = await prisma.$queryRawUnsafe(`
-      SELECT TOP 500
-        item_name, market_name, state, 
-        COALESCE(category_id, 'Uncategorized') AS category_id,
-        unit, price_naira, 
-        COALESCE(previous_price, price_naira) AS previous_price,
-        COALESCE(price_change_pct, 0) AS price_change_pct,
-        COALESCE(trend, 'stable') AS trend,
-        CAST(price_date AS VARCHAR) AS price_date,
-        COALESCE(data_source, 'NaijaMarket') AS data_source
-      FROM Daily_Prices
-      WHERE price_date = (SELECT MAX(price_date) FROM Daily_Prices)
-      ORDER BY item_name, market_name
-    `);
-
-    // Fallback: last 7 days
-    if (prices.length === 0) {
-      prices = await prisma.$queryRawUnsafe(`
-        SELECT TOP 500
-          item_name, market_name, state,
+      WITH ranked AS (
+        SELECT 
+          item_name, market_name, state, 
           COALESCE(category_id, 'Uncategorized') AS category_id,
-          unit, price_naira,
+          unit, price_naira, 
           COALESCE(previous_price, price_naira) AS previous_price,
           COALESCE(price_change_pct, 0) AS price_change_pct,
           COALESCE(trend, 'stable') AS trend,
           CAST(price_date AS VARCHAR) AS price_date,
-          COALESCE(data_source, 'NaijaMarket') AS data_source
+          COALESCE(data_source, 'NaijaMarket') AS data_source,
+          ROW_NUMBER() OVER (PARTITION BY item_name, market_name ORDER BY price_naira DESC) AS rn
         FROM Daily_Prices
-        WHERE price_date >= DATEADD(day, -7, GETDATE())
-        ORDER BY price_date DESC, item_name, market_name
+        WHERE price_date = (SELECT MAX(price_date) FROM Daily_Prices)
+      )
+      SELECT TOP 5000
+        item_name, market_name, state, category_id, unit,
+        price_naira, previous_price, price_change_pct, trend,
+        price_date, data_source
+      FROM ranked
+      WHERE rn = 1
+      ORDER BY item_name, market_name
+    `);
+
+    // Fallback: last 7 days (same ROW_NUMBER strategy)
+    if (prices.length === 0) {
+      prices = await prisma.$queryRawUnsafe(`
+        WITH ranked AS (
+          SELECT 
+            item_name, market_name, state,
+            COALESCE(category_id, 'Uncategorized') AS category_id,
+            unit, price_naira,
+            COALESCE(previous_price, price_naira) AS previous_price,
+            COALESCE(price_change_pct, 0) AS price_change_pct,
+            COALESCE(trend, 'stable') AS trend,
+            CAST(price_date AS VARCHAR) AS price_date,
+            COALESCE(data_source, 'NaijaMarket') AS data_source,
+            ROW_NUMBER() OVER (PARTITION BY item_name, market_name ORDER BY price_date DESC) AS rn
+          FROM Daily_Prices
+          WHERE price_date >= DATEADD(day, -7, GETDATE())
+        )
+        SELECT TOP 5000
+          item_name, market_name, state, category_id, unit,
+          price_naira, previous_price, price_change_pct, trend,
+          price_date, data_source
+        FROM ranked
+        WHERE rn = 1
+        ORDER BY item_name, market_name
       `);
     }
 
@@ -141,7 +165,7 @@ async function fetchReportData(reportType: string, params?: any): Promise<any> {
     if (prices.length === 0) {
       try {
         prices = await prisma.$queryRawUnsafe(`
-          SELECT TOP 500
+          SELECT TOP 5000
             item_name, market_name, state,
             'Food' AS category_id,
             unit, price_naira,
@@ -515,19 +539,19 @@ async function generatePDF(reportType: string, reportName: string, data: any): P
       { label: "Unit", width: 45 }, { label: "Price", width: 65 }, { label: "Prev", width: 65 },
       { label: "Change %", width: 55 },
     ];
-    const rows = data.prices.slice(0, 100).map((p: any) => {
+    const rows = data.prices.slice(0, 200).map((p: any) => {
       const change = Number(p.price_change_pct) || 0;
       return [
         p.item_name, p.market_name, p.state, p.unit || "-",
         fmtN(Number(p.price_naira)), fmtN(Number(p.previous_price)), fmtPct(change),
       ];
     });
-    const colors = data.prices.slice(0, 100).map((p: any) => {
+    const colors = data.prices.slice(0, 200).map((p: any) => {
       const c = Number(p.price_change_pct) || 0;
       const col = c > 0 ? "green" : c < 0 ? "red" : null;
       return [null, null, null, null, null, null, col];
     });
-    drawTable("Complete Price Table (Top 100)", hdrs, rows, colors);
+    drawTable("Complete Price Table (Top 200)", hdrs, rows, colors);
   }
 
   // ---- DISCLAIMER / FOOTER ----
