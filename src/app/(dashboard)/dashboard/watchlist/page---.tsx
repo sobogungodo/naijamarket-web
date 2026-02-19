@@ -472,9 +472,9 @@ export default function WatchlistPage() {
   // View details
   const handleView = (type: "market" | "item", name: string) => {
     if (type === "market") {
-      router.push(`/dashboard/snapshot?market=${encodeURIComponent(name)}`);
+      router.push(`/snapshot?market=${encodeURIComponent(name)}`);
     } else {
-      router.push(`/dashboard/compare?item=${encodeURIComponent(name)}`);
+      router.push(`/compare?item=${encodeURIComponent(name)}`);
     }
   };
 
