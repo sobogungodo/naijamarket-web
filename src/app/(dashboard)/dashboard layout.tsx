@@ -27,8 +27,6 @@ import {
   Map,
   FileText,
 } from "lucide-react";
-import PWAInstallBanner from "@/components/PWAInstallBanner";
-import OfflineIndicator from "@/components/OfflineIndicator";
 
 // ============================================================================
 // TYPES
@@ -190,9 +188,6 @@ export default function DashboardLayout({
 
   return (
     <div className="min-h-screen bg-terminal-bg">
-      {/* PWA: Offline/Update indicator bar */}
-      <OfflineIndicator />
-
       {/* Sidebar */}
       <aside className="sidebar">
         {/* Logo */}
@@ -315,9 +310,6 @@ export default function DashboardLayout({
           {children}
         </div>
       </main>
-
-      {/* PWA: Install-to-homescreen banner */}
-      <PWAInstallBanner />
     </div>
   );
 }
