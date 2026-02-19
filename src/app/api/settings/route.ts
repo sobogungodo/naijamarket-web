@@ -253,7 +253,7 @@ export async function GET(): Promise<NextResponse> {
     let savedSettings: any = null;
     try {
       const rows = await prisma.$queryRawUnsafe<any[]>(
-        `SELECT settings_json FROM Consumers WHERE consumer_id = ${user.consumer_id}`
+        `SELECT settings_json FROM Consumers WHERE consumer_id = '${user.consumer_id}'`
       );
       const raw = rows?.[0]?.settings_json;
       if (raw) {
@@ -325,7 +325,7 @@ export async function PUT(request: NextRequest): Promise<NextResponse> {
     let existingSettings: UserSettings;
     try {
       const rows = await prisma.$queryRawUnsafe<any[]>(
-        `SELECT settings_json FROM Consumers WHERE consumer_id = ${user.consumer_id}`
+        `SELECT settings_json FROM Consumers WHERE consumer_id = '${user.consumer_id}'`
       );
       const raw = rows?.[0]?.settings_json;
       existingSettings = raw 
@@ -355,7 +355,7 @@ export async function PUT(request: NextRequest): Promise<NextResponse> {
     // Save to database via raw SQL (bypasses Prisma schema mismatch)
     const settingsJson = JSON.stringify(updatedSettings).replace(/'/g, "''");
     await prisma.$executeRawUnsafe(
-      `UPDATE Consumers SET settings_json = '${settingsJson}' WHERE consumer_id = ${user.consumer_id}`
+      `UPDATE Consumers SET settings_json = '${settingsJson}' WHERE consumer_id = '${user.consumer_id}'`
     );
 
     // Refresh subscription info from database
@@ -402,7 +402,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     const readSettings = async () => {
       try {
         const rows = await prisma.$queryRawUnsafe<any[]>(
-          `SELECT settings_json FROM Consumers WHERE consumer_id = ${user.consumer_id}`
+          `SELECT settings_json FROM Consumers WHERE consumer_id = '${user.consumer_id}'`
         );
         const raw = rows?.[0]?.settings_json;
         return raw ? (typeof raw === "string" ? JSON.parse(raw) : raw) : getDefaultSettings(user);
@@ -415,7 +415,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     const writeSettings = async (settings: any) => {
       const json = JSON.stringify(settings).replace(/'/g, "''");
       await prisma.$executeRawUnsafe(
-        `UPDATE Consumers SET settings_json = '${json}' WHERE consumer_id = ${user.consumer_id}`
+        `UPDATE Consumers SET settings_json = '${json}' WHERE consumer_id = '${user.consumer_id}'`
       );
     };
 
