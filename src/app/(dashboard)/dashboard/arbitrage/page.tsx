@@ -118,43 +118,43 @@ function OpportunityCard({
         className="p-4 cursor-pointer"
         onClick={onToggle}
       >
-        <div className="grid grid-cols-[1fr_auto_auto_auto] md:grid-cols-[minmax(180px,1.2fr)_minmax(140px,1fr)_8px_minmax(140px,1fr)_minmax(100px,auto)_60px_36px] items-center gap-x-3 gap-y-0">
+        <div className="grid grid-cols-[1fr_auto_auto] md:grid-cols-[22%_18%_2%_18%_16%_8%_3%] items-center gap-x-2">
           {/* Item Info */}
           <div className="min-w-0">
             <div className="flex items-center gap-2">
-              <h3 className="text-white font-semibold truncate">{opportunity.itemName}</h3>
-              <span className="text-xs text-gray-500 bg-gray-800 px-2 py-0.5 rounded whitespace-nowrap">
+              <h3 className="text-white font-semibold truncate text-sm">{opportunity.itemName}</h3>
+              <span className="text-[10px] text-gray-500 bg-gray-800 px-1.5 py-0.5 rounded whitespace-nowrap">
                 {opportunity.categoryName}
               </span>
             </div>
-            <p className="text-gray-500 text-sm mt-0.5 font-mono">
+            <p className="text-gray-500 text-xs mt-0.5 font-mono">
               {opportunity.unit}
             </p>
           </div>
 
-          {/* Buy Price — hidden on mobile */}
+          {/* Buy Price */}
           <div className="hidden md:block text-right">
             <p className="text-emerald-400 font-mono text-sm tabular-nums">₦{opportunity.buyMarket.price.toLocaleString()}</p>
-            <p className="text-gray-500 text-xs truncate">{opportunity.buyMarket.name}</p>
+            <p className="text-gray-500 text-[11px] truncate">{opportunity.buyMarket.name}</p>
           </div>
 
-          {/* Arrow — hidden on mobile */}
+          {/* Arrow */}
           <div className="hidden md:flex justify-center">
-            <ArrowRight className="w-4 h-4 text-gray-600 flex-shrink-0" />
+            <ArrowRight className="w-3.5 h-3.5 text-gray-600" />
           </div>
 
-          {/* Sell Price — hidden on mobile */}
+          {/* Sell Price */}
           <div className="hidden md:block text-right">
             <p className="text-amber-400 font-mono text-sm tabular-nums">₦{opportunity.sellMarket.price.toLocaleString()}</p>
-            <p className="text-gray-500 text-xs truncate">{opportunity.sellMarket.name}</p>
+            <p className="text-gray-500 text-[11px] truncate">{opportunity.sellMarket.name}</p>
           </div>
 
           {/* Net Profit */}
           <div className="text-right">
-            <p className="text-emerald-400 font-bold font-mono tabular-nums">
+            <p className="text-emerald-400 font-bold font-mono text-sm tabular-nums">
               ₦{opportunity.netProfit.toLocaleString()}
             </p>
-            <p className="text-gray-500 text-xs">Net Profit</p>
+            <p className="text-gray-500 text-[11px]">Net Profit</p>
           </div>
 
           {/* Profit Badge */}
@@ -166,9 +166,9 @@ function OpportunityCard({
           <div className="flex justify-end">
             <button className="p-1 hover:bg-gray-800 rounded">
               {expanded ? (
-                <ChevronUp className="w-5 h-5 text-gray-400" />
+                <ChevronUp className="w-4 h-4 text-gray-400" />
               ) : (
-                <ChevronDown className="w-5 h-5 text-gray-400" />
+                <ChevronDown className="w-4 h-4 text-gray-400" />
               )}
             </button>
           </div>
@@ -544,7 +544,7 @@ export default function ArbitragePage() {
         ) : (
           <div className="space-y-2">
             {/* Column Headers */}
-            <div className="hidden md:grid grid-cols-[minmax(180px,1.2fr)_minmax(140px,1fr)_8px_minmax(140px,1fr)_minmax(100px,auto)_60px_36px] items-center gap-x-3 px-4 py-2 text-xs text-gray-500 uppercase tracking-wider border-b border-[#2a2a2a]">
+            <div className="hidden md:grid grid-cols-[22%_18%_2%_18%_16%_8%_3%] items-center gap-x-2 px-4 py-2 text-[11px] text-gray-500 uppercase tracking-wider border-b border-[#2a2a2a]">
               <div>Commodity</div>
               <div className="text-right">Buy From</div>
               <div></div>
