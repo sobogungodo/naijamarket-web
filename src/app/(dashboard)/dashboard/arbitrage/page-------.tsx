@@ -21,6 +21,18 @@ import {
 } from "lucide-react";
 
 // ============================================================================
+// CONSTANTS
+// ============================================================================
+
+const NIGERIAN_STATES = [
+  "Abia","Adamawa","Akwa Ibom","Anambra","Bauchi","Bayelsa","Benue","Borno",
+  "Cross River","Delta","Ebonyi","Edo","Ekiti","Enugu","FCT","Gombe","Imo",
+  "Jigawa","Kaduna","Kano","Katsina","Kebbi","Kogi","Kwara","Lagos",
+  "Nasarawa","Niger","Ogun","Ondo","Osun","Oyo","Plateau","Rivers",
+  "Sokoto","Taraba","Yobe","Zamfara"
+];
+
+// ============================================================================
 // TYPES
 // ============================================================================
 
@@ -249,6 +261,8 @@ export default function ArbitragePage() {
   const [itemFilter, setItemFilter] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("");
   const [minProfit, setMinProfit] = useState(1);
+  const [buyStateFilter, setBuyStateFilter] = useState("");
+  const [sellStateFilter, setSellStateFilter] = useState("");
   
   // Tier info
   const [tierInfo, setTierInfo] = useState<{
@@ -270,6 +284,8 @@ export default function ArbitragePage() {
         minProfit: String(minProfit),
         ...(itemFilter && { item: itemFilter }),
         ...(categoryFilter && { category: categoryFilter }),
+        ...(buyStateFilter && { buyState: buyStateFilter }),
+        ...(sellStateFilter && { sellState: sellStateFilter }),
       });
       
       const response = await fetch(`/api/arbitrage?${params}`);
@@ -371,6 +387,8 @@ export default function ArbitragePage() {
               {tierInfo && (
                 <span className="text-xs bg-gray-800 text-gray-400 px-3 py-1 rounded-full">
                   {tierInfo.tier} • {tierInfo.appliedMinProfit}%+ profits • {opportunities.length} found
+                  {buyStateFilter && <span className="text-emerald-400"> • from {buyStateFilter}</span>}
+                  {sellStateFilter && <span className="text-amber-400"> • to {sellStateFilter}</span>}
                 </span>
               )}
               <button
@@ -397,13 +415,28 @@ export default function ArbitragePage() {
               />
             </div>
             <div className="flex items-center gap-2 bg-[#1a1a1a] rounded-lg px-3 py-2">
-              <input
-                type="text"
-                placeholder="Filter by category..."
+              <select
                 value={categoryFilter}
                 onChange={(e) => setCategoryFilter(e.target.value)}
-                className="bg-transparent border-none outline-none text-sm w-40"
-              />
+                className="bg-transparent border-none outline-none text-sm text-gray-300"
+              >
+                <option value="" className="bg-[#1a1a1a]">All Food Categories</option>
+                <option value="CAT001" className="bg-[#1a1a1a]">Grains & Cereals</option>
+                <option value="CAT002" className="bg-[#1a1a1a]">Vegetables & Peppers</option>
+                <option value="CAT003" className="bg-[#1a1a1a]">Oils & Fats</option>
+                <option value="CAT004" className="bg-[#1a1a1a]">Frozen Foods & Poultry</option>
+                <option value="CAT005" className="bg-[#1a1a1a]">Beverages</option>
+                <option value="CAT006" className="bg-[#1a1a1a]">Plantain</option>
+                <option value="CAT007" className="bg-[#1a1a1a]">Seasoning & Spices</option>
+                <option value="CAT008" className="bg-[#1a1a1a]">Dried Fish & Stockfish</option>
+                <option value="CAT009" className="bg-[#1a1a1a]">Flour & Bakery</option>
+                <option value="CAT010" className="bg-[#1a1a1a]">Bread</option>
+                <option value="CAT013" className="bg-[#1a1a1a]">Dairy & Milk</option>
+                <option value="CAT014" className="bg-[#1a1a1a]">Tubers & Yam</option>
+                <option value="CAT015" className="bg-[#1a1a1a]">Beans & Legumes</option>
+                <option value="CAT070" className="bg-[#1a1a1a]">Poultry & Livestock</option>
+                <option value="CAT103" className="bg-[#1a1a1a]">Fish (NBS)</option>
+              </select>
             </div>
             
             {/* Min Profit Margin Selector */}
@@ -423,6 +456,36 @@ export default function ArbitragePage() {
                 <option value={10} className="bg-[#1a1a1a]">10%+</option>
                 <option value={15} className="bg-[#1a1a1a]">15%+</option>
                 <option value={20} className="bg-[#1a1a1a]">20%+</option>
+              </select>
+            </div>
+
+            {/* Buy From State */}
+            <div className="flex items-center gap-2 bg-[#1a1a1a] rounded-lg px-3 py-2">
+              <TrendingDown className="w-4 h-4 text-emerald-500/60" />
+              <select
+                value={buyStateFilter}
+                onChange={(e) => setBuyStateFilter(e.target.value)}
+                className="bg-transparent border-none outline-none text-sm text-gray-300 cursor-pointer"
+              >
+                <option value="" className="bg-[#1a1a1a]">Buy from: Any State</option>
+                {NIGERIAN_STATES.map(s => (
+                  <option key={`buy-${s}`} value={s} className="bg-[#1a1a1a]">{s}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Sell To State */}
+            <div className="flex items-center gap-2 bg-[#1a1a1a] rounded-lg px-3 py-2">
+              <TrendingUp className="w-4 h-4 text-amber-500/60" />
+              <select
+                value={sellStateFilter}
+                onChange={(e) => setSellStateFilter(e.target.value)}
+                className="bg-transparent border-none outline-none text-sm text-gray-300 cursor-pointer"
+              >
+                <option value="" className="bg-[#1a1a1a]">Sell to: Any State</option>
+                {NIGERIAN_STATES.map(s => (
+                  <option key={`sell-${s}`} value={s} className="bg-[#1a1a1a]">{s}</option>
+                ))}
               </select>
             </div>
             

@@ -118,42 +118,52 @@ function OpportunityCard({
         className="p-4 cursor-pointer"
         onClick={onToggle}
       >
-        <div className="flex items-center justify-between gap-4">
+        <div className="grid grid-cols-[1fr_auto_auto_auto] md:grid-cols-[minmax(180px,1.2fr)_minmax(140px,1fr)_8px_minmax(140px,1fr)_minmax(100px,auto)_60px_36px] items-center gap-x-3 gap-y-0">
           {/* Item Info */}
-          <div className="flex-1 min-w-0">
+          <div className="min-w-0">
             <div className="flex items-center gap-2">
               <h3 className="text-white font-semibold truncate">{opportunity.itemName}</h3>
-              <span className="text-xs text-gray-500 bg-gray-800 px-2 py-0.5 rounded">
+              <span className="text-xs text-gray-500 bg-gray-800 px-2 py-0.5 rounded whitespace-nowrap">
                 {opportunity.categoryName}
               </span>
             </div>
-            <p className="text-gray-500 text-sm mt-1 font-mono">
+            <p className="text-gray-500 text-sm mt-0.5 font-mono">
               {opportunity.unit}
             </p>
           </div>
 
-          {/* Route */}
-          <div className="hidden md:flex items-center gap-2 text-sm">
-            <div className="text-right">
-              <p className="text-emerald-400 font-mono">₦{opportunity.buyMarket.price.toLocaleString()}</p>
-              <p className="text-gray-500 text-xs truncate max-w-[120px]">{opportunity.buyMarket.name}</p>
-            </div>
-            <ArrowRight className="w-4 h-4 text-gray-600" />
-            <div className="text-left">
-              <p className="text-amber-400 font-mono">₦{opportunity.sellMarket.price.toLocaleString()}</p>
-              <p className="text-gray-500 text-xs truncate max-w-[120px]">{opportunity.sellMarket.name}</p>
-            </div>
+          {/* Buy Price — hidden on mobile */}
+          <div className="hidden md:block text-right">
+            <p className="text-emerald-400 font-mono text-sm tabular-nums">₦{opportunity.buyMarket.price.toLocaleString()}</p>
+            <p className="text-gray-500 text-xs truncate">{opportunity.buyMarket.name}</p>
           </div>
 
-          {/* Profit */}
-          <div className="flex items-center gap-4">
-            <div className="text-right">
-              <p className="text-emerald-400 font-bold font-mono">
-                ₦{opportunity.netProfit.toLocaleString()}
-              </p>
-              <p className="text-gray-500 text-xs">Net Profit</p>
-            </div>
+          {/* Arrow — hidden on mobile */}
+          <div className="hidden md:flex justify-center">
+            <ArrowRight className="w-4 h-4 text-gray-600 flex-shrink-0" />
+          </div>
+
+          {/* Sell Price — hidden on mobile */}
+          <div className="hidden md:block text-right">
+            <p className="text-amber-400 font-mono text-sm tabular-nums">₦{opportunity.sellMarket.price.toLocaleString()}</p>
+            <p className="text-gray-500 text-xs truncate">{opportunity.sellMarket.name}</p>
+          </div>
+
+          {/* Net Profit */}
+          <div className="text-right">
+            <p className="text-emerald-400 font-bold font-mono tabular-nums">
+              ₦{opportunity.netProfit.toLocaleString()}
+            </p>
+            <p className="text-gray-500 text-xs">Net Profit</p>
+          </div>
+
+          {/* Profit Badge */}
+          <div className="flex justify-end">
             <ProfitBadge percentage={opportunity.profitPercentage} />
+          </div>
+
+          {/* Chevron */}
+          <div className="flex justify-end">
             <button className="p-1 hover:bg-gray-800 rounded">
               {expanded ? (
                 <ChevronUp className="w-5 h-5 text-gray-400" />
@@ -532,7 +542,17 @@ export default function ArbitragePage() {
             </div>
           </div>
         ) : (
-          <div className="space-y-3">
+          <div className="space-y-2">
+            {/* Column Headers */}
+            <div className="hidden md:grid grid-cols-[minmax(180px,1.2fr)_minmax(140px,1fr)_8px_minmax(140px,1fr)_minmax(100px,auto)_60px_36px] items-center gap-x-3 px-4 py-2 text-xs text-gray-500 uppercase tracking-wider border-b border-[#2a2a2a]">
+              <div>Commodity</div>
+              <div className="text-right">Buy From</div>
+              <div></div>
+              <div className="text-right">Sell To</div>
+              <div className="text-right">Net Profit</div>
+              <div className="text-right">ROI</div>
+              <div></div>
+            </div>
             {opportunities.map((opp) => (
               <OpportunityCard
                 key={opp.id}
