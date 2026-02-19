@@ -104,11 +104,10 @@ interface PriceRow {
 async function fetchReportData(reportType: string, params?: any): Promise<any> {
   try {
     // ----------------------------------------------------------------
-    // KEY FIX: Use ROW_NUMBER() to get ONE representative row per 
-    // item+market combo. Without this, TOP N + alphabetical ORDER BY
-    // would only return the first item (e.g. "7-Up" fills all 500).
-    // With 524 items × 226 markets, we sample 1 row per combo and
-    // cap at 5000 to cover all commodities across many markets.
+    // SAMPLING STRATEGY: Get 3 markets per commodity item.
+    // 524 items × 3 markets = ~1,572 rows = covers ALL commodities.
+    // Previous approach (TOP 5000 by item+market alphabetically) only
+    // reached items A-Am due to 224 markets per item filling the cap.
     // ----------------------------------------------------------------
     let prices: PriceRow[] = await prisma.$queryRawUnsafe(`
       WITH ranked AS (
@@ -121,20 +120,20 @@ async function fetchReportData(reportType: string, params?: any): Promise<any> {
           COALESCE(trend, 'stable') AS trend,
           CAST(price_date AS VARCHAR) AS price_date,
           COALESCE(data_source, 'NaijaMarket') AS data_source,
-          ROW_NUMBER() OVER (PARTITION BY item_name, market_name ORDER BY price_naira DESC) AS rn
+          ROW_NUMBER() OVER (PARTITION BY item_name ORDER BY ABS(COALESCE(price_change_pct, 0)) DESC) AS rn
         FROM Daily_Prices
         WHERE price_date = (SELECT MAX(price_date) FROM Daily_Prices)
       )
-      SELECT TOP 5000
+      SELECT 
         item_name, market_name, state, category_id, unit,
         price_naira, previous_price, price_change_pct, trend,
         price_date, data_source
       FROM ranked
-      WHERE rn = 1
+      WHERE rn <= 3
       ORDER BY item_name, market_name
     `);
 
-    // Fallback: last 7 days (same ROW_NUMBER strategy)
+    // Fallback: last 7 days (same strategy)
     if (prices.length === 0) {
       prices = await prisma.$queryRawUnsafe(`
         WITH ranked AS (
@@ -147,16 +146,16 @@ async function fetchReportData(reportType: string, params?: any): Promise<any> {
             COALESCE(trend, 'stable') AS trend,
             CAST(price_date AS VARCHAR) AS price_date,
             COALESCE(data_source, 'NaijaMarket') AS data_source,
-            ROW_NUMBER() OVER (PARTITION BY item_name, market_name ORDER BY price_date DESC) AS rn
+            ROW_NUMBER() OVER (PARTITION BY item_name ORDER BY price_date DESC, ABS(COALESCE(price_change_pct, 0)) DESC) AS rn
           FROM Daily_Prices
           WHERE price_date >= DATEADD(day, -7, GETDATE())
         )
-        SELECT TOP 5000
+        SELECT 
           item_name, market_name, state, category_id, unit,
           price_naira, previous_price, price_change_pct, trend,
           price_date, data_source
         FROM ranked
-        WHERE rn = 1
+        WHERE rn <= 3
         ORDER BY item_name, market_name
       `);
     }
