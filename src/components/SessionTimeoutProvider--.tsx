@@ -9,8 +9,8 @@ import { AlertTriangle, Clock, LogOut, RefreshCw } from "lucide-react";
 // CONFIGURATION
 // ============================================================================
 
-const SESSION_TIMEOUT_MS = 10 * 60 * 1000;       // 10 minutes total
-const WARNING_BEFORE_MS = 2 * 60 * 1000;         // Show warning 2 minutes before timeout
+const SESSION_TIMEOUT_MS = 5 * 60 * 1000;        // 5 minutes total
+const WARNING_BEFORE_MS = 1 * 60 * 1000;         // Show warning 1 minute before timeout
 
 // ============================================================================
 // CONTEXT
@@ -317,7 +317,7 @@ function SessionTimeoutModal({ timeRemaining, onStayLoggedIn, onLogout }: Sessio
 
         {/* Footer Note */}
         <p className="text-xs text-gray-500 text-center mt-6">
-          For your security, we automatically log you out after 10 minutes of inactivity.
+          For your security, we automatically log you out after 5 minutes of inactivity.
         </p>
       </div>
     </div>
