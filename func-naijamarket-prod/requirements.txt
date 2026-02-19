@@ -1,0 +1,5 @@
+﻿azure-functions
+pyodbc
+requests
+beautifulsoup4
+lxml
