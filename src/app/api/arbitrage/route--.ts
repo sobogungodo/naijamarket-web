@@ -89,11 +89,60 @@ interface ArbitrageOpportunity {
 // CONFIGURATION
 // ============================================================================
 
+// Food-related categories only (this is a food price platform)
+const FOOD_CATEGORIES = new Set([
+  "CAT001", // Grains & Cereals
+  "CAT002", // Vegetables & Peppers
+  "CAT003", // Oils & Fats
+  "CAT004", // Frozen Foods & Poultry
+  "CAT005", // Beverages
+  "CAT006", // Plantain
+  "CAT007", // Seasoning & Spices
+  "CAT008", // Dried Fish & Stockfish
+  "CAT009", // Flour & Bakery
+  "CAT010", // Bread
+  "CAT013", // Dairy & Milk
+  "CAT014", // Tubers & Yam
+  "CAT015", // Beans & Legumes
+  "CAT070", // Poultry & Livestock
+  "CAT103", // Fish (NBS)
+]);
+
 const CATEGORY_MAP: Record<string, string> = {
-  "1": "Grains & Cereals", "2": "Tubers", "3": "Vegetables", "4": "Fruits",
-  "5": "Oils & Fats", "6": "Protein", "7": "Dairy", "8": "Sweeteners",
-  "9": "Beverages", "10": "Building Materials", "11": "Livestock",
-  "12": "Fish & Seafood", "13": "Condiments", "14": "Processed Foods",
+  "CAT001": "Grains & Cereals",
+  "CAT002": "Vegetables & Peppers",
+  "CAT003": "Oils & Fats",
+  "CAT004": "Frozen Foods & Poultry",
+  "CAT005": "Beverages",
+  "CAT006": "Plantain",
+  "CAT007": "Seasoning & Spices",
+  "CAT008": "Dried Fish & Stockfish",
+  "CAT009": "Flour & Bakery",
+  "CAT010": "Bread",
+  "CAT013": "Dairy & Milk",
+  "CAT014": "Tubers & Yam",
+  "CAT015": "Beans & Legumes",
+  "CAT016": "Fabrics & Textiles",
+  "CAT020": "Footwear",
+  "CAT028": "Body Care & Cosmetics",
+  "CAT029": "Hair Care",
+  "CAT036": "Cement & Building",
+  "CAT037": "Electrical Cables",
+  "CAT039": "Paints & Finishes",
+  "CAT048": "Kitchen & Cookware",
+  "CAT052": "Mattresses & Bedding",
+  "CAT059": "Tires & Auto Parts",
+  "CAT066": "Generators & Power",
+  "CAT069": "Fertilizers & Agro-Inputs",
+  "CAT070": "Poultry & Livestock",
+  "CAT078": "Pharmaceuticals",
+  "CAT083": "Baby Products & Diapers",
+  "CAT085": "Feminine Care",
+  "CAT087": "Smartphones",
+  "CAT089": "Phone Accessories",
+  "CAT092": "Appliances & Electronics",
+  "CAT103": "Fish (NBS)",
+  "CAT123": "Stationery & Office",
 };
 
 // ── NIGERIAN TRANSPORT COST MODEL (Feb 2026) ───────────────────────────
@@ -339,6 +388,9 @@ async function findArbitrageOpportunities(
   const itemFilter = filterItem ? `AND item_name LIKE '%${filterItem.replace(/'/g, "''")}%'` : "";
   const categoryFilter = filterCategory ? `AND category_id = '${filterCategory.replace(/'/g, "''")}'` : "";
 
+  // Build food category IN clause
+  const foodCatList = Array.from(FOOD_CATEGORIES).map(c => `'${c}'`).join(",");
+
   // Get latest prices from Summary table
   const prices = await prisma.$queryRawUnsafe(`
     SELECT 
@@ -347,6 +399,7 @@ async function findArbitrageOpportunities(
       price_date
     FROM Latest_Prices_Summary WITH (NOLOCK)
     WHERE price_naira > 0
+      AND category_id IN (${foodCatList})
       ${itemFilter}
       ${categoryFilter}
     ORDER BY item_name, market_name
@@ -424,7 +477,7 @@ async function findArbitrageOpportunities(
           id: `${itemName}-${buyMarket}-${sellMarket}`.replace(/\s+/g, "-").toLowerCase(),
           itemId: catId,
           itemName,
-          categoryName: CATEGORY_MAP[catId] || `Category ${catId}`,
+          categoryName: CATEGORY_MAP[catId] || "Other",
           unit: buyRec.unit || "unit",
           buyMarket: {
             id: buyMarket, name: buyMarket, state: buyRec.state || "",

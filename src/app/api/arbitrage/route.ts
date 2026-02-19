@@ -1,16 +1,22 @@
 // ============================================================================
-// NAIJAMARKET INTEL - ARBITRAGE OPPORTUNITIES API
+// NAIJAFOOD INTEL - ARBITRAGE OPPORTUNITIES API
 // File: src/app/api/arbitrage/route.ts
 // Bloomberg Equivalent: ARBI <GO>
-// Version: 4.0 - Real GPS from Markets table, Nigerian transport cost model
-// Date: 2026-02-18
+// Version: 5.0 - Category-aware transport costs (livestock, perishables)
+// Date: 2026-02-19
 //
-// TRANSPORT COST MODEL (Feb 2026):
-//   Diesel: ₦907.5/litre | Truck: ~3km/litre | ~₦302/km fuel cost
-//   30-ton truck total cost: ~₦450/km (fuel + driver + maintenance)
-//   Per 50kg bag shared-truck rate: ₦3-5/km (fragmentation premium)
-//   Fixed costs: loading ₦800 + offloading ₦700 = ₦1,500/bag
-//   Checkpoint levies: ₦50,000-100,000/trip spread across cargo
+// TRANSPORT COST MODEL v2 (Feb 2026):
+//   Base model: per-50kg-bag shared truck rates (unchanged)
+//   NEW: Category weight multiplier adjusts for actual unit transport:
+//     - Cow (CAT070): 10× base (cattle truck, handler, feed, water)
+//     - Frozen chicken (CAT004): 3× base (cold chain, cartons)
+//     - Yam tubers (CAT014): 2× base (heavy, individual handling)
+//     - Rice bags (CAT001): 1× base (standard)
+//     - Seasoning packs (CAT007): 0.5× base (small, light)
+//
+//   Example: Jos→Kuje (236km) for Cow - Medium:
+//     Before v5: ₦3,553 (per-bag rate — absurdly cheap for a cow!)
+//     After v5:  ₦35,530 (10× multiplier — realistic cattle transport)
 //
 // Sources: NBS Transport Fare Watch, NARTO, Nigerian Shippers Council,
 //   Mordor Intelligence Nigeria Freight Report 2025-2030
@@ -56,6 +62,8 @@ interface TransportResult {
   totalCost: number;
   label: string;
   ratePerKm: number;
+  weightMultiplier: number;
+  categoryNote: string;
 }
 
 interface ConfidenceResult {
@@ -86,74 +94,70 @@ interface ArbitrageOpportunity {
 }
 
 // ============================================================================
-// CONFIGURATION
+// CONFIGURATION — FOOD ONLY
 // ============================================================================
 
-// Food-related categories only (this is a food price platform)
 const FOOD_CATEGORIES = new Set([
-  "CAT001", // Grains & Cereals
-  "CAT002", // Vegetables & Peppers
-  "CAT003", // Oils & Fats
-  "CAT004", // Frozen Foods & Poultry
-  "CAT005", // Beverages
-  "CAT006", // Plantain
-  "CAT007", // Seasoning & Spices
-  "CAT008", // Dried Fish & Stockfish
-  "CAT009", // Flour & Bakery
-  "CAT010", // Bread
-  "CAT013", // Dairy & Milk
-  "CAT014", // Tubers & Yam
-  "CAT015", // Beans & Legumes
-  "CAT070", // Poultry & Livestock
-  "CAT103", // Fish (NBS)
+  "CAT001", "CAT002", "CAT003", "CAT004", "CAT005", "CAT006", "CAT007",
+  "CAT008", "CAT009", "CAT010", "CAT013", "CAT014", "CAT015", "CAT070", "CAT103",
 ]);
 
 const CATEGORY_MAP: Record<string, string> = {
-  "CAT001": "Grains & Cereals",
-  "CAT002": "Vegetables & Peppers",
-  "CAT003": "Oils & Fats",
-  "CAT004": "Frozen Foods & Poultry",
-  "CAT005": "Beverages",
-  "CAT006": "Plantain",
-  "CAT007": "Seasoning & Spices",
-  "CAT008": "Dried Fish & Stockfish",
-  "CAT009": "Flour & Bakery",
-  "CAT010": "Bread",
-  "CAT013": "Dairy & Milk",
-  "CAT014": "Tubers & Yam",
-  "CAT015": "Beans & Legumes",
-  "CAT016": "Fabrics & Textiles",
-  "CAT020": "Footwear",
-  "CAT028": "Body Care & Cosmetics",
-  "CAT029": "Hair Care",
-  "CAT036": "Cement & Building",
-  "CAT037": "Electrical Cables",
-  "CAT039": "Paints & Finishes",
-  "CAT048": "Kitchen & Cookware",
-  "CAT052": "Mattresses & Bedding",
-  "CAT059": "Tires & Auto Parts",
-  "CAT066": "Generators & Power",
-  "CAT069": "Fertilizers & Agro-Inputs",
-  "CAT070": "Poultry & Livestock",
-  "CAT078": "Pharmaceuticals",
-  "CAT083": "Baby Products & Diapers",
-  "CAT085": "Feminine Care",
-  "CAT087": "Smartphones",
-  "CAT089": "Phone Accessories",
-  "CAT092": "Appliances & Electronics",
-  "CAT103": "Fish (NBS)",
-  "CAT123": "Stationery & Office",
+  CAT001: "Grains & Cereals",
+  CAT002: "Vegetables & Peppers",
+  CAT003: "Oils & Fats",
+  CAT004: "Frozen Foods & Poultry",
+  CAT005: "Beverages",
+  CAT006: "Plantain",
+  CAT007: "Seasoning & Spices",
+  CAT008: "Dried Fish & Stockfish",
+  CAT009: "Flour & Bakery",
+  CAT010: "Bread",
+  CAT013: "Dairy & Milk",
+  CAT014: "Tubers & Yam",
+  CAT015: "Beans & Legumes",
+  CAT070: "Poultry & Livestock",
+  CAT103: "Fish (NBS)",
 };
 
+// ============================================================================
+// CATEGORY TRANSPORT WEIGHT MULTIPLIER
+// ============================================================================
+// Reflects ACTUAL transport cost per unit relative to a standard 50kg bag.
+// A cow needs a cattle truck + handler + feed = 10× a bag of rice.
+// Frozen chicken needs cold chain = 3× a bag of rice.
+//
+// KEY FACTORS:
+//   Physical weight of unit (cow 300kg vs bag 50kg)
+//   Special handling (live animals, cold chain, perishable)
+//   Space requirements (a cow takes 6× truck space vs 50kg bag)
+//   Risk premium (livestock mortality, spoilage)
+// ============================================================================
+
+const CATEGORY_TRANSPORT_MULTIPLIER: Record<string, { mult: number; note: string }> = {
+  CAT001: { mult: 1.0,  note: "Standard 50kg bags" },
+  CAT002: { mult: 2.0,  note: "Perishable, baskets need careful handling" },
+  CAT003: { mult: 1.8,  note: "Heavy liquids (25L), spill risk" },
+  CAT004: { mult: 3.5,  note: "Cold chain required, cartons" },
+  CAT005: { mult: 1.5,  note: "Heavy crates, fragile bottles" },
+  CAT006: { mult: 1.2,  note: "Bunches, perishable" },
+  CAT007: { mult: 0.5,  note: "Small lightweight packages" },
+  CAT008: { mult: 2.0,  note: "Bulky bundles, dedicated space" },
+  CAT009: { mult: 1.0,  note: "Standard bags" },
+  CAT010: { mult: 0.8,  note: "Light but bulky, perishable" },
+  CAT013: { mult: 1.0,  note: "Tins and cartons" },
+  CAT014: { mult: 2.0,  note: "Heavy individual tubers" },
+  CAT015: { mult: 1.0,  note: "Standard bags" },
+  CAT070: { mult: 10.0, note: "Cattle truck, handler, feed, water, insurance" },
+  CAT103: { mult: 2.5,  note: "Iced fish, cold handling, perishable" },
+};
+
+// Default for unknown categories
+const DEFAULT_TRANSPORT_MULT = { mult: 1.5, note: "Estimated" };
+
 // ── NIGERIAN TRANSPORT COST MODEL (Feb 2026) ───────────────────────────
-// Based on: Diesel ₦907.5/L, truck ~3km/L, shared truck rates from NARTO
-//
-// COST PER 50KG BAG = Fixed + Variable
-//   Fixed: ₦1,500 (loading ₦800 + offloading ₦700)
-//   Variable: distance × rate_per_km
-//
-// Rate tiers (₦/km per 50kg bag) - decreasing with distance (economies of scale)
-// Short haul trucks charge more per-km, long haul spread costs better
+// Base rate per 50kg bag, then multiplied by category weight factor
+
 const TRANSPORT_RATE_TIERS = [
   { maxKm: 30,   ratePerKm: 25,  label: "Same City (Danfo/Keke)" },
   { maxKm: 80,   ratePerKm: 15,  label: "Same State" },
@@ -164,56 +168,24 @@ const TRANSPORT_RATE_TIERS = [
   { maxKm: 99999, ratePerKm: 4.5, label: "Extreme Distance" },
 ];
 
-// Fixed costs per 50kg bag
-const LOADING_COST = 800;     // Loading at origin market
-const OFFLOADING_COST = 700;  // Offloading at destination market
+// Fixed costs per 50kg bag (before multiplier)
+const LOADING_COST = 800;
+const OFFLOADING_COST = 700;
 const FIXED_COST = LOADING_COST + OFFLOADING_COST; // ₦1,500
 
-// Checkpoint/security levy per km (spread per bag)
-// Based on Mordor Intelligence: ₦50K-100K per trip / ~600 bags = ₦83-167/bag
-// We model as per-km since longer routes = more checkpoints
-const CHECKPOINT_RATE_PER_KM = 0.5; // ₦0.50/km per bag
+// Checkpoint/security levy per km (spread per bag, before multiplier)
+const CHECKPOINT_RATE_PER_KM = 0.5;
 
-// Road condition multiplier by region (bad roads = slower = more expensive)
+// Road condition multiplier by state
 const ROAD_QUALITY: Record<string, number> = {
-  "Lagos": 1.15,      // Apapa gridlock, heavy traffic
-  "Ogun": 1.05,
-  "Oyo": 1.0,
-  "Osun": 1.0,
-  "Ondo": 1.05,
-  "Ekiti": 1.10,
-  "FCT": 0.95,        // Best roads in Nigeria
-  "Abuja": 0.95,
-  "Kano": 1.0,
-  "Kaduna": 1.05,
-  "Katsina": 1.10,
-  "Sokoto": 1.15,
-  "Kebbi": 1.15,
-  "Zamfara": 1.20,     // Security premium
-  "Jigawa": 1.10,
-  "Borno": 1.30,       // Security premium (insurgency corridor)
-  "Yobe": 1.25,
-  "Adamawa": 1.20,
-  "Bauchi": 1.10,
-  "Gombe": 1.10,
-  "Taraba": 1.15,
-  "Niger": 1.15,       // Banditry corridor
-  "Kwara": 1.0,
-  "Kogi": 1.05,
-  "Benue": 1.10,
-  "Plateau": 1.10,
-  "Nasarawa": 1.05,
-  "Anambra": 1.0,
-  "Enugu": 1.0,
-  "Ebonyi": 1.10,
-  "Imo": 1.05,
-  "Abia": 1.05,
-  "Rivers": 1.10,
-  "Delta": 1.05,
-  "Bayelsa": 1.15,
-  "Akwa Ibom": 1.10,
-  "Cross River": 1.10,
-  "Edo": 1.0,
+  "Lagos": 1.15, "Ogun": 1.05, "Oyo": 1.0, "Osun": 1.0, "Ondo": 1.05, "Ekiti": 1.10,
+  "FCT": 0.95, "Abuja": 0.95,
+  "Kano": 1.0, "Kaduna": 1.05, "Katsina": 1.10, "Sokoto": 1.15, "Kebbi": 1.15,
+  "Zamfara": 1.20, "Jigawa": 1.10,
+  "Borno": 1.30, "Yobe": 1.25, "Adamawa": 1.20, "Bauchi": 1.10, "Gombe": 1.10, "Taraba": 1.15,
+  "Niger": 1.15, "Kwara": 1.0, "Kogi": 1.05, "Benue": 1.10, "Plateau": 1.10, "Nasarawa": 1.05,
+  "Anambra": 1.0, "Enugu": 1.0, "Ebonyi": 1.10, "Imo": 1.05, "Abia": 1.05,
+  "Rivers": 1.10, "Delta": 1.05, "Bayelsa": 1.15, "Akwa Ibom": 1.10, "Cross River": 1.10, "Edo": 1.0,
 };
 
 const DEFAULT_TIER_CONFIG: TierConfig = { hasAccess: false, minProfitFloor: 100, maxResults: 0 };
@@ -269,49 +241,54 @@ async function getMarketCoordinates(prisma: any): Promise<Record<string, MarketG
 
     return coords;
   } catch (e: any) {
-    console.warn("[Arbitrage] Failed to load GPS from Markets table:", e.message?.substring(0, 100));
+    console.warn("[Arbitrage] Failed to load GPS:", e.message?.substring(0, 100));
     return gpsCache || {};
   }
 }
 
 // ============================================================================
-// TRANSPORT COST CALCULATOR
+// TRANSPORT COST CALCULATOR (v2 — category-aware)
 // ============================================================================
 
 function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
-  const R = 6371; // Earth radius in km
+  const R = 6371;
   const dLat = (lat2 - lat1) * (Math.PI / 180);
   const dLon = (lon2 - lon1) * (Math.PI / 180);
-  const a = 
+  const a =
     Math.sin(dLat / 2) * Math.sin(dLat / 2) +
     Math.cos(lat1 * (Math.PI / 180)) * Math.cos(lat2 * (Math.PI / 180)) *
     Math.sin(dLon / 2) * Math.sin(dLon / 2);
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  // Multiply by 1.3 for road distance (roads aren't straight lines)
+  // 1.3× for road distance (roads aren't straight lines in Nigeria)
   return Math.round(R * c * 1.3);
 }
 
 function getTransportCost(
-  fromMarket: string, 
+  fromMarket: string,
   toMarket: string,
   fromState: string,
   toState: string,
-  coords: Record<string, MarketGPS>
+  coords: Record<string, MarketGPS>,
+  categoryId: string  // NEW: pass category for weight multiplier
 ): TransportResult {
   const from = coords[fromMarket];
   const to = coords[toMarket];
 
   if (!from || !to) {
-    // Fallback: estimate from state if we know them
     const estDistance = fromState === toState ? 50 : 400;
-    return estimateTransport(estDistance, fromState, toState);
+    return estimateTransport(estDistance, fromState, toState, categoryId);
   }
 
   const distance = calculateDistance(from.lat, from.lon, to.lat, to.lon);
-  return estimateTransport(distance, from.state || fromState, to.state || toState);
+  return estimateTransport(distance, from.state || fromState, to.state || toState, categoryId);
 }
 
-function estimateTransport(distance: number, fromState: string, toState: string): TransportResult {
+function estimateTransport(
+  distance: number,
+  fromState: string,
+  toState: string,
+  categoryId: string  // NEW
+): TransportResult {
   // Find rate tier
   let ratePerKm = 5;
   let label = "Estimated";
@@ -329,19 +306,31 @@ function estimateTransport(distance: number, fromState: string, toState: string)
   const toMultiplier = ROAD_QUALITY[toState] || 1.05;
   const roadMultiplier = (fromMultiplier + toMultiplier) / 2;
 
-  // Calculate costs
-  const fuelAndHaulage = Math.round(distance * ratePerKm * roadMultiplier);
-  const checkpointCost = Math.round(distance * CHECKPOINT_RATE_PER_KM);
-  const totalCost = FIXED_COST + fuelAndHaulage + checkpointCost;
+  // Category weight multiplier (the big v5.0 change)
+  const catTransport = CATEGORY_TRANSPORT_MULTIPLIER[categoryId] || DEFAULT_TRANSPORT_MULT;
+  const weightMult = catTransport.mult;
+
+  // Calculate BASE costs (per 50kg bag)
+  const baseFuelAndHaulage = Math.round(distance * ratePerKm * roadMultiplier);
+  const baseCheckpointCost = Math.round(distance * CHECKPOINT_RATE_PER_KM);
+  const baseTotalCost = FIXED_COST + baseFuelAndHaulage + baseCheckpointCost;
+
+  // Apply category multiplier to get ACTUAL per-unit cost
+  const totalCost = Math.round(baseTotalCost * weightMult);
+  const fuelCost = Math.round(baseFuelAndHaulage * weightMult);
+  const loadingCost = Math.round(FIXED_COST * weightMult);
+  const checkpointCost = Math.round(baseCheckpointCost * weightMult);
 
   return {
     distance,
-    fuelCost: fuelAndHaulage,
-    loadingCost: FIXED_COST,
+    fuelCost,
+    loadingCost,
     checkpointCost,
     totalCost,
     label,
     ratePerKm: Math.round(ratePerKm * roadMultiplier * 10) / 10,
+    weightMultiplier: weightMult,
+    categoryNote: catTransport.note,
   };
 }
 
@@ -371,7 +360,7 @@ function getTierConfig(tier: string): TierConfig {
 }
 
 // ============================================================================
-// ARBITRAGE FINDER
+// ARBITRAGE FINDER (v5.0 — category-aware transport)
 // ============================================================================
 
 async function findArbitrageOpportunities(
@@ -381,17 +370,13 @@ async function findArbitrageOpportunities(
   filterItem?: string,
   filterCategory?: string
 ): Promise<ArbitrageOpportunity[]> {
-  // Load GPS coordinates from Markets table (cached 1hr)
   const coords = await getMarketCoordinates(prisma);
 
-  // Build SQL filters
   const itemFilter = filterItem ? `AND item_name LIKE '%${filterItem.replace(/'/g, "''")}%'` : "";
   const categoryFilter = filterCategory ? `AND category_id = '${filterCategory.replace(/'/g, "''")}'` : "";
 
-  // Build food category IN clause
   const foodCatList = Array.from(FOOD_CATEGORIES).map(c => `'${c}'`).join(",");
 
-  // Get latest prices from Summary table
   const prices = await prisma.$queryRawUnsafe(`
     SELECT 
       item_name, market_name, state, category_id, unit,
@@ -452,11 +437,14 @@ async function findArbitrageOpportunities(
         const sellMarket = sellRec.market_name || "";
         if (buyMarket === sellMarket) continue;
 
-        // Calculate real transport cost
+        const catId = String(buyRec.category_id || "");
+
+        // v5.0: Category-aware transport cost
         const transport = getTransportCost(
           buyMarket, sellMarket,
           buyRec.state || "", sellRec.state || "",
-          coords
+          coords,
+          catId  // NEW: pass category
         );
 
         const grossProfit = sellPrice - buyPrice;
@@ -465,19 +453,17 @@ async function findArbitrageOpportunities(
 
         const profitPct = (netProfit / buyPrice) * 100;
         if (profitPct < minProfitPct) continue;
-        if (profitPct > 30) continue; // Data anomaly cap
+        if (profitPct > 35) continue; // Data anomaly cap (slightly raised for realistic opportunities)
 
         const buyConf = calculateConfidence(buyRec.price_date);
         const sellConf = calculateConfidence(sellRec.price_date);
         const avgScore = Math.round((buyConf.score + sellConf.score) / 2);
 
-        const catId = String(buyRec.category_id || "");
-
         opportunities.push({
           id: `${itemName}-${buyMarket}-${sellMarket}`.replace(/\s+/g, "-").toLowerCase(),
           itemId: catId,
           itemName,
-          categoryName: CATEGORY_MAP[catId] || "Other",
+          categoryName: CATEGORY_MAP[catId] || "Food",
           unit: buyRec.unit || "unit",
           buyMarket: {
             id: buyMarket, name: buyMarket, state: buyRec.state || "",
@@ -567,10 +553,11 @@ export async function GET(request: NextRequest) {
         },
         meta: {
           generatedAt: new Date().toISOString(),
-          transportModel: "Nigerian Logistics Feb 2026",
+          transportModel: "Nigerian Logistics v2 Feb 2026 (category-aware)",
           dieselPrice: "₦907.5/litre",
           gpsSource: "Markets table (226 markets)",
           dataSource: "Latest_Prices_Summary",
+          categoryMultipliers: "Applied (livestock 10×, frozen 3.5×, perishables 2×)",
         },
       },
     });
@@ -629,11 +616,14 @@ export async function POST(request: NextRequest) {
 
     const buyNum = parseFloat(buyPrice.price) || 0;
     const sellNum = parseFloat(sellPrice.price) || 0;
+    const catId = String(buyPrice.category_id || "");
 
+    // v5.0: Category-aware transport
     const transport = getTransportCost(
       buyMarket, sellMarket,
       buyPrice.state || "", sellPrice.state || "",
-      coords
+      coords,
+      catId  // NEW
     );
 
     const quantities = [1, 5, 10, 25, 50, 100];
@@ -660,7 +650,7 @@ export async function POST(request: NextRequest) {
       data: {
         item: {
           name: buyPrice.item_name,
-          category: CATEGORY_MAP[String(buyPrice.category_id)] || "Other",
+          category: CATEGORY_MAP[catId] || "Food",
           unit: buyPrice.unit,
         },
         buyMarket: {
@@ -681,7 +671,9 @@ export async function POST(request: NextRequest) {
           totalCostPerUnit: transport.totalCost,
           label: transport.label,
           ratePerKm: transport.ratePerKm,
-          model: "Nigerian Logistics Feb 2026 (Diesel ₦907.5/L)",
+          weightMultiplier: transport.weightMultiplier,
+          categoryNote: transport.categoryNote,
+          model: "Nigerian Logistics v2 Feb 2026 (category-aware)",
         },
         profitAnalysis: {
           unitPriceSpread: Math.round(sellNum - buyNum),
