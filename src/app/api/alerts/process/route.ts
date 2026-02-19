@@ -149,7 +149,7 @@ export async function GET(request: NextRequest) {
   if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
     // Allow manual trigger for testing without secret
     const { searchParams } = new URL(request.url);
-    if (!searchParams.get("test")) {
+    if (!searchParams.get("test") && !searchParams.get("diagnose")) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
   }
