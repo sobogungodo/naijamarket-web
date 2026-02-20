@@ -11,7 +11,9 @@ import {
   Sun, Clock, MapPin, ShoppingBasket, Bell, BellOff,
   Check, Pause, Play, Trash2, ChevronRight, Sparkles,
   Send, Eye, AlertCircle, Loader2, TrendingUp, TrendingDown,
+  Settings,
 } from "lucide-react";
+import Link from "next/link";
 
 // ============================================================================
 // TYPES
@@ -58,6 +60,7 @@ export default function MorningBriefPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [phoneMissing, setPhoneMissing] = useState(false);
 
   // Form state
   const [planType, setPlanType] = useState<"DEFAULT" | "PERSONALIZED">("DEFAULT");
@@ -82,6 +85,12 @@ export default function MorningBriefPage() {
         setMarkets(data.markets || []);
         setItems(data.items || []);
 
+        if (data.phone_missing) {
+          setPhoneMissing(true);
+          return;
+        }
+
+        setPhoneMissing(false);
         if (data.subscription) {
           const sub = data.subscription;
           setSubscription(sub);
@@ -244,6 +253,21 @@ export default function MorningBriefPage() {
           </div>
         )}
       </div>
+
+      {/* Phone missing banner */}
+      {phoneMissing && (
+        <Link
+          href="/dashboard/settings"
+          className="flex items-center gap-3 bg-amber-500/10 border border-amber-500/30 rounded-lg p-4 hover:bg-amber-500/15 transition-colors"
+        >
+          <Settings className="w-5 h-5 text-amber-400 shrink-0" />
+          <div className="flex-1">
+            <p className="text-amber-400 font-medium text-sm">Phone number required</p>
+            <p className="text-amber-400/70 text-xs mt-0.5">Add your WhatsApp number in Settings to receive Morning Briefs</p>
+          </div>
+          <ChevronRight className="w-4 h-4 text-amber-400/50" />
+        </Link>
+      )}
 
       {/* Status messages */}
       {error && (
@@ -550,7 +574,7 @@ Type *STOP BRIEF* to unsubscribe`}
       <div className="flex flex-col sm:flex-row gap-3">
         <button
           onClick={handleSubscribe}
-          disabled={saving || (planType === "PERSONALIZED" && selectedMarkets.length === 0)}
+          disabled={saving || phoneMissing || (planType === "PERSONALIZED" && selectedMarkets.length === 0)}
           className="flex-1 bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed text-black font-semibold py-3 px-6 rounded-xl transition-colors flex items-center justify-center gap-2"
         >
           {saving ? (

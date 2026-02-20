@@ -21,8 +21,65 @@ const prisma = globalForPrisma.prisma || new PrismaClient();
 if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = prisma;
 
 // ============================================================================
-// HELPERS
+// FIND USER FROM SESSION (same pattern as settings route)
 // ============================================================================
+
+async function findUserFromSession(session: any) {
+  if (!session?.user) return null;
+
+  const { email, name, phone } = session.user as any;
+
+  try {
+    // Strategy 1: By email
+    if (email) {
+      const user = await prisma.consumers.findFirst({
+        where: { email: email },
+      });
+      if (user) return user;
+    }
+
+    // Strategy 2: By phone (if present in session)
+    if (phone) {
+      const user = await prisma.consumers.findFirst({
+        where: { phone_number: phone },
+      });
+      if (user) return user;
+    }
+
+    // Strategy 3: Extract phone suffix from name like "User 5952"
+    if (name && name.startsWith("User ")) {
+      const phoneSuffix = name.replace("User ", "");
+      if (phoneSuffix && /^\d{4,}$/.test(phoneSuffix)) {
+        const users = await prisma.$queryRawUnsafe<any[]>(`
+          SELECT * FROM Consumers 
+          WHERE phone_number LIKE '%${phoneSuffix}'
+          ORDER BY created_at DESC
+        `);
+        if (users && users.length > 0) return users[0];
+      }
+    }
+
+    // Strategy 4: By full_name
+    if (name && !name.startsWith("User ")) {
+      const user = await prisma.consumers.findFirst({
+        where: { full_name: name },
+      });
+      if (user) return user;
+
+      const users = await prisma.$queryRawUnsafe<any[]>(`
+        SELECT * FROM Consumers 
+        WHERE LOWER(full_name) = LOWER('${name.replace(/'/g, "''")}')
+        ORDER BY created_at DESC
+      `);
+      if (users && users.length > 0) return users[0];
+    }
+
+    return null;
+  } catch (error: any) {
+    console.error("[MorningBrief] findUser error:", error.message);
+    return null;
+  }
+}
 
 function genId(): string {
   return `MB_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 8)}`;
@@ -39,11 +96,11 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const user = session.user as any;
-    const phone = user.phone || user.phone_number || "";
+    const user = await findUserFromSession(session);
+    const phone = (user as any)?.phone_number || "";
 
     if (!phone) {
-      return NextResponse.json({ success: true, subscription: null });
+      return NextResponse.json({ success: true, subscription: null, phone_missing: true });
     }
 
     const results = await prisma.$queryRaw`
@@ -97,9 +154,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const user = session.user as any;
-    const phone = user.phone || user.phone_number || "";
-    const email = user.email || "";
+    const user = await findUserFromSession(session);
+    const phone = (user as any)?.phone_number || "";
+    const email = (user as any)?.email || session.user?.email || "";
 
     if (!phone) {
       return NextResponse.json({ error: "Phone number required" }, { status: 400 });
@@ -179,7 +236,7 @@ export async function POST(request: NextRequest) {
 
     // New subscription
     const briefId = genId();
-    const consumerId = user.consumer_id || user.id || "";
+    const consumerId = (user as any)?.consumer_id || "";
 
     await prisma.$executeRaw`
       INSERT INTO Morning_Brief_Subscriptions (
@@ -221,8 +278,8 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const user = session.user as any;
-    const phone = user.phone || user.phone_number || "";
+    const user = await findUserFromSession(session);
+    const phone = (user as any)?.phone_number || "";
 
     await prisma.$executeRaw`
       UPDATE Morning_Brief_Subscriptions
