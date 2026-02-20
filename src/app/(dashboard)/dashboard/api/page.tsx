@@ -1,494 +1,323 @@
+// ============================================================================
+// src/app/(dashboard)/dashboard/api/page.tsx
+// NaijaMarket Intel - API Key Management + Usage Dashboard
+// Version: 2.0.0 | Date: 2026-02-20
+// ============================================================================
+
 "use client";
 
-import { useState } from "react";
-import { useSession } from "next-auth/react";
+import { useState, useEffect, useCallback } from "react";
+import Link from "next/link";
 import {
-  Key,
-  Plus,
-  Copy,
-  Trash2,
-  Eye,
-  EyeOff,
-  RefreshCw,
-  CheckCircle2,
-  Lock,
-  Clock,
-  Activity,
-  Shield,
-  ExternalLink,
-  Code,
-  BookOpen,
-  Zap,
+  Key, Plus, Copy, Check, Eye, EyeOff, Trash2,
+  BarChart3, Clock, Zap, AlertCircle, Loader2,
+  Code2, ExternalLink, TrendingUp, Shield,
+  ChevronRight,
 } from "lucide-react";
 
-// ============================================================================
-// TYPES
-// ============================================================================
-
 interface APIKey {
-  id: string;
+  key_id: string;
   name: string;
-  key: string;
+  prefix: string;
+  status: string;
+  tier: string;
+  total_requests: number;
+  daily_limit: number;
+  rate_limit: number;
+  last_used: string | null;
   created: string;
-  lastUsed: string | null;
-  requests: number;
-  status: "active" | "revoked";
 }
 
-// ============================================================================
-// CONSTANTS
-// ============================================================================
-
-const TIER_HIERARCHY = ["FREE", "SILVER", "GOLD", "BUSINESS", "CORPORATE", "ENTERPRISE", "OGA_BOSS", "GOVERNMENT"];
-
-const API_LIMITS: Record<string, { requests: number; rateLimit: string }> = {
-  FREE: { requests: 0, rateLimit: "N/A" },
-  SILVER: { requests: 0, rateLimit: "N/A" },
-  GOLD: { requests: 0, rateLimit: "N/A" },
-  BUSINESS: { requests: 1000, rateLimit: "100/min" },
-  CORPORATE: { requests: 10000, rateLimit: "500/min" },
-  ENTERPRISE: { requests: 100000, rateLimit: "2000/min" },
-  OGA_BOSS: { requests: -1, rateLimit: "Unlimited" },
-  GOVERNMENT: { requests: -1, rateLimit: "Unlimited" },
-};
-
-// ============================================================================
-// HELPER FUNCTIONS
-// ============================================================================
-
-function hasTierAccess(userTier: string, minTier: string): boolean {
-  const userTierIndex = TIER_HIERARCHY.indexOf(userTier.toUpperCase());
-  const minTierIndex = TIER_HIERARCHY.indexOf(minTier.toUpperCase());
-  return userTierIndex >= minTierIndex;
+interface UsageDay {
+  date: string;
+  calls: number;
+  success: number;
+  rate_limited: number;
+  avg_ms: number;
 }
 
-function maskKey(key: string): string {
-  if (key.length < 12) return key;
-  return key.slice(0, 8) + "..." + key.slice(-4);
+interface EndpointUsage {
+  endpoint: string;
+  calls: number;
+  avg_ms: number;
 }
 
-function generateKey(): string {
-  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-  let result = "nm_live_";
-  for (let i = 0; i < 32; i++) {
-    result += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  return result;
-}
-
-// ============================================================================
-// MAIN COMPONENT
-// ============================================================================
-
-export default function APIKeysPage() {
-  const { data: session } = useSession();
-  const [apiKeys, setApiKeys] = useState<APIKey[]>([
-    {
-      id: "1",
-      name: "Production Key",
-      key: "nm_live_Kx7mN2pQ9rT4vW8yB3cE6fH1jL5nP0sU",
-      created: "2026-01-05",
-      lastUsed: "2026-01-09 08:45",
-      requests: 2847,
-      status: "active",
-    },
-    {
-      id: "2",
-      name: "Development Key",
-      key: "nm_live_aB3cD4eF5gH6iJ7kL8mN9oP0qR1sT2uV",
-      created: "2026-01-02",
-      lastUsed: "2026-01-08 14:22",
-      requests: 156,
-      status: "active",
-    },
-  ]);
-  const [showNewKeyModal, setShowNewKeyModal] = useState(false);
+export default function APIPage() {
+  const [keys, setKeys] = useState<APIKey[]>([]);
+  const [dailyUsage, setDailyUsage] = useState<UsageDay[]>([]);
+  const [endpointUsage, setEndpointUsage] = useState<EndpointUsage[]>([]);
+  const [summary, setSummary] = useState({ total_calls: 0, success_rate: 100, avg_response_ms: 0 });
+  const [loading, setLoading] = useState(true);
+  const [creating, setCreating] = useState(false);
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
   const [newKeyName, setNewKeyName] = useState("");
-  const [newKey, setNewKey] = useState<string | null>(null);
+  const [showCreate, setShowCreate] = useState(false);
+  const [newKey, setNewKey] = useState(""); // Full key shown once
   const [visibleKeys, setVisibleKeys] = useState<Set<string>>(new Set());
-  const [copiedKey, setCopiedKey] = useState<string | null>(null);
+  const [copiedText, setCopiedText] = useState("");
 
-  // Get user tier
-  const user = session?.user as { tier?: string } | undefined;
-  const userTier = user?.tier || "FREE";
-  const hasAPIAccess = hasTierAccess(userTier, "BUSINESS");
-  const limits = API_LIMITS[userTier as keyof typeof API_LIMITS] ?? { requests: 0, rateLimit: "N/A" };
+  const fetchData = useCallback(async () => {
+    try {
+      const [keysRes, usageRes] = await Promise.all([
+        fetch("/api/keys"),
+        fetch("/api/keys/usage?days=30"),
+      ]);
+      const keysData = await keysRes.json();
+      const usageData = await usageRes.json();
 
-  // Toggle key visibility
-  const toggleKeyVisibility = (keyId: string) => {
-    setVisibleKeys(prev => {
-      const next = new Set(prev);
-      if (next.has(keyId)) {
-        next.delete(keyId);
-      } else {
-        next.add(keyId);
+      if (keysData.success) setKeys(keysData.keys || []);
+      if (usageData.success) {
+        setKeys(usageData.keys || keysData.keys || []);
+        setDailyUsage(usageData.usage?.daily || []);
+        setEndpointUsage(usageData.usage?.by_endpoint || []);
+        setSummary({
+          total_calls: usageData.usage?.total_calls || 0,
+          success_rate: usageData.usage?.success_rate || 100,
+          avg_response_ms: usageData.usage?.avg_response_ms || 0,
+        });
       }
-      return next;
-    });
-  };
+    } catch { setError("Failed to load API data"); }
+    finally { setLoading(false); }
+  }, []);
 
-  // Copy key to clipboard
-  const copyToClipboard = async (key: string) => {
-    await navigator.clipboard.writeText(key);
-    setCopiedKey(key);
-    setTimeout(() => setCopiedKey(null), 2000);
-  };
+  useEffect(() => { fetchData(); }, [fetchData]);
 
-  // Create new key
-  const createNewKey = () => {
+  const createKey = async () => {
     if (!newKeyName.trim()) return;
-
-    const key = generateKey();
-    const today = new Date().toISOString().slice(0, 10);
-    const newApiKey: APIKey = {
-      id: Date.now().toString(),
-      name: newKeyName,
-      key,
-      created: today,
-      lastUsed: null,
-      requests: 0,
-      status: "active",
-    };
-
-    setApiKeys(prev => [newApiKey, ...prev]);
-    setNewKey(key);
-    setNewKeyName("");
+    setCreating(true); setError(""); setSuccess("");
+    try {
+      const res = await fetch("/api/keys", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: newKeyName }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setNewKey(data.key?.full_key || data.key?.key || "");
+        setSuccess("API key created! Copy it now — it won't be shown again.");
+        setNewKeyName("");
+        setShowCreate(false);
+        fetchData();
+      } else setError(data.error || "Failed to create key");
+    } catch { setError("Network error"); }
+    finally { setCreating(false); }
   };
 
-  // Revoke key
-  const revokeKey = (keyId: string) => {
-    setApiKeys(prev => prev.map(k => 
-      k.id === keyId ? { ...k, status: "revoked" as const } : k
-    ));
+  const revokeKey = async (keyId: string) => {
+    if (!confirm("Revoke this API key? This cannot be undone.")) return;
+    try {
+      const res = await fetch(`/api/keys?keyId=${keyId}`, { method: "DELETE" });
+      const data = await res.json();
+      if (data.success) { setSuccess("Key revoked"); fetchData(); }
+      else setError(data.error || "Failed to revoke");
+    } catch { setError("Failed to revoke key"); }
   };
 
-  // Delete key
-  const deleteKey = (keyId: string) => {
-    setApiKeys(prev => prev.filter(k => k.id !== keyId));
+  const copyText = (text: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedText(text);
+    setTimeout(() => setCopiedText(""), 2000);
   };
 
-  // Calculate total usage
-  const totalRequests = apiKeys.reduce((sum, k) => sum + k.requests, 0);
-  const activeKeys = apiKeys.filter(k => k.status === "active").length;
+  const maxCalls = Math.max(...dailyUsage.map(d => d.calls), 1);
+
+  if (loading) return <div className="flex items-center justify-center min-h-[60vh]"><Loader2 className="w-6 h-6 text-emerald-400 animate-spin" /></div>;
 
   return (
-    <div className="min-h-screen bg-[#0a0a0a] p-6">
+    <div className="max-w-5xl mx-auto space-y-6">
       {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
+      <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-white flex items-center gap-2">
-            <Key className="w-7 h-7 text-emerald-400" />
-            API Keys
+          <h1 className="text-2xl font-bold text-white flex items-center gap-3">
+            <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-cyan-600 rounded-xl flex items-center justify-center">
+              <Key className="w-5 h-5 text-white" />
+            </div>
+            API Access
           </h1>
-          <p className="text-gray-400 mt-1">
-            Manage your API keys for programmatic access to NaijaMarket data
-          </p>
+          <p className="text-gray-400 mt-1">Manage API keys and monitor usage</p>
         </div>
-
-        {hasAPIAccess && (
-          <button
-            onClick={() => setShowNewKeyModal(true)}
-            className="flex items-center gap-2 px-4 py-2 bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 transition-colors"
-          >
-            <Plus className="w-4 h-4" />
-            Create New Key
-          </button>
-        )}
+        <Link href="/dashboard/api-docs" className="flex items-center gap-2 text-sm text-emerald-400 hover:text-emerald-300 transition-colors">
+          <Code2 className="w-4 h-4" /> API Docs <ExternalLink className="w-3 h-3" />
+        </Link>
       </div>
 
-      {/* No Access Message */}
-      {!hasAPIAccess && (
-        <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-6 mb-6">
-          <div className="flex items-start gap-4">
-            <Lock className="w-8 h-8 text-amber-400 flex-shrink-0" />
-            <div>
-              <h3 className="text-amber-400 font-semibold text-lg">API Access Requires BUSINESS Tier</h3>
-              <p className="text-gray-300 mt-1">
-                Programmatic API access is available for BUSINESS tier and above. 
-                Upgrade to integrate NaijaMarket data into your applications.
-              </p>
-              <div className="mt-4 flex flex-wrap gap-4">
-                <div className="bg-[#1a1a1a] rounded-lg p-3">
-                  <div className="text-amber-400 font-semibold">BUSINESS</div>
-                  <div className="text-gray-400 text-sm">1,000 requests/day</div>
-                </div>
-                <div className="bg-[#1a1a1a] rounded-lg p-3">
-                  <div className="text-amber-400 font-semibold">CORPORATE</div>
-                  <div className="text-gray-400 text-sm">10,000 requests/day</div>
-                </div>
-                <div className="bg-[#1a1a1a] rounded-lg p-3">
-                  <div className="text-amber-400 font-semibold">ENTERPRISE</div>
-                  <div className="text-gray-400 text-sm">100,000 requests/day</div>
+      {/* Messages */}
+      {error && <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-3 flex items-center gap-2 text-red-400 text-sm"><AlertCircle className="w-4 h-4" /> {error}</div>}
+      {success && <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-lg p-3 flex items-center gap-2 text-emerald-400 text-sm"><Check className="w-4 h-4" /> {success}</div>}
+
+      {/* New key banner */}
+      {newKey && (
+        <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-4 space-y-2">
+          <p className="text-amber-400 text-sm font-medium">🔑 Your new API key (copy now — shown once only):</p>
+          <div className="flex items-center gap-2">
+            <code className="bg-[#0a0a0a] rounded px-3 py-2 text-sm font-mono text-white flex-1 break-all">{newKey}</code>
+            <button onClick={() => copyText(newKey)} className="px-3 py-2 bg-amber-500 text-black rounded-lg text-sm font-medium hover:bg-amber-600 flex items-center gap-1">
+              {copiedText === newKey ? <><Check className="w-4 h-4" /> Copied</> : <><Copy className="w-4 h-4" /> Copy</>}
+            </button>
+          </div>
+          <button onClick={() => setNewKey("")} className="text-xs text-gray-500 hover:text-gray-400">Dismiss</button>
+        </div>
+      )}
+
+      {/* Usage Stats */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="bg-[#141414] border border-[#2a2a2a] rounded-xl p-4">
+          <div className="text-[10px] text-gray-500 uppercase flex items-center gap-1"><Key className="w-3 h-3" /> Active Keys</div>
+          <div className="text-2xl font-bold text-white mt-1">{keys.filter(k => k.status === "active").length}</div>
+        </div>
+        <div className="bg-[#141414] border border-[#2a2a2a] rounded-xl p-4">
+          <div className="text-[10px] text-gray-500 uppercase flex items-center gap-1"><BarChart3 className="w-3 h-3" /> Calls (30d)</div>
+          <div className="text-2xl font-bold text-white mt-1">{summary.total_calls.toLocaleString()}</div>
+        </div>
+        <div className="bg-[#141414] border border-[#2a2a2a] rounded-xl p-4">
+          <div className="text-[10px] text-gray-500 uppercase flex items-center gap-1"><Shield className="w-3 h-3" /> Success Rate</div>
+          <div className="text-2xl font-bold text-emerald-400 mt-1">{summary.success_rate}%</div>
+        </div>
+        <div className="bg-[#141414] border border-[#2a2a2a] rounded-xl p-4">
+          <div className="text-[10px] text-gray-500 uppercase flex items-center gap-1"><Zap className="w-3 h-3" /> Avg Response</div>
+          <div className="text-2xl font-bold text-white mt-1">{summary.avg_response_ms}ms</div>
+        </div>
+      </div>
+
+      {/* Usage Chart */}
+      {dailyUsage.length > 0 && (
+        <div className="bg-[#141414] border border-[#2a2a2a] rounded-xl p-6">
+          <h3 className="text-sm font-semibold text-white mb-4">Daily API Calls (30 days)</h3>
+          <div className="flex items-end gap-[2px] h-32">
+            {dailyUsage.map((d, i) => (
+              <div key={i} className="flex-1 flex flex-col items-center gap-0.5 group relative">
+                <div className="w-full bg-emerald-500/80 rounded-t transition-all hover:bg-emerald-400"
+                  style={{ height: `${(d.calls / maxCalls) * 100}%`, minHeight: d.calls > 0 ? "2px" : "0" }} />
+                {d.rate_limited > 0 && (
+                  <div className="w-full bg-red-500/60 rounded-t" style={{ height: `${(d.rate_limited / maxCalls) * 100}%` }} />
+                )}
+                {/* Tooltip */}
+                <div className="absolute bottom-full mb-2 hidden group-hover:block bg-[#0a0a0a] border border-[#2a2a2a] rounded p-2 text-xs text-white whitespace-nowrap z-10">
+                  <div>{new Date(d.date).toLocaleDateString("en-NG", { month: "short", day: "numeric" })}</div>
+                  <div className="text-emerald-400">{d.calls} calls</div>
+                  {d.rate_limited > 0 && <div className="text-red-400">{d.rate_limited} rate limited</div>}
+                  <div className="text-gray-500">{d.avg_ms}ms avg</div>
                 </div>
               </div>
-              <button className="mt-4 px-6 py-2 bg-amber-500 text-black font-medium rounded-lg hover:bg-amber-400 transition-colors">
-                Upgrade to BUSINESS
+            ))}
+          </div>
+          <div className="flex justify-between text-[10px] text-gray-600 mt-1">
+            <span>{dailyUsage[0] ? new Date(dailyUsage[0].date).toLocaleDateString("en-NG", { month: "short", day: "numeric" }) : ""}</span>
+            <span>Today</span>
+          </div>
+        </div>
+      )}
+
+      {/* Endpoint Breakdown */}
+      {endpointUsage.length > 0 && (
+        <div className="bg-[#141414] border border-[#2a2a2a] rounded-xl p-6">
+          <h3 className="text-sm font-semibold text-white mb-3">Endpoint Usage</h3>
+          <div className="space-y-2">
+            {endpointUsage.map((e, i) => {
+              const maxEp = Math.max(...endpointUsage.map(x => x.calls));
+              return (
+                <div key={i} className="flex items-center gap-3">
+                  <code className="text-xs text-gray-400 font-mono w-36 shrink-0 truncate">{e.endpoint}</code>
+                  <div className="flex-1 bg-[#0a0a0a] rounded-full h-4 overflow-hidden">
+                    <div className="h-full bg-blue-500/50 rounded-full" style={{ width: `${(e.calls / maxEp) * 100}%` }} />
+                  </div>
+                  <span className="text-xs text-gray-500 w-20 text-right">{e.calls.toLocaleString()} calls</span>
+                  <span className="text-xs text-gray-600 w-14 text-right">{e.avg_ms}ms</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* API Keys */}
+      <div className="bg-[#141414] border border-[#2a2a2a] rounded-xl overflow-hidden">
+        <div className="flex items-center justify-between p-4 border-b border-[#2a2a2a]">
+          <h3 className="font-semibold text-white">API Keys</h3>
+          <button onClick={() => setShowCreate(!showCreate)}
+            className="flex items-center gap-1.5 text-sm text-emerald-400 hover:text-emerald-300 transition-colors">
+            <Plus className="w-4 h-4" /> Create Key
+          </button>
+        </div>
+
+        {/* Create form */}
+        {showCreate && (
+          <div className="p-4 border-b border-[#2a2a2a] bg-[#0e0e0e]">
+            <div className="flex items-center gap-3">
+              <input type="text" value={newKeyName} onChange={(e) => setNewKeyName(e.target.value)}
+                placeholder="Key name (e.g. Production, Testing)"
+                className="flex-1 bg-[#0a0a0a] border border-[#2a2a2a] rounded-lg px-3 py-2 text-sm text-white outline-none focus:border-emerald-500"
+                onKeyDown={(e) => e.key === "Enter" && createKey()} />
+              <button onClick={createKey} disabled={creating || !newKeyName.trim()}
+                className="bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 text-black font-medium px-4 py-2 rounded-lg text-sm flex items-center gap-1">
+                {creating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />} Create
               </button>
             </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {hasAPIAccess && (
-        <>
-          {/* Stats Row */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-            <div className="bg-[#1a1a1a] border border-gray-800 rounded-xl p-4">
-              <div className="flex items-center gap-2 text-gray-400 text-sm mb-2">
-                <Key className="w-4 h-4" />
-                Active Keys
-              </div>
-              <div className="text-2xl font-bold text-white">{activeKeys}</div>
-            </div>
-            <div className="bg-[#1a1a1a] border border-gray-800 rounded-xl p-4">
-              <div className="flex items-center gap-2 text-gray-400 text-sm mb-2">
-                <Activity className="w-4 h-4" />
-                Total Requests
-              </div>
-              <div className="text-2xl font-bold text-white">{totalRequests.toLocaleString()}</div>
-            </div>
-            <div className="bg-[#1a1a1a] border border-gray-800 rounded-xl p-4">
-              <div className="flex items-center gap-2 text-gray-400 text-sm mb-2">
-                <Zap className="w-4 h-4" />
-                Daily Limit
-              </div>
-              <div className="text-2xl font-bold text-white">
-                {limits.requests === -1 ? "∞" : limits.requests.toLocaleString()}
-              </div>
-            </div>
-            <div className="bg-[#1a1a1a] border border-gray-800 rounded-xl p-4">
-              <div className="flex items-center gap-2 text-gray-400 text-sm mb-2">
-                <RefreshCw className="w-4 h-4" />
-                Rate Limit
-              </div>
-              <div className="text-2xl font-bold text-white">{limits.rateLimit}</div>
-            </div>
+        {/* Key list */}
+        {keys.length === 0 ? (
+          <div className="p-8 text-center text-gray-500">
+            <Key className="w-8 h-8 mx-auto mb-2 opacity-30" />
+            <p className="text-sm">No API keys yet</p>
+            <p className="text-xs mt-1">Create your first key to start using the API</p>
           </div>
-
-          {/* API Keys List */}
-          <div className="bg-[#1a1a1a] border border-gray-800 rounded-xl overflow-hidden mb-6">
-            <div className="px-4 py-3 border-b border-gray-800">
-              <h3 className="text-white font-medium">Your API Keys</h3>
-            </div>
-            <div className="divide-y divide-gray-800">
-              {apiKeys.map((apiKey) => (
-                <div key={apiKey.id} className="p-4 hover:bg-gray-800/30">
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2">
-                        <span className="text-white font-medium">{apiKey.name}</span>
-                        <span className={`
-                          text-xs px-2 py-0.5 rounded
-                          ${apiKey.status === "active" 
-                            ? "bg-emerald-500/20 text-emerald-400" 
-                            : "bg-red-500/20 text-red-400"
-                          }
-                        `}>
-                          {apiKey.status}
-                        </span>
-                      </div>
-                      
-                      <div className="flex items-center gap-2 mt-2">
-                        <code className="bg-gray-900 px-3 py-1 rounded text-sm font-mono text-gray-300">
-                          {visibleKeys.has(apiKey.id) ? apiKey.key : maskKey(apiKey.key)}
-                        </code>
-                        <button
-                          onClick={() => toggleKeyVisibility(apiKey.id)}
-                          className="p-1 text-gray-400 hover:text-white"
-                          title={visibleKeys.has(apiKey.id) ? "Hide" : "Show"}
-                        >
-                          {visibleKeys.has(apiKey.id) ? (
-                            <EyeOff className="w-4 h-4" />
-                          ) : (
-                            <Eye className="w-4 h-4" />
-                          )}
-                        </button>
-                        <button
-                          onClick={() => copyToClipboard(apiKey.key)}
-                          className="p-1 text-gray-400 hover:text-white"
-                          title="Copy"
-                        >
-                          {copiedKey === apiKey.key ? (
-                            <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                          ) : (
-                            <Copy className="w-4 h-4" />
-                          )}
-                        </button>
-                      </div>
-
-                      <div className="flex items-center gap-4 mt-3 text-xs text-gray-500">
-                        <span className="flex items-center gap-1">
-                          <Clock className="w-3 h-3" />
-                          Created: {apiKey.created}
-                        </span>
-                        <span className="flex items-center gap-1">
-                          <Activity className="w-3 h-3" />
-                          Last used: {apiKey.lastUsed || "Never"}
-                        </span>
-                        <span className="flex items-center gap-1">
-                          <Zap className="w-3 h-3" />
-                          {apiKey.requests.toLocaleString()} requests
-                        </span>
-                      </div>
-                    </div>
-
+        ) : (
+          <div className="divide-y divide-[#1a1a1a]">
+            {keys.map((k) => (
+              <div key={k.key_id} className="p-4 hover:bg-[#1a1a1a]/50 transition-colors">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
-                      {apiKey.status === "active" && (
-                        <button
-                          onClick={() => revokeKey(apiKey.id)}
-                          className="px-3 py-1.5 text-sm text-amber-400 hover:bg-amber-500/10 rounded-lg transition-colors"
-                        >
-                          Revoke
-                        </button>
-                      )}
-                      <button
-                        onClick={() => deleteKey(apiKey.id)}
-                        className="p-2 text-gray-400 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                      <span className="text-white font-medium text-sm">{k.name}</span>
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${k.status === "active" ? "bg-emerald-500/20 text-emerald-400" : "bg-red-500/20 text-red-400"}`}>{k.status}</span>
+                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-400">{k.tier || "FREE"}</span>
+                    </div>
+                    <div className="flex items-center gap-2 mt-1.5">
+                      <code className="text-xs font-mono text-gray-400">{visibleKeys.has(k.key_id) ? k.prefix + "..." : k.prefix + "••••••••"}</code>
+                      <button onClick={() => setVisibleKeys(prev => { const n = new Set(prev); n.has(k.key_id) ? n.delete(k.key_id) : n.add(k.key_id); return n; })}
+                        className="text-gray-600 hover:text-gray-400">{visibleKeys.has(k.key_id) ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}</button>
+                    </div>
+                    <div className="flex items-center gap-4 mt-2 text-xs text-gray-600">
+                      <span>{k.total_requests.toLocaleString()} requests</span>
+                      <span>Limit: {k.daily_limit.toLocaleString()}/day</span>
+                      <span>Last used: {k.last_used ? new Date(k.last_used).toLocaleDateString("en-NG", { month: "short", day: "numeric" }) : "Never"}</span>
                     </div>
                   </div>
-                </div>
-              ))}
-
-              {apiKeys.length === 0 && (
-                <div className="p-8 text-center">
-                  <Key className="w-12 h-12 text-gray-600 mx-auto mb-4" />
-                  <p className="text-gray-400">No API keys yet</p>
-                  <p className="text-gray-500 text-sm">Create your first key to get started</p>
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Documentation Links */}
-          <div className="grid md:grid-cols-3 gap-4">
-            <a
-              href="#"
-              className="bg-[#1a1a1a] border border-gray-800 rounded-xl p-4 hover:border-gray-700 transition-colors group"
-            >
-              <div className="flex items-center gap-3 mb-2">
-                <BookOpen className="w-5 h-5 text-blue-400" />
-                <span className="text-white font-medium">API Documentation</span>
-                <ExternalLink className="w-4 h-4 text-gray-500 group-hover:text-gray-400 ml-auto" />
-              </div>
-              <p className="text-gray-400 text-sm">
-                Complete guide to all API endpoints, parameters, and responses
-              </p>
-            </a>
-
-            <a
-              href="#"
-              className="bg-[#1a1a1a] border border-gray-800 rounded-xl p-4 hover:border-gray-700 transition-colors group"
-            >
-              <div className="flex items-center gap-3 mb-2">
-                <Code className="w-5 h-5 text-emerald-400" />
-                <span className="text-white font-medium">Code Examples</span>
-                <ExternalLink className="w-4 h-4 text-gray-500 group-hover:text-gray-400 ml-auto" />
-              </div>
-              <p className="text-gray-400 text-sm">
-                Sample code in Python, JavaScript, and cURL
-              </p>
-            </a>
-
-            <a
-              href="#"
-              className="bg-[#1a1a1a] border border-gray-800 rounded-xl p-4 hover:border-gray-700 transition-colors group"
-            >
-              <div className="flex items-center gap-3 mb-2">
-                <Shield className="w-5 h-5 text-amber-400" />
-                <span className="text-white font-medium">Security Best Practices</span>
-                <ExternalLink className="w-4 h-4 text-gray-500 group-hover:text-gray-400 ml-auto" />
-              </div>
-              <p className="text-gray-400 text-sm">
-                Learn how to securely store and use your API keys
-              </p>
-            </a>
-          </div>
-        </>
-      )}
-
-      {/* Create New Key Modal */}
-      {showNewKeyModal && (
-        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-          <div className="bg-[#1a1a1a] border border-gray-700 rounded-xl w-full max-w-md">
-            <div className="p-4 border-b border-gray-800">
-              <h3 className="text-lg font-semibold text-white">Create New API Key</h3>
-            </div>
-            
-            <div className="p-4">
-              {newKey ? (
-                <div>
-                  <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-lg p-4 mb-4">
-                    <div className="flex items-center gap-2 text-emerald-400 mb-2">
-                      <CheckCircle2 className="w-5 h-5" />
-                      <span className="font-medium">Key Created Successfully</span>
-                    </div>
-                    <p className="text-gray-300 text-sm mb-3">
-                      Copy your key now. You won't be able to see it again!
-                    </p>
-                    <div className="flex items-center gap-2">
-                      <code className="flex-1 bg-gray-900 px-3 py-2 rounded text-sm font-mono text-gray-300 overflow-x-auto">
-                        {newKey}
-                      </code>
-                      <button
-                        onClick={() => copyToClipboard(newKey)}
-                        className="p-2 bg-emerald-500 text-white rounded-lg hover:bg-emerald-600"
-                      >
-                        {copiedKey === newKey ? (
-                          <CheckCircle2 className="w-4 h-4" />
-                        ) : (
-                          <Copy className="w-4 h-4" />
-                        )}
-                      </button>
-                    </div>
-                  </div>
-                  <button
-                    onClick={() => {
-                      setShowNewKeyModal(false);
-                      setNewKey(null);
-                    }}
-                    className="w-full py-2 bg-gray-700 text-white rounded-lg hover:bg-gray-600"
-                  >
-                    Done
-                  </button>
-                </div>
-              ) : (
-                <div>
-                  <label className="block text-gray-400 text-sm mb-2">Key Name</label>
-                  <input
-                    type="text"
-                    value={newKeyName}
-                    onChange={(e) => setNewKeyName(e.target.value)}
-                    placeholder="e.g., Production, Development, Testing"
-                    className="w-full bg-gray-900 border border-gray-700 rounded-lg px-4 py-2 text-white placeholder:text-gray-500 focus:outline-none focus:border-emerald-500"
-                  />
-                  <p className="text-gray-500 text-xs mt-2">
-                    Give your key a descriptive name to identify its purpose
-                  </p>
-
-                  <div className="flex gap-3 mt-6">
-                    <button
-                      onClick={() => setShowNewKeyModal(false)}
-                      className="flex-1 py-2 bg-gray-700 text-white rounded-lg hover:bg-gray-600"
-                    >
-                      Cancel
+                  {k.status === "active" && (
+                    <button onClick={() => revokeKey(k.key_id)}
+                      className="p-2 text-gray-600 hover:text-red-400 transition-colors" title="Revoke">
+                      <Trash2 className="w-4 h-4" />
                     </button>
-                    <button
-                      onClick={createNewKey}
-                      disabled={!newKeyName.trim()}
-                      className="flex-1 py-2 bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      Create Key
-                    </button>
-                  </div>
+                  )}
                 </div>
-              )}
-            </div>
+              </div>
+            ))}
           </div>
-        </div>
-      )}
+        )}
+      </div>
+
+      {/* CTA */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <Link href="/dashboard/api-docs" className="bg-[#141414] border border-[#2a2a2a] rounded-xl p-5 hover:bg-[#1a1a1a] transition-colors flex items-center gap-4">
+          <div className="w-10 h-10 bg-blue-500/20 rounded-lg flex items-center justify-center shrink-0"><Code2 className="w-5 h-5 text-blue-400" /></div>
+          <div className="flex-1">
+            <p className="text-white font-medium text-sm">API Documentation</p>
+            <p className="text-gray-500 text-xs mt-0.5">Endpoints, parameters, try-it-live</p>
+          </div>
+          <ChevronRight className="w-4 h-4 text-gray-600" />
+        </Link>
+        <a href="mailto:api@naijamarketintel.com" className="bg-[#141414] border border-[#2a2a2a] rounded-xl p-5 hover:bg-[#1a1a1a] transition-colors flex items-center gap-4">
+          <div className="w-10 h-10 bg-amber-500/20 rounded-lg flex items-center justify-center shrink-0"><Zap className="w-5 h-5 text-amber-400" /></div>
+          <div className="flex-1">
+            <p className="text-white font-medium text-sm">Enterprise / Custom Limits</p>
+            <p className="text-gray-500 text-xs mt-0.5">Contact us for volume pricing</p>
+          </div>
+          <ChevronRight className="w-4 h-4 text-gray-600" />
+        </a>
+      </div>
     </div>
   );
 }

@@ -27,8 +27,6 @@ import {
   Map,
   FileText,
   Sun,
-  BookOpen,
-  Key,
 } from "lucide-react";
 
 // ============================================================================
@@ -231,8 +229,7 @@ export default function DashboardLayout({
               Tools
             </div>
             <NavLink href="/dashboard/export" icon={Download} label="Export Data" currentPath={pathname} />
-            <NavLink href="/dashboard/api" icon={Key} label="API Keys" badge="PRO" currentPath={pathname} />
-            <NavLink href="/dashboard/api-docs" icon={BookOpen} label="API Docs" badge="NEW" currentPath={pathname} />
+            <NavLink href="/dashboard/api" icon={Command} label="API Keys" badge="PRO" currentPath={pathname} />
           </div>
         </nav>
 

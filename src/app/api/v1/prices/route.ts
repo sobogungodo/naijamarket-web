@@ -1,176 +1,110 @@
+// ============================================================================
 // src/app/api/v1/prices/route.ts
-// NaijaMarket Intel - Public API v1 - Price Data
-// Requires API Key Authentication
+// NaijaMarket Intel - Public API v1: Prices
+// GET /api/v1/prices?item=rice&market=mile+12&state=lagos&limit=50
+// ============================================================================
 
 import { NextRequest, NextResponse } from "next/server";
-import { prisma } from "@/lib/prisma";
-import crypto from "crypto";
+import { PrismaClient } from "@prisma/client";
+import { validateRequest, logUsage, apiResponse, corsHeaders } from "@/lib/api-middleware";
 
-// ============================================================================
-// API KEY VALIDATION
-// ============================================================================
+const globalForPrisma = globalThis as unknown as { prisma: PrismaClient };
+const prisma = globalForPrisma.prisma || new PrismaClient();
+if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = prisma;
 
-async function validateAPIKey(request: NextRequest): Promise<{ valid: boolean; error?: string; keyId?: string }> {
-  const authHeader = request.headers.get("Authorization");
-  const apiKeyHeader = request.headers.get("X-API-Key");
-
-  let apiKey = "";
-
-  // Check Authorization header (Bearer token)
-  if (authHeader && authHeader.startsWith("Bearer ")) {
-    apiKey = authHeader.slice(7);
-  }
-  // Or X-API-Key header
-  else if (apiKeyHeader) {
-    apiKey = apiKeyHeader;
-  }
-
-  if (!apiKey) {
-    return { valid: false, error: "API key required. Use 'Authorization: Bearer <key>' or 'X-API-Key: <key>'" };
-  }
-
-  // Validate key format
-  if (!apiKey.startsWith("nm_live_")) {
-    return { valid: false, error: "Invalid API key format" };
-  }
-
-  // Hash and lookup
-  const keyHash = crypto.createHash("sha256").update(apiKey).digest("hex");
-
-  try {
-    const keys = await prisma.$queryRaw`
-      SELECT key_id, phone_number, status, request_count, daily_limit
-      FROM API_Keys
-      WHERE key_hash = ${keyHash}
-    ` as any[];
-
-    if (!keys || keys.length === 0) {
-      return { valid: false, error: "Invalid API key" };
-    }
-
-    const key = keys[0];
-
-    if (key.status !== "active") {
-      return { valid: false, error: "API key has been revoked" };
-    }
-
-    // Check rate limit
-    if (parseInt(key.request_count) >= parseInt(key.daily_limit)) {
-      return { valid: false, error: "Daily rate limit exceeded" };
-    }
-
-    // Increment request count
-    await prisma.$executeRaw`
-      UPDATE API_Keys 
-      SET request_count = request_count + 1, last_used_at = GETDATE()
-      WHERE key_id = ${key.key_id}
-    `;
-
-    return { valid: true, keyId: key.key_id };
-
-  } catch (error) {
-    console.error("API Key validation error:", error);
-    return { valid: false, error: "Authentication failed" };
-  }
+export async function OPTIONS() {
+  return new NextResponse(null, { status: 204, headers: corsHeaders() });
 }
-
-// ============================================================================
-// GET: Fetch Price Data
-// ============================================================================
 
 export async function GET(request: NextRequest) {
-  // Validate API Key
-  const auth = await validateAPIKey(request);
-  if (!auth.valid) {
-    return NextResponse.json(
-      { success: false, error: auth.error },
-      { status: 401 }
-    );
-  }
+  const result = await validateRequest(request, "/api/v1/prices");
+  if (!result.ok) return result.response;
+  const { ctx } = result;
 
   try {
-    const { searchParams } = new URL(request.url);
-    const item = searchParams.get("item");
-    const market = searchParams.get("market");
-    const limit = Math.min(parseInt(searchParams.get("limit") || "100"), 1000);
+    const sp = request.nextUrl.searchParams;
+    const item = sp.get("item") || "";
+    const market = sp.get("market") || "";
+    const state = sp.get("state") || "";
+    const category = sp.get("category") || "";
+    const limit = Math.min(parseInt(sp.get("limit") || "50"), 200);
+    const offset = parseInt(sp.get("offset") || "0");
+    const sort = sp.get("sort") || "date_desc"; // date_desc, date_asc, price_asc, price_desc, change_desc
 
-    let prices: any[] = [];
+    // Build WHERE clauses
+    let where = "WHERE dp.price_naira > 0 AND dp.price_date >= DATEADD(day, -2, CAST(GETDATE() AS DATE))";
+    if (item) where += ` AND dp.item_name LIKE '%${item.replace(/'/g, "''")}%'`;
+    if (market) where += ` AND dp.market_name LIKE '%${market.replace(/'/g, "''")}%'`;
+    if (state) where += ` AND dp.state LIKE '%${state.replace(/'/g, "''")}%'`;
+    if (category) where += ` AND c.category_name LIKE '%${category.replace(/'/g, "''")}%'`;
 
-    // Simple queries based on filters
-    if (item && market) {
-      prices = await prisma.$queryRaw`
-        SELECT TOP ${limit}
-          p.price_id, p.item_name, p.market_name, p.price, p.unit,
-          p.price_trend, p.price_change_percent, p.validated_at, p.created_at,
-          m.state, m.region
-        FROM Approved_Prices p
-        LEFT JOIN Markets m ON p.market_name = m.market_name
-        WHERE p.item_name LIKE ${'%' + item + '%'} 
-          AND p.market_name LIKE ${'%' + market + '%'}
-        ORDER BY p.created_at DESC
-      ` as any[];
-    } else if (item) {
-      prices = await prisma.$queryRaw`
-        SELECT TOP ${limit}
-          p.price_id, p.item_name, p.market_name, p.price, p.unit,
-          p.price_trend, p.price_change_percent, p.validated_at, p.created_at,
-          m.state, m.region
-        FROM Approved_Prices p
-        LEFT JOIN Markets m ON p.market_name = m.market_name
-        WHERE p.item_name LIKE ${'%' + item + '%'}
-        ORDER BY p.created_at DESC
-      ` as any[];
-    } else if (market) {
-      prices = await prisma.$queryRaw`
-        SELECT TOP ${limit}
-          p.price_id, p.item_name, p.market_name, p.price, p.unit,
-          p.price_trend, p.price_change_percent, p.validated_at, p.created_at,
-          m.state, m.region
-        FROM Approved_Prices p
-        LEFT JOIN Markets m ON p.market_name = m.market_name
-        WHERE p.market_name LIKE ${'%' + market + '%'}
-        ORDER BY p.created_at DESC
-      ` as any[];
-    } else {
-      prices = await prisma.$queryRaw`
-        SELECT TOP ${limit}
-          p.price_id, p.item_name, p.market_name, p.price, p.unit,
-          p.price_trend, p.price_change_percent, p.validated_at, p.created_at,
-          m.state, m.region
-        FROM Approved_Prices p
-        LEFT JOIN Markets m ON p.market_name = m.market_name
-        ORDER BY p.created_at DESC
-      ` as any[];
-    }
+    // Sort
+    let orderBy = "dp.price_date DESC, dp.time_slot DESC";
+    if (sort === "price_asc") orderBy = "dp.price_naira ASC";
+    if (sort === "price_desc") orderBy = "dp.price_naira DESC";
+    if (sort === "change_desc") orderBy = "ABS(dp.price_change_pct) DESC";
+    if (sort === "date_asc") orderBy = "dp.price_date ASC";
 
-    return NextResponse.json({
-      success: true,
-      data: prices.map((p: any) => ({
-        id: p.price_id,
-        item: p.item_name,
-        market: p.market_name,
-        state: p.state,
-        region: p.region,
-        price: parseFloat(p.price) || 0,
-        unit: p.unit,
-        trend: p.price_trend,
-        changePercent: parseFloat(p.price_change_percent) || 0,
-        validatedAt: p.validated_at,
-        timestamp: p.created_at,
-      })),
-      count: prices.length,
-      meta: {
-        apiVersion: "v1",
-        endpoint: "/api/v1/prices",
-        timestamp: new Date().toISOString(),
+    const query = `
+      SELECT
+        dp.item_name, dp.market_name, dp.state,
+        ISNULL(c.category_name, '') AS category,
+        dp.price_naira AS price,
+        ISNULL(dp.unit, ic.Unit) AS unit,
+        dp.previous_price,
+        dp.price_change_pct AS change_pct,
+        dp.trend,
+        dp.confidence_score,
+        dp.price_date,
+        dp.time_slot
+      FROM Daily_Prices dp
+      LEFT JOIN Items_Catalog ic ON dp.item_name = ic.item_name
+      LEFT JOIN Categories c ON ic.category_id = c.category_id
+      ${where}
+      ORDER BY ${orderBy}
+      OFFSET ${offset} ROWS FETCH NEXT ${limit} ROWS ONLY
+    `;
+
+    const prices = await prisma.$queryRawUnsafe(query) as any[];
+
+    // Count total
+    const countQuery = `
+      SELECT COUNT(*) AS total
+      FROM Daily_Prices dp
+      LEFT JOIN Items_Catalog ic ON dp.item_name = ic.item_name
+      LEFT JOIN Categories c ON ic.category_id = c.category_id
+      ${where}
+    `;
+    const countResult = await prisma.$queryRawUnsafe(countQuery) as any[];
+    const total = parseInt(countResult[0]?.total || "0");
+
+    await logUsage(ctx.keyInfo.key_id, "/api/v1/prices", "GET", 200, Date.now() - ctx.startTime, request);
+
+    return apiResponse(
+      {
+        data: prices.map((p: any) => ({
+          item: p.item_name,
+          market: p.market_name,
+          state: p.state,
+          category: p.category,
+          price: parseFloat(p.price),
+          unit: p.unit,
+          previous_price: p.previous_price ? parseFloat(p.previous_price) : null,
+          change_pct: p.change_pct ? parseFloat(p.change_pct) : 0,
+          trend: p.trend,
+          confidence: p.confidence_score ? parseFloat(p.confidence_score) : null,
+          date: p.price_date,
+          time_slot: p.time_slot,
+        })),
+        pagination: { total, limit, offset, has_more: offset + limit < total },
       },
-    });
-
-  } catch (error) {
-    console.error("API v1 Prices Error:", error);
-    return NextResponse.json(
-      { success: false, error: "Failed to fetch prices" },
-      { status: 500 }
+      ctx,
+      { endpoint: "prices", filters: { item, market, state, category } }
     );
+  } catch (e: any) {
+    await logUsage(ctx.keyInfo.key_id, "/api/v1/prices", "GET", 500, Date.now() - ctx.startTime, request);
+    return NextResponse.json({ error: "server_error", message: e.message }, { status: 500, headers: corsHeaders() });
   }
 }
+
+export const dynamic = "force-dynamic";
