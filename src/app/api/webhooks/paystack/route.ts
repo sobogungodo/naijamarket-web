@@ -1,0 +1,383 @@
+// ============================================================================
+// src/app/api/webhooks/paystack/route.ts
+// NaijaMarket Intel - Paystack Payment Webhook
+// Version: 1.0.0 | Date: 2026-02-20
+//
+// WHAT THIS DOES:
+// 1. Receives payment events from Paystack
+// 2. Verifies webhook signature (HMAC-SHA512)
+// 3. Auto-activates subscription on charge.success
+// 4. Updates Consumers table tier + Consumer_Active_Subscriptions
+// 5. Logs to Subscription_Transactions
+// 6. Sends WhatsApp confirmation via Twilio
+// 7. Handles failures, renewals, refunds
+//
+// PAYSTACK DASHBOARD SETUP:
+//   Webhook URL: https://naijamarket-web.vercel.app/api/webhooks/paystack
+//   Events: charge.success, charge.failed, subscription.create,
+//           invoice.payment_failed, refund.processed
+//
+// VERCEL ENV VARS NEEDED:
+//   PAYSTACK_SECRET_KEY (from Paystack dashboard → Settings → API Keys)
+//   TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_WHATSAPP_FROM
+//
+// PAYMENT INITIALIZATION MUST INCLUDE metadata:
+//   {
+//     phone_number: "2348031234567",
+//     consumer_id: "CON_xxx",
+//     tier_code: "SABI",
+//     tier_name: "Sabi",
+//     billing_cycle: "WEEKLY",         // WEEKLY | MONTHLY | QUARTERLY | ANNUAL
+//     product_type: "SUBSCRIPTION"     // SUBSCRIPTION | ADDON | MORNING_BRIEF
+//   }
+// ============================================================================
+
+import { NextRequest, NextResponse } from "next/server";
+import crypto from "crypto";
+
+// ============================================================================
+// PRISMA (singleton)
+// ============================================================================
+
+import { PrismaClient } from "@prisma/client";
+const globalForPrisma = globalThis as unknown as { prisma: PrismaClient };
+const prisma = globalForPrisma.prisma || new PrismaClient();
+if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = prisma;
+
+// ============================================================================
+// CONFIG
+// ============================================================================
+
+const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY || "";
+const TWILIO_SID = process.env.TWILIO_ACCOUNT_SID || "";
+const TWILIO_TOKEN = process.env.TWILIO_AUTH_TOKEN || "";
+const TWILIO_FROM = process.env.TWILIO_WHATSAPP_FROM || "whatsapp:+14155238886";
+
+const DURATION_DAYS: Record<string, number> = {
+  WEEKLY: 7, MONTHLY: 30, QUARTERLY: 90, ANNUAL: 365,
+};
+
+const GRACE_PERIOD_DAYS = 3;
+
+// ============================================================================
+// HELPERS
+// ============================================================================
+
+function phoneToWhatsApp(phone: string): string {
+  let c = phone.replace(/\D/g, "");
+  if (c.startsWith("0")) c = "234" + c.substring(1);
+  if (!c.startsWith("234")) c = "234" + c;
+  return `whatsapp:+${c}`;
+}
+
+function naira(amount: number): string {
+  return `₦${amount.toLocaleString("en-NG")}`;
+}
+
+function genId(prefix: string): string {
+  return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 8)}`;
+}
+
+async function sendWhatsApp(phone: string, message: string): Promise<boolean> {
+  if (!TWILIO_SID || !TWILIO_TOKEN) return false;
+  try {
+    const res = await fetch(
+      `https://api.twilio.com/2010-04-01/Accounts/${TWILIO_SID}/Messages.json`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: "Basic " + Buffer.from(`${TWILIO_SID}:${TWILIO_TOKEN}`).toString("base64"),
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: new URLSearchParams({
+          From: TWILIO_FROM,
+          To: phoneToWhatsApp(phone),
+          Body: message,
+        }).toString(),
+      }
+    );
+    const data = await res.json();
+    if (res.ok) { console.log(`[WA] ✅ ${phone}: ${data.sid}`); return true; }
+    console.error(`[WA] ❌ ${phone}: ${data.message}`);
+    return false;
+  } catch (e) { console.error("[WA] error:", e); return false; }
+}
+
+function verifySignature(body: string, sig: string): boolean {
+  if (!PAYSTACK_SECRET_KEY) return true; // dev mode
+  return crypto.createHmac("sha512", PAYSTACK_SECRET_KEY).update(body).digest("hex") === sig;
+}
+
+// Extract phone, tier, billing from Paystack metadata
+interface Meta {
+  phone_number: string;
+  consumer_id: string;
+  tier_code: string;
+  tier_name: string;
+  billing_cycle: string;
+  addon_code: string;
+  product_type: string;
+}
+
+function extractMeta(data: any): Meta {
+  const m = data.metadata || {};
+  const cf: Record<string, string> = {};
+  for (const f of m.custom_fields || []) cf[f.variable_name] = f.value;
+  return {
+    phone_number: m.phone_number || cf.phone_number || data.customer?.phone || "",
+    consumer_id:  m.consumer_id  || cf.consumer_id  || "",
+    tier_code:    m.tier_code    || cf.tier_code    || "",
+    tier_name:    m.tier_name    || cf.tier_name    || "",
+    billing_cycle:m.billing_cycle|| cf.billing_cycle|| "MONTHLY",
+    addon_code:   m.addon_code   || cf.addon_code   || "",
+    product_type: m.product_type || cf.product_type || "SUBSCRIPTION",
+  };
+}
+
+// ============================================================================
+// ACTIVATE SUBSCRIPTION
+// ============================================================================
+
+async function activateSubscription(
+  phone: string, tierCode: string, tierName: string,
+  billingCycle: string, amount: number, ref: string, provider: string
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const days = DURATION_DAYS[billingCycle] || 30;
+    const endDate = new Date(Date.now() + days * 86400000);
+    const graceEnd = new Date(endDate.getTime() + GRACE_PERIOD_DAYS * 86400000);
+    const subId = genId("SUB");
+    const txnId = genId("TXN");
+    const endISO = endDate.toISOString();
+    const graceISO = graceEnd.toISOString();
+
+    // Deactivate existing
+    await prisma.$executeRaw`
+      UPDATE Consumer_Active_Subscriptions
+      SET status = 'SUPERSEDED', updated_at = GETDATE()
+      WHERE phone_number = ${phone} AND status = 'ACTIVE'
+    `;
+
+    // Create subscription
+    await prisma.$executeRaw`
+      INSERT INTO Consumer_Active_Subscriptions (
+        subscription_id, phone_number, tier_code, tier_name,
+        status, start_date, end_date, grace_end_date,
+        payment_reference, payment_provider, payment_amount,
+        auto_renew, created_at, updated_at, notes
+      ) VALUES (
+        ${subId}, ${phone}, ${tierCode}, ${tierName},
+        'ACTIVE', GETDATE(), ${endISO}, ${graceISO},
+        ${ref}, ${provider}, ${amount},
+        0, GETDATE(), GETDATE(), ${"Activated via " + provider + " webhook"}
+      )
+    `;
+
+    // Update consumer tier
+    await prisma.$executeRaw`
+      UPDATE Consumers
+      SET subscription_tier = ${tierCode},
+          subscription_start = GETDATE(),
+          subscription_end = ${endISO},
+          grace_period_end = ${graceISO},
+          updated_at = GETDATE()
+      WHERE phone_number = ${phone}
+    `;
+
+    // Log transaction
+    await prisma.$executeRaw`
+      INSERT INTO Subscription_Transactions (
+        transaction_id, phone_number, transaction_type,
+        product_code, product_name, billing_cycle,
+        amount, currency, payment_provider, payment_reference,
+        status, verified_at, created_at
+      ) VALUES (
+        ${txnId}, ${phone}, 'NEW_SUBSCRIPTION',
+        ${tierCode}, ${tierName}, ${billingCycle},
+        ${amount}, 'NGN', ${provider}, ${ref},
+        'SUCCESS', GETDATE(), GETDATE()
+      )
+    `;
+
+    console.log(`[PS] ✅ ${tierCode} activated for ${phone} until ${endISO}`);
+    return { success: true };
+  } catch (e: any) {
+    console.error("[PS] Activation error:", e);
+    return { success: false, error: e.message };
+  }
+}
+
+// ============================================================================
+// EVENT HANDLERS
+// ============================================================================
+
+async function onChargeSuccess(data: any): Promise<string> {
+  const meta = extractMeta(data);
+  const phone = meta.phone_number;
+  const amount = (data.amount || 0) / 100; // kobo → naira
+  const ref = data.reference || "";
+
+  if (!phone) return "No phone in metadata";
+
+  console.log(`[PS] charge.success: ${phone} ${naira(amount)} ref=${ref}`);
+
+  // Route by product type
+  if (meta.product_type === "ADDON" || meta.addon_code) {
+    const txnId = genId("TXN");
+    await prisma.$executeRaw`
+      INSERT INTO Subscription_Transactions (
+        transaction_id, phone_number, transaction_type,
+        product_code, product_name, amount, currency,
+        payment_provider, payment_reference, status, verified_at, created_at
+      ) VALUES (
+        ${txnId}, ${phone}, 'ADDON_PURCHASE',
+        ${meta.addon_code || "ADDON"}, ${meta.tier_name || "Add-on"},
+        ${amount}, 'NGN', 'PAYSTACK', ${ref}, 'SUCCESS', GETDATE(), GETDATE()
+      )
+    `;
+    await sendWhatsApp(phone,
+      `✅ *Add-On Activated!*\n\n${meta.tier_name || "Your add-on"} is now active.\nPayment: ${naira(amount)}\n\nType *mystatus* to see details.`
+    );
+    return `Addon for ${phone}`;
+  }
+
+  if (meta.product_type === "MORNING_BRIEF") {
+    const txnId = genId("TXN");
+    const days = DURATION_DAYS[meta.billing_cycle] || 7;
+    const endDate = new Date(Date.now() + days * 86400000);
+    await prisma.$executeRaw`
+      INSERT INTO Subscription_Transactions (
+        transaction_id, phone_number, transaction_type,
+        product_code, product_name, billing_cycle,
+        amount, currency, payment_provider, payment_reference,
+        status, verified_at, created_at
+      ) VALUES (
+        ${txnId}, ${phone}, 'MORNING_BRIEF',
+        'MORNING_BRIEF', 'Market Opener Morning Brief', ${meta.billing_cycle || "WEEKLY"},
+        ${amount}, 'NGN', 'PAYSTACK', ${ref}, 'SUCCESS', GETDATE(), GETDATE()
+      )
+    `;
+    await sendWhatsApp(phone,
+      `✅ *Morning Brief Activated!*\n\nYou'll receive daily prices at 5:30 AM.\nPayment: ${naira(amount)}\nValid until: ${endDate.toLocaleDateString("en-NG")}\n\n🌅 See you tomorrow morning!`
+    );
+    return `Morning Brief for ${phone}`;
+  }
+
+  // Default: subscription
+  const tierCode = meta.tier_code || "SABI";
+  const tierName = meta.tier_name || tierCode;
+  const billing = meta.billing_cycle || "MONTHLY";
+
+  const result = await activateSubscription(phone, tierCode, tierName, billing, amount, ref, "PAYSTACK");
+
+  if (result.success) {
+    const days = DURATION_DAYS[billing] || 30;
+    const endDate = new Date(Date.now() + days * 86400000);
+    await sendWhatsApp(phone,
+      `✅ *Payment Confirmed!*\n\n` +
+      `Your payment of ${naira(amount)} has been received.\n\n` +
+      `📦 *Plan:* ${tierName} (${billing})\n` +
+      `📅 *Valid Until:* ${endDate.toLocaleDateString("en-NG", { day: "numeric", month: "short", year: "numeric" })}\n` +
+      `🔓 *Status:* ACTIVE\n\n` +
+      `Type *mystatus* to view details.\nType *price* to start checking prices.`
+    );
+  }
+
+  return result.success ? `Activated ${tierCode} for ${phone}` : `Failed: ${result.error}`;
+}
+
+async function onChargeFailed(data: any): Promise<string> {
+  const meta = extractMeta(data);
+  const phone = meta.phone_number;
+  if (!phone) return "No phone";
+  const amount = (data.amount || 0) / 100;
+  const ref = data.reference || "";
+  const reason = data.gateway_response || "Payment failed";
+
+  const txnId = genId("TXN");
+  await prisma.$executeRaw`
+    INSERT INTO Subscription_Transactions (
+      transaction_id, phone_number, transaction_type,
+      amount, currency, payment_provider, payment_reference,
+      status, notes, created_at
+    ) VALUES (
+      ${txnId}, ${phone}, 'PAYMENT_FAILED',
+      ${amount}, 'NGN', 'PAYSTACK', ${ref},
+      'FAILED', ${reason}, GETDATE()
+    )
+  `;
+
+  await sendWhatsApp(phone,
+    `❌ *Payment Failed*\n\nWe couldn't process your payment of ${naira(amount)}.\n\n📋 *Reason:* ${reason}\n📎 *Ref:* ${ref}\n\nType *upgrade* to retry.`
+  );
+
+  return `Failed ${phone}: ${reason}`;
+}
+
+async function onInvoicePaymentFailed(data: any): Promise<string> {
+  const meta = extractMeta(data);
+  const phone = meta.phone_number || data.customer?.phone || "";
+  if (!phone) return "No phone";
+
+  await prisma.$executeRaw`
+    UPDATE Consumer_Active_Subscriptions
+    SET status = 'GRACE_PERIOD', updated_at = GETDATE()
+    WHERE phone_number = ${phone} AND status = 'ACTIVE'
+  `;
+
+  await sendWhatsApp(phone,
+    `⚠️ *Subscription Renewal Failed*\n\nWe couldn't renew your subscription.\n\nYou have *${GRACE_PERIOD_DAYS} days* before downgrade to FREE.\n\nType *upgrade* to renew now.`
+  );
+
+  return `Grace period for ${phone}`;
+}
+
+async function onRefundProcessed(data: any): Promise<string> {
+  const meta = extractMeta(data);
+  const phone = meta.phone_number;
+  const amount = (data.amount || 0) / 100;
+  if (phone) {
+    await sendWhatsApp(phone,
+      `💰 *Refund Processed*\n\nYour refund of ${naira(amount)} has been processed.\nPlease allow 3-5 business days to see it in your account.`
+    );
+  }
+  return `Refund ${naira(amount)} for ${phone}`;
+}
+
+// ============================================================================
+// MAIN POST HANDLER
+// ============================================================================
+
+export async function POST(request: NextRequest) {
+  const t0 = Date.now();
+
+  try {
+    const rawBody = await request.text();
+    const sig = request.headers.get("x-paystack-signature") || "";
+
+    if (!verifySignature(rawBody, sig)) {
+      console.error("[PS] ❌ Invalid signature");
+      return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
+    }
+
+    const { event, data } = JSON.parse(rawBody);
+    console.log(`[PS] ═══ ${event} | ref=${data?.reference} | amt=${(data?.amount || 0) / 100} ═══`);
+
+    let result: string;
+    switch (event) {
+      case "charge.success":            result = await onChargeSuccess(data); break;
+      case "charge.failed":             result = await onChargeFailed(data); break;
+      case "subscription.create":       result = `Subscription created`; break;
+      case "invoice.payment_failed":    result = await onInvoicePaymentFailed(data); break;
+      case "refund.processed":          result = await onRefundProcessed(data); break;
+      default:                          result = `Ignored: ${event}`;
+    }
+
+    console.log(`[PS] ✅ ${Date.now() - t0}ms: ${result}`);
+    return NextResponse.json({ success: true, event, result });
+
+  } catch (e: any) {
+    console.error("[PS] Fatal:", e);
+    return NextResponse.json({ success: false, error: e.message }, { status: 200 });
+  }
+}
