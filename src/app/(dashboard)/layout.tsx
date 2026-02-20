@@ -26,9 +26,8 @@ import {
   Filter,
   Map,
   FileText,
+  Sun,
 } from "lucide-react";
-import PWAInstallBanner from "@/components/PWAInstallBanner";
-import OfflineIndicator from "@/components/OfflineIndicator";
 
 // ============================================================================
 // TYPES
@@ -190,9 +189,6 @@ export default function DashboardLayout({
 
   return (
     <div className="min-h-screen bg-terminal-bg">
-      {/* PWA: Offline/Update indicator bar */}
-      <OfflineIndicator />
-
       {/* Sidebar */}
       <aside className="sidebar">
         {/* Logo */}
@@ -219,6 +215,7 @@ export default function DashboardLayout({
             <NavLink href="/dashboard/bulk-buyer" icon={ShoppingCart} label="Bulk Buyer" badge="NEW" currentPath={pathname} />
             <NavLink href="/dashboard/watchlist" icon={Star} label="Watchlist" currentPath={pathname} />
             <NavLink href="/dashboard/alerts" icon={Bell} label="Price Alerts" currentPath={pathname} />
+            <NavLink href="/dashboard/morning-brief" icon={Sun} label="Morning Brief" badge="NEW" currentPath={pathname} />
             <NavLink href="/dashboard/analytics" icon={BarChart3} label="Analytics" currentPath={pathname} />
             <NavLink href="/dashboard/screener" icon={Filter} label="Screener" badge="NEW" currentPath={pathname} />
             <NavLink href="/dashboard/heatmap" icon={Map} label="Heatmap" badge="NEW" currentPath={pathname} />
@@ -315,9 +312,6 @@ export default function DashboardLayout({
           {children}
         </div>
       </main>
-
-      {/* PWA: Install-to-homescreen banner */}
-      <PWAInstallBanner />
     </div>
   );
 }
