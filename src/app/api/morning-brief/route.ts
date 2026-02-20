@@ -137,7 +137,17 @@ export async function GET(request: NextRequest) {
              ISNULL(i.Unit, '') as unit
       FROM Items_Catalog i
       LEFT JOIN Categories c ON i.category_id = c.category_id
-      WHERE i.status IS NULL OR i.status = 'ACTIVE' OR i.status = 'active'
+      WHERE (i.status IS NULL OR i.status = 'ACTIVE' OR i.status = 'active')
+        AND c.category_name IN (
+          'Beans & Legumes', 'Bread & Bakery', 'Cereals & Grains',
+          'Cooking Oil', 'Dairy & Eggs', 'Fish & Seafood', 'Flour',
+          'Fruits', 'Garri & Cassava', 'Meat & Poultry', 'Nuts & Seeds',
+          'Pasta & Noodles', 'Pepper & Spices', 'Plantain & Yam',
+          'Rice', 'Roots & Tubers', 'Salt & Seasonings', 'Snacks',
+          'Sugar & Sweeteners', 'Tomato & Sauce', 'Vegetables',
+          'Beverages', 'Canned Foods', 'Food', 'Foodstuff',
+          'Grains', 'Tubers', 'Provisions', 'Condiments'
+        )
       ORDER BY c.category_name, i.item_name
     ` as any[];
 
