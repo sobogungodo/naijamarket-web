@@ -103,37 +103,47 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ success: true, subscription: null, phone_missing: true });
     }
 
-    const results = await prisma.$queryRaw`
-      SELECT 
-        brief_id, phone_number, plan_type, price_weekly,
-        billing_status, billing_start, billing_end,
-        selected_markets, selected_items, max_items,
-        delivery_time, delivery_channel, status,
-        last_sent_at, total_sent, created_at
-      FROM Morning_Brief_Subscriptions
-      WHERE phone_number = ${phone}
-        AND status != 'CANCELLED'
-      ORDER BY created_at DESC
-    ` as any[];
+    // Fetch subscription (may fail if table not created yet)
+    let subscription = null;
+    try {
+      const results = await prisma.$queryRaw`
+        SELECT 
+          brief_id, phone_number, plan_type, price_weekly,
+          billing_status, billing_start, billing_end,
+          selected_markets, selected_items, max_items,
+          delivery_time, delivery_channel, status,
+          last_sent_at, total_sent, created_at
+        FROM Morning_Brief_Subscriptions
+        WHERE phone_number = ${phone}
+          AND status != 'CANCELLED'
+        ORDER BY created_at DESC
+      ` as any[];
+      subscription = results[0] || null;
+    } catch (e) {
+      console.log("[MorningBrief] Subscription table may not exist yet:", (e as any).message);
+    }
 
     // Also fetch available markets and items for the picker
     const markets = await prisma.$queryRaw`
-      SELECT DISTINCT market_id, market_name, state
+      SELECT market_id, market_name, ISNULL(state, 'Other') as state
       FROM Markets
-      WHERE status = 'ACTIVE'
+      WHERE status IS NULL OR status = 'ACTIVE' OR status = 'active'
       ORDER BY state, market_name
     ` as any[];
 
     const items = await prisma.$queryRaw`
-      SELECT DISTINCT item_id, item_name, category, unit
-      FROM Items_Catalog
-      WHERE status = 'ACTIVE'
-      ORDER BY category, item_name
+      SELECT i.item_id, i.item_name, 
+             ISNULL(c.category_name, 'Other') as category,
+             ISNULL(i.Unit, '') as unit
+      FROM Items_Catalog i
+      LEFT JOIN Categories c ON i.category_id = c.category_id
+      WHERE i.status IS NULL OR i.status = 'ACTIVE' OR i.status = 'active'
+      ORDER BY c.category_name, i.item_name
     ` as any[];
 
     return NextResponse.json({
       success: true,
-      subscription: results[0] || null,
+      subscription,
       markets,
       items,
     });
