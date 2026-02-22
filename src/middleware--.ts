@@ -1,42 +1,56 @@
 // ============================================================================
 // middleware.ts 
-// NaijaMarket Intel - Route Protection Middleware + Single Session Validation
-// Version: 2.1.0 - Added trader portal exclusion
-// Date: 2026-02-04
+// NaijaMarket Intel - Route Protection Middleware
+// Version: 2.2.0 - Fixed session expiry on tab switch + added public pages
+// Date: 2026-02-22
 // 
-// CHANGES FROM PREVIOUS VERSION:
-// - v2.1.0: Added /trader/* exclusion (trader portal uses separate JWT auth)
-// - v2.0.0: Added session token validation against database
-// - Redirects to login if user logged in from another device
-// - Caches validation for 5 minutes to reduce database calls
-// 
-// LOCATION: Can be in project root OR src/ folder
+// CHANGES FROM v2.1.0:
+// - v2.2.0: Added /privacy, /terms, /docs, /contact to public routes
+// - v2.2.0: Extended session validation cache from 5min to 30min
+// - v2.2.0: Don't redirect to sessionExpired on validation errors (allow through)
+// - v2.2.0: Skip session DB validation for non-API GET requests (page views)
+// - v2.1.0: Added /trader/* exclusion
+// - v2.0.0: Single session enforcement
 // ============================================================================
 
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { getToken } from "next-auth/jwt";
 
+// ============================================================================
+// ROUTE CONFIGURATION
+// ============================================================================
+
+// Routes that DON'T require authentication (public pages)
+const PUBLIC_ROUTES = [
+  "/",
+  "/login",
+  "/register",
+  "/privacy",
+  "/terms",
+  "/docs",
+  "/contact",
+  "/api/auth",
+  "/api/public",
+  "/api/health",
+];
+
 // Routes that require authentication
-const PROTECTED_ROUTES = [
+const PROTECTED_PREFIXES = [
   "/dashboard",
-  "/subscribe",
-  "/settings",
-  "/profile",
-  "/watchlist",
-  "/alerts",
   "/prices",
   "/analytics",
+  "/alerts",
+  "/settings",
+  "/watchlist",
   "/compare",
   "/arbitrage",
   "/inflation",
+  "/subscribe",
 ];
 
-// Routes that redirect to dashboard if already authenticated
-const AUTH_ROUTES = ["/login", "/register"];
-
-// API routes that need session validation
-const PROTECTED_API_ROUTES = [
+// Protected API routes (need session validation)
+const PROTECTED_API_PREFIXES = [
   "/api/prices",
   "/api/analytics",
   "/api/alerts",
@@ -45,171 +59,158 @@ const PROTECTED_API_ROUTES = [
   "/api/settings",
 ];
 
+// ============================================================================
+// HELPER FUNCTIONS
+// ============================================================================
+
+function isPublicRoute(pathname: string): boolean {
+  return PUBLIC_ROUTES.some(
+    (route) => pathname === route || pathname.startsWith(route + "/")
+  );
+}
+
+function isProtectedRoute(pathname: string): boolean {
+  return PROTECTED_PREFIXES.some((prefix) => pathname.startsWith(prefix));
+}
+
+function isProtectedApiRoute(pathname: string): boolean {
+  return PROTECTED_API_PREFIXES.some((prefix) => pathname.startsWith(prefix));
+}
+
+// ============================================================================
+// MIDDLEWARE
+// ============================================================================
+
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  // ============================================================================
-  // TRADER PORTAL - Uses separate JWT auth via localStorage
-  // Skip ALL middleware checks for trader routes
-  // ============================================================================
+  // ── SKIP: Trader portal (uses separate JWT auth) ──────────────────────
   if (pathname.startsWith("/trader") || pathname.startsWith("/api/trader")) {
     return NextResponse.next();
   }
 
-  // Skip middleware for static files and Next.js internals
+  // ── SKIP: Static files, images, Next.js internals ─────────────────────
   if (
-    pathname.startsWith("/_next") ||
-    pathname.startsWith("/static") ||
-    pathname.startsWith("/api/auth") ||
-    pathname.startsWith("/api/health") ||
-    pathname.startsWith("/api/public") ||
-    pathname.includes(".") ||
-    pathname.startsWith("/images") ||
-    pathname.startsWith("/icons")
+    pathname.startsWith("/_next/") ||
+    pathname.startsWith("/favicon") ||
+    pathname.startsWith("/images/") ||
+    pathname.startsWith("/icons/") ||
+    pathname.startsWith("/static/") ||
+    pathname.includes(".")
   ) {
     return NextResponse.next();
   }
 
-  // Get the session token from NextAuth
+  // ── SKIP: Public routes (no auth needed) ──────────────────────────────
+  if (isPublicRoute(pathname)) {
+    return NextResponse.next();
+  }
+
+  // ── GET SESSION TOKEN ─────────────────────────────────────────────────
   const token = await getToken({
     req: request,
     secret: process.env.NEXTAUTH_SECRET,
   });
-
   const isAuthenticated = !!token;
-  const isProtectedRoute = PROTECTED_ROUTES.some((route) => pathname.startsWith(route));
-  const isAuthRoute = AUTH_ROUTES.some((route) => pathname.startsWith(route));
-  const isProtectedApiRoute = PROTECTED_API_ROUTES.some((route) => pathname.startsWith(route));
 
-  // ============================================================================
-  // CASE 1: User NOT authenticated trying to access protected route
-  // ============================================================================
-  if (!isAuthenticated && (isProtectedRoute || isProtectedApiRoute)) {
-    // API routes return JSON error
-    if (isProtectedApiRoute) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: "UNAUTHORIZED",
-          message: "Please log in to continue",
-        },
-        { status: 401 }
-      );
+  // ── CASE 1: Unauthenticated user on protected route → login ───────────
+  if (!isAuthenticated && (isProtectedRoute(pathname) || isProtectedApiRoute(pathname))) {
+    // API routes get 401
+    if (pathname.startsWith("/api/")) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
-
     // Page routes redirect to login
     const loginUrl = new URL("/login", request.url);
     loginUrl.searchParams.set("callbackUrl", pathname);
-    
-    const response = NextResponse.redirect(loginUrl);
-    response.headers.set("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
-    response.headers.set("Pragma", "no-cache");
-    
-    return response;
+    return NextResponse.redirect(loginUrl);
   }
 
-  // ============================================================================
-  // CASE 2: User IS authenticated trying to access login/register
-  // ============================================================================
-  if (isAuthenticated && isAuthRoute) {
+  // ── CASE 2: Authenticated user on login/register → dashboard ──────────
+  if (isAuthenticated && (pathname === "/login" || pathname === "/register")) {
     return NextResponse.redirect(new URL("/dashboard", request.url));
   }
 
-  // ============================================================================
-  // CASE 3: Protected route with valid auth - Validate session token
-  // ============================================================================
-  if ((isProtectedRoute || isProtectedApiRoute) && isAuthenticated && token.sessionToken) {
-    // Check if we've validated recently (within 5 minutes)
-    const lastValidated = request.cookies.get("session_validated")?.value;
-    const now = Date.now();
-    
-    if (lastValidated) {
-      const lastValidatedTime = parseInt(lastValidated, 10);
-      const timeSinceValidation = now - lastValidatedTime;
-      
-      // If validated within last 5 minutes, skip database check
-      if (timeSinceValidation < 5 * 60 * 1000) {
-        const response = NextResponse.next();
-        response.headers.set("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0");
-        response.headers.set("Pragma", "no-cache");
-        response.headers.set("Expires", "0");
-        return response;
-      }
-    }
-
-    // Validate session against database
-    try {
-      const validationUrl = new URL("/api/auth/validate-session", request.url);
-      
-      const validationResponse = await fetch(validationUrl.toString(), {
-        method: "GET",
-        headers: {
-          Cookie: request.headers.get("cookie") || "",
-        },
-      });
-
-      if (validationResponse.ok) {
-        const validationResult = await validationResponse.json();
-
-        if (!validationResult.valid) {
-          console.log("[MIDDLEWARE] ❌ Session invalid:", validationResult.error_code);
-
-          // API routes return JSON error
-          if (isProtectedApiRoute) {
-            return NextResponse.json(
-              {
-                success: false,
-                error: validationResult.error_code,
-                message: validationResult.message,
-              },
-              { status: 401 }
-            );
-          }
-
-          // Page routes redirect to login with error
-          const loginUrl = new URL("/login", request.url);
-          loginUrl.searchParams.set("error", validationResult.error_code);
-          loginUrl.searchParams.set("callbackUrl", pathname);
-          
-          const response = NextResponse.redirect(loginUrl);
-          response.cookies.delete("session_validated");
-          response.headers.set("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
-          
-          return response;
-        }
-
-        // Session valid - update validation timestamp
-        const response = NextResponse.next();
-        response.cookies.set("session_validated", now.toString(), {
-          httpOnly: true,
-          secure: process.env.NODE_ENV === "production",
-          sameSite: "lax",
-          maxAge: 5 * 60, // 5 minutes
-          path: "/",
-        });
-        response.headers.set("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0");
-        response.headers.set("Pragma", "no-cache");
-        response.headers.set("Expires", "0");
-        
-        return response;
-      }
-    } catch (error) {
-      console.error("[MIDDLEWARE] Session validation error:", error);
-      // On validation error, allow request but don't update cookie
-      // This prevents blocking users due to temporary issues
-    }
+  // ── CASE 3: Authenticated user on protected route ─────────────────────
+  // v2.2.0: RELAXED session validation
+  // Only validate session against DB for protected API calls (mutations)
+  // For regular page views, trust the JWT token — don't hit DB
+  if (isAuthenticated && isProtectedRoute(pathname)) {
+    // v2.2.0: For page GET requests, just set no-cache headers
+    // Do NOT validate session against DB — this prevents the "tab switch = logout" bug
+    const response = NextResponse.next();
+    response.headers.set(
+      "Cache-Control",
+      "no-store, no-cache, must-revalidate, max-age=0"
+    );
+    response.headers.set("Pragma", "no-cache");
+    return response;
   }
 
-  // ============================================================================
-  // CASE 4: Protected route without session token (old sessions)
-  // ============================================================================
-  if (isProtectedRoute && isAuthenticated) {
-    const response = NextResponse.next();
-    response.headers.set("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0");
-    response.headers.set("Pragma", "no-cache");
-    response.headers.set("Expires", "0");
-    
-    return response;
+  // ── CASE 4: Authenticated API calls — validate session if needed ──────
+  if (isAuthenticated && isProtectedApiRoute(pathname)) {
+    // Check session validation cache (30-minute window)
+    const sessionValidated = request.cookies.get("session_validated")?.value;
+    const now = Date.now();
+
+    if (sessionValidated) {
+      const lastValidated = parseInt(sessionValidated, 10);
+      const CACHE_DURATION = 30 * 60 * 1000; // 30 minutes (was 5 min)
+      if (now - lastValidated < CACHE_DURATION) {
+        // Still within cache window — allow through
+        return NextResponse.next();
+      }
+    }
+
+    // Session needs revalidation against DB
+    try {
+      const sessionToken =
+        request.cookies.get("next-auth.session-token")?.value ||
+        request.cookies.get("__Secure-next-auth.session-token")?.value;
+
+      if (sessionToken && token?.email) {
+        const validateUrl = new URL("/api/auth/validate-session", request.url);
+        const validateResponse = await fetch(validateUrl.toString(), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            sessionToken,
+            email: token.email,
+          }),
+        });
+
+        if (validateResponse.ok) {
+          const data = await validateResponse.json();
+
+          if (!data.valid) {
+            // v2.2.0: Only redirect for actual invalid sessions (logged in elsewhere)
+            // NOT for temporary errors or missing session records
+            if (data.reason === "session_replaced") {
+              const loginUrl = new URL("/login", request.url);
+              loginUrl.searchParams.set("sessionExpired", "true");
+              const response = NextResponse.redirect(loginUrl);
+              response.cookies.delete("session_validated");
+              return response;
+            }
+          }
+
+          // Session valid — update cache timestamp
+          const response = NextResponse.next();
+          response.cookies.set("session_validated", now.toString(), {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === "production",
+            sameSite: "lax",
+            maxAge: 30 * 60, // 30 minutes
+            path: "/",
+          });
+          return response;
+        }
+      }
+    } catch (error) {
+      // v2.2.0: On ANY validation error, ALLOW the request through
+      // Don't log out users due to temporary issues
+      console.error("[MIDDLEWARE] Session validation error (allowing through):", error);
+      return NextResponse.next();
+    }
   }
 
   return NextResponse.next();

@@ -127,7 +127,11 @@ export async function middleware(request: NextRequest) {
 
   // ── CASE 2: Authenticated user on login/register → dashboard ──────────
   if (isAuthenticated && (pathname === "/login" || pathname === "/register")) {
-    return NextResponse.redirect(new URL("/dashboard", request.url));
+    const response = NextResponse.redirect(new URL("/dashboard", request.url));
+    // Clear stale session validation cache on login redirect
+    // This ensures a fresh validation cycle after re-authentication
+    response.cookies.delete("session_validated");
+    return response;
   }
 
   // ── CASE 3: Authenticated user on protected route ─────────────────────
