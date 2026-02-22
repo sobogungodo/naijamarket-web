@@ -137,7 +137,7 @@ export default function APIPage() {
           </h1>
           <p className="text-gray-400 mt-1">Manage API keys and monitor usage</p>
         </div>
-        <Link href="/dashboard/api-docs" className="flex items-center gap-2 text-sm text-emerald-400 hover:text-emerald-300 transition-colors">
+        <Link href="/dashboard/api-portal" className="flex items-center gap-2 text-sm text-emerald-400 hover:text-emerald-300 transition-colors">
           <Code2 className="w-4 h-4" /> API Docs <ExternalLink className="w-3 h-3" />
         </Link>
       </div>
@@ -301,7 +301,7 @@ export default function APIPage() {
 
       {/* CTA */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <Link href="/dashboard/api-docs" className="bg-[#141414] border border-[#2a2a2a] rounded-xl p-5 hover:bg-[#1a1a1a] transition-colors flex items-center gap-4">
+        <Link href="/dashboard/api-portal" className="bg-[#141414] border border-[#2a2a2a] rounded-xl p-5 hover:bg-[#1a1a1a] transition-colors flex items-center gap-4">
           <div className="w-10 h-10 bg-blue-500/20 rounded-lg flex items-center justify-center shrink-0"><Code2 className="w-5 h-5 text-blue-400" /></div>
           <div className="flex-1">
             <p className="text-white font-medium text-sm">API Documentation</p>
