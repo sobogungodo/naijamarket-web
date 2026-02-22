@@ -1,6 +1,3 @@
-"use client";
-
-import { useState } from "react";
 import Link from "next/link";
 import { 
   TrendingUp, 
@@ -10,12 +7,7 @@ import {
   Zap, 
   Shield,
   ArrowRight,
-  Check,
-  Mail,
-  Phone,
-  MapPin,
-  Send,
-  MessageCircle,
+  Check
 } from "lucide-react";
 
 // ============================================================================
@@ -346,226 +338,40 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* Newsletter CTA Section */}
-      <NewsletterCTA />
-
       {/* Footer */}
-      <footer className="border-t border-terminal-border bg-terminal-bg">
-        <div className="container mx-auto max-w-6xl px-4 py-16">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-10">
-            {/* Brand Column */}
-            <div className="lg:col-span-2">
-              <div className="flex items-center gap-2 mb-4">
-                <div className="w-8 h-8 bg-gradient-to-br from-naija-green to-naija-gold rounded-lg flex items-center justify-center">
-                  <span className="text-terminal-bg font-bold text-sm">NM</span>
-                </div>
-                <span className="font-display font-bold text-lg text-white">
-                  NaijaMarket<span className="text-naija-green">Intel</span>
-                </span>
+      <footer className="py-12 px-4 border-t border-terminal-border">
+        <div className="container mx-auto max-w-6xl">
+          <div className="flex flex-col md:flex-row items-center justify-between gap-6">
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 bg-gradient-to-br from-naija-green to-naija-gold rounded-lg flex items-center justify-center">
+                <span className="text-terminal-bg font-bold text-sm">NM</span>
               </div>
-              <p className="text-sm text-gray-500 leading-relaxed max-w-xs mb-6">
-                Nigeria&apos;s most comprehensive commodity price intelligence platform. 
-                Empowering traders, businesses, and analysts with real-time, 
-                GPS-verified market data across 226+ markets.
-              </p>
-              <p className="text-xs text-gray-600">
-                A product of <span className="text-gray-400">Giggababytes Oy</span>
-              </p>
+              <span className="font-display font-bold text-lg text-white">
+                NaijaMarket<span className="text-naija-green">Intel</span>
+              </span>
             </div>
-
-            {/* Product Column */}
-            <div>
-              <h4 className="text-sm font-semibold text-white mb-4 uppercase tracking-wider">Product</h4>
-              <ul className="space-y-3">
-                {[
-                  { label: "Live Prices", href: "/dashboard/prices" },
-                  { label: "Markets", href: "/dashboard/markets" },
-                  { label: "Analytics", href: "/dashboard/analytics" },
-                  { label: "Arbitrage", href: "/dashboard/arbitrage" },
-                  { label: "API Portal", href: "/dashboard/api-portal" },
-                  { label: "Reports", href: "/dashboard/reports" },
-                ].map((item) => (
-                  <li key={item.label}>
-                    <Link href={item.href} className="text-sm text-gray-500 hover:text-naija-green transition-colors">
-                      {item.label}
-                    </Link>
-                  </li>
-                ))}
-              </ul>
+            
+            <div className="flex items-center gap-6 text-sm text-gray-500">
+              <Link href="/privacy" className="hover:text-white transition-colors">
+                Privacy
+              </Link>
+              <Link href="/terms" className="hover:text-white transition-colors">
+                Terms
+              </Link>
+              <Link href="/docs" className="hover:text-white transition-colors">
+                API Docs
+              </Link>
+              <Link href="/contact" className="hover:text-white transition-colors">
+                Contact
+              </Link>
             </div>
-
-            {/* Company Column */}
-            <div>
-              <h4 className="text-sm font-semibold text-white mb-4 uppercase tracking-wider">Company</h4>
-              <ul className="space-y-3">
-                {[
-                  { label: "About Us", href: "/about" },
-                  { label: "Contact", href: "/contact" },
-                  { label: "Pricing", href: "#pricing" },
-                  { label: "Terms & Conditions", href: "/terms" },
-                  { label: "Privacy Policy", href: "/privacy" },
-                  { label: "API Documentation", href: "/dashboard/api-portal" },
-                ].map((item) => (
-                  <li key={item.label}>
-                    <Link href={item.href} className="text-sm text-gray-500 hover:text-naija-green transition-colors">
-                      {item.label}
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            </div>
-
-            {/* Contact Column */}
-            <div>
-              <h4 className="text-sm font-semibold text-white mb-4 uppercase tracking-wider">Contact</h4>
-              <ul className="space-y-4">
-                <li className="flex items-start gap-3">
-                  <MapPin className="w-4 h-4 text-naija-green shrink-0 mt-0.5" />
-                  <span className="text-sm text-gray-500">
-                    Helsinki, Finland<br />
-                    Lagos, Nigeria
-                  </span>
-                </li>
-                <li className="flex items-center gap-3">
-                  <Phone className="w-4 h-4 text-naija-green shrink-0" />
-                  <a href="tel:+2349030001333" className="text-sm text-gray-500 hover:text-white transition-colors">
-                    +234 903 000 1333
-                  </a>
-                </li>
-                <li className="flex items-center gap-3">
-                  <Mail className="w-4 h-4 text-naija-green shrink-0" />
-                  <a href="mailto:support@naijafood.ng" className="text-sm text-gray-500 hover:text-white transition-colors">
-                    support@naijafood.ng
-                  </a>
-                </li>
-                <li className="flex items-center gap-3">
-                  <MessageCircle className="w-4 h-4 text-naija-green shrink-0" />
-                  <a href="https://wa.me/14155238886?text=Hi" className="text-sm text-gray-500 hover:text-white transition-colors">
-                    WhatsApp Support
-                  </a>
-                </li>
-              </ul>
-            </div>
-          </div>
-
-          {/* Bottom Bar */}
-          <div className="mt-12 pt-8 border-t border-terminal-border flex flex-col md:flex-row items-center justify-between gap-4">
-            <div className="text-sm text-gray-600">
-              © {new Date().getFullYear()} NaijaMarket Intel. All rights reserved.
-            </div>
-            <div className="flex items-center gap-6 text-xs text-gray-600">
-              <span>263 commodities</span>
-              <span className="text-terminal-border">•</span>
-              <span>219 markets</span>
-              <span className="text-terminal-border">•</span>
-              <span>31 states</span>
-              <span className="text-terminal-border">•</span>
-              <span>Real-time data</span>
+            
+            <div className="text-sm text-gray-500">
+              © {new Date().getFullYear()} NaijaMarketIntel. All rights reserved.
             </div>
           </div>
         </div>
       </footer>
     </div>
-  );
-}
-
-// ============================================================================
-// NEWSLETTER CTA COMPONENT
-// ============================================================================
-
-function NewsletterCTA() {
-  const [email, setEmail] = useState("");
-  const [status, setStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
-  const [message, setMessage] = useState("");
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!email || !email.includes("@")) return;
-
-    setStatus("loading");
-    try {
-      const res = await fetch("/api/newsletter", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email }),
-      });
-      const data = await res.json();
-      if (data.success) {
-        setStatus("success");
-        setMessage("You\u2019re in! Watch your inbox for market updates.");
-        setEmail("");
-      } else {
-        setStatus("error");
-        setMessage(data.error || "Something went wrong. Try again.");
-      }
-    } catch {
-      setStatus("error");
-      setMessage("Network error. Please try again.");
-    }
-  };
-
-  return (
-    <section className="py-20 px-4 border-t border-terminal-border">
-      <div className="container mx-auto max-w-4xl">
-        <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-naija-green/10 via-terminal-surface to-naija-gold/10 border border-terminal-border p-8 md:p-12">
-          {/* Background glow */}
-          <div className="absolute top-0 right-0 w-64 h-64 bg-naija-green/5 rounded-full blur-3xl" />
-          <div className="absolute bottom-0 left-0 w-64 h-64 bg-naija-gold/5 rounded-full blur-3xl" />
-
-          <div className="relative flex flex-col md:flex-row items-center gap-8">
-            {/* Text */}
-            <div className="flex-1 text-center md:text-left">
-              <h2 className="text-2xl md:text-3xl font-display font-bold text-white mb-3">
-                Get commodity prices &amp; market{" "}
-                <span className="text-naija-green">insights every day</span>
-              </h2>
-              <p className="text-gray-400 text-sm">
-                Join 5,000+ traders, analysts, and procurement teams. Free daily market 
-                summary delivered to your inbox every morning.
-              </p>
-            </div>
-
-            {/* Form */}
-            <div className="w-full md:w-auto">
-              {status === "success" ? (
-                <div className="flex items-center gap-2 px-6 py-3 bg-naija-green/20 border border-naija-green/30 rounded-lg">
-                  <Check className="w-5 h-5 text-naija-green" />
-                  <span className="text-naija-green text-sm font-medium">{message}</span>
-                </div>
-              ) : (
-                <form onSubmit={handleSubmit} className="flex gap-2">
-                  <input
-                    type="email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    placeholder="Enter your email"
-                    required
-                    className="w-full md:w-64 px-4 py-3 bg-terminal-bg border border-terminal-border rounded-lg text-white text-sm placeholder:text-gray-600 focus:outline-none focus:border-naija-green transition-colors"
-                  />
-                  <button
-                    type="submit"
-                    disabled={status === "loading"}
-                    className="px-6 py-3 bg-naija-green text-terminal-bg font-semibold text-sm rounded-lg hover:bg-naija-green-400 transition-colors whitespace-nowrap flex items-center gap-2 disabled:opacity-50"
-                  >
-                    {status === "loading" ? (
-                      <div className="w-4 h-4 border-2 border-terminal-bg border-t-transparent rounded-full animate-spin" />
-                    ) : (
-                      <Send className="w-4 h-4" />
-                    )}
-                    Join Now
-                  </button>
-                </form>
-              )}
-              {status === "error" && (
-                <p className="text-red-400 text-xs mt-2">{message}</p>
-              )}
-              <p className="text-gray-600 text-xs mt-3 text-center md:text-left">
-                No spam, ever. Unsubscribe anytime.
-              </p>
-            </div>
-          </div>
-        </div>
-      </div>
-    </section>
   );
 }
