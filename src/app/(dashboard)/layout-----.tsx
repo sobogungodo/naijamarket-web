@@ -27,10 +27,13 @@ import {
   Map,
   FileText,
   Sun,
-  BookOpen,
   Key,
-  Eye,
+  Code2,
+  Truck,
+  DollarSign,
+  Coins,
 } from "lucide-react";
+import { ThemeToggle } from "@/components/ThemeToggle";
 
 // ============================================================================
 // TYPES
@@ -200,7 +203,7 @@ export default function DashboardLayout({
             <div className="w-8 h-8 bg-gradient-to-br from-naija-green to-naija-gold rounded-lg flex items-center justify-center">
               <span className="text-terminal-bg font-bold text-sm">NM</span>
             </div>
-            <span className="font-display font-bold text-white">
+            <span className="font-display font-bold" style={{ color: "var(--text-primary)" }}>
               NaijaMarket<span className="text-naija-green">Intel</span>
             </span>
           </Link>
@@ -232,15 +235,17 @@ export default function DashboardLayout({
             <div className="px-4 mb-2 text-2xs font-medium text-gray-500 uppercase tracking-wider">
               Enterprise
             </div>
-            <NavLink href="/dashboard/supplier-intelligence" icon={Eye} label="Supplier Intel" badge="₦50K" currentPath={pathname} />
+            <NavLink href="/dashboard/supplier" icon={Truck} label="Supplier Intel" badge="₦50K" currentPath={pathname} />
+            <NavLink href="/dashboard/revenue" icon={DollarSign} label="Revenue" badge="ENT" currentPath={pathname} />
             <NavLink href="/dashboard/api" icon={Key} label="API Keys" badge="PRO" currentPath={pathname} />
-            <NavLink href="/dashboard/api-docs" icon={BookOpen} label="API Docs" badge="NEW" currentPath={pathname} />
+            <NavLink href="/dashboard/api-portal" icon={Code2} label="API Portal" badge="NEW" currentPath={pathname} />
           </div>
 
           <div className="mt-8 pt-8 border-t border-terminal-border">
             <div className="px-4 mb-2 text-2xs font-medium text-gray-500 uppercase tracking-wider">
               Tools
             </div>
+            <NavLink href="/dashboard/tokens" icon={Coins} label="Token Wallet" badge="NEW" currentPath={pathname} />
             <NavLink href="/dashboard/export" icon={Download} label="Export Data" currentPath={pathname} />
           </div>
         </nav>
@@ -253,10 +258,14 @@ export default function DashboardLayout({
                 {userInitials}
               </div>
               <div>
-                <div className="text-sm text-white">{userName}</div>
-                <div className="text-2xs text-gray-500">{userTier}</div>
+                <div className="text-sm" style={{ color: "var(--text-primary)" }}>{userName}</div>
+                <div className="text-2xs" style={{ color: "var(--text-muted)" }}>{userTier}</div>
               </div>
             </div>
+          </div>
+          {/* Theme Toggle */}
+          <div className="mb-3">
+            <ThemeToggle />
           </div>
           <div className="flex items-center gap-2">
             <Link
@@ -293,7 +302,8 @@ export default function DashboardLayout({
               <input
                 type="text"
                 placeholder="Type a command (e.g., NM:PRICES RICE LAGOS) or search..."
-                className="flex-1 bg-transparent font-mono text-sm text-white placeholder:text-gray-500 outline-none"
+                className="flex-1 bg-transparent font-mono text-sm placeholder:text-gray-500 outline-none"
+                style={{ color: "var(--text-primary)" }}
               />
               <div className="flex items-center gap-1 text-2xs text-gray-500">
                 <kbd className="px-1.5 py-0.5 bg-terminal-muted rounded text-gray-400">⌘</kbd>

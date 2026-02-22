@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { signOut, useSession } from "next-auth/react";
 import {
   LayoutDashboard,
@@ -14,7 +14,6 @@ import {
   Settings,
   LogOut,
   Search,
-  Command,
   HelpCircle,
   Download,
   GitCompare,
@@ -32,6 +31,8 @@ import {
   Truck,
   DollarSign,
   Coins,
+  Lock,
+  ChevronUp,
 } from "lucide-react";
 import { ThemeToggle } from "@/components/ThemeToggle";
 
@@ -49,6 +50,33 @@ interface TickerItem {
 }
 
 // ============================================================================
+// TIER ACCESS SYSTEM
+// ============================================================================
+
+const TIER_HIERARCHY = ["FREE", "SILVER", "GOLD", "BUSINESS", "CORPORATE", "ENTERPRISE", "OGA_BOSS", "GOVERNMENT"];
+
+function getTierIndex(tier: string): number {
+  const idx = TIER_HIERARCHY.indexOf(tier.toUpperCase());
+  return idx === -1 ? 0 : idx;
+}
+
+function hasTierAccess(userTier: string, minTier: string): boolean {
+  return getTierIndex(userTier) >= getTierIndex(minTier);
+}
+
+// Short display name for tier badges in sidebar
+function tierBadgeLabel(minTier: string): string {
+  const labels: Record<string, string> = {
+    SILVER: "SILVER+",
+    GOLD: "GOLD+",
+    BUSINESS: "BIZ+",
+    CORPORATE: "CORP+",
+    ENTERPRISE: "ENT",
+  };
+  return labels[minTier] || minTier;
+}
+
+// ============================================================================
 // DYNAMIC PRICE TICKER COMPONENT
 // ============================================================================
 
@@ -56,7 +84,6 @@ function PriceTicker() {
   const [tickerData, setTickerData] = useState<TickerItem[]>([]);
   const [loading, setLoading] = useState(true);
 
-  // Fetch ticker data on mount and refresh every 5 minutes
   useEffect(() => {
     const fetchTickerData = async () => {
       try {
@@ -65,7 +92,6 @@ function PriceTicker() {
         if (data.success && data.data) {
           setTickerData(data.data);
         } else {
-          // Use fallback if API fails
           setTickerData(getStaticFallback());
         }
       } catch (error) {
@@ -77,21 +103,15 @@ function PriceTicker() {
     };
 
     fetchTickerData();
-
-    // Refresh every 5 minutes
     const interval = setInterval(fetchTickerData, 5 * 60 * 1000);
     return () => clearInterval(interval);
   }, []);
 
-  // Format price with Naira symbol
   const formatPrice = (price: number): string => {
-    if (price >= 1000) {
-      return `₦${price.toLocaleString()}`;
-    }
+    if (price >= 1000) return `₦${price.toLocaleString()}`;
     return `₦${price.toFixed(1)}`;
   };
 
-  // Format change percentage
   const formatChange = (change: number): string => {
     const sign = change >= 0 ? "+" : "";
     return `${sign}${change.toFixed(2)}%`;
@@ -113,7 +133,6 @@ function PriceTicker() {
     );
   }
 
-  // Double the items for seamless loop
   const doubledData = [...tickerData, ...tickerData];
 
   return (
@@ -141,7 +160,6 @@ function PriceTicker() {
   );
 }
 
-// Static fallback data when API fails
 function getStaticFallback(): TickerItem[] {
   return [
     { symbol: "RICE.NGN", name: "Rice (50kg)", price: 78500, change: 2.3, trend: "up", unit: "bag" },
@@ -167,8 +185,8 @@ export default function DashboardLayout({
   const pathname = usePathname();
   const { data: session } = useSession();
   const [isLoggingOut, setIsLoggingOut] = useState(false);
+  const [upgradeToast, setUpgradeToast] = useState<string | null>(null);
 
-  // Get user info from session
   const user = session?.user as { name?: string; tier?: string } | undefined;
   const userName = user?.name || "User";
   const userTier = user?.tier || "FREE";
@@ -179,7 +197,6 @@ export default function DashboardLayout({
     .toUpperCase()
     .slice(0, 2);
 
-  // Handle logout
   const handleLogout = async () => {
     setIsLoggingOut(true);
     try {
@@ -192,6 +209,14 @@ export default function DashboardLayout({
       setIsLoggingOut(false);
     }
   };
+
+  // Auto-dismiss upgrade toast
+  useEffect(() => {
+    if (upgradeToast) {
+      const timer = setTimeout(() => setUpgradeToast(null), 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [upgradeToast]);
 
   return (
     <div className="min-h-screen bg-terminal-bg">
@@ -211,23 +236,30 @@ export default function DashboardLayout({
 
         {/* Navigation */}
         <nav className="sidebar-nav custom-scrollbar">
+          {/* ---- CORE: Available to everyone ---- */}
           <div className="space-y-1">
-            <NavLink href="/dashboard" icon={LayoutDashboard} label="Dashboard" currentPath={pathname} />
-            <NavLink href="/dashboard/snapshot" icon={Globe2} label="Snapshot" badge="NEW" currentPath={pathname} />
-            <NavLink href="/dashboard/prices" icon={TrendingUp} label="Prices" currentPath={pathname} />
-            <NavLink href="/dashboard/markets" icon={MapPin} label="Markets" currentPath={pathname} />
-            <NavLink href="/dashboard/compare" icon={GitCompare} label="Compare" currentPath={pathname} />
-            <NavLink href="/dashboard/arbitrage" icon={ArrowLeftRight} label="Arbitrage" badge="PRO" currentPath={pathname} />
-            <NavLink href="/dashboard/bulk-buyer" icon={ShoppingCart} label="Bulk Buyer" badge="NEW" currentPath={pathname} />
-            <NavLink href="/dashboard/watchlist" icon={Star} label="Watchlist" currentPath={pathname} />
-            <NavLink href="/dashboard/alerts" icon={Bell} label="Price Alerts" currentPath={pathname} />
-            <NavLink href="/dashboard/morning-brief" icon={Sun} label="Morning Brief" badge="NEW" currentPath={pathname} />
-            <NavLink href="/dashboard/analytics" icon={BarChart3} label="Analytics" currentPath={pathname} />
-            <NavLink href="/dashboard/screener" icon={Filter} label="Screener" badge="NEW" currentPath={pathname} />
-            <NavLink href="/dashboard/heatmap" icon={Map} label="Heatmap" badge="NEW" currentPath={pathname} />
-            <NavLink href="/dashboard/forecast" icon={Sparkles} label="Forecast" badge="NEW" currentPath={pathname} />
-            <NavLink href="/dashboard/inflation" icon={Activity} label="Inflation" badge="NEW" currentPath={pathname} />
-            <NavLink href="/dashboard/reports" icon={FileText} label="Reports" badge="NEW" currentPath={pathname} />
+            <NavLink href="/dashboard" icon={LayoutDashboard} label="Dashboard" currentPath={pathname} userTier={userTier} />
+            <NavLink href="/dashboard/snapshot" icon={Globe2} label="Snapshot" currentPath={pathname} userTier={userTier} />
+            <NavLink href="/dashboard/prices" icon={TrendingUp} label="Prices" currentPath={pathname} userTier={userTier} />
+            <NavLink href="/dashboard/markets" icon={MapPin} label="Markets" currentPath={pathname} userTier={userTier} />
+            <NavLink href="/dashboard/compare" icon={GitCompare} label="Compare" currentPath={pathname} userTier={userTier} />
+            <NavLink href="/dashboard/inflation" icon={Activity} label="Inflation" currentPath={pathname} userTier={userTier} />
+
+            {/* ---- SILVER+ ---- */}
+            <NavLink href="/dashboard/watchlist" icon={Star} label="Watchlist" currentPath={pathname} userTier={userTier} minTier="SILVER" onLocked={setUpgradeToast} />
+
+            {/* ---- GOLD+ ---- */}
+            <NavLink href="/dashboard/alerts" icon={Bell} label="Price Alerts" currentPath={pathname} userTier={userTier} minTier="GOLD" onLocked={setUpgradeToast} />
+            <NavLink href="/dashboard/arbitrage" icon={ArrowLeftRight} label="Arbitrage" currentPath={pathname} userTier={userTier} minTier="GOLD" onLocked={setUpgradeToast} />
+            <NavLink href="/dashboard/screener" icon={Filter} label="Screener" currentPath={pathname} userTier={userTier} minTier="GOLD" onLocked={setUpgradeToast} />
+            <NavLink href="/dashboard/heatmap" icon={Map} label="Heatmap" currentPath={pathname} userTier={userTier} minTier="GOLD" onLocked={setUpgradeToast} />
+
+            {/* ---- BUSINESS+ ---- */}
+            <NavLink href="/dashboard/morning-brief" icon={Sun} label="Morning Brief" currentPath={pathname} userTier={userTier} minTier="BUSINESS" onLocked={setUpgradeToast} />
+            <NavLink href="/dashboard/bulk-buyer" icon={ShoppingCart} label="Bulk Buyer" currentPath={pathname} userTier={userTier} minTier="BUSINESS" onLocked={setUpgradeToast} />
+            <NavLink href="/dashboard/analytics" icon={BarChart3} label="Analytics" currentPath={pathname} userTier={userTier} minTier="BUSINESS" onLocked={setUpgradeToast} />
+            <NavLink href="/dashboard/forecast" icon={Sparkles} label="Forecast" currentPath={pathname} userTier={userTier} minTier="BUSINESS" onLocked={setUpgradeToast} />
+            <NavLink href="/dashboard/reports" icon={FileText} label="Reports" currentPath={pathname} userTier={userTier} minTier="BUSINESS" onLocked={setUpgradeToast} />
           </div>
 
           {/* Enterprise Section */}
@@ -235,18 +267,19 @@ export default function DashboardLayout({
             <div className="px-4 mb-2 text-2xs font-medium text-gray-500 uppercase tracking-wider">
               Enterprise
             </div>
-            <NavLink href="/dashboard/supplier" icon={Truck} label="Supplier Intel" badge="₦50K" currentPath={pathname} />
-            <NavLink href="/dashboard/revenue" icon={DollarSign} label="Revenue" badge="ENT" currentPath={pathname} />
-            <NavLink href="/dashboard/api" icon={Key} label="API Keys" badge="PRO" currentPath={pathname} />
-            <NavLink href="/dashboard/api-portal" icon={Code2} label="API Portal" badge="NEW" currentPath={pathname} />
+            <NavLink href="/dashboard/supplier" icon={Truck} label="Supplier Intel" currentPath={pathname} userTier={userTier} minTier="CORPORATE" onLocked={setUpgradeToast} />
+            <NavLink href="/dashboard/revenue" icon={DollarSign} label="Revenue" currentPath={pathname} userTier={userTier} minTier="ENTERPRISE" onLocked={setUpgradeToast} />
+            <NavLink href="/dashboard/api" icon={Key} label="API Keys" currentPath={pathname} userTier={userTier} minTier="CORPORATE" onLocked={setUpgradeToast} />
+            <NavLink href="/dashboard/api-portal" icon={Code2} label="API Portal" currentPath={pathname} userTier={userTier} minTier="CORPORATE" onLocked={setUpgradeToast} />
           </div>
 
+          {/* Tools Section */}
           <div className="mt-8 pt-8 border-t border-terminal-border">
             <div className="px-4 mb-2 text-2xs font-medium text-gray-500 uppercase tracking-wider">
               Tools
             </div>
-            <NavLink href="/dashboard/tokens" icon={Coins} label="Token Wallet" badge="NEW" currentPath={pathname} />
-            <NavLink href="/dashboard/export" icon={Download} label="Export Data" currentPath={pathname} />
+            <NavLink href="/dashboard/tokens" icon={Coins} label="Token Wallet" currentPath={pathname} userTier={userTier} />
+            <NavLink href="/dashboard/export" icon={Download} label="Export Data" currentPath={pathname} userTier={userTier} minTier="GOLD" onLocked={setUpgradeToast} />
           </div>
         </nav>
 
@@ -296,7 +329,6 @@ export default function DashboardLayout({
         {/* Command Bar */}
         <header className="sticky top-0 z-30 bg-terminal-bg/95 backdrop-blur-xl border-b border-terminal-border">
           <div className="flex items-center gap-4 px-6 py-3">
-            {/* Command Input */}
             <div className="flex-1 flex items-center gap-2 bg-terminal-surface border border-terminal-border rounded-lg px-4 py-2">
               <Search className="w-4 h-4 text-gray-500" />
               <input
@@ -311,7 +343,6 @@ export default function DashboardLayout({
               </div>
             </div>
 
-            {/* Quick Actions */}
             <div className="flex items-center gap-2">
               <Link 
                 href="/dashboard/alerts"
@@ -334,27 +365,82 @@ export default function DashboardLayout({
           {children}
         </div>
       </main>
+
+      {/* ================================================================ */}
+      {/* UPGRADE TOAST — appears when user clicks a locked item */}
+      {/* ================================================================ */}
+      {upgradeToast && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 animate-slide-up">
+          <div className="flex items-center gap-3 bg-gray-900 border border-gray-700 rounded-xl px-5 py-3 shadow-2xl">
+            <div className="w-8 h-8 rounded-full bg-amber-500/20 flex items-center justify-center shrink-0">
+              <ChevronUp className="w-4 h-4 text-amber-400" />
+            </div>
+            <div>
+              <p className="text-sm text-white font-medium">
+                Requires <span className="text-amber-400">{upgradeToast}</span> subscription
+              </p>
+              <p className="text-xs text-gray-400">Upgrade to unlock this feature</p>
+            </div>
+            <Link
+              href="/subscribe"
+              className="ml-3 shrink-0 px-4 py-1.5 bg-naija-green text-black text-xs font-bold rounded-lg hover:bg-naija-green/90 transition-colors"
+            >
+              Upgrade
+            </Link>
+            <button
+              onClick={() => setUpgradeToast(null)}
+              className="ml-1 text-gray-500 hover:text-gray-300 text-lg leading-none"
+            >
+              ×
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
 // ============================================================================
-// COMPONENTS
+// NAV LINK COMPONENT — with tier gating
 // ============================================================================
 
 interface NavLinkProps {
   href: string;
   icon: React.ElementType;
   label: string;
-  badge?: string;
   currentPath: string | null;
+  userTier: string;
+  minTier?: string;          // minimum tier required (undefined = available to all)
+  onLocked?: (tier: string) => void; // callback when locked item is clicked
 }
 
-function NavLink({ href, icon: Icon, label, badge, currentPath }: NavLinkProps) {
-  // Determine if this link is active
+function NavLink({ href, icon: Icon, label, currentPath, userTier, minTier, onLocked }: NavLinkProps) {
   const isActive = currentPath === href || 
     (href !== "/dashboard" && currentPath?.startsWith(href));
 
+  const isLocked = minTier ? !hasTierAccess(userTier, minTier) : false;
+
+  // If locked, show grayed-out link that triggers upgrade toast
+  if (isLocked) {
+    return (
+      <button
+        onClick={() => onLocked?.(tierBadgeLabel(minTier!))}
+        className="sidebar-link w-full opacity-50 hover:opacity-70 transition-opacity group"
+        title={`Requires ${tierBadgeLabel(minTier!)} subscription`}
+      >
+        <Icon className="w-4 h-4 text-gray-500" />
+        <span className="flex-1 text-gray-500">{label}</span>
+        <span className="flex items-center gap-1">
+          <Lock className="w-3 h-3 text-gray-600" />
+          <span className="px-1.5 py-0.5 text-2xs font-medium bg-gray-700/50 text-gray-500 rounded">
+            {tierBadgeLabel(minTier!)}
+          </span>
+        </span>
+      </button>
+    );
+  }
+
+  // Unlocked — normal link
   return (
     <Link
       href={href}
@@ -362,11 +448,6 @@ function NavLink({ href, icon: Icon, label, badge, currentPath }: NavLinkProps) 
     >
       <Icon className="w-4 h-4" />
       <span className="flex-1">{label}</span>
-      {badge && (
-        <span className="px-1.5 py-0.5 text-2xs font-medium bg-naija-gold/20 text-naija-gold rounded">
-          {badge}
-        </span>
-      )}
     </Link>
   );
 }
