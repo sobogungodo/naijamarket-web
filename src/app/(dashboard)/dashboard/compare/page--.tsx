@@ -22,16 +22,6 @@ import {
 } from "lucide-react";
 
 // ============================================================================
-// FOOD-ONLY CATEGORIES (same 15 as Prices API v9.4)
-// ============================================================================
-
-const FOOD_CATEGORY_IDS = new Set([
-  "CAT001", "CAT002", "CAT003", "CAT004", "CAT005",
-  "CAT006", "CAT007", "CAT008", "CAT009", "CAT010",
-  "CAT013", "CAT014", "CAT015", "CAT070", "CAT103",
-]);
-
-// ============================================================================
 // TYPES
 // ============================================================================
 
@@ -603,11 +593,7 @@ export default function ComparePage() {
         const data = await response.json();
         console.log("Categories API response:", data);
         if (data.success && data.data) {
-          // Filter to food-only categories
-          const foodOnly = data.data.filter((cat: Category) => 
-            FOOD_CATEGORY_IDS.has(cat.category_id)
-          );
-          setCategories(foodOnly);
+          setCategories(data.data);
         }
       } catch (err) {
         console.error("Failed to fetch categories:", err);
