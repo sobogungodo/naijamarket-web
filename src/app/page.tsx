@@ -17,6 +17,7 @@ import {
   Send,
   MessageCircle,
 } from "lucide-react";
+import { ThemeToggle } from "@/components/ThemeToggle";
 
 // ============================================================================
 // LANDING PAGE
@@ -50,6 +51,7 @@ export default function LandingPage() {
             <Link href="/login" className="text-sm text-gray-400 hover:text-white transition-colors">
               Sign In
             </Link>
+            <ThemeToggle />
             <Link 
               href="/register" 
               className="px-4 py-2 bg-naija-green text-terminal-bg text-sm font-medium rounded-lg hover:bg-naija-green-400 transition-colors"
