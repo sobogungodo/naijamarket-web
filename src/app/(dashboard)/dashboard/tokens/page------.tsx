@@ -226,20 +226,10 @@ export default function TokenWalletPage() {
   // PURCHASE HANDLER
   // ========================================================================
   const handlePurchase = async (pack: TokenPack) => {
-    console.log("[TokenWallet] Buy clicked:", pack.name, "Price:", pack.price, "PackID:", pack.id);
-    console.log("[TokenWallet] ConsumerID:", consumerId);
-    
-    if (!consumerId) {
-      console.error("[TokenWallet] No consumer ID — cannot purchase");
-      setError("Unable to identify your account. Please log out and log back in.");
-      return;
-    }
-    
+    if (!consumerId) return;
     setPurchasing(pack.id);
-    setError(null);
 
     try {
-      console.log("[TokenWallet] Calling /api/tokens/purchase...");
       const res = await fetch("/api/tokens/purchase", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -250,24 +240,20 @@ export default function TokenWalletPage() {
         }),
       });
 
-      console.log("[TokenWallet] Purchase API status:", res.status);
       const data = await res.json();
-      console.log("[TokenWallet] Purchase API response:", JSON.stringify(data).substring(0, 500));
 
       if (data.success && data.paymentUrl) {
-        console.log("[TokenWallet] Redirecting to Paystack:", data.paymentUrl);
+        // Redirect to Paystack checkout (same window for proper callback)
         window.location.href = data.paymentUrl;
-        return;
+        return; // Don't reset purchasing state — page will redirect
       } else if (data.success) {
-        console.log("[TokenWallet] Direct credit — refreshing wallet");
+        // Direct credit (for testing)
         await fetchWallet(true);
       } else {
-        console.error("[TokenWallet] Purchase failed:", data.error);
         setError(data.error || "Purchase failed. Please try again.");
       }
-    } catch (err) {
-      console.error("[TokenWallet] Purchase exception:", err);
-      setError("Failed to initiate purchase. Check your connection and try again.");
+    } catch {
+      setError("Failed to initiate purchase");
     } finally {
       setPurchasing(null);
     }
