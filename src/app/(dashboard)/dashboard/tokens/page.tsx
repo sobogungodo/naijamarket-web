@@ -243,13 +243,14 @@ export default function TokenWalletPage() {
       const data = await res.json();
 
       if (data.success && data.paymentUrl) {
-        // Redirect to Paystack/Flutterwave checkout
-        window.open(data.paymentUrl, "_blank");
+        // Redirect to Paystack checkout (same window for proper callback)
+        window.location.href = data.paymentUrl;
+        return; // Don't reset purchasing state — page will redirect
       } else if (data.success) {
         // Direct credit (for testing)
         await fetchWallet(true);
       } else {
-        setError(data.error || "Purchase failed");
+        setError(data.error || "Purchase failed. Please try again.");
       }
     } catch {
       setError("Failed to initiate purchase");
