@@ -367,7 +367,7 @@ export default function LandingPage() {
             </div>
             
             <div className="text-sm text-gray-500">
-              © {new Date().getFullYear()} Giggababytes Oy. All rights reserved.
+              © {new Date().getFullYear()} NaijaMarketIntel. All rights reserved.
             </div>
           </div>
         </div>
