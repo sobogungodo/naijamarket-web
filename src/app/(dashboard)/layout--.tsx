@@ -27,6 +27,11 @@ import {
   Map,
   FileText,
   Sun,
+  Key,
+  Code2,
+  Truck,
+  DollarSign,
+  Coins,
 } from "lucide-react";
 
 // ============================================================================
@@ -224,12 +229,23 @@ export default function DashboardLayout({
             <NavLink href="/dashboard/reports" icon={FileText} label="Reports" badge="NEW" currentPath={pathname} />
           </div>
 
+          {/* Enterprise Section */}
+          <div className="mt-8 pt-8 border-t border-terminal-border">
+            <div className="px-4 mb-2 text-2xs font-medium text-gray-500 uppercase tracking-wider">
+              Enterprise
+            </div>
+            <NavLink href="/dashboard/supplier" icon={Truck} label="Supplier Intel" badge="₦50K" currentPath={pathname} />
+            <NavLink href="/dashboard/revenue" icon={DollarSign} label="Revenue" badge="ENT" currentPath={pathname} />
+            <NavLink href="/dashboard/api" icon={Key} label="API Keys" badge="PRO" currentPath={pathname} />
+            <NavLink href="/dashboard/api-portal" icon={Code2} label="API Portal" badge="NEW" currentPath={pathname} />
+          </div>
+
           <div className="mt-8 pt-8 border-t border-terminal-border">
             <div className="px-4 mb-2 text-2xs font-medium text-gray-500 uppercase tracking-wider">
               Tools
             </div>
+            <NavLink href="/dashboard/tokens" icon={Coins} label="Token Wallet" badge="NEW" currentPath={pathname} />
             <NavLink href="/dashboard/export" icon={Download} label="Export Data" currentPath={pathname} />
-            <NavLink href="/dashboard/api" icon={Command} label="API Keys" badge="PRO" currentPath={pathname} />
           </div>
         </nav>
 

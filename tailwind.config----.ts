@@ -17,15 +17,15 @@ const config: Config = {
     },
     extend: {
       colors: {
-        // Bloomberg-inspired terminal colors — now CSS variable based for theme switching
+        // Bloomberg-inspired terminal colors
         terminal: {
-          bg: "var(--terminal-bg)",
-          surface: "var(--terminal-surface)",
-          elevated: "var(--terminal-elevated)",
-          border: "var(--terminal-border)",
-          muted: "var(--terminal-muted)",
+          bg: "#0a0a0a",
+          surface: "#141414",
+          elevated: "#1a1a1a",
+          border: "#2a2a2a",
+          muted: "#3a3a3a",
         },
-        // NaijaMarket brand colors (same in both themes)
+        // NaijaMarket brand colors
         naija: {
           green: {
             DEFAULT: "#00A36C",
@@ -64,13 +64,13 @@ const config: Config = {
             dark: "#1976D2",
           },
         },
-        // Price change colors — CSS variable based for theme switching
+        // Price change colors
         price: {
-          up: "var(--price-up)",
-          down: "var(--price-down)",
-          unchanged: "var(--price-unchanged)",
+          up: "#00C853",
+          down: "#FF1744",
+          unchanged: "#78909C",
         },
-        // Semantic colors (shadcn-compatible)
+        // Semantic colors
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",
         ring: "hsl(var(--ring))",
@@ -181,7 +181,7 @@ const config: Config = {
       backgroundImage: {
         "gradient-radial": "radial-gradient(var(--tw-gradient-stops))",
         "gradient-conic": "conic-gradient(from 180deg at 50% 50%, var(--tw-gradient-stops))",
-        "grid-pattern": "linear-gradient(to right, var(--terminal-border) 1px, transparent 1px), linear-gradient(to bottom, var(--terminal-border) 1px, transparent 1px)",
+        "grid-pattern": "linear-gradient(to right, #1a1a1a 1px, transparent 1px), linear-gradient(to bottom, #1a1a1a 1px, transparent 1px)",
         "noise": "url('/images/noise.png')",
       },
       boxShadow: {

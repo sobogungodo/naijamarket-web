@@ -5,12 +5,11 @@
 /* ============================================
    NAIJAMARKET INTEL - GLOBAL STYLES
    Bloomberg Terminal-Inspired Theme
-   With Light/Dark Mode Support
    ============================================ */
 
 @layer base {
   :root {
-    /* Light mode */
+    /* Light mode (minimal use - primarily dark) */
     --background: 0 0% 100%;
     --foreground: 0 0% 3.9%;
     --card: 0 0% 100%;
@@ -31,23 +30,6 @@
     --input: 0 0% 89.8%;
     --ring: 156 100% 32%;
     --radius: 0.5rem;
-
-    /* Terminal colors — Light mode */
-    --terminal-bg: #f8f9fa;
-    --terminal-surface: #ffffff;
-    --terminal-elevated: #f1f3f5;
-    --terminal-border: #dee2e6;
-    --terminal-muted: #ced4da;
-
-    /* Price colors — Light mode */
-    --price-up: #0ca678;
-    --price-down: #e03131;
-    --price-unchanged: #868e96;
-
-    /* Text overrides for light */
-    --text-primary: #212529;
-    --text-secondary: #495057;
-    --text-muted: #868e96;
   }
 
   .dark {
@@ -71,23 +53,6 @@
     --border: 0 0% 14.9%;
     --input: 0 0% 14.9%;
     --ring: 156 100% 41%;
-
-    /* Terminal colors — Dark mode */
-    --terminal-bg: #0a0a0a;
-    --terminal-surface: #141414;
-    --terminal-elevated: #1a1a1a;
-    --terminal-border: #2a2a2a;
-    --terminal-muted: #3a3a3a;
-
-    /* Price colors — Dark mode */
-    --price-up: #00C853;
-    --price-down: #FF1744;
-    --price-unchanged: #78909C;
-
-    /* Text overrides for dark */
-    --text-primary: #f8f9fa;
-    --text-secondary: #adb5bd;
-    --text-muted: #6c757d;
   }
 
   * {
@@ -102,7 +67,6 @@
   body {
     @apply bg-background text-foreground antialiased;
     font-feature-settings: "rlig" 1, "calt" 1;
-    transition: background-color 0.2s ease, color 0.2s ease;
   }
 }
 
@@ -114,16 +78,15 @@
   /* Command Bar - Bloomberg-style */
   .command-bar {
     @apply fixed top-0 left-0 right-0 z-50;
-    background-color: var(--terminal-bg);
-    @apply backdrop-blur-xl;
-    border-bottom: 1px solid var(--terminal-border);
+    @apply bg-terminal-bg/95 backdrop-blur-xl;
+    @apply border-b border-terminal-border;
     @apply px-4 py-2;
   }
 
   .command-input {
     @apply w-full bg-transparent;
     @apply font-mono text-sm text-naija-gold;
-    @apply placeholder:text-gray-500;
+    @apply placeholder:text-terminal-muted;
     @apply outline-none border-none;
     caret-color: #FFB800;
   }
@@ -131,9 +94,7 @@
   /* Price Ticker */
   .price-ticker {
     @apply flex items-center gap-6 overflow-hidden;
-    background-color: var(--terminal-surface);
-    border-top: 1px solid var(--terminal-border);
-    border-bottom: 1px solid var(--terminal-border);
+    @apply bg-terminal-surface border-y border-terminal-border;
     @apply py-2 px-4;
   }
 
@@ -147,7 +108,7 @@
   }
 
   .ticker-price {
-    color: var(--text-primary);
+    @apply text-white;
   }
 
   .ticker-change {
@@ -155,23 +116,18 @@
   }
 
   .ticker-change.up {
-    color: var(--price-up);
+    @apply text-price-up;
   }
 
   .ticker-change.down {
-    color: var(--price-down);
+    @apply text-price-down;
   }
 
   /* Price Card - Information Dense */
   .price-card {
-    background-color: var(--terminal-surface);
-    border: 1px solid var(--terminal-border);
+    @apply bg-terminal-surface border border-terminal-border;
     @apply rounded-lg p-4;
-    @apply transition-colors;
-  }
-
-  .price-card:hover {
-    border-color: rgba(0, 163, 108, 0.5);
+    @apply hover:border-naija-green/50 transition-colors;
   }
 
   .price-card-header {
@@ -179,19 +135,16 @@
   }
 
   .price-card-title {
-    @apply font-semibold text-sm truncate;
-    color: var(--text-primary);
+    @apply font-semibold text-white text-sm truncate;
   }
 
   .price-card-badge {
     @apply text-2xs font-mono px-2 py-0.5 rounded;
-    background-color: var(--terminal-muted);
-    color: var(--text-muted);
+    @apply bg-terminal-muted text-gray-400;
   }
 
   .price-card-value {
-    @apply font-mono text-2xl font-bold;
-    color: var(--text-primary);
+    @apply font-mono text-2xl font-bold text-white;
   }
 
   .price-card-change {
@@ -199,19 +152,17 @@
   }
 
   .price-card-change.up {
-    color: var(--price-up);
+    @apply text-price-up;
   }
 
   .price-card-change.down {
-    color: var(--price-down);
+    @apply text-price-down;
   }
 
   .price-card-meta {
-    @apply mt-3 pt-3;
-    border-top: 1px solid var(--terminal-border);
+    @apply mt-3 pt-3 border-t border-terminal-border;
     @apply flex items-center justify-between;
-    @apply text-2xs font-mono;
-    color: var(--text-muted);
+    @apply text-2xs text-gray-500 font-mono;
   }
 
   /* Data Table - Terminal Style */
@@ -221,22 +172,18 @@
 
   .data-table th {
     @apply text-left text-2xs font-mono uppercase tracking-wider;
-    color: var(--text-muted);
-    background-color: var(--terminal-surface);
-    @apply px-4 py-2;
-    border-bottom: 1px solid var(--terminal-border);
+    @apply text-gray-500 bg-terminal-surface;
+    @apply px-4 py-2 border-b border-terminal-border;
     @apply sticky top-0 z-10;
   }
 
   .data-table td {
-    @apply px-4 py-3;
-    border-bottom: 1px solid var(--terminal-border);
-    @apply text-sm;
-    color: var(--text-secondary);
+    @apply px-4 py-3 border-b border-terminal-border/50;
+    @apply text-sm text-gray-300;
   }
 
   .data-table tr:hover td {
-    background-color: var(--terminal-elevated);
+    @apply bg-terminal-elevated;
   }
 
   .data-table .numeric {
@@ -244,17 +191,16 @@
   }
 
   .data-table .positive {
-    color: var(--price-up);
+    @apply text-price-up;
   }
 
   .data-table .negative {
-    color: var(--price-down);
+    @apply text-price-down;
   }
 
   /* Chart Container */
   .chart-container {
-    background-color: var(--terminal-surface);
-    border: 1px solid var(--terminal-border);
+    @apply bg-terminal-surface border border-terminal-border;
     @apply rounded-lg p-4;
   }
 
@@ -263,8 +209,7 @@
   }
 
   .chart-title {
-    @apply font-semibold;
-    color: var(--text-primary);
+    @apply font-semibold text-white;
   }
 
   .chart-controls {
@@ -273,13 +218,9 @@
 
   .chart-period-btn {
     @apply px-2 py-1 text-xs font-mono;
-    color: var(--text-muted);
+    @apply text-gray-400 hover:text-white;
     @apply border border-transparent rounded;
     @apply transition-colors;
-  }
-
-  .chart-period-btn:hover {
-    color: var(--text-primary);
   }
 
   .chart-period-btn.active {
@@ -300,18 +241,15 @@
   }
 
   .heatmap-cell.positive {
-    background-color: rgba(0, 200, 83, 0.15);
-    color: var(--price-up);
+    @apply bg-price-up/20 text-price-up;
   }
 
   .heatmap-cell.negative {
-    background-color: rgba(255, 23, 68, 0.15);
-    color: var(--price-down);
+    @apply bg-price-down/20 text-price-down;
   }
 
   .heatmap-cell.neutral {
-    background-color: var(--terminal-muted);
-    color: var(--text-muted);
+    @apply bg-terminal-muted text-gray-400;
   }
 
   /* Status Badge */
@@ -321,8 +259,7 @@
   }
 
   .status-badge.active {
-    background-color: rgba(0, 200, 83, 0.15);
-    color: var(--price-up);
+    @apply bg-price-up/20 text-price-up;
   }
 
   .status-badge.warning {
@@ -330,19 +267,17 @@
   }
 
   .status-badge.error {
-    background-color: rgba(255, 23, 68, 0.15);
-    color: var(--price-down);
+    @apply bg-price-down/20 text-price-down;
   }
 
   .status-badge.muted {
-    background-color: var(--terminal-muted);
-    color: var(--text-muted);
+    @apply bg-terminal-muted text-gray-400;
   }
 
   /* Loading States */
   .skeleton {
     @apply animate-shimmer bg-gradient-to-r;
-    background-color: var(--terminal-muted);
+    @apply from-terminal-muted via-terminal-border to-terminal-muted;
     background-size: 200% 100%;
   }
 
@@ -357,14 +292,13 @@
   /* Sidebar Navigation */
   .sidebar {
     @apply fixed left-0 top-0 bottom-0 z-40;
-    @apply w-64 flex flex-col;
-    background-color: var(--terminal-bg);
-    border-right: 1px solid var(--terminal-border);
+    @apply w-64 bg-terminal-bg border-r border-terminal-border;
+    @apply flex flex-col;
   }
 
   .sidebar-logo {
     @apply h-16 flex items-center px-4;
-    border-bottom: 1px solid var(--terminal-border);
+    @apply border-b border-terminal-border;
   }
 
   .sidebar-nav {
@@ -373,13 +307,8 @@
 
   .sidebar-link {
     @apply flex items-center gap-3 px-4 py-2.5 mx-2 rounded;
-    @apply text-sm transition-colors;
-    color: var(--text-muted);
-  }
-
-  .sidebar-link:hover {
-    color: var(--text-primary);
-    background-color: var(--terminal-elevated);
+    @apply text-sm text-gray-400 hover:text-white;
+    @apply hover:bg-terminal-elevated transition-colors;
   }
 
   .sidebar-link.active {
@@ -387,8 +316,7 @@
   }
 
   .sidebar-footer {
-    @apply p-4;
-    border-top: 1px solid var(--terminal-border);
+    @apply p-4 border-t border-terminal-border;
   }
 
   /* ============================================
@@ -402,7 +330,7 @@
 
   .border-gradient {
     @apply border border-transparent;
-    background: linear-gradient(var(--terminal-bg), var(--terminal-bg)) padding-box,
+    background: linear-gradient(var(--background), var(--background)) padding-box,
                 linear-gradient(135deg, #00A36C, #FFB800) border-box;
   }
 
@@ -417,7 +345,7 @@
   /* Scrollbar styling */
   .custom-scrollbar {
     scrollbar-width: thin;
-    scrollbar-color: var(--terminal-muted) transparent;
+    scrollbar-color: #2a2a2a transparent;
   }
 
   .custom-scrollbar::-webkit-scrollbar {
@@ -430,18 +358,16 @@
   }
 
   .custom-scrollbar::-webkit-scrollbar-thumb {
-    background-color: var(--terminal-muted);
-    border-radius: 9999px;
+    @apply bg-terminal-muted rounded-full;
   }
 
   .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-    background-color: var(--terminal-border);
+    @apply bg-terminal-border;
   }
 
   /* Focus styles */
   .focus-ring {
-    @apply focus:outline-none focus:ring-2 focus:ring-naija-green focus:ring-offset-2;
-    --tw-ring-offset-color: var(--terminal-bg);
+    @apply focus:outline-none focus:ring-2 focus:ring-naija-green focus:ring-offset-2 focus:ring-offset-terminal-bg;
   }
 
   /* Responsive table wrapper */
@@ -490,6 +416,7 @@
    FONT IMPORTS
    ============================================ */
 
+/* JetBrains Mono for terminal text */
 @font-face {
   font-family: 'JetBrains Mono';
   font-style: normal;
