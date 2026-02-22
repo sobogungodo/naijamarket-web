@@ -1,7 +1,7 @@
 // ============================================================================
 // src/app/api/prices/route.ts
 // NaijaFood Intel - Live Prices API
-// Version: 9.4.0 - Fixed price_date parsing for UPDATED column
+// Version: 9.3.0 - FOOD-ONLY filter on all queries
 // ============================================================================
 // Changes from v9.2:
 // - Added FOOD FILTER clause to Summary + Daily + Filters queries
@@ -85,21 +85,6 @@ async function getPrisma() {
 }
 
 // ============================================================================
-// PARSE PRICE DATE — handles Date objects, strings, and nulls from Prisma
-// ============================================================================
-
-function parsePriceDate(val: any): string {
-  if (!val) return new Date().toISOString();
-  // Prisma raw queries may return Date objects OR date strings
-  if (val instanceof Date) return val.toISOString();
-  // Try parsing as string
-  const parsed = new Date(val);
-  if (!isNaN(parsed.getTime())) return parsed.toISOString();
-  // Final fallback
-  return new Date().toISOString();
-}
-
-// ============================================================================
 // MAP ROW → PriceRecord
 // ============================================================================
 
@@ -125,7 +110,7 @@ function mapRow(p: any, prefix: string): PriceRecord {
     high_24h: Math.round(price * 1.03),
     confidence: Math.round(Number(p.confidence_score) || 85),
     validators: 3,
-    updated_at: parsePriceDate(p.price_date),
+    updated_at: p.price_date instanceof Date ? p.price_date.toISOString() : new Date().toISOString(),
     source: prefix === "lps" ? "Latest_Prices_Summary" : "Daily_Prices",
     unit: p.unit || "",
     trend: p.trend || (changePercent > 0 ? "↑" : changePercent < 0 ? "↓" : "→"),
