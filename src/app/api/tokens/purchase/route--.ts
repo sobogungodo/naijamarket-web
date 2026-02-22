@@ -49,17 +49,13 @@ export async function POST(request: NextRequest) {
 
     if (!PAYSTACK_SECRET_KEY || PAYSTACK_SECRET_KEY === "sk_test_placeholder") {
       return NextResponse.json(
-        { success: false, error: "PAYSTACK_SECRET_KEY is not configured in Vercel environment variables." },
+        { success: false, error: "Payment system is not configured. Please contact support." },
         { status: 500 }
       );
     }
 
-    console.log("[TokenPurchase] Step 1: Connecting to SQL...");
-
     // 1. Get pack details from database
     pool = await sql.connect(sqlConfig);
-
-    console.log("[TokenPurchase] Step 2: Querying Token_Packs for packId:", packId);
 
     const packResult = await pool.request()
       .input("pack_id", sql.Int, packId)
@@ -71,13 +67,12 @@ export async function POST(request: NextRequest) {
 
     if (packResult.recordset.length === 0) {
       return NextResponse.json(
-        { success: false, error: `Token pack ${packId} not found or inactive. Check Token_Packs table.` },
+        { success: false, error: "Token pack not found or inactive" },
         { status: 404 }
       );
     }
 
     const pack = packResult.recordset[0];
-    console.log("[TokenPurchase] Step 3: Pack found:", pack.pack_name, "Price:", pack.price_ngn);
 
     // 2. Get consumer details (need email/phone for Paystack)
     const consumerResult = await pool.request()
@@ -89,7 +84,6 @@ export async function POST(request: NextRequest) {
       `);
 
     const consumer = consumerResult.recordset[0];
-    console.log("[TokenPurchase] Step 4: Consumer found:", consumer ? "yes" : "no", "Email:", consumer?.email || "none");
     const email = consumer?.email || `${consumerId}@naijamarketintel.ng`;
     const phone = consumer?.phone_number || "";
     const name = consumer?.full_name || "Customer";
@@ -98,8 +92,6 @@ export async function POST(request: NextRequest) {
     const reference = generateReference();
     const amountNgn = pack.price_ngn;
     const totalTokens = (pack.token_count || 0) + (pack.bonus_tokens || 0);
-
-    console.log("[TokenPurchase] Step 5: Logging pending transaction. Ref:", reference, "Amount:", amountNgn, "Tokens:", totalTokens);
 
     // 4. Log pending transaction in database
     await pool.request()
@@ -120,8 +112,6 @@ export async function POST(request: NextRequest) {
           (@consumer_id, @transaction_type, @token_amount, @description, @reference_id,
            @payment_amount, @payment_currency, @payment_provider, @payment_status)
       `);
-
-    console.log("[TokenPurchase] Step 6: Calling Paystack initialize...");
 
     // 5. Initialize Paystack payment
     const paystackResponse = await fetch("https://api.paystack.co/transaction/initialize", {
@@ -202,9 +192,9 @@ export async function POST(request: NextRequest) {
 
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Purchase failed";
-    console.error("[TokenPurchase] Error:", message, error);
+    console.error("[TokenPurchase] Error:", message);
     return NextResponse.json(
-      { success: false, error: `Purchase error: ${message}` },
+      { success: false, error: "Unable to process purchase. Please try again." },
       { status: 500 }
     );
   } finally {
