@@ -181,12 +181,46 @@ function checkVTPass(): ServiceCheck {
   };
 }
 
-function checkWhatsApp(): ServiceCheck {
+async function checkWhatsApp(): Promise<ServiceCheck> {
+  const sid = process.env.TWILIO_ACCOUNT_SID;
+  const token = process.env.TWILIO_AUTH_TOKEN;
+
+  if (!sid || !token) {
+    return {
+      name: 'WhatsApp API (Twilio)',
+      status: 'placeholder',
+      responseTime: 0,
+      message: 'TWILIO_ACCOUNT_SID / TWILIO_AUTH_TOKEN not configured',
+      lastChecked: new Date().toISOString(),
+    };
+  }
+
+  const { elapsed, error } = await checkWithTimeout(async () => {
+    const res = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${sid}.json`, {
+      headers: {
+        'Authorization': 'Basic ' + Buffer.from(`${sid}:${token}`).toString('base64'),
+      },
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return res.status;
+  }, 10000);
+
+  if (error) {
+    return {
+      name: 'WhatsApp API (Twilio)',
+      status: 'down',
+      responseTime: elapsed,
+      message: `Twilio unreachable: ${error}`,
+      lastChecked: new Date().toISOString(),
+    };
+  }
+
   return {
-    name: 'WhatsApp API',
-    status: 'placeholder',
-    responseTime: 0,
-    message: 'Awaiting Twilio configuration',
+    name: 'WhatsApp API (Twilio)',
+    status: elapsed < 3000 ? 'operational' : 'degraded',
+    responseTime: elapsed,
+    message: `Twilio account ${sid.slice(0, 8)}... responding`,
     lastChecked: new Date().toISOString(),
   };
 }
@@ -196,11 +230,12 @@ export async function GET(request: NextRequest) {
 
   try {
     // Run all checks in parallel
-    const [azureSql, consumerSite, adminApi, brevo] = await Promise.all([
+    const [azureSql, consumerSite, adminApi, brevo, whatsapp] = await Promise.all([
       checkAzureSQL(),
       checkConsumerSite(),
       checkAdminAPI(),
       checkBrevoEmail(),
+      checkWhatsApp(),
     ]);
 
     // Get DB stats (only if SQL is up)
@@ -213,7 +248,7 @@ export async function GET(request: NextRequest) {
       consumerSite,
       adminApi,
       brevo,
-      checkWhatsApp(),
+      whatsapp,
       checkVTPass(),
     ];
 

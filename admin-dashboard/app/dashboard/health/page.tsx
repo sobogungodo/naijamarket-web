@@ -31,7 +31,7 @@ const SERVICE_ICONS: Record<string, any> = {
   'Consumer Website': Globe,
   'Admin Dashboard': Server,
   'Brevo Email': Mail,
-  'WhatsApp API': MessageSquare,
+  'WhatsApp API (Twilio)': MessageSquare,
   'VTPass Payment': CreditCard,
 };
 
