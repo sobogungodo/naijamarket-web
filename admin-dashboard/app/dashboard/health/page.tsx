@@ -1,446 +1,295 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { PageWrapper } from '@/components/dashboard/layout';
-import { StatCard, Badge, Button, Alert } from '@/components/ui';
-import { 
-  LineChartComponent, 
-  AreaChartComponent,
-  CHART_COLORS 
-} from '@/components/charts';
-import { StatusIndicator } from '@/components/dashboard/widgets';
-import { formatRelativeTime } from '@/lib/utils';
 import {
-  Activity,
-  Server,
-  Database,
-  MessageSquare,
-  CreditCard,
-  RefreshCw,
-  CheckCircle,
-  AlertTriangle,
-  XCircle,
-  Clock,
-  Zap,
-  Cpu,
-  HardDrive,
-  Wifi,
-  Globe,
+  Activity, RefreshCw, CheckCircle, AlertTriangle, XCircle, Clock,
+  Database, Globe, Server, Mail, MessageSquare, CreditCard, Loader2,
+  Shield, HardDrive, Layers,
 } from 'lucide-react';
-import type { ServiceStatus, SystemError } from '@/types';
 
-// ============================================
-// MOCK DATA
-// ============================================
+interface ServiceCheck {
+  name: string;
+  status: 'operational' | 'degraded' | 'down' | 'placeholder';
+  responseTime: number;
+  message: string;
+  lastChecked: string;
+}
 
-const mockHealthStats = {
-  overallStatus: 'healthy' as const,
-  uptime: 99.97,
-  avgResponseTime: 145,
-  errorRate: 0.12,
-  activeConnections: 1247,
-  queueDepth: 23,
-  lastIncident: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000),
+interface HealthData {
+  overall_status: string;
+  uptime_pct: number;
+  avg_response_time: number;
+  total_check_time: number;
+  services: ServiceCheck[];
+  database: { size: string; tables: number; totalRows: number };
+  recent_errors: any[];
+}
+
+const SERVICE_ICONS: Record<string, any> = {
+  'Azure SQL Database': Database,
+  'Consumer Website': Globe,
+  'Admin Dashboard': Server,
+  'Brevo Email': Mail,
+  'WhatsApp API': MessageSquare,
+  'VTPass Payment': CreditCard,
 };
 
-const mockServices: ServiceStatus[] = [
-  { name: 'WhatsApp API', status: 'operational', responseTime: 89, lastChecked: new Date() },
-  { name: 'Azure SQL Database', status: 'operational', responseTime: 23, lastChecked: new Date() },
-  { name: 'VTPass Payment', status: 'operational', responseTime: 234, lastChecked: new Date() },
-  { name: 'Google Sheets Sync', status: 'operational', responseTime: 156, lastChecked: new Date() },
-  { name: 'Make.com Workflows', status: 'operational', responseTime: 178, lastChecked: new Date() },
-  { name: 'Azure Functions', status: 'operational', responseTime: 67, lastChecked: new Date() },
-  { name: 'Application Insights', status: 'operational', responseTime: 45, lastChecked: new Date() },
-  { name: 'Azure Blob Storage', status: 'operational', responseTime: 34, lastChecked: new Date() },
-];
+const STATUS_CONFIG = {
+  operational: { icon: CheckCircle, color: 'text-green-400', bg: 'bg-green-500/10', badge: 'bg-green-500/20 text-green-400', label: 'Operational' },
+  degraded: { icon: AlertTriangle, color: 'text-yellow-400', bg: 'bg-yellow-500/10', badge: 'bg-yellow-500/20 text-yellow-400', label: 'Degraded' },
+  down: { icon: XCircle, color: 'text-red-400', bg: 'bg-red-500/10', badge: 'bg-red-500/20 text-red-400', label: 'Down' },
+  placeholder: { icon: Clock, color: 'text-gray-400', bg: 'bg-gray-500/10', badge: 'bg-gray-500/20 text-gray-400', label: 'Not Configured' },
+};
 
-const mockResponseTimeTrend = [
-  { name: '00:00', api: 120, db: 25, whatsapp: 85 },
-  { name: '04:00', api: 115, db: 22, whatsapp: 78 },
-  { name: '08:00', api: 185, db: 35, whatsapp: 125 },
-  { name: '12:00', api: 210, db: 42, whatsapp: 145 },
-  { name: '16:00', api: 195, db: 38, whatsapp: 132 },
-  { name: '20:00', api: 165, db: 30, whatsapp: 98 },
-  { name: '23:59', api: 125, db: 24, whatsapp: 82 },
-];
-
-const mockThroughputTrend = [
-  { name: '00:00', requests: 1200, errors: 2 },
-  { name: '04:00', requests: 800, errors: 1 },
-  { name: '08:00', requests: 4500, errors: 5 },
-  { name: '12:00', requests: 6200, errors: 8 },
-  { name: '16:00', requests: 5800, errors: 6 },
-  { name: '20:00', requests: 3500, errors: 4 },
-  { name: '23:59', requests: 1500, errors: 2 },
-];
-
-const mockRecentErrors: SystemError[] = [
-  {
-    id: 'E-001',
-    service: 'VTPass Payment',
-    message: 'Timeout waiting for response from VTPass API',
-    timestamp: new Date(Date.now() - 2 * 60 * 60 * 1000),
-    count: 3,
-    resolved: true,
-  },
-  {
-    id: 'E-002',
-    service: 'WhatsApp API',
-    message: 'Rate limit exceeded for message sending',
-    timestamp: new Date(Date.now() - 5 * 60 * 60 * 1000),
-    count: 1,
-    resolved: true,
-  },
-  {
-    id: 'E-003',
-    service: 'Google Sheets Sync',
-    message: 'Authentication token expired, auto-renewed',
-    timestamp: new Date(Date.now() - 12 * 60 * 60 * 1000),
-    count: 1,
-    resolved: true,
-  },
-];
-
-const mockUptimeHistory = [
-  { name: 'Today', uptime: 100 },
-  { name: 'Yesterday', uptime: 99.98 },
-  { name: '2 days ago', uptime: 100 },
-  { name: '3 days ago', uptime: 99.95 },
-  { name: '4 days ago', uptime: 100 },
-  { name: '5 days ago', uptime: 100 },
-  { name: '6 days ago', uptime: 99.92 },
-];
-
-// ============================================
-// SYSTEM HEALTH PAGE
-// ============================================
+const OVERALL_CONFIG: Record<string, { label: string; color: string; icon: any }> = {
+  operational: { label: 'All Systems Operational', color: 'text-green-400', icon: CheckCircle },
+  degraded: { label: 'Performance Degraded', color: 'text-yellow-400', icon: AlertTriangle },
+  partial_outage: { label: 'Partial Outage', color: 'text-orange-400', icon: AlertTriangle },
+  major_outage: { label: 'Major Outage', color: 'text-red-400', icon: XCircle },
+};
 
 export default function SystemHealthPage() {
-  const [isRefreshing, setIsRefreshing] = useState(false);
-  const [lastRefresh, setLastRefresh] = useState(new Date());
+  const [data, setData] = useState<HealthData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
 
-  const handleRefresh = () => {
-    setIsRefreshing(true);
-    setTimeout(() => {
-      setIsRefreshing(false);
+  const fetchHealth = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch('/api/health');
+      const json = await res.json();
+      if (!json.success) throw new Error(json.error || 'Health check failed');
+      setData(json.data);
       setLastRefresh(new Date());
-    }, 2000);
-  };
-
-  // Auto-refresh every 30 seconds
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setLastRefresh(new Date());
-    }, 30000);
-    return () => clearInterval(interval);
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
-  const getStatusIcon = (status: string) => {
-    switch (status) {
-      case 'operational':
-        return <CheckCircle className="w-4 h-4 text-status-success" />;
-      case 'degraded':
-        return <AlertTriangle className="w-4 h-4 text-status-warning" />;
-      case 'down':
-        return <XCircle className="w-4 h-4 text-status-danger" />;
-      default:
-        return <Clock className="w-4 h-4 text-dash-muted" />;
-    }
+  useEffect(() => { fetchHealth(); }, [fetchHealth]);
+
+  // Auto-refresh every 60 seconds
+  useEffect(() => {
+    const interval = setInterval(fetchHealth, 60000);
+    return () => clearInterval(interval);
+  }, [fetchHealth]);
+
+  const overall = data ? OVERALL_CONFIG[data.overall_status] || OVERALL_CONFIG.operational : null;
+
+  const formatTime = (ms: number) => {
+    if (ms === 0) return '—';
+    if (ms < 1000) return `${ms}ms`;
+    return `${(ms / 1000).toFixed(1)}s`;
   };
 
-  const getResponseTimeColor = (ms: number) => {
-    if (ms < 100) return 'text-status-success';
-    if (ms < 300) return 'text-status-info';
-    if (ms < 500) return 'text-status-warning';
-    return 'text-status-danger';
+  const formatRows = (n: number) => {
+    if (n >= 1000000) return `${(n / 1000000).toFixed(1)}M`;
+    if (n >= 1000) return `${(n / 1000).toFixed(1)}K`;
+    return String(n);
   };
 
   return (
     <PageWrapper
       title="System Health"
-      subtitle="Monitor platform performance and service status"
+      subtitle="Real-time platform health checks and service status"
       actions={
         <div className="flex items-center gap-3">
-          <span className="text-xs text-dash-muted">
-            Last updated {formatRelativeTime(lastRefresh)}
-          </span>
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={handleRefresh}
-            isLoading={isRefreshing}
-            leftIcon={RefreshCw}
-          >
-            Refresh
-          </Button>
+          {lastRefresh && (
+            <span className="flex items-center gap-1.5 text-xs text-dash-muted">
+              <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+              Live Data
+              <span className="text-dash-muted/60">
+                Updated {lastRefresh.toLocaleTimeString()}
+              </span>
+            </span>
+          )}
+          <button onClick={fetchHealth} disabled={loading} className="flex items-center gap-2 px-4 py-2 rounded-lg bg-dash-bg border border-dash-border text-dash-muted hover:text-dash-text transition-colors text-sm">
+            {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+            {loading ? 'Checking...' : 'Refresh'}
+          </button>
         </div>
       }
     >
-      <div className="space-y-6">
-        {/* Overall Status Banner */}
-        <div className={`p-4 rounded-xl border ${
-          mockHealthStats.overallStatus === 'healthy' 
-            ? 'bg-status-success/10 border-status-success/30' 
-            : mockHealthStats.overallStatus === 'degraded'
-            ? 'bg-status-warning/10 border-status-warning/30'
-            : 'bg-status-danger/10 border-status-danger/30'
-        }`}>
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <div className={`w-12 h-12 rounded-full flex items-center justify-center ${
-                mockHealthStats.overallStatus === 'healthy' ? 'bg-status-success/20' : 'bg-status-warning/20'
-              }`}>
-                {mockHealthStats.overallStatus === 'healthy' 
-                  ? <CheckCircle className="w-6 h-6 text-status-success" />
-                  : <AlertTriangle className="w-6 h-6 text-status-warning" />
-                }
-              </div>
-              <div>
-                <h2 className={`text-xl font-bold ${
-                  mockHealthStats.overallStatus === 'healthy' ? 'text-status-success' : 'text-status-warning'
-                }`}>
-                  All Systems Operational
-                </h2>
-                <p className="text-sm text-dash-muted">
-                  Last incident: {formatRelativeTime(mockHealthStats.lastIncident)}
-                </p>
-              </div>
-            </div>
-            <div className="flex items-center gap-6">
-              <div className="text-right">
-                <p className="text-2xl font-bold font-mono text-dash-text">{mockHealthStats.uptime}%</p>
-                <p className="text-xs text-dash-muted">30-day uptime</p>
-              </div>
-            </div>
-          </div>
+      {error && (
+        <div className="mb-4 p-4 bg-red-500/10 border border-red-500/30 rounded-lg flex items-center gap-3">
+          <AlertTriangle className="w-5 h-5 text-red-500" />
+          <span className="text-red-400 text-sm">{error}</span>
+          <button onClick={fetchHealth} className="ml-auto text-red-400 hover:text-red-300 text-sm underline">Retry</button>
         </div>
+      )}
 
-        {/* Stats Row */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          <StatCard
-            title="Avg Response Time"
-            value={`${mockHealthStats.avgResponseTime}ms`}
-            subtitle="last hour"
-            icon={Zap}
-            iconColor="text-status-success"
-          />
-          <StatCard
-            title="Error Rate"
-            value={mockHealthStats.errorRate}
-            subtitle="last 24 hours"
-            icon={AlertTriangle}
-            iconColor="text-status-warning"
-            format="percentage"
-          />
-          <StatCard
-            title="Active Connections"
-            value={mockHealthStats.activeConnections}
-            subtitle="current"
-            icon={Wifi}
-            iconColor="text-status-info"
-            format="compact"
-          />
-          <StatCard
-            title="Queue Depth"
-            value={mockHealthStats.queueDepth}
-            subtitle="messages pending"
-            icon={Clock}
-            iconColor="text-naija-gold-400"
-          />
-        </div>
-
-        {/* Service Status Grid */}
-        <div className="dash-card">
-          <h3 className="font-semibold text-dash-text mb-4">Service Status</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            {mockServices.map((service) => (
-              <div
-                key={service.name}
-                className="p-4 rounded-lg bg-dash-bg border border-dash-border hover:border-dash-hover transition-colors"
-              >
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-sm font-medium text-dash-text">{service.name}</span>
-                  {getStatusIcon(service.status)}
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className={`text-lg font-mono ${getResponseTimeColor(service.responseTime || 0)}`}>
-                    {service.responseTime}ms
-                  </span>
-                  <Badge variant={service.status === 'operational' ? 'success' : 'warning'} size="sm">
-                    {service.status}
-                  </Badge>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Charts Row */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Response Time Trend */}
-          <div className="dash-card">
-            <h3 className="font-semibold text-dash-text mb-4">Response Time (24h)</h3>
-            <LineChartComponent
-              data={mockResponseTimeTrend}
-              dataKeys={[
-                { key: 'api', name: 'API', color: CHART_COLORS.primary },
-                { key: 'db', name: 'Database', color: CHART_COLORS.blue },
-                { key: 'whatsapp', name: 'WhatsApp', color: CHART_COLORS.secondary },
-              ]}
-              height={250}
-              formatter={(value) => `${value}ms`}
-            />
-          </div>
-
-          {/* Throughput Trend */}
-          <div className="dash-card">
-            <h3 className="font-semibold text-dash-text mb-4">Request Throughput (24h)</h3>
-            <AreaChartComponent
-              data={mockThroughputTrend}
-              dataKeys={[
-                { key: 'requests', name: 'Requests', color: CHART_COLORS.primary },
-                { key: 'errors', name: 'Errors', color: CHART_COLORS.red },
-              ]}
-              height={250}
-            />
-          </div>
-        </div>
-
-        {/* Uptime History */}
-        <div className="dash-card">
-          <h3 className="font-semibold text-dash-text mb-4">7-Day Uptime History</h3>
-          <div className="grid grid-cols-7 gap-2">
-            {mockUptimeHistory.map((day) => (
-              <div key={day.name} className="text-center">
-                <div
-                  className={`h-16 rounded-lg mb-2 flex items-center justify-center ${
-                    day.uptime === 100
-                      ? 'bg-status-success/20'
-                      : day.uptime >= 99.9
-                      ? 'bg-status-success/10'
-                      : day.uptime >= 99
-                      ? 'bg-status-warning/20'
-                      : 'bg-status-danger/20'
-                  }`}
-                >
-                  <span className={`font-mono text-sm ${
-                    day.uptime === 100 ? 'text-status-success' : 
-                    day.uptime >= 99.9 ? 'text-status-success' :
-                    day.uptime >= 99 ? 'text-status-warning' : 'text-status-danger'
-                  }`}>
-                    {day.uptime}%
-                  </span>
-                </div>
-                <span className="text-xs text-dash-muted">{day.name}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Recent Errors */}
-        <div className="dash-card">
-          <h3 className="font-semibold text-dash-text mb-4">Recent Errors</h3>
-          {mockRecentErrors.length > 0 ? (
-            <div className="space-y-3">
-              {mockRecentErrors.map((error) => (
-                <div
-                  key={error.id}
-                  className="flex items-start gap-4 p-3 rounded-lg bg-dash-bg border border-dash-border"
-                >
-                  <div className={`p-2 rounded-lg ${error.resolved ? 'bg-status-success/10' : 'bg-status-danger/10'}`}>
-                    {error.resolved 
-                      ? <CheckCircle className="w-4 h-4 text-status-success" />
-                      : <XCircle className="w-4 h-4 text-status-danger" />
-                    }
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-1">
-                      <span className="font-medium text-dash-text">{error.service}</span>
-                      <Badge variant={error.resolved ? 'success' : 'danger'} size="sm">
-                        {error.resolved ? 'Resolved' : 'Active'}
-                      </Badge>
-                      {error.count > 1 && (
-                        <Badge variant="default" size="sm">
-                          ×{error.count}
-                        </Badge>
-                      )}
-                    </div>
-                    <p className="text-sm text-dash-muted">{error.message}</p>
-                  </div>
-                  <span className="text-xs text-dash-muted whitespace-nowrap">
-                    {formatRelativeTime(error.timestamp)}
-                  </span>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="text-center py-8 text-dash-muted">
-              <CheckCircle className="w-12 h-12 mx-auto mb-3 text-status-success opacity-50" />
-              <p>No recent errors</p>
-            </div>
-          )}
-        </div>
-
-        {/* Resource Usage */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div className="dash-card">
-            <div className="flex items-center gap-3 mb-4">
-              <Cpu className="w-5 h-5 text-naija-green-500" />
-              <h4 className="font-medium text-dash-text">Azure Functions</h4>
-            </div>
-            <div className="space-y-3">
-              <div>
-                <div className="flex justify-between text-sm mb-1">
-                  <span className="text-dash-muted">Executions Today</span>
-                  <span className="text-dash-text font-mono">24,567</span>
-                </div>
-                <div className="h-2 bg-dash-bg rounded-full overflow-hidden">
-                  <div className="h-full bg-naija-green-500 rounded-full" style={{ width: '32%' }} />
-                </div>
-                <p className="text-xs text-dash-muted mt-1">32% of daily limit</p>
-              </div>
+      {/* Overall Status Banner */}
+      <div className={`dash-card p-5 mb-6 ${data?.overall_status === 'operational' ? 'border-green-500/30' : data?.overall_status === 'degraded' ? 'border-yellow-500/30' : 'border-red-500/30'}`}>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            {loading ? (
+              <Loader2 className="w-8 h-8 text-dash-muted animate-spin" />
+            ) : overall ? (
+              <overall.icon className={`w-8 h-8 ${overall.color}`} />
+            ) : (
+              <Activity className="w-8 h-8 text-dash-muted" />
+            )}
+            <div>
+              <h2 className={`text-xl font-bold ${overall?.color || 'text-dash-text'}`}>
+                {loading ? 'Running Health Checks...' : overall?.label || 'Unknown'}
+              </h2>
+              <p className="text-sm text-dash-muted">
+                {data ? `Health check completed in ${formatTime(data.total_check_time)}` : 'Checking all services...'}
+              </p>
             </div>
           </div>
-
-          <div className="dash-card">
-            <div className="flex items-center gap-3 mb-4">
-              <Database className="w-5 h-5 text-status-info" />
-              <h4 className="font-medium text-dash-text">Azure SQL</h4>
-            </div>
-            <div className="space-y-3">
-              <div>
-                <div className="flex justify-between text-sm mb-1">
-                  <span className="text-dash-muted">Storage Used</span>
-                  <span className="text-dash-text font-mono">2.4 GB</span>
-                </div>
-                <div className="h-2 bg-dash-bg rounded-full overflow-hidden">
-                  <div className="h-full bg-status-info rounded-full" style={{ width: '12%' }} />
-                </div>
-                <p className="text-xs text-dash-muted mt-1">12% of 20 GB limit</p>
-              </div>
-            </div>
-          </div>
-
-          <div className="dash-card">
-            <div className="flex items-center gap-3 mb-4">
-              <HardDrive className="w-5 h-5 text-naija-gold-400" />
-              <h4 className="font-medium text-dash-text">Blob Storage</h4>
-            </div>
-            <div className="space-y-3">
-              <div>
-                <div className="flex justify-between text-sm mb-1">
-                  <span className="text-dash-muted">Storage Used</span>
-                  <span className="text-dash-text font-mono">156 MB</span>
-                </div>
-                <div className="h-2 bg-dash-bg rounded-full overflow-hidden">
-                  <div className="h-full bg-naija-gold-400 rounded-full" style={{ width: '3%' }} />
-                </div>
-                <p className="text-xs text-dash-muted mt-1">3% of 5 GB allocation</p>
-              </div>
-            </div>
+          <div className="text-right">
+            <p className="text-3xl font-bold text-naija-green-400">{data?.uptime_pct?.toFixed(2) || '—'}%</p>
+            <p className="text-xs text-dash-muted">Availability</p>
           </div>
         </div>
       </div>
+
+      {/* Quick Stats */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+        <div className="dash-card p-4">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-sm text-dash-muted">Avg Response Time</span>
+            <Activity className="w-5 h-5 text-naija-green-400" />
+          </div>
+          <p className="text-2xl font-bold text-dash-text">{data ? formatTime(data.avg_response_time) : '...'}</p>
+          <p className="text-xs text-dash-muted mt-1">across all services</p>
+        </div>
+        <div className="dash-card p-4">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-sm text-dash-muted">Services Checked</span>
+            <Shield className="w-5 h-5 text-blue-400" />
+          </div>
+          <p className="text-2xl font-bold text-dash-text">{data?.services?.length || '...'}</p>
+          <p className="text-xs text-dash-muted mt-1">
+            {data ? `${data.services.filter(s => s.status === 'operational').length} operational` : '...'}
+          </p>
+        </div>
+        <div className="dash-card p-4">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-sm text-dash-muted">Database Size</span>
+            <HardDrive className="w-5 h-5 text-amber-400" />
+          </div>
+          <p className="text-2xl font-bold text-dash-text">{data?.database?.size || '...'}</p>
+          <p className="text-xs text-dash-muted mt-1">{data ? `${data.database.tables} tables` : '...'}</p>
+        </div>
+        <div className="dash-card p-4">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-sm text-dash-muted">Total Records</span>
+            <Layers className="w-5 h-5 text-purple-400" />
+          </div>
+          <p className="text-2xl font-bold text-dash-text">{data ? formatRows(data.database.totalRows) : '...'}</p>
+          <p className="text-xs text-dash-muted mt-1">across all tables</p>
+        </div>
+      </div>
+
+      {/* Service Status Grid */}
+      <h3 className="font-semibold text-dash-text mb-3">Service Status</h3>
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
+        {loading ? (
+          Array.from({ length: 6 }).map((_, i) => (
+            <div key={i} className="dash-card p-4 animate-pulse">
+              <div className="h-4 bg-dash-border rounded w-2/3 mb-3" />
+              <div className="h-6 bg-dash-border rounded w-1/3 mb-2" />
+              <div className="h-3 bg-dash-border rounded w-full" />
+            </div>
+          ))
+        ) : data?.services?.map(svc => {
+          const cfg = STATUS_CONFIG[svc.status] || STATUS_CONFIG.placeholder;
+          const Icon = SERVICE_ICONS[svc.name] || Server;
+          return (
+            <div key={svc.name} className={`dash-card p-4 border-l-2 ${svc.status === 'operational' ? 'border-l-green-500' : svc.status === 'degraded' ? 'border-l-yellow-500' : svc.status === 'down' ? 'border-l-red-500' : 'border-l-gray-500'}`}>
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <Icon className={`w-4 h-4 ${cfg.color}`} />
+                  <span className="text-sm font-medium text-dash-text">{svc.name}</span>
+                </div>
+                <cfg.icon className={`w-4 h-4 ${cfg.color}`} />
+              </div>
+              <div className="flex items-center justify-between mb-2">
+                <span className={`text-xl font-bold ${cfg.color}`}>
+                  {svc.status === 'placeholder' ? '—' : formatTime(svc.responseTime)}
+                </span>
+                <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${cfg.badge}`}>
+                  {cfg.label}
+                </span>
+              </div>
+              <p className="text-xs text-dash-muted truncate">{svc.message}</p>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Recent Errors */}
+      <h3 className="font-semibold text-dash-text mb-3">Recent Errors</h3>
+      <div className="dash-card overflow-hidden mb-6">
+        {!data || data.recent_errors.length === 0 ? (
+          <div className="p-8 text-center text-dash-muted text-sm">
+            <CheckCircle className="w-8 h-8 text-green-400 mx-auto mb-2" />
+            No recent errors logged
+          </div>
+        ) : (
+          <div className="divide-y divide-dash-border">
+            {data.recent_errors.map((err: any, i: number) => (
+              <div key={err.error_id || i} className="px-4 py-3 flex items-center gap-3">
+                {err.resolved_at ? (
+                  <CheckCircle className="w-5 h-5 text-green-400 flex-shrink-0" />
+                ) : (
+                  <AlertTriangle className="w-5 h-5 text-red-400 flex-shrink-0" />
+                )}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-medium text-dash-text">{err.error_source}</span>
+                    <span className={`px-1.5 py-0.5 text-xs rounded-full ${err.resolved_at ? 'bg-green-500/10 text-green-400' : 'bg-red-500/10 text-red-400'}`}>
+                      {err.status}
+                    </span>
+                    {err.severity && (
+                      <span className="px-1.5 py-0.5 text-xs rounded-full bg-gray-500/10 text-gray-400">{err.severity}</span>
+                    )}
+                  </div>
+                  <p className="text-xs text-dash-muted truncate mt-0.5">{err.error_message}</p>
+                </div>
+                <span className="text-xs text-dash-muted flex-shrink-0">
+                  {new Date(err.created_at).toLocaleString('en-NG', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Database Details */}
+      {data?.database && (
+        <>
+          <h3 className="font-semibold text-dash-text mb-3">Database Details</h3>
+          <div className="dash-card p-4">
+            <div className="grid grid-cols-3 gap-6">
+              <div>
+                <p className="text-xs text-dash-muted mb-1">Database</p>
+                <p className="text-sm font-medium text-dash-text">naijafoodmarket-live</p>
+                <p className="text-xs text-dash-muted mt-0.5">naijafood.database.windows.net</p>
+              </div>
+              <div>
+                <p className="text-xs text-dash-muted mb-1">Storage Used</p>
+                <p className="text-sm font-medium text-dash-text">{data.database.size}</p>
+                <div className="w-full bg-dash-border rounded-full h-1.5 mt-1.5">
+                  <div className="bg-blue-500 h-1.5 rounded-full" style={{ width: `${Math.min(parseFloat(data.database.size) / 20 * 100, 100)}%` }} />
+                </div>
+              </div>
+              <div>
+                <p className="text-xs text-dash-muted mb-1">Total Records</p>
+                <p className="text-sm font-medium text-dash-text">{data.database.totalRows.toLocaleString()}</p>
+                <p className="text-xs text-dash-muted mt-0.5">{data.database.tables} tables</p>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
     </PageWrapper>
   );
 }
