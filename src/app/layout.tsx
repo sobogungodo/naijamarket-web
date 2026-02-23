@@ -1,16 +1,16 @@
 // src/app/layout.tsx
-// NaijaMarket Intel - Root Layout with Single Session Support + AI ChatBot
-// Version: 2.1.0 - Added AI ChatBot
-// Date: 2026-02-04
+// NaijaMarket Intel - Root Layout with Conditional Session Management
+// Version: 2.2.0 - Fixed: public pages no longer trigger session checks
+// Date: 2026-02-23
 //
-// CHANGES FROM PREVIOUS VERSION:
-// - Added SingleSessionProvider for one-browser-at-a-time enforcement
-// - Added SessionExpiredModal to show when user logged out from another device
-// - Added Suspense boundary for client components using useSearchParams
-// - ✅ NEW: Added AI ChatBot component (Claude-powered)
+// CHANGES FROM v2.1.0:
+// - Moved SingleSessionProvider, SessionTimeoutProvider, SessionExpiredModal,
+//   and ChatBot into AuthShell component
+// - AuthShell only activates on protected routes (dashboard, settings, etc.)
+// - Landing page, about, privacy, blog, etc. render WITHOUT session providers
+// - FIXES: visiting landing page → redirected to /login?sessionExpired=true
 
 import type { Metadata, Viewport } from "next";
-import { Suspense } from "react";
 import { GeistSans } from "geist/font/sans";
 import { GeistMono } from "geist/font/mono";
 import { Space_Grotesk } from "next/font/google";
@@ -19,11 +19,8 @@ import { Toaster } from "sonner";
 import "@/styles/globals.css";
 import { cn } from "@/lib/utils";
 import Providers from "@/components/Providers";
-import { SessionTimeoutProvider } from "@/components/SessionTimeoutProvider";
-import { SingleSessionProvider } from "@/components/SingleSessionProvider";
-import SessionExpiredModal from "@/components/SessionExpiredModal";
-import ChatBot from "@/components/ChatBot"; // ✅ NEW: AI ChatBot
-import { ThemeProvider } from "@/components/ThemeProvider"; // ✅ NEW: Light/Dark mode
+import AuthShell from "@/components/AuthShell";
+import { ThemeProvider } from "@/components/ThemeProvider";
 
 // ============================================================================
 // FONTS
@@ -121,7 +118,7 @@ export const metadata: Metadata = {
     canonical: "https://naijamarket.intel",
     languages: {
       "en-NG": "https://naijamarket.intel",
-      "pcm-NG": "https://naijamarket.intel/pidgin", // Pidgin English
+      "pcm-NG": "https://naijamarket.intel/pidgin",
     },
   },
 };
@@ -147,8 +144,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html 
-      lang="en" 
+    <html
+      lang="en"
       className={cn(
         GeistSans.variable,
         GeistMono.variable,
@@ -157,11 +154,8 @@ export default function RootLayout({
       suppressHydrationWarning
     >
       <head>
-        {/* Preconnect to external resources */}
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
-        
-        {/* PWA meta tags */}
         <meta name="application-name" content="NaijaMarket Intel" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
@@ -179,49 +173,39 @@ export default function RootLayout({
       >
         {/* ═══════════════════════════════════════════════════════════════════
             PROVIDER HIERARCHY (order matters!)
-            1. Providers (NextAuth SessionProvider) - handles JWT tokens
-            2. SingleSessionProvider - validates session against database
-            3. SessionTimeoutProvider - auto-logout after inactivity
+            1. Providers (NextAuth SessionProvider) — handles JWT tokens
+            2. ThemeProvider — enables light/dark mode toggle
+            3. AuthShell — CONDITIONALLY wraps with session management:
+               • Public pages (/, /about, /blog, etc.): children only
+               • Protected pages (/dashboard, /settings): full session stack
+                 → SingleSessionProvider + SessionTimeout + ChatBot
             ═══════════════════════════════════════════════════════════════════ */}
         <Providers>
-          {/* Theme Provider - enables light/dark mode toggle */}
           <ThemeProvider
             attribute="class"
             defaultTheme="dark"
             enableSystem
             disableTransitionOnChange={false}
           >
-          {/* Single Session Provider - enforces one-browser-at-a-time */}
-          <SingleSessionProvider>
-            {/* Session Timeout Provider - Shows warning at 4 min, auto-logout at 5 min */}
-            <SessionTimeoutProvider>
-              {/* Main Content */}
+            {/* AuthShell: session providers ONLY on protected routes */}
+            <AuthShell>
               {children}
-            </SessionTimeoutProvider>
+            </AuthShell>
 
-            {/* Modal that shows when user is logged out from another device */}
-            <Suspense fallback={null}>
-              <SessionExpiredModal />
-            </Suspense>
-
-            {/* ✅ NEW: AI ChatBot - Floating button on all pages */}
-            <ChatBot />
-          </SingleSessionProvider>
-
-          {/* Toast Notifications */}
-          <Toaster
-            position="top-right"
-            toastOptions={{
-              classNames: {
-                toast: "!bg-[var(--terminal-surface)] !border-[var(--terminal-border)] !text-[var(--text-primary)]",
-                success: "!border-[var(--price-up)]/50",
-                error: "!border-[var(--price-down)]/50",
-                warning: "!border-naija-gold/50",
-                info: "!border-naija-blue/50",
-              },
-            }}
-            closeButton
-          />
+            {/* Toast Notifications — available on ALL pages */}
+            <Toaster
+              position="top-right"
+              toastOptions={{
+                classNames: {
+                  toast: "!bg-[var(--terminal-surface)] !border-[var(--terminal-border)] !text-[var(--text-primary)]",
+                  success: "!border-[var(--price-up)]/50",
+                  error: "!border-[var(--price-down)]/50",
+                  warning: "!border-naija-gold/50",
+                  info: "!border-naija-blue/50",
+                },
+              }}
+              closeButton
+            />
           </ThemeProvider>
         </Providers>
       </body>

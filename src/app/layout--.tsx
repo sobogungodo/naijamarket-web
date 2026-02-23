@@ -23,6 +23,7 @@ import { SessionTimeoutProvider } from "@/components/SessionTimeoutProvider";
 import { SingleSessionProvider } from "@/components/SingleSessionProvider";
 import SessionExpiredModal from "@/components/SessionExpiredModal";
 import ChatBot from "@/components/ChatBot"; // ✅ NEW: AI ChatBot
+import { ThemeProvider } from "@/components/ThemeProvider"; // ✅ NEW: Light/Dark mode
 
 // ============================================================================
 // FONTS
@@ -152,7 +153,6 @@ export default function RootLayout({
         GeistSans.variable,
         GeistMono.variable,
         spaceGrotesk.variable,
-        "dark"
       )}
       suppressHydrationWarning
     >
@@ -184,6 +184,13 @@ export default function RootLayout({
             3. SessionTimeoutProvider - auto-logout after inactivity
             ═══════════════════════════════════════════════════════════════════ */}
         <Providers>
+          {/* Theme Provider - enables light/dark mode toggle */}
+          <ThemeProvider
+            attribute="class"
+            defaultTheme="dark"
+            enableSystem
+            disableTransitionOnChange={false}
+          >
           {/* Single Session Provider - enforces one-browser-at-a-time */}
           <SingleSessionProvider>
             {/* Session Timeout Provider - Shows warning at 4 min, auto-logout at 5 min */}
@@ -203,23 +210,19 @@ export default function RootLayout({
 
           {/* Toast Notifications */}
           <Toaster
-            theme="dark"
             position="top-right"
             toastOptions={{
-              style: {
-                background: "#141414",
-                border: "1px solid #2a2a2a",
-                color: "#fff",
-              },
               classNames: {
-                success: "!border-price-up/50",
-                error: "!border-price-down/50",
+                toast: "!bg-[var(--terminal-surface)] !border-[var(--terminal-border)] !text-[var(--text-primary)]",
+                success: "!border-[var(--price-up)]/50",
+                error: "!border-[var(--price-down)]/50",
                 warning: "!border-naija-gold/50",
                 info: "!border-naija-blue/50",
               },
             }}
             closeButton
           />
+          </ThemeProvider>
         </Providers>
       </body>
     </html>
