@@ -67,6 +67,9 @@ export default function CommoditiesPage() {
     whole_sale_Price: '', min_price: '', max_price: '',
   });
 
+  const [pricesLoading, setPricesLoading] = useState(false);
+
+  // Stage 1: Fast load (Items_Catalog only)
   const fetchData = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -82,6 +85,20 @@ export default function CommoditiesPage() {
     } finally {
       setLoading(false);
     }
+  }, []);
+
+  // Stage 2: Load live prices from Daily_Prices (heavy)
+  const fetchPrices = useCallback(async () => {
+    setPricesLoading(true);
+    try {
+      const res = await fetch('/api/commodities?prices=1');
+      const json = await res.json();
+      if (json.success) {
+        setItems(json.data.items || []);
+        setSummary(json.data.summary || null);
+      }
+    } catch { /* silent */ }
+    finally { setPricesLoading(false); }
   }, []);
 
   useEffect(() => { fetchData(); }, [fetchData]);
@@ -179,6 +196,9 @@ export default function CommoditiesPage() {
         <div className="flex items-center gap-2">
           <button onClick={fetchData} className="p-2 rounded-lg bg-dash-bg border border-dash-border text-dash-muted hover:text-dash-text transition-colors" title="Refresh">
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+          </button>
+          <button onClick={fetchPrices} disabled={pricesLoading} className="flex items-center gap-2 px-3 py-2 rounded-lg bg-dash-bg border border-dash-border text-dash-muted hover:text-dash-text transition-colors text-sm">
+            {pricesLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <TrendingUp className="w-4 h-4" />} {pricesLoading ? 'Loading...' : 'Load Prices'}
           </button>
           <button onClick={exportCSV} className="flex items-center gap-2 px-3 py-2 rounded-lg bg-dash-bg border border-dash-border text-dash-muted hover:text-dash-text transition-colors text-sm">
             <Download className="w-4 h-4" /> Export
