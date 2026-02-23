@@ -65,8 +65,6 @@ export async function middleware(request: NextRequest) {
     pathname.startsWith("/api/health") ||
     pathname.startsWith("/api/public") ||
     pathname.startsWith("/api/inflation") ||
-    pathname.startsWith("/api/subscribe-email") ||
-    pathname.startsWith("/api/unsubscribe") ||
     pathname.includes(".") ||
     pathname.startsWith("/images") ||
     pathname.startsWith("/icons") ||
