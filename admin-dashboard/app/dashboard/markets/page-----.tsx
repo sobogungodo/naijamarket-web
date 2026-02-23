@@ -78,9 +78,6 @@ export default function MarketsPage() {
     radius_meters: '500', opening_hours: '6:00 AM - 6:00 PM',
   });
 
-  const [statsLoading, setStatsLoading] = useState(false);
-
-  // Stage 1: Fast load (Markets + Traders only)
   const fetchData = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -97,21 +94,6 @@ export default function MarketsPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
-
-  // Stage 2: Load heavy submission stats in background
-  const fetchStats = useCallback(async () => {
-    setStatsLoading(true);
-    try {
-      const res = await fetch('/api/markets?stats=1');
-      const json = await res.json();
-      if (json.success) {
-        setMarkets(json.data.markets || []);
-        setSummary(json.data.summary || null);
-        setActivity(json.data.activity_7d || []);
-      }
-    } catch { /* silent fail - base data already loaded */ }
-    finally { setStatsLoading(false); }
   }, []);
 
   useEffect(() => { fetchData(); }, [fetchData]);
@@ -208,9 +190,6 @@ export default function MarketsPage() {
         <div className="flex items-center gap-2">
           <button onClick={fetchData} className="p-2 rounded-lg bg-dash-bg border border-dash-border text-dash-muted hover:text-dash-text transition-colors" title="Refresh">
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-          </button>
-          <button onClick={fetchStats} disabled={statsLoading} className="flex items-center gap-2 px-3 py-2 rounded-lg bg-dash-bg border border-dash-border text-dash-muted hover:text-dash-text transition-colors text-sm">
-            {statsLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4" />} {statsLoading ? 'Loading...' : 'Load Stats'}
           </button>
           <button onClick={exportCSV} className="flex items-center gap-2 px-3 py-2 rounded-lg bg-dash-bg border border-dash-border text-dash-muted hover:text-dash-text transition-colors text-sm">
             <Download className="w-4 h-4" /> Export
