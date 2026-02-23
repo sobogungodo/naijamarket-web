@@ -20,6 +20,8 @@ import {
   FileText,
   MapPin,
   Package,
+  Code2,
+  Megaphone,
 } from 'lucide-react';
 import { signOut, useSession } from 'next-auth/react';
 import { Avatar } from '@/components/ui';
@@ -72,6 +74,21 @@ const navItems = [
   },
 ];
 
+const revenueItems = [
+  {
+    title: 'Widget Keys',
+    href: '/dashboard/widgets',
+    icon: Code2,
+    badge: 'new',
+  },
+  {
+    title: 'FMCG Alerts',
+    href: '/dashboard/fmcg-alerts',
+    icon: Megaphone,
+    badge: 'new',
+  },
+];
+
 const bottomNavItems = [
   {
     title: 'Settings',
@@ -99,6 +116,45 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
       return pathname === '/dashboard';
     }
     return pathname.startsWith(href);
+  };
+
+  const renderNavItem = (item: { title: string; href: string; icon: React.ElementType; badge?: string }) => {
+    const Icon = item.icon;
+    const active = isActive(item.href);
+
+    return (
+      <Link
+        key={item.href}
+        href={item.href}
+        className={cn(
+          'flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200',
+          'hover:bg-dash-hover group',
+          active
+            ? 'bg-naija-green-500/10 text-naija-green-400 border-l-2 border-naija-green-500'
+            : 'text-dash-muted hover:text-dash-text',
+          collapsed && 'justify-center px-0'
+        )}
+        title={collapsed ? item.title : undefined}
+      >
+        <Icon className={cn('w-5 h-5 flex-shrink-0', active && 'text-naija-green-400')} />
+        {!collapsed && (
+          <>
+            <span className="flex-1 font-medium">{item.title}</span>
+            {item.badge === 'critical' && (
+              <span className="w-2 h-2 rounded-full bg-status-danger animate-pulse" />
+            )}
+            {item.badge === 'new' && (
+              <span className="px-1.5 py-0.5 text-[9px] font-bold bg-naija-green-500/20 text-naija-green-400 rounded">
+                NEW
+              </span>
+            )}
+          </>
+        )}
+        {collapsed && item.badge === 'critical' && (
+          <span className="absolute right-3 w-2 h-2 rounded-full bg-status-danger animate-pulse" />
+        )}
+      </Link>
+    );
   };
 
   return (
@@ -132,39 +188,17 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
 
         {/* Main Navigation */}
         <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
-          {navItems.map((item) => {
-            const Icon = item.icon;
-            const active = isActive(item.href);
+          {navItems.map(renderNavItem)}
 
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                className={cn(
-                  'flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200',
-                  'hover:bg-dash-hover group',
-                  active
-                    ? 'bg-naija-green-500/10 text-naija-green-400 border-l-2 border-naija-green-500'
-                    : 'text-dash-muted hover:text-dash-text',
-                  collapsed && 'justify-center px-0'
-                )}
-                title={collapsed ? item.title : undefined}
-              >
-                <Icon className={cn('w-5 h-5 flex-shrink-0', active && 'text-naija-green-400')} />
-                {!collapsed && (
-                  <>
-                    <span className="flex-1 font-medium">{item.title}</span>
-                    {item.badge === 'critical' && (
-                      <span className="w-2 h-2 rounded-full bg-status-danger animate-pulse" />
-                    )}
-                  </>
-                )}
-                {collapsed && item.badge === 'critical' && (
-                  <span className="absolute right-3 w-2 h-2 rounded-full bg-status-danger animate-pulse" />
-                )}
-              </Link>
-            );
-          })}
+          {/* Revenue / B2B Section */}
+          <div className="pt-4 mt-4 border-t border-dash-border">
+            {!collapsed && (
+              <p className="px-3 mb-2 text-[10px] font-semibold text-dash-muted uppercase tracking-wider">
+                Revenue / B2B
+              </p>
+            )}
+            {revenueItems.map(renderNavItem)}
+          </div>
         </nav>
 
         {/* Bottom Navigation */}
