@@ -4,7 +4,6 @@ import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { signOut, useSession } from "next-auth/react";
-import { useTheme } from "next-themes";
 import {
   LayoutDashboard,
   DollarSign,
@@ -20,8 +19,6 @@ import {
   GitCompare,
   Menu,
   X,
-  Sun,
-  Moon,
 } from "lucide-react";
 
 // ============================================================================
@@ -68,20 +65,20 @@ const mainNavItems: NavItem[] = [
     name: "Compare",
     href: "/compare",
     icon: GitCompare,
-    minTier: ["FREE"],
+    minTier: ["FREE"], // Available to all tiers
   },
   {
     name: "Arbitrage",
     href: "/arbitrage",
     icon: TrendingUp,
     badge: "PRO",
-    minTier: ["GOLD"],
+    minTier: ["GOLD"], // Gold and above
   },
   {
     name: "Watchlist",
     href: "/watchlist",
     icon: Star,
-    minTier: ["SILVER"],
+    minTier: ["SILVER"], // Silver and above
   },
   {
     name: "Price Alerts",
@@ -92,7 +89,7 @@ const mainNavItems: NavItem[] = [
     name: "Analytics",
     href: "/analytics",
     icon: BarChart3,
-    minTier: ["BUSINESS"],
+    minTier: ["BUSINESS"], // Business and above
   },
 ];
 
@@ -119,7 +116,6 @@ const toolsNavItems: NavItem[] = [
 export default function Sidebar() {
   const pathname = usePathname();
   const { data: session } = useSession();
-  const { theme, setTheme } = useTheme();
   const [isMobileOpen, setIsMobileOpen] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
 
@@ -146,11 +142,6 @@ export default function Sidebar() {
       console.error("Logout error:", error);
       setIsLoggingOut(false);
     }
-  };
-
-  // Toggle theme
-  const toggleTheme = () => {
-    setTheme(theme === "dark" ? "light" : "dark");
   };
 
   // Check if nav item is active
@@ -192,7 +183,7 @@ export default function Sidebar() {
           flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200
           ${active 
             ? "bg-emerald-500/10 text-emerald-400 border-l-2 border-emerald-400" 
-            : "text-[var(--text-muted)] hover:bg-[var(--terminal-elevated)] hover:text-[var(--text-primary)]"
+            : "text-gray-400 hover:bg-gray-800/50 hover:text-white"
           }
         `}
       >
@@ -217,11 +208,11 @@ export default function Sidebar() {
   const sidebarContent = (
     <>
       {/* Logo */}
-      <div className="flex items-center gap-2 px-4 py-4 border-b border-[var(--terminal-border)]">
+      <div className="flex items-center gap-2 px-4 py-4 border-b border-gray-800">
         <div className="w-8 h-8 rounded-lg bg-emerald-500 flex items-center justify-center">
           <span className="text-white font-bold text-sm">NM</span>
         </div>
-        <span className="text-lg font-semibold text-[var(--text-primary)]">
+        <span className="text-lg font-semibold text-white">
           NaijaMarket<span className="text-emerald-400">Intel</span>
         </span>
       </div>
@@ -232,7 +223,7 @@ export default function Sidebar() {
 
         {/* Tools Section */}
         <div className="pt-6">
-          <div className="px-3 pb-2 text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider">
+          <div className="px-3 pb-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">
             Tools
           </div>
           {toolsNavItems.map(renderNavItem)}
@@ -240,7 +231,7 @@ export default function Sidebar() {
       </nav>
 
       {/* User Section */}
-      <div className="border-t border-[var(--terminal-border)] p-4">
+      <div className="border-t border-gray-800 p-4">
         {/* User Info */}
         <div className="flex items-center gap-3 mb-4">
           <div className="w-10 h-10 rounded-full bg-emerald-500/20 flex items-center justify-center">
@@ -249,10 +240,10 @@ export default function Sidebar() {
             </span>
           </div>
           <div className="flex-1 min-w-0">
-            <div className="text-sm font-medium text-[var(--text-primary)] truncate">
+            <div className="text-sm font-medium text-white truncate">
               {userName}
             </div>
-            <div className="text-xs text-[var(--text-muted)] uppercase">
+            <div className="text-xs text-gray-500 uppercase">
               {userTier}
             </div>
           </div>
@@ -260,22 +251,9 @@ export default function Sidebar() {
 
         {/* User Actions */}
         <div className="flex items-center gap-2">
-          {/* Theme Toggle */}
-          <button
-            onClick={toggleTheme}
-            className="flex items-center justify-center p-2 rounded-lg text-[var(--text-muted)] hover:bg-[var(--terminal-elevated)] hover:text-[var(--text-primary)] transition-colors"
-            title={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
-          >
-            {theme === "dark" ? (
-              <Sun className="w-4 h-4" />
-            ) : (
-              <Moon className="w-4 h-4" />
-            )}
-          </button>
-
           <Link
             href="/settings"
-            className="flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-[var(--text-muted)] hover:bg-[var(--terminal-elevated)] hover:text-[var(--text-primary)] transition-colors"
+            className="flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-gray-400 hover:bg-gray-800 hover:text-white transition-colors"
           >
             <Settings className="w-4 h-4" />
             <span className="text-sm">Settings</span>
@@ -283,7 +261,7 @@ export default function Sidebar() {
           <button
             onClick={handleLogout}
             disabled={isLoggingOut}
-            className="flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-[var(--text-muted)] hover:bg-red-500/10 hover:text-red-400 transition-colors disabled:opacity-50"
+            className="flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-gray-400 hover:bg-red-500/10 hover:text-red-400 transition-colors disabled:opacity-50"
             title="Sign out"
           >
             {isLoggingOut ? (
@@ -302,7 +280,7 @@ export default function Sidebar() {
       {/* Mobile Menu Button */}
       <button
         onClick={() => setIsMobileOpen(!isMobileOpen)}
-        className="lg:hidden fixed top-4 left-4 z-50 p-2 rounded-lg bg-[var(--terminal-surface)] text-[var(--text-primary)] border border-[var(--terminal-border)]"
+        className="lg:hidden fixed top-4 left-4 z-50 p-2 rounded-lg bg-gray-800 text-white"
       >
         {isMobileOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
       </button>
@@ -318,7 +296,7 @@ export default function Sidebar() {
       {/* Sidebar - Mobile */}
       <aside
         className={`
-          lg:hidden fixed inset-y-0 left-0 z-50 w-64 bg-[var(--terminal-bg)] border-r border-[var(--terminal-border)]
+          lg:hidden fixed inset-y-0 left-0 z-50 w-64 bg-[#0f0f0f] border-r border-gray-800
           transform transition-transform duration-300
           ${isMobileOpen ? "translate-x-0" : "-translate-x-full"}
           flex flex-col
@@ -328,7 +306,7 @@ export default function Sidebar() {
       </aside>
 
       {/* Sidebar - Desktop */}
-      <aside className="hidden lg:flex lg:flex-col lg:w-64 lg:fixed lg:inset-y-0 bg-[var(--terminal-bg)] border-r border-[var(--terminal-border)]">
+      <aside className="hidden lg:flex lg:flex-col lg:w-64 lg:fixed lg:inset-y-0 bg-[#0f0f0f] border-r border-gray-800">
         {sidebarContent}
       </aside>
     </>

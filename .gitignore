@@ -59,3 +59,5 @@ logs
 __tests__/
 *.test.ts
 *.spec.ts
+
+.vercel
