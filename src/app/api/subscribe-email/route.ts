@@ -274,7 +274,10 @@ export async function POST(request: NextRequest) {
 
     const cleanEmail = email.trim().toLowerCase();
     const cleanName = (firstName || "").trim().slice(0, 100);
-    const cleanSource = source || "landing_page";
+    
+    // Sanitize source to match DB CHECK constraint
+    const VALID_SOURCES = ["landing_page", "registration", "blog", "api_portal", "manual", "import"];
+    const cleanSource = VALID_SOURCES.includes(source) ? source : "landing_page";
 
     if (!isValidEmail(cleanEmail)) {
       return NextResponse.json(
