@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, FormEvent } from "react";
 import Link from "next/link";
+import EmailSignup from "@/components/EmailSignup";
 
 // ============================================================================
 // NaijaMarket Intel — Landing Page v2.0
@@ -449,6 +450,10 @@ function Hero() {
               </div>
             ))}
           </div>
+
+          <div className="nm-hero-signup">
+            <EmailSignup variant="inline" source="hero" />
+          </div>
         </div>
 
         <div className="nm-hero-demo">
@@ -673,6 +678,14 @@ function CTASection() {
             💬 Chat on WhatsApp
           </a>
         </div>
+        <div className="nm-cta-signup">
+          <div className="nm-cta-divider">
+            <span className="nm-cta-divider-line" />
+            <span className="nm-cta-divider-text">or get free weekly market briefs</span>
+            <span className="nm-cta-divider-line" />
+          </div>
+          <EmailSignup variant="footer" source="cta_section" />
+        </div>
       </div>
     </section>
   );
@@ -723,6 +736,9 @@ function Footer() {
             Real-time, GPS-verified commodity price intelligence for Nigeria.
             The Bloomberg of Nigerian Commodities.
           </p>
+          <div className="nm-footer-signup">
+            <EmailSignup variant="footer" source="footer" />
+          </div>
         </div>
         {columns.map((col, i) => (
           <div key={i} className="nm-footer-col">
@@ -1671,6 +1687,41 @@ html { scroll-behavior: smooth; }
   gap: 6px;
   font-size: 11px;
   color: var(--nm-text4);
+}
+
+/* ── Email Signup ── */
+.nm-hero-signup {
+  margin-top: 28px;
+}
+.nm-cta-signup {
+  margin-top: 28px;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+}
+.nm-cta-divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  max-width: 400px;
+}
+.nm-cta-divider-line {
+  flex: 1;
+  height: 1px;
+  background: rgba(255,255,255,0.08);
+}
+.nm-cta-divider-text {
+  font-size: 11px;
+  color: var(--nm-text3);
+  white-space: nowrap;
+  font-family: var(--nm-mono);
+  letter-spacing: 0.3px;
+}
+.nm-footer-signup {
+  margin-top: 16px;
 }
 
 /* ══════════════════════════════════════════════════════════
