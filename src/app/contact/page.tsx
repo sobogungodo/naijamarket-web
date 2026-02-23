@@ -1,102 +1,90 @@
-// src/app/contact/page.tsx
-// NaijaMarket Intel - Contact Page
+import PublicPageShell from "@/components/PublicPageShell";
 
-import Link from "next/link";
-
-export const metadata = {
-  title: "Contact Us | NaijaMarket Intel",
-  description: "Get in touch with the NaijaMarket Intel team.",
-};
+export const metadata = { title: "Contact | NaijaMarket Intel" };
 
 export default function ContactPage() {
   return (
-    <div className="min-h-screen bg-terminal-bg text-gray-300">
-      <header className="border-b border-terminal-border py-4 px-6">
-        <div className="max-w-4xl mx-auto flex items-center justify-between">
-          <Link href="/" className="flex items-center gap-2">
-            <div className="w-8 h-8 bg-gradient-to-br from-naija-green to-naija-gold rounded-lg flex items-center justify-center">
-              <span className="text-terminal-bg font-bold text-sm">NM</span>
-            </div>
-            <span className="font-display font-bold text-lg text-white">
-              NaijaMarket<span className="text-naija-green">Intel</span>
-            </span>
-          </Link>
-          <Link href="/" className="text-sm text-gray-500 hover:text-white transition-colors">← Back to Home</Link>
-        </div>
-      </header>
-
-      <main className="max-w-4xl mx-auto px-6 py-12">
-        <h1 className="text-3xl font-bold text-white mb-2">Contact Us</h1>
-        <p className="text-gray-500 mb-8">We&apos;d love to hear from you. Reach out through any of the channels below.</p>
-
-        <div className="grid md:grid-cols-2 gap-6">
-          {/* General Inquiries */}
-          <div className="bg-terminal-surface border border-terminal-border rounded-xl p-6">
-            <div className="text-2xl mb-3">📧</div>
-            <h3 className="text-lg font-semibold text-white mb-2">General Inquiries</h3>
-            <p className="text-sm text-gray-400 mb-3">Questions about the platform, features, or partnerships.</p>
-            <a href="mailto:hello@naijamarketintel.com" className="text-naija-green hover:underline text-sm font-medium">
-              hello@naijamarketintel.com
+    <PublicPageShell
+      title="Contact Us"
+      subtitle="Questions, partnerships, or feedback — we'd love to hear from you."
+    >
+      <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 20 }}>
+        <div className="pp-card">
+          <h3 style={{ marginTop: 0 }}>💬 WhatsApp (Fastest)</h3>
+          <p>
+            Chat with us directly on WhatsApp for quick questions or to try our
+            price query service.
+          </p>
+          <p>
+            <a
+              href="https://wa.me/14155238886?text=Hi%20NaijaMarket"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Open WhatsApp Chat →
             </a>
-          </div>
-
-          {/* Support */}
-          <div className="bg-terminal-surface border border-terminal-border rounded-xl p-6">
-            <div className="text-2xl mb-3">🛟</div>
-            <h3 className="text-lg font-semibold text-white mb-2">Technical Support</h3>
-            <p className="text-sm text-gray-400 mb-3">Issues with your account, subscriptions, or WhatsApp integration.</p>
-            <a href="mailto:support@naijamarketintel.com" className="text-naija-green hover:underline text-sm font-medium">
-              support@naijamarketintel.com
-            </a>
-          </div>
-
-          {/* Enterprise / API */}
-          <div className="bg-terminal-surface border border-terminal-border rounded-xl p-6">
-            <div className="text-2xl mb-3">🏢</div>
-            <h3 className="text-lg font-semibold text-white mb-2">Enterprise &amp; API</h3>
-            <p className="text-sm text-gray-400 mb-3">Enterprise pricing, API access, bulk data licensing, and B2B partnerships.</p>
-            <a href="mailto:enterprise@naijamarketintel.com" className="text-naija-green hover:underline text-sm font-medium">
-              enterprise@naijamarketintel.com
-            </a>
-          </div>
-
-          {/* WhatsApp */}
-          <div className="bg-terminal-surface border border-terminal-border rounded-xl p-6">
-            <div className="text-2xl mb-3">💬</div>
-            <h3 className="text-lg font-semibold text-white mb-2">WhatsApp</h3>
-            <p className="text-sm text-gray-400 mb-3">Quick support via our WhatsApp bot. Type <strong className="text-white">help</strong> to get started.</p>
-            <a href="https://wa.me/14155238886?text=join%20daily-drew" className="text-naija-green hover:underline text-sm font-medium" target="_blank" rel="noopener noreferrer">
-              Open WhatsApp →
-            </a>
-          </div>
+          </p>
         </div>
 
-        {/* Office */}
-        <div className="mt-10 bg-terminal-surface border border-terminal-border rounded-xl p-6">
-          <h3 className="text-lg font-semibold text-white mb-4">Our Offices</h3>
-          <div className="grid md:grid-cols-2 gap-6">
-            <div>
-              <p className="text-sm font-medium text-naija-green mb-1">Nigeria (Operations)</p>
-              <p className="text-sm text-gray-400">Lagos, Nigeria</p>
-            </div>
-            <div>
-              <p className="text-sm font-medium text-naija-green mb-1">Finland (Headquarters)</p>
-              <p className="text-sm text-gray-400">Helsinki, Finland</p>
-            </div>
-          </div>
+        <div className="pp-card">
+          <h3 style={{ marginTop: 0 }}>📧 Email</h3>
+          <p>For detailed inquiries, partnerships, or formal communications.</p>
+          <ul>
+            <li>
+              <strong>General:</strong>{" "}
+              <a href="mailto:info@naijamarketintel.ng">info@naijamarketintel.ng</a>
+            </li>
+            <li>
+              <strong>Enterprise Sales:</strong>{" "}
+              <a href="mailto:sales@naijamarketintel.ng">sales@naijamarketintel.ng</a>
+            </li>
+            <li>
+              <strong>Technical Support:</strong>{" "}
+              <a href="mailto:support@naijamarketintel.ng">support@naijamarketintel.ng</a>
+            </li>
+            <li>
+              <strong>Privacy & Data:</strong>{" "}
+              <a href="mailto:privacy@naijamarketintel.ng">privacy@naijamarketintel.ng</a>
+            </li>
+          </ul>
         </div>
 
-        {/* Trader / Validator */}
-        <div className="mt-10 bg-naija-green/10 border border-naija-green/30 rounded-xl p-6">
-          <h3 className="text-lg font-semibold text-white mb-2">Become a Market Trader or Validator</h3>
-          <p className="text-sm text-gray-400 mb-3">Earn airtime rewards by submitting verified commodity prices from Nigerian markets or validating price submissions.</p>
-          <p className="text-sm text-gray-400">Send <strong className="text-white">Hi</strong> to our WhatsApp number to get started — registration takes less than 2 minutes.</p>
+        <div className="pp-card">
+          <h3 style={{ marginTop: 0 }}>🏢 Company</h3>
+          <p>
+            <strong>Giggababytes Oy</strong><br />
+            Helsinki, Finland<br />
+            <a href="mailto:olawale.sobogungod@giggabytes.eu">
+              olawale.sobogungod@giggabytes.eu
+            </a>
+          </p>
         </div>
-      </main>
 
-      <footer className="border-t border-terminal-border py-6 px-6 text-center text-sm text-gray-500">
-        © {new Date().getFullYear()} NaijaMarket Intel. All rights reserved.
-      </footer>
-    </div>
+        <div className="pp-card">
+          <h3 style={{ marginTop: 0 }}>🤝 Partnerships</h3>
+          <p>
+            We partner with market associations, agricultural agencies, fintech
+            companies, and government institutions across Nigeria. If you represent
+            an organization interested in market intelligence data, API access, or
+            white-label solutions, reach out to our enterprise team.
+          </p>
+          <p>
+            <a href="mailto:partnerships@naijamarketintel.ng">
+              partnerships@naijamarketintel.ng
+            </a>
+          </p>
+        </div>
+      </div>
+
+      <div className="pp-highlight" style={{ marginTop: 32 }}>
+        <h3 style={{ marginTop: 0 }}>🐛 Found a Bug?</h3>
+        <p style={{ marginBottom: 0 }}>
+          If you encounter any technical issues on the platform, please email{" "}
+          <a href="mailto:support@naijamarketintel.ng">support@naijamarketintel.ng</a>{" "}
+          with a description of the issue, your device/browser, and screenshots
+          if possible. We typically respond within 24 hours.
+        </p>
+      </div>
+    </PublicPageShell>
   );
 }

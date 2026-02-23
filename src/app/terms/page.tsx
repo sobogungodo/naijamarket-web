@@ -1,98 +1,119 @@
-// src/app/terms/page.tsx
-// NaijaMarket Intel - Terms of Service
+import PublicPageShell from "@/components/PublicPageShell";
 
-import Link from "next/link";
-
-export const metadata = {
-  title: "Terms of Service | NaijaMarket Intel",
-  description: "Terms and conditions for using NaijaMarket Intel platform.",
-};
+export const metadata = { title: "Terms of Service | NaijaMarket Intel" };
 
 export default function TermsPage() {
   return (
-    <div className="min-h-screen bg-terminal-bg text-gray-300">
-      <header className="border-b border-terminal-border py-4 px-6">
-        <div className="max-w-4xl mx-auto flex items-center justify-between">
-          <Link href="/" className="flex items-center gap-2">
-            <div className="w-8 h-8 bg-gradient-to-br from-naija-green to-naija-gold rounded-lg flex items-center justify-center">
-              <span className="text-terminal-bg font-bold text-sm">NM</span>
-            </div>
-            <span className="font-display font-bold text-lg text-white">
-              NaijaMarket<span className="text-naija-green">Intel</span>
-            </span>
-          </Link>
-          <Link href="/" className="text-sm text-gray-500 hover:text-white transition-colors">← Back to Home</Link>
-        </div>
-      </header>
+    <PublicPageShell
+      title="Terms of Service"
+      subtitle="The rules that govern your use of NaijaMarket Intel."
+    >
+      <p className="pp-date">Last updated: February 23, 2026</p>
 
-      <main className="max-w-4xl mx-auto px-6 py-12">
-        <h1 className="text-3xl font-bold text-white mb-2">Terms of Service</h1>
-        <p className="text-gray-500 mb-8">Last updated: February 2026</p>
+      <h2>1. Acceptance of Terms</h2>
+      <p>
+        By accessing or using NaijaMarket Intel (&quot;the Platform&quot;), operated by
+        Giggababytes Oy (&quot;the Company&quot;), you agree to be bound by these Terms of
+        Service. If you do not agree, do not use the Platform.
+      </p>
 
-        <div className="space-y-8 leading-relaxed">
-          <section>
-            <h2 className="text-xl font-semibold text-white mb-3">1. Acceptance of Terms</h2>
-            <p>By accessing or using NaijaMarket Intel (&quot;the Platform&quot;), you agree to be bound by these Terms of Service. The Platform is operated by NaijaMarket Intel, providing commodity price intelligence services across Nigerian markets.</p>
-          </section>
+      <h2>2. Service Description</h2>
+      <p>
+        NaijaMarket Intel is a commodity price intelligence platform that provides
+        crowdsourced, GPS-verified market prices across Nigeria. The Platform
+        operates through web and WhatsApp interfaces and offers tiered subscription
+        plans from FREE to ENTERPRISE.
+      </p>
 
-          <section>
-            <h2 className="text-xl font-semibold text-white mb-3">2. User Roles &amp; Responsibilities</h2>
-            <p className="mb-2">The Platform supports three user roles:</p>
-            <ul className="list-disc ml-6 space-y-2">
-              <li><strong className="text-white">Traders:</strong> Submit commodity prices from physical markets. Must be physically present within 500m of the market (GPS verified). Earn ₦20 per approved submission. Must provide accurate pricing — repeated fraudulent submissions result in permanent suspension.</li>
-              <li><strong className="text-white">Validators:</strong> Verify price submissions through consensus voting. Earn ₦50 per validation. Must vote honestly — accuracy below 60% results in suspension.</li>
-              <li><strong className="text-white">Consumers:</strong> Access real-time verified commodity prices. Subscription tiers range from FREE to ENTERPRISE with varying access levels.</li>
-            </ul>
-            <p className="mt-2">Each phone number may only be registered for ONE role. Role switching is not permitted.</p>
-          </section>
+      <h2>3. User Accounts</h2>
+      <ul>
+        <li>You must provide accurate and complete registration information</li>
+        <li>You are responsible for maintaining the confidentiality of your account</li>
+        <li>One account per person — account sharing is prohibited</li>
+        <li>You must be at least 18 years old to use the Platform</li>
+        <li>We reserve the right to suspend or terminate accounts that violate these terms</li>
+      </ul>
 
-          <section>
-            <h2 className="text-xl font-semibold text-white mb-3">3. Subscription &amp; Payment</h2>
-            <p>Consumer subscriptions are billed according to the selected tier (FREE, SABI, BUSINESS, CORPORATE, ENTERPRISE). Payment is processed through Paystack and Flutterwave. Subscriptions auto-renew unless cancelled. Refunds are available within 48 hours of initial subscription only.</p>
-          </section>
+      <h2>4. Trader Terms</h2>
+      <div className="pp-card">
+        <p>If you submit price data as a Trader, you agree to:</p>
+        <ul>
+          <li>Submit accurate, truthful commodity prices from physical markets</li>
+          <li>Be physically present at the market when submitting prices (GPS verification required)</li>
+          <li>Not use GPS spoofing, mock locations, or any location manipulation tools</li>
+          <li>Not collude with other traders or validators to manipulate prices</li>
+          <li>Accept that fraudulent submissions will result in reputation penalties and potential account termination</li>
+        </ul>
+        <p>
+          <strong>Rewards:</strong> Approved submissions earn ₦20 in airtime credits.
+          Minimum payout balance is ₦500. Payouts are processed weekly on Fridays.
+        </p>
+      </div>
 
-          <section>
-            <h2 className="text-xl font-semibold text-white mb-3">4. Rewards &amp; Payouts</h2>
-            <p>Trader and Validator rewards accumulate in platform balance. Minimum payout threshold is ₦500. Weekly payouts are distributed as airtime via VTPass every Friday at 6 PM WAT. NaijaMarket Intel reserves the right to withhold rewards for fraudulent activity pending investigation.</p>
-          </section>
+      <h2>5. Validator Terms</h2>
+      <div className="pp-card">
+        <p>If you participate as a Validator, you agree to:</p>
+        <ul>
+          <li>Provide honest, independent assessments of price submissions</li>
+          <li>Not coordinate votes with other validators or traders</li>
+          <li>Complete validations within the 30-minute deadline</li>
+          <li>Accept that inaccurate validations affect your accuracy score</li>
+        </ul>
+        <p>
+          <strong>Rewards:</strong> Majority-consensus validations earn ₦50 in airtime
+          credits. Validators below 60% accuracy may be suspended.
+        </p>
+      </div>
 
-          <section>
-            <h2 className="text-xl font-semibold text-white mb-3">5. Prohibited Conduct</h2>
-            <ul className="list-disc ml-6 space-y-1">
-              <li>Submitting false or manipulated commodity prices.</li>
-              <li>Using GPS spoofing or location falsification tools.</li>
-              <li>Creating multiple accounts for the same role.</li>
-              <li>Colluding with validators to approve fraudulent submissions.</li>
-              <li>Scraping, copying, or redistributing platform data without authorization.</li>
-              <li>Attempting to exploit the rewards system through automated submissions.</li>
-            </ul>
-          </section>
+      <h2>6. Subscription Terms</h2>
+      <ul>
+        <li>FREE tier users receive limited queries per day at no cost</li>
+        <li>Paid subscriptions (SILVER, GOLD, BUSINESS, CORPORATE, ENTERPRISE) are billed monthly</li>
+        <li>Subscriptions auto-renew unless cancelled before the renewal date</li>
+        <li>Refunds are not provided for partial months — you retain access until the period ends</li>
+        <li>Enterprise subscriptions require a separate service agreement</li>
+      </ul>
 
-          <section>
-            <h2 className="text-xl font-semibold text-white mb-3">6. Data Accuracy Disclaimer</h2>
-            <p>While we implement rigorous validation (3-validator consensus, GPS verification, ML anomaly detection), NaijaMarket Intel does not guarantee the absolute accuracy of all listed prices. Prices are crowdsourced and should be used as market intelligence, not as the sole basis for financial decisions.</p>
-          </section>
+      <h2>7. Prohibited Conduct</h2>
+      <ul>
+        <li>Submitting false or misleading price data</li>
+        <li>Using GPS spoofing or location manipulation tools</li>
+        <li>Creating multiple accounts to earn additional rewards</li>
+        <li>Scraping, crawling, or automated access to the Platform without API authorization</li>
+        <li>Attempting to reverse-engineer or compromise Platform security</li>
+        <li>Using the Platform for any unlawful purpose</li>
+      </ul>
 
-          <section>
-            <h2 className="text-xl font-semibold text-white mb-3">7. Service Availability</h2>
-            <p>We aim for 99.9% uptime but do not guarantee uninterrupted service. Scheduled maintenance windows are communicated in advance via WhatsApp and email.</p>
-          </section>
+      <h2>8. Intellectual Property</h2>
+      <p>
+        All content, data, analytics, algorithms, and technology on the Platform are
+        owned by Giggababytes Oy. Aggregate market data and analytics generated by
+        the Platform may not be reproduced, distributed, or commercially exploited
+        without a valid API or Enterprise subscription.
+      </p>
 
-          <section>
-            <h2 className="text-xl font-semibold text-white mb-3">8. Termination</h2>
-            <p>We reserve the right to suspend or terminate accounts that violate these terms. Users may delete their accounts at any time by contacting support@naijamarketintel.com.</p>
-          </section>
+      <h2>9. Limitation of Liability</h2>
+      <p>
+        NaijaMarket Intel provides market intelligence for informational purposes
+        only. We do not guarantee the accuracy, completeness, or timeliness of any
+        price data. The Platform is not a substitute for professional financial,
+        procurement, or investment advice. We are not liable for any losses incurred
+        from decisions made based on Platform data.
+      </p>
 
-          <section>
-            <h2 className="text-xl font-semibold text-white mb-3">9. Contact</h2>
-            <p>For questions about these terms, contact <a href="mailto:legal@naijamarketintel.com" className="text-naija-green hover:underline">legal@naijamarketintel.com</a>.</p>
-          </section>
-        </div>
-      </main>
+      <h2>10. Governing Law</h2>
+      <p>
+        These Terms are governed by the laws of <strong>Finland</strong> and the
+        <strong> Federal Republic of Nigeria</strong>. Disputes shall be resolved
+        through arbitration in accordance with the Arbitration and Conciliation Act
+        of Nigeria, unless otherwise required by applicable law.
+      </p>
 
-      <footer className="border-t border-terminal-border py-6 px-6 text-center text-sm text-gray-500">
-        © {new Date().getFullYear()} NaijaMarket Intel. All rights reserved.
-      </footer>
-    </div>
+      <h2>11. Contact</h2>
+      <p>
+        For questions about these terms, contact us at{" "}
+        <a href="mailto:legal@naijamarketintel.ng">legal@naijamarketintel.ng</a>.
+      </p>
+    </PublicPageShell>
   );
 }
