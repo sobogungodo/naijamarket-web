@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { query, execute } from '@/lib/db';
 
 // ============================================
-// ADMIN MARKETS API
+// ADMIN MARKETS API — naijafoodmarket-live
 // GET  /api/markets — List all markets with live stats
 // POST /api/markets — Add new market
 // PUT  /api/markets — Update market
@@ -15,16 +15,15 @@ export async function GET(request: NextRequest) {
       SELECT 
         m.market_id,
         m.market_name,
-        m.market_type,
-        m.address,
         m.state,
-        m.gps_latitude,
-        m.gps_longitude,
+        m.latitude,
+        m.longitude,
         m.radius_meters,
-        m.operating_hours,
+        m.opening_hours,
         m.status,
+        m.region_id,
+        m.coordinate_source,
         m.created_at,
-        m.updated_at,
 
         -- Trader count for this market
         ISNULL(t.trader_count, 0) AS trader_count,
@@ -35,11 +34,8 @@ export async function GET(request: NextRequest) {
         -- Total submissions all time
         ISNULL(sub_all.total_submissions, 0) AS total_submissions,
 
-        -- Avg price accuracy (% of submissions approved)
-        CASE 
-          WHEN ISNULL(sub_all.total_submissions, 0) = 0 THEN 0
-          ELSE ROUND(ISNULL(sub_all.approved_count, 0) * 100.0 / sub_all.total_submissions, 1)
-        END AS accuracy_pct,
+        -- Avg confidence score as accuracy proxy
+        ISNULL(sub_all.avg_confidence, 0) AS accuracy_pct,
 
         -- Latest submission timestamp
         sub_all.latest_submission,
@@ -49,13 +45,13 @@ export async function GET(request: NextRequest) {
 
       FROM dbo.Markets m
 
-      -- Traders per market
+      -- Traders per market (using assigned_market_id)
       LEFT JOIN (
-        SELECT market_id, COUNT(*) AS trader_count
-        FROM dbo.Traders
+        SELECT assigned_market_id, COUNT(*) AS trader_count
+        FROM dbo.Traders_register
         WHERE registration_status = 'APPROVED'
-        GROUP BY market_id
-      ) t ON t.market_id = m.market_id
+        GROUP BY assigned_market_id
+      ) t ON t.assigned_market_id = m.market_id
 
       -- Today's submissions
       LEFT JOIN (
@@ -65,12 +61,12 @@ export async function GET(request: NextRequest) {
         GROUP BY market_id
       ) sub_today ON sub_today.market_id = m.market_id
 
-      -- All-time submissions + approved count
+      -- All-time submissions + avg confidence
       LEFT JOIN (
         SELECT 
           market_id, 
           COUNT(*) AS total_submissions,
-          SUM(CASE WHEN validation_status = 'APPROVED' THEN 1 ELSE 0 END) AS approved_count,
+          ROUND(AVG(CAST(confidence_score AS FLOAT)), 1) AS avg_confidence,
           MAX(price_date) AS latest_submission
         FROM dbo.Daily_Prices
         GROUP BY market_id
@@ -97,7 +93,7 @@ export async function GET(request: NextRequest) {
 
     const traderStats = await query<any>(`
       SELECT COUNT(*) AS total_traders
-      FROM dbo.Traders
+      FROM dbo.Traders_register
       WHERE registration_status = 'APPROVED'
     `);
 
@@ -121,7 +117,7 @@ export async function GET(request: NextRequest) {
     // 4. Submission activity last 7 days (for bar chart)
     const activity7d = await query<any>(`
       SELECT 
-        CAST(price_date AS DATE) AS date,
+        CAST(price_date AS DATE) AS [date],
         COUNT(*) AS submissions,
         COUNT(DISTINCT market_id) AS markets_active
       FROM dbo.Daily_Prices
@@ -159,10 +155,10 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { market_name, market_type, address, state, gps_latitude, gps_longitude, radius_meters, operating_hours } = body;
+    const { market_name, state, latitude, longitude, radius_meters, opening_hours, region_id } = body;
 
-    if (!market_name || !state || !gps_latitude || !gps_longitude) {
-      return NextResponse.json({ success: false, error: 'market_name, state, gps_latitude, gps_longitude required' }, { status: 400 });
+    if (!market_name || !state || !latitude || !longitude) {
+      return NextResponse.json({ success: false, error: 'market_name, state, latitude, longitude required' }, { status: 400 });
     }
 
     // Generate next market_id
@@ -173,18 +169,17 @@ export async function POST(request: NextRequest) {
     const newId = 'M' + String(lastNum + 1).padStart(3, '0');
 
     await execute(`
-      INSERT INTO dbo.Markets (market_id, market_name, market_type, address, state, gps_latitude, gps_longitude, radius_meters, operating_hours, status)
-      VALUES (@market_id, @market_name, @market_type, @address, @state, @gps_latitude, @gps_longitude, @radius_meters, @operating_hours, 'ACTIVE')
+      INSERT INTO dbo.Markets (market_id, market_name, state, latitude, longitude, radius_meters, opening_hours, region_id, status, coordinate_source)
+      VALUES (@market_id, @market_name, @state, @latitude, @longitude, @radius_meters, @opening_hours, @region_id, 'ACTIVE', 'admin_dashboard')
     `, {
       market_id: newId,
       market_name,
-      market_type: market_type || 'Mixed',
-      address: address || '',
       state,
-      gps_latitude: parseFloat(gps_latitude),
-      gps_longitude: parseFloat(gps_longitude),
+      latitude: parseFloat(latitude),
+      longitude: parseFloat(longitude),
       radius_meters: parseInt(radius_meters) || 500,
-      operating_hours: operating_hours || '6:00 AM - 6:00 PM',
+      opening_hours: opening_hours || '6:00 AM - 6:00 PM',
+      region_id: region_id || null,
     });
 
     return NextResponse.json({ success: true, market_id: newId, message: `Market ${market_name} created` });
@@ -197,7 +192,7 @@ export async function POST(request: NextRequest) {
 export async function PUT(request: NextRequest) {
   try {
     const body = await request.json();
-    const { market_id, status, market_name, address, state, gps_latitude, gps_longitude, radius_meters, operating_hours, market_type } = body;
+    const { market_id, status, market_name, state, latitude, longitude, radius_meters, opening_hours } = body;
 
     if (!market_id) {
       return NextResponse.json({ success: false, error: 'market_id required' }, { status: 400 });
@@ -206,7 +201,7 @@ export async function PUT(request: NextRequest) {
     // Toggle status shortcut
     if (status && Object.keys(body).length === 2) {
       await execute(`
-        UPDATE dbo.Markets SET status = @status, updated_at = GETDATE() WHERE market_id = @market_id
+        UPDATE dbo.Markets SET status = @status WHERE market_id = @market_id
       `, { market_id, status });
       return NextResponse.json({ success: true, message: `Market ${market_id} status updated to ${status}` });
     }
@@ -215,26 +210,21 @@ export async function PUT(request: NextRequest) {
     await execute(`
       UPDATE dbo.Markets SET
         market_name = ISNULL(@market_name, market_name),
-        market_type = ISNULL(@market_type, market_type),
-        address = ISNULL(@address, address),
         state = ISNULL(@state, state),
-        gps_latitude = ISNULL(@gps_latitude, gps_latitude),
-        gps_longitude = ISNULL(@gps_longitude, gps_longitude),
+        latitude = ISNULL(@latitude, latitude),
+        longitude = ISNULL(@longitude, longitude),
         radius_meters = ISNULL(@radius_meters, radius_meters),
-        operating_hours = ISNULL(@operating_hours, operating_hours),
-        status = ISNULL(@status, status),
-        updated_at = GETDATE()
+        opening_hours = ISNULL(@opening_hours, opening_hours),
+        status = ISNULL(@status, status)
       WHERE market_id = @market_id
     `, {
       market_id,
       market_name: market_name || null,
-      market_type: market_type || null,
-      address: address || null,
       state: state || null,
-      gps_latitude: gps_latitude ? parseFloat(gps_latitude) : null,
-      gps_longitude: gps_longitude ? parseFloat(gps_longitude) : null,
+      latitude: latitude ? parseFloat(latitude) : null,
+      longitude: longitude ? parseFloat(longitude) : null,
       radius_meters: radius_meters ? parseInt(radius_meters) : null,
-      operating_hours: operating_hours || null,
+      opening_hours: opening_hours || null,
       status: status || null,
     });
 
