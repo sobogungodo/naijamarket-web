@@ -64,58 +64,31 @@ async function checkDatabaseStats(): Promise<{
   totalRows: number;
 }> {
   try {
-    // Use sp_spaceused which works for any db user
-    const sizeResult = await query<any>(`EXEC sp_spaceused`);
-    const sizeMB = sizeResult[0]?.database_size?.replace(' MB', '').trim() || '0';
+    const sizeResult = await query<any>(`
+      SELECT 
+        CAST(SUM(size * 8.0 / 1024) AS DECIMAL(10,1)) AS size_mb
+      FROM sys.database_files
+    `);
 
     const tableCount = await query<any>(`
       SELECT COUNT(*) AS cnt FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_TYPE = 'BASE TABLE'
     `);
 
-    // Use fast row estimates from SQL Server stats instead of COUNT(*)
-    // This avoids scanning 2.3M row Daily_Prices table
-    let totalRows = 0;
-    try {
-      const rowEstimate = await query<any>(`
-        SELECT SUM(st.row_count) AS total_rows
-        FROM sys.dm_db_partition_stats st
-        WHERE st.index_id IN (0, 1)
-          AND st.object_id IN (
-            SELECT object_id FROM sys.tables
-          )
-      `);
-      totalRows = rowEstimate[0]?.total_rows || 0;
-    } catch {
-      // Fallback: count only small tables
-      try {
-        const smallCount = await query<any>(`
-          SELECT 
-            (SELECT COUNT(*) FROM dbo.Markets) +
-            (SELECT COUNT(*) FROM dbo.Traders_register) +
-            (SELECT COUNT(*) FROM dbo.Items_Catalog) +
-            (SELECT COUNT(*) FROM dbo.Validators) +
-            (SELECT COUNT(*) FROM dbo.Consumers)
-            AS total_rows
-        `);
-        totalRows = smallCount[0]?.total_rows || 0;
-      } catch { totalRows = 0; }
-    }
+    // Get row counts from the fast sys.partitions view (not COUNT(*) which is slow)
+    const rowCount = await query<any>(`
+      SELECT SUM(p.rows) AS total_rows
+      FROM sys.partitions p
+      JOIN sys.tables t ON p.object_id = t.object_id
+      WHERE p.index_id IN (0, 1)
+    `);
 
     return {
-      size: `${sizeMB} MB`,
+      size: `${sizeResult[0]?.size_mb || 0} MB`,
       tables: tableCount[0]?.cnt || 0,
-      totalRows,
+      totalRows: rowCount[0]?.total_rows || 0,
     };
-  } catch (e: any) {
-    // Fallback: just get table count if everything else fails
-    try {
-      const tableCount = await query<any>(`
-        SELECT COUNT(*) AS cnt FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_TYPE = 'BASE TABLE'
-      `);
-      return { size: 'N/A', tables: tableCount[0]?.cnt || 0, totalRows: 0 };
-    } catch {
-      return { size: 'N/A', tables: 0, totalRows: 0 };
-    }
+  } catch {
+    return { size: 'N/A', tables: 0, totalRows: 0 };
   }
 }
 
