@@ -11,10 +11,6 @@
     {
       "path": "/api/morning-brief/send",
       "schedule": "30 4 * * *"
-    },
-    {
-      "path": "/api/fmcg-alerts/send",
-      "schedule": "0 5 * * *"
     }
   ]
 }
