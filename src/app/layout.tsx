@@ -20,6 +20,7 @@ import "@/styles/globals.css";
 import { cn } from "@/lib/utils";
 import Providers from "@/components/Providers";
 import AuthShell from "@/components/AuthShell";
+import CookieBanner from "@/components/CookieBanner";
 import { ThemeProvider } from "@/components/ThemeProvider";
 
 // ============================================================================
@@ -191,6 +192,9 @@ export default function RootLayout({
             <AuthShell>
               {children}
             </AuthShell>
+
+            {/* Cookie Consent Banner — GDPR/NDPR, loads before GA */}
+            <CookieBanner />
 
             {/* Toast Notifications — available on ALL pages */}
             <Toaster
