@@ -3,7 +3,6 @@
 import { useState, useEffect, useRef, FormEvent } from "react";
 import Link from "next/link";
 import EmailSignup from "@/components/EmailSignup";
-import { ThemeToggle } from "@/components/ThemeToggle";
 
 // ============================================================================
 // NaijaMarket Intel — Landing Page v2.0
@@ -194,7 +193,6 @@ function Nav() {
           <a href="#pricing">Pricing</a>
           <a href="#how-it-works">How It Works</a>
           <Link href="/login" className="nm-nav-signin">Sign In</Link>
-          <ThemeToggle />
           <Link href="/register" className="nm-btn-green nm-btn-sm">
             Get Started Free
           </Link>
@@ -803,6 +801,34 @@ const PAGE_STYLES = `
   --nm-radius: 12px;
 }
 
+/* ── Light Mode Overrides ── */
+html.light :root,
+html.light {
+  --nm-bg: #f0f4f8;
+  --nm-bg2: #ffffff;
+  --nm-card: rgba(255, 255, 255, 0.9);
+  --nm-border: rgba(0, 0, 0, 0.08);
+  --nm-green: #00a846;
+  --nm-green-dim: rgba(0, 168, 70, 0.1);
+  --nm-text: #0f172a;
+  --nm-text2: #334155;
+  --nm-text3: #64748b;
+  --nm-text4: #94a3b8;
+}
+
+html:not(.dark) {
+  --nm-bg: #f0f4f8;
+  --nm-bg2: #ffffff;
+  --nm-card: rgba(255, 255, 255, 0.9);
+  --nm-border: rgba(0, 0, 0, 0.08);
+  --nm-green: #00a846;
+  --nm-green-dim: rgba(0, 168, 70, 0.1);
+  --nm-text: #0f172a;
+  --nm-text2: #334155;
+  --nm-text3: #64748b;
+  --nm-text4: #94a3b8;
+}
+
 * { margin: 0; padding: 0; box-sizing: border-box; }
 html { scroll-behavior: smooth; }
 ::selection { background: rgba(0, 200, 83, 0.3); color: #fff; }
@@ -817,6 +843,11 @@ html { scroll-behavior: smooth; }
   color: var(--nm-text);
   font-family: var(--nm-font);
   overflow-x: hidden;
+  transition: background 0.2s ease, color 0.2s ease;
+}
+.nm-nav-s {
+  background: var(--nm-bg) !important;
+  opacity: 0.97;
 }
 .nm-g { color: var(--nm-green); }
 .nm-gradient-text {
@@ -878,7 +909,7 @@ html { scroll-behavior: smooth; }
   transition: all 0.3s ease;
 }
 .nm-nav-s {
-  background: rgba(10, 15, 20, 0.95);
+  background: rgba(var(--nm-bg-rgb, 10, 15, 20), 0.95);
   backdrop-filter: blur(20px);
   border-bottom: 1px solid rgba(0, 200, 83, 0.08);
 }
