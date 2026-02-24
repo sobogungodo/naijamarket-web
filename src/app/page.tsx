@@ -1274,10 +1274,11 @@ html { scroll-behavior: smooth; }
 .nm-ck-table { font-family: var(--nm-mono); font-size: 11px; }
 .nm-ck-row {
   display: grid;
-  grid-template-columns: 2fr 1fr 1.2fr 1fr;
+  grid-template-columns: 2fr 1fr 1.2fr 0.8fr;
   padding: 7px 0;
   border-bottom: 1px solid rgba(255, 255, 255, 0.03);
   animation: nm-fade-up 0.3s ease both;
+  align-items: center;
 }
 .nm-ck-row-h {
   color: var(--nm-text4);
@@ -1287,9 +1288,11 @@ html { scroll-behavior: smooth; }
   border-bottom-color: var(--nm-border);
   animation: none;
 }
+.nm-ck-row-h span:nth-child(3),
+.nm-ck-row-h span:nth-child(4) { text-align: right; }
 .nm-ck-mkt { color: var(--nm-text); font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .nm-ck-state { color: var(--nm-text3); }
-.nm-ck-price { color: #fff; font-weight: 600; text-align: right; }
+.nm-ck-price { color: var(--nm-text); font-weight: 600; text-align: right; }
 .nm-ck-up { color: #00C853; font-weight: 600; text-align: right; }
 .nm-ck-down { color: #FF5252; font-weight: 600; text-align: right; }
 .nm-ck-footer {
