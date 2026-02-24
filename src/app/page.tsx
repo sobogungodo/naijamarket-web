@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, FormEvent } from "react";
 import Link from "next/link";
 import EmailSignup from "@/components/EmailSignup";
+import { ThemeToggle } from "@/components/ThemeToggle";
 
 // ============================================================================
 // NaijaMarket Intel — Landing Page v2.0
@@ -193,6 +194,7 @@ function Nav() {
           <a href="#pricing">Pricing</a>
           <a href="#how-it-works">How It Works</a>
           <Link href="/login" className="nm-nav-signin">Sign In</Link>
+          <ThemeToggle />
           <Link href="/register" className="nm-btn-green nm-btn-sm">
             Get Started Free
           </Link>
