@@ -38,8 +38,8 @@ const SERVICES = [
   {
     name: 'Consumer Website',
     type: 'http' as const,
-    url: 'https://naijamarketintel.com',
-    description: 'naijamarketintel.com responding',
+    url: 'https://www.naijamarketintel.com',
+    description: 'www.naijamarketintel.com responding',
   },
   {
     name: 'Admin Dashboard',
@@ -230,7 +230,7 @@ export async function GET() {
   // Run all checks in parallel for speed
   const [dbStats, consumerCheck, adminCheck, twilioCheck] = await Promise.all([
     getDatabaseStats(),
-    checkHttpService('https://naijamarketintel.com'),
+    checkHttpService('https://www.naijamarketintel.com'),
     checkHttpService(process.env.NEXT_PUBLIC_ADMIN_URL || 'https://naijamarket-admin.vercel.app'),
     checkTwilio(),
   ]);
