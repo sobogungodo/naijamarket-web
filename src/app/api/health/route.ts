@@ -101,7 +101,7 @@ async function getDatabaseStats(): Promise<{
     if (sizeResult.recordset.length > 0) {
       const sizeMb: number = sizeResult.recordset[0].size_mb;
       const sizeGb: number = sizeResult.recordset[0].size_gb;
-      if (sizeGb >= 1) {
+      if (sizeMb >= 1024) {
         databaseSize = `${sizeGb.toFixed(2)} GB`;
       } else {
         databaseSize = `${Math.round(sizeMb)} MB`;
