@@ -451,9 +451,7 @@ function Hero() {
             ))}
           </div>
 
-          <div className="nm-hero-signup">
-            <EmailSignup variant="inline" source="hero" />
-          </div>
+
         </div>
 
         <div className="nm-hero-demo">
@@ -736,9 +734,7 @@ function Footer() {
             Real-time, GPS-verified commodity price intelligence for Nigeria.
             The Bloomberg of Nigerian Commodities.
           </p>
-          <div className="nm-footer-signup">
-            <EmailSignup variant="footer" source="footer" />
-          </div>
+
         </div>
         {columns.map((col, i) => (
           <div key={i} className="nm-footer-col">
@@ -769,8 +765,8 @@ export default function LandingPage() {
       <style>{PAGE_STYLES}</style>
       <div className="nm-landing">
         <Nav />
-        <Hero />
         <TrustBar />
+        <Hero />
         <FeaturesSection />
         <HowItWorksSection />
         <PricingSection />
