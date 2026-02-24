@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, FormEvent } from "react";
 import Link from "next/link";
 import EmailSignup from "@/components/EmailSignup";
+import { ThemeToggle } from "@/components/ThemeToggle";
 
 // ============================================================================
 // NaijaMarket Intel — Landing Page v2.0
@@ -193,6 +194,7 @@ function Nav() {
           <a href="#pricing">Pricing</a>
           <a href="#how-it-works">How It Works</a>
           <Link href="/login" className="nm-nav-signin">Sign In</Link>
+          <ThemeToggle />
           <Link href="/register" className="nm-btn-green nm-btn-sm">
             Get Started Free
           </Link>
@@ -1125,7 +1127,7 @@ html { scroll-behavior: smooth; }
   font-size: clamp(30px, 7vw, 54px);
   font-weight: 800;
   line-height: 1.08;
-  color: #fff;
+  color: var(--nm-text);
   letter-spacing: -1.5px;
   margin-bottom: 16px;
 }
@@ -1151,7 +1153,7 @@ html { scroll-behavior: smooth; }
 .nm-stat-val {
   font-size: 22px;
   font-weight: 800;
-  color: #fff;
+  color: var(--nm-text);
   font-family: var(--nm-mono);
   line-height: 1;
 }
@@ -1268,7 +1270,7 @@ html { scroll-behavior: smooth; }
   animation: nm-spin 0.6s linear infinite;
 }
 .nm-ck-results { animation: nm-fade-up 0.4s ease; }
-.nm-ck-item-name { font-size: 13px; font-weight: 700; color: #fff; margin-bottom: 8px; }
+.nm-ck-item-name { font-size: 13px; font-weight: 700; color: var(--nm-text); margin-bottom: 8px; }
 .nm-ck-table { font-family: var(--nm-mono); font-size: 11px; }
 .nm-ck-row {
   display: grid;
@@ -1328,10 +1330,10 @@ html { scroll-behavior: smooth; }
   justify-content: center;
   font-size: 11px;
   font-weight: 800;
-  color: #fff;
+  color: var(--nm-text);
   font-family: var(--nm-mono);
 }
-.nm-wa-name { font-size: 13px; font-weight: 700; color: #fff; }
+.nm-wa-name { font-size: 13px; font-weight: 700; color: var(--nm-text); }
 .nm-wa-status { font-size: 10px; color: rgba(255, 255, 255, 0.6); }
 .nm-wa-body {
   padding: 14px;
@@ -1352,7 +1354,7 @@ html { scroll-behavior: smooth; }
 .nm-wa-user {
   align-self: flex-end;
   background: #005C4B;
-  color: #fff;
+  color: var(--nm-text);
   border-bottom-right-radius: 2px;
   font-family: var(--nm-mono);
   font-weight: 600;
@@ -1370,7 +1372,7 @@ html { scroll-behavior: smooth; }
   text-align: center;
   padding: 12px;
   background: #25D366;
-  color: #fff;
+  color: var(--nm-text);
   font-weight: 700;
   font-size: 13px;
   text-decoration: none;
@@ -1426,7 +1428,7 @@ html { scroll-behavior: smooth; }
 .nm-section-title {
   font-size: clamp(24px, 5vw, 40px);
   font-weight: 800;
-  color: #fff;
+  color: var(--nm-text);
   margin-top: 10px;
   letter-spacing: -1px;
   line-height: 1.15;
@@ -1467,7 +1469,7 @@ html { scroll-behavior: smooth; }
   filter: blur(28px);
 }
 .nm-feature-icon { font-size: 28px; margin-bottom: 12px; }
-.nm-feature-title { font-size: 16px; font-weight: 700; color: #fff; margin-bottom: 6px; }
+.nm-feature-title { font-size: 16px; font-weight: 700; color: var(--nm-text); margin-bottom: 6px; }
 .nm-feature-desc { font-size: 13px; color: var(--nm-text3); line-height: 1.6; }
 
 /* ── Steps ── */
@@ -1501,7 +1503,7 @@ html { scroll-behavior: smooth; }
   justify-content: center;
   font-size: 24px;
 }
-.nm-step-title { font-size: 16px; font-weight: 700; color: #fff; margin-bottom: 8px; }
+.nm-step-title { font-size: 16px; font-weight: 700; color: var(--nm-text); margin-bottom: 8px; }
 .nm-step-desc {
   font-size: 13px;
   color: var(--nm-text3);
@@ -1555,7 +1557,7 @@ html { scroll-behavior: smooth; }
   margin-bottom: 6px;
 }
 .nm-price-amount { margin-bottom: 18px; }
-.nm-price-num { font-size: 28px; font-weight: 800; color: #fff; }
+.nm-price-num { font-size: 28px; font-weight: 800; color: var(--nm-text); }
 .nm-price-period { font-size: 13px; color: var(--nm-text3); }
 .nm-price-features { list-style: none; margin-bottom: 20px; }
 .nm-price-features li {
@@ -1614,10 +1616,10 @@ html { scroll-behavior: smooth; }
   justify-content: center;
   font-size: 12px;
   font-weight: 700;
-  color: #fff;
+  color: var(--nm-text);
   font-family: var(--nm-mono);
 }
-.nm-test-name { font-size: 13px; font-weight: 700; color: #fff; }
+.nm-test-name { font-size: 13px; font-weight: 700; color: var(--nm-text); }
 .nm-test-role { font-size: 11px; color: var(--nm-text3); }
 
 /* ── CTA ── */
@@ -1650,7 +1652,7 @@ html { scroll-behavior: smooth; }
 .nm-cta-title {
   font-size: clamp(26px, 5vw, 38px);
   font-weight: 800;
-  color: #fff;
+  color: var(--nm-text);
   letter-spacing: -1px;
   margin-bottom: 12px;
   position: relative;
