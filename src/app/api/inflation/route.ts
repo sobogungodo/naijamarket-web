@@ -619,7 +619,8 @@ async function buildFromPrecomputed(
   const momChange   = latest?.naijamarket_mom  ?? 0;
   const latestNBS   = latest?.nbs_official_yoy ?? 8.89;
 
-  const regionalBreakdown: RegionalInflation[] = await fetchRegionalInflation();
+  // Regional runs independently — timeout/error returns [] not a page crash
+  const regionalBreakdown: RegionalInflation[] = await fetchRegionalInflation().catch(() => []);
 
   // No hardcoded basket prices — vw fallback uses empty arrays.
   // Real inflators/deflators only available via Inflation_Cache path (primary).
@@ -1018,9 +1019,10 @@ async function fetchRegionalInflation(): Promise<RegionalInflation[]> {
   if (!pool) return [];
 
   try {
-    // Same approach as movers: Daily_Prices (Feb 2026) vs Items_Catalog baseline (Jan 2025)
-    // OldestPrices from Daily_Prices returns 0 rows in common — different item names.
-    const result = await pool.request().query(`
+    // Lightweight regional query — uses Latest_Prices_Summary cache table (136K rows)
+    // instead of full Daily_Prices (2.9M rows). Falls back to [] on timeout.
+    const result = await pool.request()
+      .query(`
       WITH
       -- Zone mapping for all 37 states
       StateZone AS (
@@ -1064,27 +1066,23 @@ async function fetchRegionalInflation(): Promise<RegionalInflation[]> {
             ) IS NOT NULL
       ),
       -- Feb 2026 actual prices per item per zone
+      -- Uses Latest_Prices_Summary (136K rows) NOT Daily_Prices (2.9M rows) — 20x faster
       RecentByZone AS (
         SELECT
           sz.zone,
-          dp.item_name,
-          AVG(dp.price_naira)             AS cur_price,
-          COUNT(DISTINCT dp.market_name)  AS market_count
-        FROM dbo.Daily_Prices dp
-        JOIN StateZone sz ON sz.state = dp.state
-        WHERE dp.price_naira > 0
+          lp.item_name,
+          AVG(lp.price_naira)             AS cur_price,
+          COUNT(DISTINCT lp.market_name)  AS market_count
+        FROM dbo.Latest_Prices_Summary lp
+        JOIN StateZone sz ON sz.state = lp.state
+        WHERE lp.price_naira > 0
           AND sz.zone IS NOT NULL
-          AND dp.category_id IN (
+          AND lp.category_id IN (
             'CAT001','CAT002','CAT003','CAT004','CAT006','CAT007',
             'CAT008','CAT009','CAT010','CAT013','CAT014','CAT015',
             'CAT070','CAT103'
           )
-          AND dp.price_date >= (
-            SELECT DATEADD(DAY, -40, MAX(price_date))
-            FROM dbo.Daily_Prices WHERE price_naira > 0
-          )
-        GROUP BY sz.zone, dp.item_name
-        HAVING COUNT(*) >= 2
+        GROUP BY sz.zone, lp.item_name
       ),
       -- Per item per zone: annualised 13-month rate vs Jan 2025 catalog
       ItemRates AS (
@@ -1211,7 +1209,7 @@ export async function GET(request: NextRequest) {
         },
         monthlyTrend: displayData,
         // Regional breakdown — from static NBS data (accurate, no query needed)
-        regionalBreakdown: await fetchRegionalInflation(),
+        regionalBreakdown: await fetchRegionalInflation().catch(() => []),
         nbsComparison: {
           naijaMarket:    Math.round(currentRate * 10) / 10,
           nbs:            latestNBS,
