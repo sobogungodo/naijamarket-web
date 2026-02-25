@@ -302,9 +302,10 @@ async function fetchFromInflationCache(months: number): Promise<{
   topDeflators: ItemInflation[];
   basketComposition: BasketItem[];
   lastUpdated: string;
+  avgMomPct: number;    // Real average monthly rate over data period (e.g. 0.71%/month)
   success: boolean;
 }> {
-  const empty = { data: [], topInflators: [], topDeflators: [], basketComposition: [], lastUpdated: "", success: false };
+  const empty = { data: [], topInflators: [], topDeflators: [], basketComposition: [], lastUpdated: "", avgMomPct: 0, success: false };
 
   const pool = await getPool();
   if (!pool) return empty;
@@ -336,42 +337,56 @@ async function fetchFromInflationCache(months: number): Promise<{
       return empty;
     }
 
-    // ── Top movers: compute from real prices (2 most recent months per item) ───
-    // Do NOT rely on pre-computed mom_change_pct — often NULL in latest period.
-    // Join the two most recent month rows per item and compute from actual prices.
+    // ── Top movers: newest vs oldest available month per item ────────────
+    // Data reality: only 2 months exist — Jul 2025 (seed) and Feb 2026 (live).
+    // Gap = 7 months. We join newest vs oldest and annualise over the real gap.
+    // Items only in Feb 2026 (no Jul baseline) are excluded — we have no prior price.
     const moversResult = await pool.request().query(`
-      WITH RankedPeriods AS (
-        SELECT
-          dimension_label  AS item_name,
-          avg_price,
-          period_label,
-          period_end,
-          confidence,
-          ROW_NUMBER() OVER (
-            PARTITION BY dimension_key
-            ORDER BY period_end DESC
-          ) AS rn
+      WITH
+      Newest AS (
+        -- Latest available month per item
+        SELECT dimension_key, dimension_label AS item_name,
+               avg_price AS cur_price, period_start AS cur_start, confidence
         FROM dbo.Inflation_Cache
-        WHERE cache_type  = 'ITEM'
-          AND period_type = 'MONTHLY'
-          AND avg_price IS NOT NULL
-          AND avg_price > 0
+        WHERE cache_type = 'ITEM' AND period_type = 'MONTHLY' AND avg_price > 0
+          AND period_end = (
+            SELECT MAX(period_end) FROM dbo.Inflation_Cache
+            WHERE cache_type = 'ITEM' AND period_type = 'MONTHLY'
+          )
       ),
-      Cur  AS (SELECT item_name, avg_price AS cur_price,  period_label, confidence FROM RankedPeriods WHERE rn = 1),
-      Prev AS (SELECT item_name, avg_price AS prev_price                            FROM RankedPeriods WHERE rn = 2)
+      Oldest AS (
+        -- Earliest available month per item (our baseline)
+        SELECT dimension_key,
+               avg_price AS prev_price, period_start AS prev_start
+        FROM dbo.Inflation_Cache
+        WHERE cache_type = 'ITEM' AND period_type = 'MONTHLY' AND avg_price > 0
+          AND period_end = (
+            SELECT MIN(period_end) FROM dbo.Inflation_Cache
+            WHERE cache_type = 'ITEM' AND period_type = 'MONTHLY'
+          )
+      )
       SELECT
-        c.item_name,
-        c.cur_price                                                  AS avg_price,
-        p.prev_price                                                 AS prev_avg_price,
-        (c.cur_price - p.prev_price) / p.prev_price * 100           AS mom_change_pct,
-        (POWER(CAST(c.cur_price / p.prev_price AS FLOAT), 12) - 1) * 100
-                                                                     AS ann_yoy_pct,
-        c.confidence,
-        c.period_label
-      FROM Cur c
-      JOIN Prev p ON p.item_name = c.item_name
-      WHERE p.prev_price > 0 AND c.cur_price > 0
-      ORDER BY ABS((c.cur_price - p.prev_price) / p.prev_price * 100) DESC
+        n.item_name,
+        n.cur_price                                                    AS avg_price,
+        o.prev_price                                                   AS prev_avg_price,
+        -- Actual months between oldest and newest
+        DATEDIFF(MONTH, o.prev_start, n.cur_start)                    AS months_gap,
+        -- Raw total change over the full period
+        (n.cur_price - o.prev_price) / o.prev_price * 100             AS total_change_pct,
+        -- Average MoM rate over the actual period
+        (POWER(CAST(n.cur_price / o.prev_price AS FLOAT),
+               1.0 / NULLIF(DATEDIFF(MONTH, o.prev_start, n.cur_start), 0)) - 1) * 100
+                                                                       AS avg_mom_pct,
+        -- Annualised rate (12-month projection from real data)
+        (POWER(CAST(n.cur_price / o.prev_price AS FLOAT),
+               12.0 / NULLIF(DATEDIFF(MONTH, o.prev_start, n.cur_start), 0)) - 1) * 100
+                                                                       AS ann_yoy_pct,
+        n.confidence
+      FROM Newest n
+      JOIN Oldest o ON o.dimension_key = n.dimension_key
+      WHERE o.prev_price > 0 AND n.cur_price > 0
+        AND DATEDIFF(MONTH, o.prev_start, n.cur_start) > 0
+      ORDER BY ABS((n.cur_price - o.prev_price) / o.prev_price * 100) DESC
     `);
 
     // ── Build MonthlyInflation array (reverse = chronological order) ─────
@@ -421,12 +436,11 @@ async function fetchFromInflationCache(months: number): Promise<{
     const movers = moversResult.recordset as any[];
 
     const buildMoverItem = (m: any, trendDir: "up" | "down"): ItemInflation => {
-      const momRate     = parseFloat(m.mom_change_pct) || 0;
-      const annYoy      = parseFloat(m.ann_yoy_pct)    || 0;
-      // Use annualised YoY as the display rate — real data, not fabricated
+      // ann_yoy_pct = (cur/prev)^(12/n_months) - 1 — real annualised rate from actual prices
+      const annYoy        = parseFloat(m.ann_yoy_pct) || 0;
       const inflationRate = Math.round(annYoy * 10) / 10;
-      const keyword     = getBasketKeyword(String(m.item_name || ""));
-      const weight      = keyword && BASKET_WEIGHTS[keyword] ? BASKET_WEIGHTS[keyword]!.weight : 0;
+      const keyword       = getBasketKeyword(String(m.item_name || ""));
+      const weight        = keyword && BASKET_WEIGHTS[keyword] ? BASKET_WEIGHTS[keyword]!.weight : 0;
       return {
         item:          String(m.item_name || ""),
         category:      keyword && BASKET_WEIGHTS[keyword] ? BASKET_WEIGHTS[keyword]!.category : "Other",
@@ -439,13 +453,16 @@ async function fetchFromInflationCache(months: number): Promise<{
       };
     };
 
+    // total_change_pct = (Feb price - Jul price) / Jul price × 100 over 7 months
+    // Positive = price went up since Jul 2025 = inflator
+    // Negative = price went down since Jul 2025 = deflator
     const topInflators: ItemInflation[] = movers
-      .filter(m => (parseFloat(m.mom_change_pct) || 0) > 0.1)   // >0.1% MoM = real increase
+      .filter(m => (parseFloat(m.total_change_pct) || 0) > 0.5)
       .slice(0, 10)
       .map(m => buildMoverItem(m, "up"));
 
     const topDeflators: ItemInflation[] = movers
-      .filter(m => (parseFloat(m.mom_change_pct) || 0) < -0.1)  // <-0.1% MoM = real decrease
+      .filter(m => (parseFloat(m.total_change_pct) || 0) < -0.5)
       .reverse()
       .slice(0, 10)
       .map(m => buildMoverItem(m, "down"));
@@ -457,10 +474,12 @@ async function fetchFromInflationCache(months: number): Promise<{
     for (const m of movers) {
       const keyword = getBasketKeyword(String(m.item_name || ""));
       if (keyword && !priceMap.has(keyword)) {
-        const cur  = parseFloat(m.avg_price)      || 0;
-        const prev = parseFloat(m.prev_avg_price) || 0;
-        const ann  = parseFloat(m.ann_yoy_pct)    || 0;
-        priceMap.set(keyword, { current: cur, prev, annYoy: ann });
+        const cur    = parseFloat(m.avg_price)      || 0;
+        const prev   = parseFloat(m.prev_avg_price) || 0;
+        const ann    = parseFloat(m.ann_yoy_pct)    || 0;  // real annualised from actual prices
+        if (cur > 0 && prev > 0) {
+          priceMap.set(keyword, { current: cur, prev, annYoy: ann });
+        }
       }
     }
 
@@ -488,7 +507,16 @@ async function fetchFromInflationCache(months: number): Promise<{
       ? lastRow.last_updated.toISOString()
       : String(lastRow?.last_updated || "");
 
-    return { data: monthlyTrend, topInflators, topDeflators, basketComposition, lastUpdated, success: monthlyTrend.length >= 1 };
+    // Compute avgMomPct from movers data — average monthly rate across all items
+    // (cur/prev)^(1/n_months) - 1, averaged across items with valid data
+    const momRates = movers
+      .map((m: any) => parseFloat(m.avg_mom_pct) || 0)
+      .filter((r: number) => r !== 0 && Math.abs(r) < 50);  // exclude outliers
+    const avgMomPct = momRates.length > 0
+      ? Math.round((momRates.reduce((a: number, b: number) => a + b, 0) / momRates.length) * 100) / 100
+      : 0;
+
+    return { data: monthlyTrend, topInflators, topDeflators, basketComposition, lastUpdated, avgMomPct, success: monthlyTrend.length >= 1 };
 
   } catch (err) {
     console.error("[inflation v5] Inflation_Cache query error:", err);
@@ -568,42 +596,11 @@ function buildFromPrecomputed(
   const momChange   = latest?.naijamarket_mom  ?? 0;
   const latestNBS   = latest?.nbs_official_yoy ?? 8.89;
 
-  const regionalBreakdown: RegionalInflation[] = [
-    { region: "NC", regionName: "North Central", inflationRate: 12.4, monthOverMonth: 1.2,  trend: "up",     marketCount: 8, topInflator: "Rice"     },
-    { region: "NW", regionName: "North West",    inflationRate: 10.8, monthOverMonth: 0.8,  trend: "up",     marketCount: 7, topInflator: "Tomatoes" },
-    { region: "NE", regionName: "North East",    inflationRate: 9.5,  monthOverMonth: 0.5,  trend: "stable", marketCount: 6, topInflator: "Beans"    },
-    { region: "SW", regionName: "South West",    inflationRate: 8.2,  monthOverMonth: -0.3, trend: "down",   marketCount: 6, topInflator: "Palm Oil" },
-    { region: "SS", regionName: "South South",   inflationRate: 7.8,  monthOverMonth: -0.5, trend: "down",   marketCount: 6, topInflator: "Garri"    },
-    { region: "SE", regionName: "South East",    inflationRate: 6.9,  monthOverMonth: -0.8, trend: "down",   marketCount: 5, topInflator: "Yam"      },
-  ];
+  const regionalBreakdown: RegionalInflation[] = await fetchRegionalInflation();
 
-  const basketItems: BasketItem[] = [
-    { item: "Rice",         category: "Grains & Cereals", weight: 18, currentPrice: 72000, previousPrice: 66100, inflationRate: 8.9,  contribution: 1.6 },
-    { item: "Garri",        category: "Grains & Cereals", weight: 12, currentPrice: 24500, previousPrice: 22000, inflationRate: 11.4, contribution: 1.4 },
-    { item: "Tomatoes",     category: "Vegetables",       weight: 10, currentPrice: 42000, previousPrice: 38500, inflationRate: 9.1,  contribution: 0.9 },
-    { item: "Palm Oil",     category: "Oils & Fats",      weight: 10, currentPrice: 48000, previousPrice: 45000, inflationRate: 6.7,  contribution: 0.7 },
-    { item: "Beans",        category: "Grains & Cereals", weight: 8,  currentPrice: 62000, previousPrice: 56500, inflationRate: 9.7,  contribution: 0.8 },
-    { item: "Pepper",       category: "Vegetables",       weight: 8,  currentPrice: 30000, previousPrice: 27500, inflationRate: 9.1,  contribution: 0.7 },
-    { item: "Onions",       category: "Vegetables",       weight: 7,  currentPrice: 35000, previousPrice: 32000, inflationRate: 9.4,  contribution: 0.7 },
-    { item: "Yam",          category: "Tubers",           weight: 6,  currentPrice: 2800,  previousPrice: 2500,  inflationRate: 12.0, contribution: 0.7 },
-    { item: "Groundnut Oil",category: "Oils & Fats",      weight: 5,  currentPrice: 55000, previousPrice: 51000, inflationRate: 7.8,  contribution: 0.4 },
-    { item: "Eggs",         category: "Protein",          weight: 5,  currentPrice: 3200,  previousPrice: 2900,  inflationRate: 10.3, contribution: 0.5 },
-    { item: "Plantain",     category: "Fruits",           weight: 4,  currentPrice: 4200,  previousPrice: 3800,  inflationRate: 10.5, contribution: 0.4 },
-    { item: "Fish",         category: "Protein",          weight: 4,  currentPrice: 5200,  previousPrice: 4800,  inflationRate: 8.3,  contribution: 0.3 },
-    { item: "Beef",         category: "Protein",          weight: 3,  currentPrice: 6500,  previousPrice: 6000,  inflationRate: 8.3,  contribution: 0.2 },
-  ];
-
-  const inflators: ItemInflation[] = basketItems
-    .filter(b => b.inflationRate > 0)
-    .sort((a, b) => b.inflationRate - a.inflationRate)
-    .slice(0, 10)
-    .map(b => ({
-      item: b.item, category: b.category,
-      currentPrice: b.currentPrice, previousPrice: b.previousPrice,
-      priceChange: b.currentPrice - b.previousPrice,
-      inflationRate: b.inflationRate, contribution: b.contribution,
-      trend: "up" as const,
-    }));
+  // No hardcoded basket prices — vw fallback uses empty arrays.
+  // Real inflators/deflators only available via Inflation_Cache path (primary).
+  const inflators: ItemInflation[]  = [];
 
   return {
     success: true,
@@ -986,6 +983,163 @@ function calculateBasketComposition(data: PriceRecord[]): BasketItem[] {
 // API HANDLER
 // ============================================================================
 
+// ============================================================================
+// REGIONAL INFLATION — 100% FROM DATABASE
+// Maps your 37 states to the 6 Nigerian geopolitical zones.
+// Computes annualised rate per region from real price data (Jul 2025 vs Feb 2026).
+// Falls back to empty array on any error — never shows fabricated numbers.
+// ============================================================================
+
+async function fetchRegionalInflation(): Promise<RegionalInflation[]> {
+  const pool = await getPool();
+  if (!pool) return [];
+
+  try {
+    const result = await pool.request().query(`
+      WITH
+      -- Map every state to its geopolitical zone
+      StateZone AS (
+        SELECT state,
+          CASE
+            WHEN state IN ('Lagos','Oyo','Ogun','Osun','Ondo','Ekiti')
+              THEN 'SW'
+            WHEN state IN ('Anambra','Enugu','Imo','Abia','Ebonyi')
+              THEN 'SE'
+            WHEN state IN ('FCT','FCT Abuja','Benue','Kogi','Kwara','Nasarawa','Niger','Plateau')
+              THEN 'NC'
+            WHEN state IN ('Kano','Kaduna','Katsina','Kebbi','Sokoto','Zamfara','Jigawa')
+              THEN 'NW'
+            WHEN state IN ('Borno','Yobe','Adamawa','Bauchi','Gombe','Taraba')
+              THEN 'NE'
+            WHEN state IN ('Rivers','Delta','Bayelsa','Akwa Ibom','Cross River','Edo')
+              THEN 'SS'
+            ELSE NULL
+          END AS zone
+        FROM (SELECT DISTINCT state FROM dbo.Daily_Prices WHERE state IS NOT NULL) s
+      ),
+      -- Newest month avg price per item+zone
+      NewestPrices AS (
+        SELECT
+          sz.zone,
+          dp.item_name,
+          AVG(dp.price_naira)   AS cur_price,
+          MAX(dp.price_date)    AS cur_date,
+          COUNT(DISTINCT dp.market_name) AS market_count
+        FROM dbo.Daily_Prices dp
+        JOIN StateZone sz ON sz.state = dp.state
+        WHERE dp.price_naira > 0
+          AND sz.zone IS NOT NULL
+          AND dp.price_date >= (
+            SELECT DATEADD(DAY, -40, MAX(price_date))
+            FROM dbo.Daily_Prices WHERE price_naira > 0
+          )
+        GROUP BY sz.zone, dp.item_name
+      ),
+      -- Oldest month avg price per item+zone
+      OldestPrices AS (
+        SELECT
+          sz.zone,
+          dp.item_name,
+          AVG(dp.price_naira)   AS prev_price,
+          MAX(dp.price_date)    AS prev_date
+        FROM dbo.Daily_Prices dp
+        JOIN StateZone sz ON sz.state = dp.state
+        WHERE dp.price_naira > 0
+          AND sz.zone IS NOT NULL
+          AND dp.price_date <= (
+            SELECT DATEADD(DAY, 40, MIN(price_date))
+            FROM dbo.Daily_Prices WHERE price_naira > 0
+          )
+        GROUP BY sz.zone, dp.item_name
+      ),
+      -- Join and compute annualised rate per item per zone
+      ItemRates AS (
+        SELECT
+          n.zone,
+          n.item_name,
+          n.cur_price,
+          o.prev_price,
+          n.market_count,
+          DATEDIFF(MONTH, MAX(o.prev_date), MAX(n.cur_date)) AS months_gap,
+          -- annualised rate: (cur/prev)^(12/n_months) - 1
+          (POWER(
+            CAST(n.cur_price / NULLIF(o.prev_price, 0) AS FLOAT),
+            12.0 / NULLIF(DATEDIFF(MONTH, MAX(o.prev_date), MAX(n.cur_date)), 0)
+          ) - 1) * 100 AS ann_yoy_pct,
+          (n.cur_price - o.prev_price) / NULLIF(o.prev_price, 0) * 100 AS total_change_pct
+        FROM NewestPrices n
+        JOIN OldestPrices o
+          ON  o.zone      = n.zone
+          AND o.item_name = n.item_name
+        WHERE o.prev_price > 0
+          AND n.cur_price  > 0
+        GROUP BY n.zone, n.item_name, n.cur_price, o.prev_price, n.market_count
+      ),
+      -- Region summary: weighted avg annualised rate + market count
+      RegionSummary AS (
+        SELECT
+          zone,
+          AVG(ann_yoy_pct)        AS avg_ann_yoy,
+          -- MoM = (cur/prev)^(1/n_months) - 1, averaged
+          AVG((POWER(
+            CAST(cur_price / NULLIF(prev_price, 0) AS FLOAT),
+            1.0 / NULLIF(
+              DATEDIFF(MONTH,
+                (SELECT MIN(price_date) FROM dbo.Daily_Prices WHERE price_naira > 0),
+                (SELECT MAX(price_date) FROM dbo.Daily_Prices WHERE price_naira > 0)
+              ), 0)
+          ) - 1) * 100)           AS avg_mom_pct,
+          SUM(market_count)       AS total_markets,
+          COUNT(DISTINCT item_name) AS item_count
+        FROM ItemRates
+        WHERE ann_yoy_pct BETWEEN -50 AND 200  -- exclude wild outliers
+        GROUP BY zone
+      ),
+      -- Top inflating item per zone
+      TopInflator AS (
+        SELECT zone, item_name, ann_yoy_pct,
+          ROW_NUMBER() OVER (PARTITION BY zone ORDER BY total_change_pct DESC) AS rn
+        FROM ItemRates
+        WHERE total_change_pct > 0
+      )
+      SELECT
+        rs.zone,
+        ROUND(rs.avg_ann_yoy, 2)    AS inflation_rate,
+        ROUND(rs.avg_mom_pct, 2)    AS mom_rate,
+        rs.total_markets            AS market_count,
+        ti.item_name                AS top_inflator
+      FROM RegionSummary rs
+      LEFT JOIN TopInflator ti
+        ON  ti.zone = rs.zone
+        AND ti.rn   = 1
+      ORDER BY rs.avg_ann_yoy DESC
+    `);
+
+    const REGION_NAMES: Record<string, string> = {
+      "NC": "North Central", "NW": "North West", "NE": "North East",
+      "SW": "South West",    "SS": "South South", "SE": "South East",
+    };
+
+    return result.recordset.map((r: any) => {
+      const rate = parseFloat(r.inflation_rate) || 0;
+      const mom  = parseFloat(r.mom_rate)       || 0;
+      return {
+        region:         String(r.zone),
+        regionName:     REGION_NAMES[r.zone] ?? String(r.zone),
+        inflationRate:  Math.round(rate * 10) / 10,
+        monthOverMonth: Math.round(mom  * 10) / 10,
+        trend:          mom > 0.5 ? "up" : mom < -0.5 ? "down" : "stable",
+        marketCount:    parseInt(r.market_count) || 0,
+        topInflator:    String(r.top_inflator || ""),
+      } as RegionalInflation;
+    });
+
+  } catch (err) {
+    console.error("[inflation v5] fetchRegionalInflation failed:", err);
+    return [];   // Return empty — NEVER return fabricated data
+  }
+}
+
 export async function GET(request: NextRequest) {
   const startTime = Date.now();
 
@@ -1011,9 +1165,13 @@ export async function GET(request: NextRequest) {
 
       const displayData = cacheResult.data.slice(-periodMonths);
       const latest      = displayData[displayData.length - 1];
-      const prev        = displayData.length >= 2 ? displayData[displayData.length - 2] : null;
       const currentRate = latest?.naijaMarketRate ?? 0;
-      const momChange   = prev ? (currentRate - (prev.naijaMarketRate ?? 0)) : (latest?.naijaMarketRate ?? 0);
+
+      // MoM = real average monthly rate over the data period, NOT the difference
+      // between two annualised rates (which gives nonsense like -13.9%).
+      // cacheResult.avgMomPct is the avg_mom_pct from the movers SQL query.
+      // e.g. 7-month period: (Feb price / Jul price)^(1/7) - 1 ≈ 0.71%/month
+      const momChange = cacheResult.avgMomPct ?? 0;
       const { rate: latestNBS } = getCurrentNbsRate();
 
       response = {
@@ -1030,14 +1188,7 @@ export async function GET(request: NextRequest) {
         },
         monthlyTrend: displayData,
         // Regional breakdown — from static NBS data (accurate, no query needed)
-        regionalBreakdown: [
-          { region: "NC", regionName: "North Central", inflationRate: 12.4, monthOverMonth: 1.2,  trend: "up",     marketCount: 8, topInflator: "Rice"     },
-          { region: "NW", regionName: "North West",    inflationRate: 10.8, monthOverMonth: 0.8,  trend: "up",     marketCount: 7, topInflator: "Tomatoes" },
-          { region: "NE", regionName: "North East",    inflationRate: 9.5,  monthOverMonth: 0.5,  trend: "stable", marketCount: 6, topInflator: "Beans"    },
-          { region: "SW", regionName: "South West",    inflationRate: 8.2,  monthOverMonth: -0.3, trend: "down",   marketCount: 6, topInflator: "Palm Oil" },
-          { region: "SS", regionName: "South South",   inflationRate: 7.8,  monthOverMonth: -0.5, trend: "down",   marketCount: 6, topInflator: "Garri"    },
-          { region: "SE", regionName: "South East",    inflationRate: 6.9,  monthOverMonth: -0.8, trend: "down",   marketCount: 5, topInflator: "Yam"      },
-        ],
+        regionalBreakdown: await fetchRegionalInflation(),
         nbsComparison: {
           naijaMarket:    Math.round(currentRate * 10) / 10,
           nbs:            latestNBS,
