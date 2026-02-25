@@ -1018,9 +1018,11 @@ async function fetchRegionalInflation(): Promise<RegionalInflation[]> {
   if (!pool) return [];
 
   try {
+    // Same approach as movers: Daily_Prices (Feb 2026) vs Items_Catalog baseline (Jan 2025)
+    // OldestPrices from Daily_Prices returns 0 rows in common — different item names.
     const result = await pool.request().query(`
       WITH
-      -- Map every state to its geopolitical zone
+      -- Zone mapping for all 37 states
       StateZone AS (
         SELECT state,
           CASE
@@ -1040,103 +1042,95 @@ async function fetchRegionalInflation(): Promise<RegionalInflation[]> {
           END AS zone
         FROM (SELECT DISTINCT state FROM dbo.Daily_Prices WHERE state IS NOT NULL) s
       ),
-      -- Newest month avg price per item+zone
-      NewestPrices AS (
+      -- Jan 2025 reference prices from Items_Catalog (one row per item)
+      Baseline AS (
+        SELECT
+          item_name,
+          COALESCE(
+            NULLIF(whole_sale_price,      0),
+            NULLIF(Ave_Measurement_Price, 0),
+            NULLIF(average_unit_price,    0)
+          ) AS baseline_price
+        FROM dbo.Items_Catalog
+        WHERE category_id IN (
+          'CAT001','CAT002','CAT003','CAT004','CAT006','CAT007',
+          'CAT008','CAT009','CAT010','CAT013','CAT014','CAT015',
+          'CAT070','CAT103'
+        )
+        AND COALESCE(
+              NULLIF(whole_sale_price,      0),
+              NULLIF(Ave_Measurement_Price, 0),
+              NULLIF(average_unit_price,    0)
+            ) IS NOT NULL
+      ),
+      -- Feb 2026 actual prices per item per zone
+      RecentByZone AS (
         SELECT
           sz.zone,
           dp.item_name,
-          AVG(dp.price_naira)   AS cur_price,
-          MAX(dp.price_date)    AS cur_date,
-          COUNT(DISTINCT dp.market_name) AS market_count
+          AVG(dp.price_naira)             AS cur_price,
+          COUNT(DISTINCT dp.market_name)  AS market_count
         FROM dbo.Daily_Prices dp
         JOIN StateZone sz ON sz.state = dp.state
         WHERE dp.price_naira > 0
           AND sz.zone IS NOT NULL
-          AND dp.category_id IN ('CAT001','CAT002','CAT003','CAT004','CAT006','CAT007',
-                                  'CAT008','CAT009','CAT010','CAT013','CAT014','CAT015',
-                                  'CAT070','CAT103')
+          AND dp.category_id IN (
+            'CAT001','CAT002','CAT003','CAT004','CAT006','CAT007',
+            'CAT008','CAT009','CAT010','CAT013','CAT014','CAT015',
+            'CAT070','CAT103'
+          )
           AND dp.price_date >= (
             SELECT DATEADD(DAY, -40, MAX(price_date))
             FROM dbo.Daily_Prices WHERE price_naira > 0
           )
         GROUP BY sz.zone, dp.item_name
+        HAVING COUNT(*) >= 2
       ),
-      -- Oldest month avg price per item+zone
-      OldestPrices AS (
-        SELECT
-          sz.zone,
-          dp.item_name,
-          AVG(dp.price_naira)   AS prev_price,
-          MAX(dp.price_date)    AS prev_date
-        FROM dbo.Daily_Prices dp
-        JOIN StateZone sz ON sz.state = dp.state
-        WHERE dp.price_naira > 0
-          AND sz.zone IS NOT NULL
-          AND dp.category_id IN ('CAT001','CAT002','CAT003','CAT004','CAT006','CAT007',
-                                  'CAT008','CAT009','CAT010','CAT013','CAT014','CAT015',
-                                  'CAT070','CAT103')
-          AND dp.price_date <= (
-            SELECT DATEADD(DAY, 40, MIN(price_date))
-            FROM dbo.Daily_Prices WHERE price_naira > 0
-          )
-        GROUP BY sz.zone, dp.item_name
-      ),
-      -- Join and compute annualised rate per item per zone
+      -- Per item per zone: annualised 13-month rate vs Jan 2025 catalog
       ItemRates AS (
         SELECT
-          n.zone,
-          n.item_name,
-          n.cur_price,
-          o.prev_price,
-          n.market_count,
-          DATEDIFF(MONTH, MAX(o.prev_date), MAX(n.cur_date)) AS months_gap,
-          -- annualised rate: (cur/prev)^(12/n_months) - 1
-          (POWER(
-            CAST(n.cur_price / NULLIF(o.prev_price, 0) AS FLOAT),
-            12.0 / NULLIF(DATEDIFF(MONTH, MAX(o.prev_date), MAX(n.cur_date)), 0)
-          ) - 1) * 100 AS ann_yoy_pct,
-          (n.cur_price - o.prev_price) / NULLIF(o.prev_price, 0) * 100 AS total_change_pct
-        FROM NewestPrices n
-        JOIN OldestPrices o
-          ON  o.zone      = n.zone
-          AND o.item_name = n.item_name
-        WHERE o.prev_price > 0
-          AND n.cur_price  > 0
-        GROUP BY n.zone, n.item_name, n.cur_price, o.prev_price, n.market_count
+          r.zone,
+          r.item_name,
+          r.cur_price,
+          b.baseline_price                                              AS prev_price,
+          r.market_count,
+          -- 13-month annualised rate: (cur/baseline)^(12/13) - 1
+          (POWER(CAST(r.cur_price / b.baseline_price AS FLOAT),
+                 12.0 / 13) - 1) * 100                                AS ann_yoy_pct,
+          (r.cur_price - b.baseline_price) / b.baseline_price * 100   AS total_change_pct
+        FROM RecentByZone r
+        JOIN Baseline b ON b.item_name = r.item_name
+        WHERE b.baseline_price > 0
+          AND r.cur_price > 0
+          AND ABS((r.cur_price - b.baseline_price) / b.baseline_price) < 5
       ),
-      -- Region summary: weighted avg annualised rate + market count
+      -- Zone summary
       RegionSummary AS (
         SELECT
           zone,
-          AVG(ann_yoy_pct)        AS avg_ann_yoy,
-          -- MoM = (cur/prev)^(1/n_months) - 1, averaged
-          AVG((POWER(
-            CAST(cur_price / NULLIF(prev_price, 0) AS FLOAT),
-            1.0 / NULLIF(
-              DATEDIFF(MONTH,
-                (SELECT MIN(price_date) FROM dbo.Daily_Prices WHERE price_naira > 0),
-                (SELECT MAX(price_date) FROM dbo.Daily_Prices WHERE price_naira > 0)
-              ), 0)
-          ) - 1) * 100)           AS avg_mom_pct,
-          SUM(market_count)       AS total_markets,
+          AVG(ann_yoy_pct)          AS avg_ann_yoy,
+          -- avg_mom_pct: (cur/baseline)^(1/13) - 1
+          AVG((POWER(CAST(cur_price / prev_price AS FLOAT),
+                     1.0 / 13) - 1) * 100)  AS avg_mom_pct,
+          SUM(market_count)         AS total_markets,
           COUNT(DISTINCT item_name) AS item_count
         FROM ItemRates
-        WHERE ann_yoy_pct BETWEEN -50 AND 200  -- exclude wild outliers
+        WHERE ann_yoy_pct BETWEEN -50 AND 200
         GROUP BY zone
       ),
-      -- Top inflating item per zone
+      -- Top inflating item per zone (highest total_change_pct)
       TopInflator AS (
-        SELECT zone, item_name, ann_yoy_pct,
+        SELECT zone, item_name,
           ROW_NUMBER() OVER (PARTITION BY zone ORDER BY total_change_pct DESC) AS rn
         FROM ItemRates
         WHERE total_change_pct > 0
       )
       SELECT
         rs.zone,
-        ROUND(rs.avg_ann_yoy, 2)    AS inflation_rate,
-        ROUND(rs.avg_mom_pct, 2)    AS mom_rate,
-        rs.total_markets            AS market_count,
-        ti.item_name                AS top_inflator
+        ROUND(rs.avg_ann_yoy,  2)  AS inflation_rate,
+        ROUND(rs.avg_mom_pct,  2)  AS mom_rate,
+        rs.total_markets           AS market_count,
+        ti.item_name               AS top_inflator
       FROM RegionSummary rs
       LEFT JOIN TopInflator ti
         ON  ti.zone = rs.zone
