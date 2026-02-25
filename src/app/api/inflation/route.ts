@@ -336,26 +336,42 @@ async function fetchFromInflationCache(months: number): Promise<{
       return empty;
     }
 
-    // ── Top movers from cache ────────────────────────────────────────────
+    // ── Top movers: compute from real prices (2 most recent months per item) ───
+    // Do NOT rely on pre-computed mom_change_pct — often NULL in latest period.
+    // Join the two most recent month rows per item and compute from actual prices.
     const moversResult = await pool.request().query(`
-      WITH LatestPeriod AS (
-        SELECT MAX(period_end) AS latest_end
-        FROM dbo.Inflation_Cache WHERE cache_type = 'ITEM' AND period_type = 'MONTHLY'
-      )
-      SELECT TOP 20
-        ic.dimension_label  AS item_name,
-        ic.avg_price,
-        ic.prev_avg_price,
-        ic.mom_change_pct,
-        ic.yoy_change_pct,
-        ic.confidence,
-        ic.period_label
-      FROM dbo.Inflation_Cache ic
-      JOIN LatestPeriod lp ON ic.period_end = lp.latest_end
-      WHERE ic.cache_type  = 'ITEM'
-        AND ic.period_type = 'MONTHLY'
-        AND ic.mom_change_pct IS NOT NULL
-      ORDER BY ABS(ISNULL(ic.mom_change_pct, 0)) DESC
+      WITH RankedPeriods AS (
+        SELECT
+          dimension_label  AS item_name,
+          avg_price,
+          period_label,
+          period_end,
+          confidence,
+          ROW_NUMBER() OVER (
+            PARTITION BY dimension_key
+            ORDER BY period_end DESC
+          ) AS rn
+        FROM dbo.Inflation_Cache
+        WHERE cache_type  = 'ITEM'
+          AND period_type = 'MONTHLY'
+          AND avg_price IS NOT NULL
+          AND avg_price > 0
+      ),
+      Cur  AS (SELECT item_name, avg_price AS cur_price,  period_label, confidence FROM RankedPeriods WHERE rn = 1),
+      Prev AS (SELECT item_name, avg_price AS prev_price                            FROM RankedPeriods WHERE rn = 2)
+      SELECT
+        c.item_name,
+        c.cur_price                                                  AS avg_price,
+        p.prev_price                                                 AS prev_avg_price,
+        (c.cur_price - p.prev_price) / p.prev_price * 100           AS mom_change_pct,
+        (POWER(CAST(c.cur_price / p.prev_price AS FLOAT), 12) - 1) * 100
+                                                                     AS ann_yoy_pct,
+        c.confidence,
+        c.period_label
+      FROM Cur c
+      JOIN Prev p ON p.item_name = c.item_name
+      WHERE p.prev_price > 0 AND c.cur_price > 0
+      ORDER BY ABS((c.cur_price - p.prev_price) / p.prev_price * 100) DESC
     `);
 
     // ── Build MonthlyInflation array (reverse = chronological order) ─────
@@ -398,90 +414,74 @@ async function fetchFromInflationCache(months: number): Promise<{
       };
     });
 
-    // ── Build top movers ─────────────────────────────────────────────────
+    // ── Build top movers from REAL price data ────────────────────────────
+    // ann_yoy_pct = annualised from actual MoM price movement in our DB.
+    // This is the real data — what items actually cost more/less this month
+    // vs last month, expressed as an annual rate for comparison with NBS.
     const movers = moversResult.recordset as any[];
+
+    const buildMoverItem = (m: any, trendDir: "up" | "down"): ItemInflation => {
+      const momRate     = parseFloat(m.mom_change_pct) || 0;
+      const annYoy      = parseFloat(m.ann_yoy_pct)    || 0;
+      // Use annualised YoY as the display rate — real data, not fabricated
+      const inflationRate = Math.round(annYoy * 10) / 10;
+      const keyword     = getBasketKeyword(String(m.item_name || ""));
+      const weight      = keyword && BASKET_WEIGHTS[keyword] ? BASKET_WEIGHTS[keyword]!.weight : 0;
+      return {
+        item:          String(m.item_name || ""),
+        category:      keyword && BASKET_WEIGHTS[keyword] ? BASKET_WEIGHTS[keyword]!.category : "Other",
+        currentPrice:  Math.round(parseFloat(m.avg_price)      || 0),
+        previousPrice: Math.round(parseFloat(m.prev_avg_price) || 0),
+        priceChange:   Math.round((parseFloat(m.avg_price) || 0) - (parseFloat(m.prev_avg_price) || 0)),
+        inflationRate,
+        contribution:  Math.round((inflationRate * weight) / 100 * 10) / 10,
+        trend:         trendDir,
+      };
+    };
+
     const topInflators: ItemInflation[] = movers
-      .filter(m => (parseFloat(m.mom_change_pct) || 0) > 0)
+      .filter(m => (parseFloat(m.mom_change_pct) || 0) > 0.1)   // >0.1% MoM = real increase
       .slice(0, 10)
-      .map((m: any, idx) => {
-        const inflationRate = Math.round((parseFloat(m.yoy_change_pct) || parseFloat(m.mom_change_pct) || 0) * 10) / 10;
-        const keyword = getBasketKeyword(String(m.item_name || ""));
-        const weight  = keyword && BASKET_WEIGHTS[keyword] ? BASKET_WEIGHTS[keyword]!.weight : 0;
-        return {
-          item:          String(m.item_name || ""),
-          category:      keyword && BASKET_WEIGHTS[keyword] ? BASKET_WEIGHTS[keyword]!.category : "Other",
-          currentPrice:  Math.round(parseFloat(m.avg_price)      || 0),
-          previousPrice: Math.round(parseFloat(m.prev_avg_price) || 0),
-          priceChange:   Math.round((parseFloat(m.avg_price) || 0) - (parseFloat(m.prev_avg_price) || 0)),
-          inflationRate,
-          contribution:  Math.round((inflationRate * weight) / 100 * 10) / 10,
-          trend:         "up" as const,
-        };
-      });
+      .map(m => buildMoverItem(m, "up"));
 
     const topDeflators: ItemInflation[] = movers
-      .filter(m => (parseFloat(m.mom_change_pct) || 0) < 0)
-      .slice(-10).reverse()
-      .map((m: any) => {
-        const inflationRate = Math.round((parseFloat(m.yoy_change_pct) || parseFloat(m.mom_change_pct) || 0) * 10) / 10;
-        const keyword = getBasketKeyword(String(m.item_name || ""));
-        const weight  = keyword && BASKET_WEIGHTS[keyword] ? BASKET_WEIGHTS[keyword]!.weight : 0;
-        return {
-          item:          String(m.item_name || ""),
-          category:      keyword && BASKET_WEIGHTS[keyword] ? BASKET_WEIGHTS[keyword]!.category : "Other",
-          currentPrice:  Math.round(parseFloat(m.avg_price)      || 0),
-          previousPrice: Math.round(parseFloat(m.prev_avg_price) || 0),
-          priceChange:   Math.round((parseFloat(m.avg_price) || 0) - (parseFloat(m.prev_avg_price) || 0)),
-          inflationRate,
-          contribution:  Math.round((inflationRate * weight) / 100 * 10) / 10,
-          trend:         "down" as const,
-        };
-      });
+      .filter(m => (parseFloat(m.mom_change_pct) || 0) < -0.1)  // <-0.1% MoM = real decrease
+      .reverse()
+      .slice(0, 10)
+      .map(m => buildMoverItem(m, "down"));
 
-    // ── Basket composition (uses prices from latest movers) ──────────────
-    // Build using BASKET_WEIGHTS as skeleton, fill prices from cache data
-    const priceMap = new Map<string, { current: number; prev: number }>();
+    // ── Basket composition: REAL prices from DB, annualised per item ────────
+    // Priority: (1) real DB price from movers, (2) nothing — no fabricated fallbacks.
+    // inflationRate per item = annualised MoM from actual market prices.
+    const priceMap = new Map<string, { current: number; prev: number; annYoy: number }>();
     for (const m of movers) {
       const keyword = getBasketKeyword(String(m.item_name || ""));
       if (keyword && !priceMap.has(keyword)) {
-        priceMap.set(keyword, {
-          current: parseFloat(m.avg_price)      || 0,
-          prev:    parseFloat(m.prev_avg_price) || 0,
-        });
+        const cur  = parseFloat(m.avg_price)      || 0;
+        const prev = parseFloat(m.prev_avg_price) || 0;
+        const ann  = parseFloat(m.ann_yoy_pct)    || 0;
+        priceMap.set(keyword, { current: cur, prev, annYoy: ann });
       }
     }
 
-    const STATIC_BASKET_PRICES: Record<string, { current: number; prev: number }> = {
-      "rice":          { current: 72000, prev: 66100 },
-      "garri":         { current: 24500, prev: 22000 },
-      "tomatoes":      { current: 42000, prev: 38500 },
-      "palm oil":      { current: 48000, prev: 45000 },
-      "beans":         { current: 62000, prev: 56500 },
-      "pepper":        { current: 30000, prev: 27500 },
-      "onions":        { current: 35000, prev: 32000 },
-      "yam":           { current: 2800,  prev: 2500  },
-      "groundnut oil": { current: 55000, prev: 51000 },
-      "eggs":          { current: 3200,  prev: 2900  },
-      "plantain":      { current: 4200,  prev: 3800  },
-      "fish":          { current: 5200,  prev: 4800  },
-      "beef":          { current: 6500,  prev: 6000  },
-    };
-
     const basketComposition: BasketItem[] = Object.entries(BASKET_WEIGHTS).map(([keyword, config]) => {
-      const prices = priceMap.get(keyword) ?? STATIC_BASKET_PRICES[keyword] ?? { current: 0, prev: 0 };
-      const inflationRate = prices.prev > 0
-        ? Math.round(((prices.current - prices.prev) / prices.prev) * 100 * 10) / 10
+      const prices = priceMap.get(keyword);
+      // Use annualised YoY from real data; 0 if item not in DB yet
+      const inflationRate = prices
+        ? Math.round(prices.annYoy * 10) / 10
         : 0;
       return {
         item:          keyword.charAt(0).toUpperCase() + keyword.slice(1),
         category:      config.category,
         weight:        config.weight,
-        currentPrice:  Math.round(prices.current),
-        previousPrice: Math.round(prices.prev),
+        currentPrice:  prices ? Math.round(prices.current) : 0,
+        previousPrice: prices ? Math.round(prices.prev)    : 0,
         inflationRate,
         contribution:  Math.round((inflationRate * config.weight) / 100 * 10) / 10,
       };
-    }).sort((a, b) => b.contribution - a.contribution);
+    })
+    .filter(b => b.currentPrice > 0)          // only show items we have real data for
+    .sort((a, b) => b.contribution - a.contribution);
 
     const lastRow     = trendResult.recordset[0];
     const lastUpdated = lastRow?.last_updated instanceof Date
