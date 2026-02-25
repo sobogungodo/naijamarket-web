@@ -337,56 +337,79 @@ async function fetchFromInflationCache(months: number): Promise<{
       return empty;
     }
 
-    // ── Top movers: newest vs oldest available month per item ────────────
-    // Data reality: only 2 months exist — Jul 2025 (seed) and Feb 2026 (live).
-    // Gap = 7 months. We join newest vs oldest and annualise over the real gap.
-    // Items only in Feb 2026 (no Jul baseline) are excluded — we have no prior price.
+    // ── Top movers: Daily_Prices (Feb 2026) vs Items_Catalog.whole_sale_price (Jan 2025) ──
+    // Jul 2025 seed data shares ZERO item names with Feb 2026 live data — no join possible.
+    // Solution: Items_Catalog.whole_sale_price = Jan 2025 reference wholesale price.
+    // Real 13-month comparison: Jan 2025 catalog baseline → Feb 2026 actual market price.
+    // FOOD ONLY: CAT001=Grains, CAT002=Veg, CAT003=Oils, CAT004=Protein/Meat/Fish,
+    //            CAT006=Fruits(Plantain), CAT007=Spices/Pepper, CAT008=DriedFish,
+    //            CAT009/010=Bread, CAT013=Dairy/Milk, CAT014=Tubers(Yam/Cassava),
+    //            CAT015=Beans, CAT070=Poultry, CAT103=Fish(NBS)
     const moversResult = await pool.request().query(`
       WITH
-      Newest AS (
-        -- Latest available month per item
-        SELECT dimension_key, dimension_label AS item_name,
-               avg_price AS cur_price, period_start AS cur_start, confidence
-        FROM dbo.Inflation_Cache
-        WHERE cache_type = 'ITEM' AND period_type = 'MONTHLY' AND avg_price > 0
-          AND period_end = (
-            SELECT MAX(period_end) FROM dbo.Inflation_Cache
-            WHERE cache_type = 'ITEM' AND period_type = 'MONTHLY'
+      -- Step 1: Feb 2026 actual avg price per food item (last 35 days)
+      RecentPrices AS (
+        SELECT
+          dp.item_name,
+          dp.category_id,
+          AVG(dp.price_naira)   AS cur_price,
+          COUNT(*)              AS data_points
+        FROM dbo.Daily_Prices dp
+        WHERE dp.price_naira > 0
+          AND dp.category_id IN (
+            'CAT001','CAT002','CAT003','CAT004','CAT006','CAT007',
+            'CAT008','CAT009','CAT010','CAT013','CAT014','CAT015',
+            'CAT070','CAT103'
           )
+          AND dp.price_date >= (
+            SELECT DATEADD(DAY, -35, MAX(price_date))
+            FROM dbo.Daily_Prices WHERE price_naira > 0
+          )
+        GROUP BY dp.item_name, dp.category_id
+        HAVING COUNT(*) >= 3
       ),
-      Oldest AS (
-        -- Earliest available month per item (our baseline)
-        SELECT dimension_key,
-               avg_price AS prev_price, period_start AS prev_start
-        FROM dbo.Inflation_Cache
-        WHERE cache_type = 'ITEM' AND period_type = 'MONTHLY' AND avg_price > 0
-          AND period_end = (
-            SELECT MIN(period_end) FROM dbo.Inflation_Cache
-            WHERE cache_type = 'ITEM' AND period_type = 'MONTHLY'
+      -- Step 2: Jan 2025 baseline from Items_Catalog.whole_sale_price
+      Baseline AS (
+        SELECT
+          item_name,
+          category_id,
+          COALESCE(
+            NULLIF(whole_sale_price,      0),
+            NULLIF(Ave_Measurement_Price, 0),
+            NULLIF(average_unit_price,    0)
+          ) AS baseline_price
+        FROM dbo.Items_Catalog
+        WHERE COALESCE(
+                NULLIF(whole_sale_price,      0),
+                NULLIF(Ave_Measurement_Price, 0),
+                NULLIF(average_unit_price,    0)
+              ) IS NOT NULL
+          AND category_id IN (
+            'CAT001','CAT002','CAT003','CAT004','CAT006','CAT007',
+            'CAT008','CAT009','CAT010','CAT013','CAT014','CAT015',
+            'CAT070','CAT103'
           )
       )
       SELECT
-        n.item_name,
-        n.cur_price                                                    AS avg_price,
-        o.prev_price                                                   AS prev_avg_price,
-        -- Actual months between oldest and newest
-        DATEDIFF(MONTH, o.prev_start, n.cur_start)                    AS months_gap,
-        -- Raw total change over the full period
-        (n.cur_price - o.prev_price) / o.prev_price * 100             AS total_change_pct,
-        -- Average MoM rate over the actual period
-        (POWER(CAST(n.cur_price / o.prev_price AS FLOAT),
-               1.0 / NULLIF(DATEDIFF(MONTH, o.prev_start, n.cur_start), 0)) - 1) * 100
-                                                                       AS avg_mom_pct,
-        -- Annualised rate (12-month projection from real data)
-        (POWER(CAST(n.cur_price / o.prev_price AS FLOAT),
-               12.0 / NULLIF(DATEDIFF(MONTH, o.prev_start, n.cur_start), 0)) - 1) * 100
-                                                                       AS ann_yoy_pct,
-        n.confidence
-      FROM Newest n
-      JOIN Oldest o ON o.dimension_key = n.dimension_key
-      WHERE o.prev_price > 0 AND n.cur_price > 0
-        AND DATEDIFF(MONTH, o.prev_start, n.cur_start) > 0
-      ORDER BY ABS((n.cur_price - o.prev_price) / o.prev_price * 100) DESC
+        r.item_name,
+        r.category_id,
+        ROUND(r.cur_price,      2)  AS avg_price,
+        ROUND(b.baseline_price, 2)  AS prev_avg_price,
+        13                          AS months_gap,
+        ROUND((r.cur_price - b.baseline_price) / b.baseline_price * 100, 2)
+                                    AS total_change_pct,
+        ROUND((POWER(CAST(r.cur_price / b.baseline_price AS FLOAT),
+               1.0  / 13) - 1) * 100, 4)  AS avg_mom_pct,
+        ROUND((POWER(CAST(r.cur_price / b.baseline_price AS FLOAT),
+               12.0 / 13) - 1) * 100, 2)  AS ann_yoy_pct,
+        r.data_points,
+        'HIGH'                      AS confidence
+      FROM RecentPrices r
+      JOIN Baseline b ON b.item_name = r.item_name
+      WHERE b.baseline_price > 0
+        AND r.cur_price > 0
+        AND ABS((r.cur_price - b.baseline_price) / b.baseline_price) < 5
+      ORDER BY ABS((r.cur_price - b.baseline_price) / b.baseline_price * 100) DESC
     `);
 
     // ── Build MonthlyInflation array (reverse = chronological order) ─────
@@ -1029,6 +1052,9 @@ async function fetchRegionalInflation(): Promise<RegionalInflation[]> {
         JOIN StateZone sz ON sz.state = dp.state
         WHERE dp.price_naira > 0
           AND sz.zone IS NOT NULL
+          AND dp.category_id IN ('CAT001','CAT002','CAT003','CAT004','CAT006','CAT007',
+                                  'CAT008','CAT009','CAT010','CAT013','CAT014','CAT015',
+                                  'CAT070','CAT103')
           AND dp.price_date >= (
             SELECT DATEADD(DAY, -40, MAX(price_date))
             FROM dbo.Daily_Prices WHERE price_naira > 0
@@ -1046,6 +1072,9 @@ async function fetchRegionalInflation(): Promise<RegionalInflation[]> {
         JOIN StateZone sz ON sz.state = dp.state
         WHERE dp.price_naira > 0
           AND sz.zone IS NOT NULL
+          AND dp.category_id IN ('CAT001','CAT002','CAT003','CAT004','CAT006','CAT007',
+                                  'CAT008','CAT009','CAT010','CAT013','CAT014','CAT015',
+                                  'CAT070','CAT103')
           AND dp.price_date <= (
             SELECT DATEADD(DAY, 40, MIN(price_date))
             FROM dbo.Daily_Prices WHERE price_naira > 0
