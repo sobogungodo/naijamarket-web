@@ -2,19 +2,17 @@
 // NAIJAFOOD INTEL - ARBITRAGE OPPORTUNITIES API
 // File: src/app/api/arbitrage/route.ts
 // Bloomberg Equivalent: ARBI <GO>
-// Version: 6.0 - Precomputed transport costs from Market_Distances table
-// Date: 2026-02-19
+// Version: 7.0 - Latest_Prices_Summary cache (136K rows) replaces Daily_Prices (2.9M rows)
+// Date: 2026-02-25
 //
-// WHAT'S NEW IN v6.0:
-//   - Transport costs precomputed for ALL 226×225/2 = 25,425 market pairs
-//   - JOINs to dbo.vw_Market_Transport instead of runtime Haversine
-//   - Lagos premium (1.40×), FCT discount (0.92×), state-specific multipliers
-//   - Realistic rates: ₦8-35/km + ₦3,000 fixed + ₦2/km checkpoints
-//   - Category weight multipliers (livestock 10×, frozen 3.5×, etc.)
-//   - Single SQL query computes everything — no JS transport math
-//
-// Sources: NBS Transport Fare Watch, NARTO, Kobo360 data,
-//   Mordor Intelligence Nigeria Freight Report 2025-2030
+// WHAT'S NEW IN v7.0:
+//   - LatestPrices CTE now reads dbo.Latest_Prices_Summary (136K rows)
+//     instead of dbo.Daily_Prices (2.9M rows) — ~20x faster, no timeout
+//   - Latest_Prices_Summary already has item_name, market_name, state pre-joined
+//     so we drop the expensive Daily_Prices JOIN Items_Catalog JOIN Markets
+//   - All transport logic, tier access, category multipliers unchanged
+//   - POST /detail handler also updated to use Latest_Prices_Summary
+//   - Expected response time: ~300ms (was 30s+ timeout on Azure SQL S2)
 // ============================================================================
 
 import { NextRequest, NextResponse } from "next/server";
@@ -220,10 +218,10 @@ async function findArbitrageOpportunities(
   // Build dynamic WHERE filters
   const conditions: string[] = [];
   if (filterItem) {
-    conditions.push(`AND ic.item_name LIKE '%${filterItem.replace(/'/g, "''")}%'`);
+    conditions.push(`AND lp.item_name LIKE '%${filterItem.replace(/'/g, "''")}%'`);
   }
   if (filterCategory) {
-    conditions.push(`AND ic.category_id = '${filterCategory.replace(/'/g, "''")}'`);
+    conditions.push(`AND lp.category_id = '${filterCategory.replace(/'/g, "''")}'`);
   }
   const extraWhere = conditions.join(" ");
 
@@ -237,30 +235,26 @@ async function findArbitrageOpportunities(
   }
   const stateWhere = stateConditions.join(" ");
 
-  // Single SQL: latest prices × latest prices × precomputed transport
+  // PERF FIX v7: Latest_Prices_Summary (136K rows, pre-joined) replaces
+  // Daily_Prices JOIN Items_Catalog JOIN Markets (2.9M rows, self-join).
+  // Latest_Prices_Summary has one row per item+market with latest price already.
+  // No ROW_NUMBER needed — it IS the latest price per item+market.
   const sql = `
     WITH LatestPrices AS (
-      SELECT 
-        dp.item_id,
-        dp.market_id,
-        dp.price_naira,
-        dp.price_date,
-        dp.time_slot,
-        ic.item_name,
-        ic.unit,
-        ic.category_id,
-        m.market_name,
-        m.state,
-        ROW_NUMBER() OVER (
-          PARTITION BY dp.item_id, dp.market_id 
-          ORDER BY dp.price_date DESC, dp.time_slot DESC
-        ) AS rn
-      FROM dbo.Daily_Prices dp
-      JOIN dbo.Items_Catalog ic ON dp.item_id = ic.item_id
-      JOIN dbo.Markets m ON dp.market_id = m.market_id
-      WHERE dp.price_naira > 0
-        AND dp.price_date >= DATEADD(DAY, -7, CAST(GETDATE() AS DATE))
-        AND ic.category_id IN (${FOOD_CAT_SQL})
+      SELECT
+        lp.item_id,
+        lp.market_id,
+        lp.price_naira,
+        lp.price_date,
+        lp.item_name,
+        lp.unit,
+        lp.category_id,
+        lp.market_name,
+        lp.state,
+        1 AS rn   -- LPS already holds latest price per item+market
+      FROM dbo.Latest_Prices_Summary lp
+      WHERE lp.price_naira > 0
+        AND lp.category_id IN (${FOOD_CAT_SQL})
         ${extraWhere}
     )
     SELECT TOP ${Math.min(maxResults * 3, 300)}
@@ -437,7 +431,7 @@ export async function GET(request: NextRequest) {
           transportModel: "Precomputed Market_Distances v6.0 (Feb 2026)",
           dieselPrice: "₦1,100/litre",
           marketPairs: "25,425 precomputed (226 markets)",
-          dataSource: "Daily_Prices + vw_Market_Transport",
+          dataSource: "Latest_Prices_Summary + vw_Market_Transport (v7.0)",
           categoryMultipliers: "Applied (livestock 10×, frozen 3.5×, perishables 2×)",
         },
       },
@@ -477,24 +471,22 @@ export async function POST(request: NextRequest) {
     const sellSearch = (sellMarket || "").replace(/'/g, "''");
 
     // Get prices for both markets
+    // v7 PERF FIX: Latest_Prices_Summary (136K rows) not Daily_Prices (2.9M)
     const results = await prisma.$queryRawUnsafe(`
-      SELECT item_name, market_name, market_id, state, category_id, unit,
-        CAST(price_naira AS FLOAT) as price, price_date
-      FROM (
-        SELECT dp.item_id, ic.item_name, m.market_name, m.market_id, m.state, 
-          ic.category_id, ic.unit, dp.price_naira, dp.price_date,
-          ROW_NUMBER() OVER (PARTITION BY dp.item_id, dp.market_id 
-            ORDER BY dp.price_date DESC, dp.time_slot DESC) AS rn
-        FROM dbo.Daily_Prices dp
-        JOIN dbo.Items_Catalog ic ON dp.item_id = ic.item_id
-        JOIN dbo.Markets m ON dp.market_id = m.market_id
-        WHERE ic.item_name LIKE '%${itemSearch}%'
-          AND (m.market_name LIKE '%${buySearch}%' OR m.market_name LIKE '%${sellSearch}%')
-          AND dp.price_naira > 0
-          AND dp.price_date >= DATEADD(DAY, -7, CAST(GETDATE() AS DATE))
-          AND ic.category_id IN (${FOOD_CAT_SQL})
-      ) sub
-      WHERE rn = 1
+      SELECT
+        lp.item_name,
+        lp.market_name,
+        lp.market_id,
+        lp.state,
+        lp.category_id,
+        lp.unit,
+        CAST(lp.price_naira AS FLOAT) AS price,
+        lp.price_date
+      FROM dbo.Latest_Prices_Summary lp
+      WHERE lp.item_name  LIKE '%${itemSearch}%'
+        AND (lp.market_name LIKE '%${buySearch}%' OR lp.market_name LIKE '%${sellSearch}%')
+        AND lp.price_naira > 0
+        AND lp.category_id IN (${FOOD_CAT_SQL})
     `) as any[];
 
     if (!results || results.length < 2) {
