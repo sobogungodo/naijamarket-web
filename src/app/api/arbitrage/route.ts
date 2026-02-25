@@ -2,7 +2,7 @@
 // NAIJAFOOD INTEL - ARBITRAGE OPPORTUNITIES API
 // File: src/app/api/arbitrage/route.ts
 // Bloomberg Equivalent: ARBI <GO>
-// Version: 8.0 - State-level aggregation before self-join (~300ms)
+// Version: 9.0 - State aggregation, no correlated subqueries, safe LEFT JOIN transport
 // Date: 2026-02-19
 //
 // WHAT'S NEW IN v6.0:
@@ -237,17 +237,13 @@ async function findArbitrageOpportunities(
   }
   const stateWhere = stateConditions.join(" ");
 
-  // ── v8 PERF FIX: State-level aggregation BEFORE self-join ─────────────────
-  // ROOT CAUSE of slowness: market-level self-join
-  //   136K rows × 136K rows = 18 BILLION combinations (cartesian explosion)
-  // SOLUTION: aggregate to state level first
-  //   ~18K rows (500 items × 37 states) × ~18K rows = 324M → filtered fast
-  // Transport: avg cost per state-pair from vw_Market_Transport
-  // Result: ~300ms vs 30s+ timeout
+  // ── v9: State-level aggregation — NO correlated subqueries, NO Markets join ──
+  // 1. Aggregate LPS to state level: ~18K rows (500 items × 37 states)
+  // 2. Self-join on state: 18K×18K = manageable, filter reduces to ~500 rows
+  // 3. Transport cost: from vw_Market_Transport state-pair lookup (LEFT JOIN safe)
+  // 4. No dbo.Markets join, no ROW_NUMBER, no correlated subqueries
   const sql = `
     WITH
-    -- Step 1: Avg price per item per STATE (not per market)
-    -- 500 items × 37 states = ~18K rows max (vs 136K market-level rows)
     StatePrices AS (
       SELECT
         lp.item_id,
@@ -255,96 +251,77 @@ async function findArbitrageOpportunities(
         lp.unit,
         lp.category_id,
         lp.state,
-        AVG(lp.price_naira)             AS avg_price,
-        MIN(lp.price_naira)             AS min_price,
-        MAX(lp.price_naira)             AS max_price,
-        MAX(lp.price_date)              AS latest_date,
-        COUNT(DISTINCT lp.market_id)    AS market_count,
-        -- Best buy market name (cheapest in state)
-        MIN(CASE WHEN lp.price_naira = (
-          SELECT MIN(lp2.price_naira)
-          FROM dbo.Latest_Prices_Summary lp2
-          WHERE lp2.item_id = lp.item_id AND lp2.state = lp.state AND lp2.price_naira > 0
-        ) THEN lp.market_name ELSE NULL END) AS cheapest_market,
-        MIN(CASE WHEN lp.price_naira = (
-          SELECT MAX(lp2.price_naira)
-          FROM dbo.Latest_Prices_Summary lp2
-          WHERE lp2.item_id = lp.item_id AND lp2.state = lp.state AND lp2.price_naira > 0
-        ) THEN lp.market_name ELSE NULL END) AS priciest_market,
-        MIN(lp.market_id)               AS sample_market_id
+        AVG(lp.price_naira)           AS avg_price,
+        MAX(lp.price_date)            AS latest_date,
+        MIN(lp.market_name)           AS buy_market,
+        MAX(lp.market_name)           AS sell_market,
+        MIN(lp.market_id)             AS buy_market_id,
+        MAX(lp.market_id)             AS sell_market_id
       FROM dbo.Latest_Prices_Summary lp
       WHERE lp.price_naira > 0
         AND lp.category_id IN (${FOOD_CAT_SQL})
         ${extraWhere}
       GROUP BY lp.item_id, lp.item_name, lp.unit, lp.category_id, lp.state
-      HAVING COUNT(*) >= 1
     ),
-    -- Step 2: Average transport cost between state pairs
-    -- Pre-aggregate vw_Market_Transport to state level
-    StateTransport AS (
+    StatePairs AS (
       SELECT
-        mb.state                          AS state_a,
-        ms.state                          AS state_b,
-        AVG(t.road_distance_km)           AS avg_distance_km,
-        AVG(t.total_cost_per_bag)         AS avg_transport_cost,
-        MIN(t.distance_band)              AS distance_band,
-        AVG(t.rate_per_km)                AS avg_rate_per_km
-      FROM dbo.vw_Market_Transport t
-      JOIN dbo.Markets mb ON mb.market_id = t.market_a_id
-      JOIN dbo.Markets ms ON ms.market_id = t.market_b_id
-      WHERE mb.state IS NOT NULL AND ms.state IS NOT NULL
-        AND mb.state != ms.state
-      GROUP BY mb.state, ms.state
-    )
-    -- Step 3: Self-join on STATE level (18K × 18K = fast)
-    SELECT TOP ${Math.min(maxResults * 3, 300)}
-      p1.item_id,
-      p1.item_name,
-      p1.unit,
-      p1.category_id,
-
-      -- Buy side (cheaper state)
-      'STATE_AVG'             AS buy_market_id,
-      ISNULL(p1.cheapest_market, p1.state + ' (avg)') AS buy_market,
-      p1.state                AS buy_state,
-      CAST(p1.avg_price AS FLOAT) AS buy_price,
-      p1.latest_date          AS buy_date,
-
-      -- Sell side (pricier state)
-      'STATE_AVG'             AS sell_market_id,
-      ISNULL(p1.priciest_market, p2.state + ' (avg)') AS sell_market,
-      p2.state                AS sell_state,
-      CAST(p2.avg_price AS FLOAT) AS sell_price,
-      p2.latest_date          AS sell_date,
-
-      -- Transport
-      ISNULL(CAST(st.avg_distance_km AS FLOAT), 500)      AS distance_km,
-      ISNULL(CAST(st.avg_transport_cost AS FLOAT), 8500)  AS transport_cost,
-      ISNULL(st.distance_band, 'Estimated')               AS distance_band,
-      ISNULL(CAST(st.avg_rate_per_km AS FLOAT), 17)       AS rate_per_km,
-      1.0                     AS road_quality_mult,
-      ISNULL(CAST(st.avg_transport_cost AS FLOAT) * 0.7, 5950) AS fuel_haulage_cost,
-      ISNULL(CAST(st.avg_transport_cost AS FLOAT) * 0.1, 850)  AS checkpoint_cost_val,
-      ISNULL(CAST(st.avg_transport_cost AS FLOAT) * 0.2, 1700) AS fixed_cost_val,
-
-      -- Profit
-      CAST(p2.avg_price - p1.avg_price AS FLOAT) AS gross_profit,
-      CAST(p2.avg_price - p1.avg_price - ISNULL(st.avg_transport_cost, 8500) AS FLOAT) AS raw_net_profit,
-      ROUND(
-        (CAST(p2.avg_price - p1.avg_price - ISNULL(st.avg_transport_cost, 8500) AS FLOAT)
-         / CAST(p1.avg_price AS FLOAT)) * 100, 1
-      ) AS raw_profit_pct
-
-    FROM StatePrices p1
-    JOIN StatePrices p2
-      ON  p1.item_id    = p2.item_id
-      AND p1.state      != p2.state
-      AND p2.avg_price  > p1.avg_price
-    LEFT JOIN StateTransport st
-      ON  st.state_a = p1.state
-      AND st.state_b = p2.state
-    WHERE CAST(p2.avg_price - p1.avg_price - ISNULL(st.avg_transport_cost, 8500) AS FLOAT) > 0
+        p1.item_id,
+        p1.item_name,
+        p1.unit,
+        p1.category_id,
+        p1.state                          AS buy_state,
+        p1.buy_market                     AS buy_market,
+        p1.buy_market_id                  AS buy_market_id,
+        CAST(p1.avg_price AS FLOAT)       AS buy_price,
+        p1.latest_date                    AS buy_date,
+        p2.state                          AS sell_state,
+        p2.sell_market                    AS sell_market,
+        p2.sell_market_id                 AS sell_market_id,
+        CAST(p2.avg_price AS FLOAT)       AS sell_price,
+        p2.latest_date                    AS sell_date,
+        CAST(p2.avg_price - p1.avg_price AS FLOAT)  AS gross_profit
+      FROM StatePrices p1
+      JOIN StatePrices p2
+        ON  p1.item_id  = p2.item_id
+        AND p1.state   != p2.state
+        AND p2.avg_price > p1.avg_price
       ${stateWhere}
+    )
+    SELECT TOP ${Math.min(maxResults * 3, 300)}
+      sp.item_id,
+      sp.item_name,
+      sp.unit,
+      sp.category_id,
+      sp.buy_market_id,
+      sp.buy_market,
+      sp.buy_state,
+      sp.buy_price,
+      sp.buy_date,
+      sp.sell_market_id,
+      sp.sell_market,
+      sp.sell_state,
+      sp.sell_price,
+      sp.sell_date,
+      ISNULL(CAST(t.road_distance_km   AS FLOAT), 500)   AS distance_km,
+      ISNULL(CAST(t.total_cost_per_bag AS FLOAT), 8500)  AS transport_cost,
+      ISNULL(t.distance_band, 'Inter-State')             AS distance_band,
+      ISNULL(CAST(t.rate_per_km        AS FLOAT), 17.0)  AS rate_per_km,
+      1.0                                                AS road_quality_mult,
+      ISNULL(CAST(t.total_cost_per_bag AS FLOAT)*0.70, 5950) AS fuel_haulage_cost,
+      ISNULL(CAST(t.total_cost_per_bag AS FLOAT)*0.10, 850)  AS checkpoint_cost_val,
+      ISNULL(CAST(t.total_cost_per_bag AS FLOAT)*0.20, 1700) AS fixed_cost_val,
+      sp.gross_profit                                     AS gross_profit,
+      sp.gross_profit - ISNULL(CAST(t.total_cost_per_bag AS FLOAT), 8500)
+                                                         AS raw_net_profit,
+      ROUND(
+        (sp.gross_profit - ISNULL(CAST(t.total_cost_per_bag AS FLOAT), 8500))
+        / sp.buy_price * 100, 1
+      )                                                  AS raw_profit_pct
+    FROM StatePairs sp
+    LEFT JOIN dbo.vw_Market_Transport t
+      ON  t.market_a_id = sp.buy_market_id
+      AND t.market_b_id = sp.sell_market_id
+    WHERE sp.gross_profit - ISNULL(CAST(t.total_cost_per_bag AS FLOAT), 8500) > 0
     ORDER BY raw_profit_pct DESC
   `;
 
@@ -470,8 +447,8 @@ export async function GET(request: NextRequest) {
           generatedAt: new Date().toISOString(),
           transportModel: "Precomputed Market_Distances v6.0 (Feb 2026)",
           dieselPrice: "₦1,100/litre",
-          marketPairs: "37×37 state pairs (1,332 combinations) — aggregated for speed",
-          dataSource: "Latest_Prices_Summary (state-aggregated) + vw_Market_Transport v8.0",
+          marketPairs: "37 states × 37 states = 1,332 state pairs (aggregated)",
+          dataSource: "Latest_Prices_Summary (state-aggregated) + vw_Market_Transport v9.0",
           categoryMultipliers: "Applied (livestock 10×, frozen 3.5×, perishables 2×)",
         },
       },
@@ -518,7 +495,7 @@ export async function POST(request: NextRequest) {
         CAST(lp.price_naira AS FLOAT) AS price,
         lp.price_date
       FROM dbo.Latest_Prices_Summary lp
-      WHERE lp.item_name  LIKE '%${itemSearch}%'
+      WHERE lp.item_name   LIKE '%${itemSearch}%'
         AND (lp.market_name LIKE '%${buySearch}%' OR lp.market_name LIKE '%${sellSearch}%')
         AND lp.price_naira > 0
         AND lp.category_id IN (${FOOD_CAT_SQL})
