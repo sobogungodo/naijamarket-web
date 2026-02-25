@@ -299,7 +299,6 @@ async function findArbitrageOpportunities(
     FROM dbo.Latest_Prices_Summary lp
     WHERE lp.price_naira > 0
       AND lp.category_id IN (${FOOD_CAT_SQL})
-      ${extraWhere}
     GROUP BY lp.item_id, lp.item_name, lp.unit, lp.category_id, lp.state;
 
     -- Step 2: Index for self-join (49ms in SSMS benchmark)
@@ -344,7 +343,6 @@ async function findArbitrageOpportunities(
       ON  p1.item_id   = p2.item_id
       AND p1.state    != p2.state
       AND p2.avg_price > p1.avg_price
-      ${stateWhere}
     LEFT JOIN dbo.vw_Market_Transport t
       ON  t.market_a_id = p1.buy_market_id
       AND t.market_b_id = p2.sell_market_id
@@ -360,8 +358,31 @@ async function findArbitrageOpportunities(
   const batchResult = await pool.request().batch(batchSql);
   const results: any[] = batchResult?.recordset || [];
 
+  // ── JS-level filtering (item, category, state) ─────────────────────────
+  // Much safer than injecting dynamic WHERE into batch SQL.
+  // 300 rows max — JS filter is instant (<1ms).
+  const filtered = results.filter((r: any) => {
+    if (filterItem) {
+      const name = String(r.item_name || "").toLowerCase();
+      if (!name.includes(filterItem.toLowerCase())) return false;
+    }
+    if (filterCategory) {
+      const catId = filterCategory.startsWith("CAT")
+        ? filterCategory
+        : Object.entries(CATEGORY_MAP).find(([, v]) => v === filterCategory)?.[0];
+      if (catId && r.category_id !== catId) return false;
+    }
+    if (filterBuyState) {
+      if (String(r.buy_state || "") !== filterBuyState) return false;
+    }
+    if (filterSellState) {
+      if (String(r.sell_state || "") !== filterSellState) return false;
+    }
+    return true;
+  });
+
   // Map to ArbitrageOpportunity with category-aware transport
-  return results
+  return filtered
     .map((r: any) => {
       const buyPrice = parseFloat(r.buy_price) || 0;
       const sellPrice = parseFloat(r.sell_price) || 0;
