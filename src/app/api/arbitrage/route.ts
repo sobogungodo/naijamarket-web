@@ -2,7 +2,7 @@
 // NAIJAFOOD INTEL - ARBITRAGE OPPORTUNITIES API
 // File: src/app/api/arbitrage/route.ts
 // Bloomberg Equivalent: ARBI <GO>
-// Version: 11.0 - mssql pool.connect() for temp table session persistence
+// Version: 12.0 - pool.request().batch() — single connection, temp table safe
 // Date: 2026-02-19
 //
 // WHAT'S NEW IN v6.0:
@@ -24,26 +24,44 @@ import sql from "mssql";
 // MSSQL CONNECTION POOL (single pool — temp tables persist within a request)
 // ============================================================================
 
+// ── Exact same config as inflation route (which works) ─────────────────────
 const SQL_CONFIG: sql.config = {
-  server:   process.env.AZURE_SQL_SERVER   || "naijafood.database.windows.net",
-  database: process.env.AZURE_SQL_DATABASE || process.env.AZURE_SQL_DB || "naijafoodmarket-live",
-  user:     process.env.AZURE_SQL_USER     || process.env.AZURE_SQL_USERNAME || "",
-  password: process.env.AZURE_SQL_PASSWORD || process.env.AZURE_SQL_PASS || "",
-  options:  { encrypt: true, trustServerCertificate: false },
-  connectionTimeout: 15000,
-  requestTimeout:    30000,
-  pool: { max: 10, min: 0, idleTimeoutMillis: 30000 },
+  server:   process.env.AZURE_SQL_SERVER   || process.env.DATABASE_SERVER   || "naijafood.database.windows.net",
+  database: process.env.AZURE_SQL_DATABASE || process.env.DATABASE_NAME     || "naijafoodmarket",
+  user:     process.env.AZURE_SQL_USER     || process.env.DATABASE_USER     || "",
+  password: process.env.AZURE_SQL_PASSWORD || process.env.DATABASE_PASSWORD || "",
+  options: {
+    encrypt:                true,
+    trustServerCertificate: false,
+  },
+  connectionTimeout: 30000,
+  requestTimeout:    60000,   // temp table build needs more time
+  pool: {
+    max:                  5,
+    min:                  1,
+    idleTimeoutMillis:    60000,
+    acquireTimeoutMillis: 30000,
+  },
 };
 
 let _pool: sql.ConnectionPool | null = null;
 
 async function getPool(): Promise<sql.ConnectionPool | null> {
+  if (_pool && _pool.connected) return _pool;
+
+  // Guard: don't attempt connection if credentials missing
+  if (!SQL_CONFIG.user || !SQL_CONFIG.password) {
+    console.warn("[arbitrage v12] SQL credentials not set in env vars");
+    return null;
+  }
+
   try {
-    if (_pool?.connected) return _pool;
     _pool = await new sql.ConnectionPool(SQL_CONFIG).connect();
+    console.log("[arbitrage v12] Connection pool established");
     return _pool;
   } catch (err) {
-    console.error("[arbitrage] DB connection failed:", err);
+    console.error("[arbitrage v12] Failed to create connection pool:", err);
+    _pool = null;
     return null;
   }
 }
@@ -255,13 +273,15 @@ async function findArbitrageOpportunities(
   const stateWhere = stateConditions.join(" ");
 
 
-  // Use a SINGLE mssql connection for the entire request.
-  // Temp tables are session-scoped — $executeRawUnsafe + $queryRawUnsafe
-  // use different Prisma pool connections so #StatePrices disappears.
-  // mssql pool.request() reuses the same connection for both statements.
-  const buildSql = `
+  // ── v12 KEY FIX: pool.request().batch() sends ALL statements as ONE T-SQL batch
+  // on a SINGLE connection — #StatePrices persists for the full batch.
+  // pool.connect() returns the pool itself (not a single connection) in mssql.
+  // pool.request().batch() is the correct pattern for multi-statement + temp tables.
+  const batchSql = `
+    -- Cleanup any leftover from failed previous run
     IF OBJECT_ID('tempdb..#StatePrices') IS NOT NULL DROP TABLE #StatePrices;
 
+    -- Step 1: Materialize state averages (258ms in SSMS benchmark)
     SELECT
       lp.item_id, lp.item_name, lp.unit, lp.category_id, lp.state,
       AVG(lp.price_naira)        AS avg_price,
@@ -277,68 +297,63 @@ async function findArbitrageOpportunities(
       ${extraWhere}
     GROUP BY lp.item_id, lp.item_name, lp.unit, lp.category_id, lp.state;
 
+    -- Step 2: Index for self-join (49ms in SSMS benchmark)
     CREATE INDEX IX_SP ON #StatePrices (item_id, avg_price)
     INCLUDE (item_name, unit, category_id, state, latest_date,
              buy_market, sell_market, buy_market_id, sell_market_id);
+
+    -- Step 3: Self-join + transport (same batch = same connection = #StatePrices alive)
+    SELECT TOP ${Math.min(maxResults * 3, 300)}
+      p1.item_id,
+      p1.item_name,
+      p1.unit,
+      p1.category_id,
+      p1.buy_market_id                                              AS buy_market_id,
+      p1.buy_market                                                 AS buy_market,
+      p1.state                                                      AS buy_state,
+      CAST(p1.avg_price  AS FLOAT)                                  AS buy_price,
+      p1.latest_date                                                AS buy_date,
+      p2.sell_market_id                                             AS sell_market_id,
+      p2.sell_market                                                AS sell_market,
+      p2.state                                                      AS sell_state,
+      CAST(p2.avg_price  AS FLOAT)                                  AS sell_price,
+      p2.latest_date                                                AS sell_date,
+      ISNULL(CAST(t.road_distance_km   AS FLOAT), 500)             AS distance_km,
+      ISNULL(CAST(t.total_cost_per_bag AS FLOAT), 8500)            AS transport_cost,
+      ISNULL(t.distance_band, 'Inter-State')                       AS distance_band,
+      ISNULL(CAST(t.rate_per_km        AS FLOAT), 17.0)            AS rate_per_km,
+      ISNULL(CAST(t.road_quality_mult  AS FLOAT), 1.0)             AS road_quality_mult,
+      ISNULL(CAST(t.fuel_haulage_cost  AS FLOAT), 5950)            AS fuel_haulage_cost,
+      ISNULL(CAST(t.checkpoint_cost    AS FLOAT), 850)             AS checkpoint_cost_val,
+      ISNULL(CAST(t.fixed_cost         AS FLOAT), 1700)            AS fixed_cost_val,
+      CAST(p2.avg_price - p1.avg_price AS FLOAT)                   AS gross_profit,
+      CAST(p2.avg_price - p1.avg_price
+           - ISNULL(t.total_cost_per_bag, 8500) AS FLOAT)          AS raw_net_profit,
+      ROUND(
+        CAST(p2.avg_price - p1.avg_price
+             - ISNULL(t.total_cost_per_bag, 8500) AS FLOAT)
+        / CAST(p1.avg_price AS FLOAT) * 100, 1
+      )                                                             AS raw_profit_pct
+    FROM #StatePrices p1
+    JOIN #StatePrices p2
+      ON  p1.item_id   = p2.item_id
+      AND p1.state    != p2.state
+      AND p2.avg_price > p1.avg_price
+      ${stateWhere}
+    LEFT JOIN dbo.vw_Market_Transport t
+      ON  t.market_a_id = p1.buy_market_id
+      AND t.market_b_id = p2.sell_market_id
+    WHERE CAST(p2.avg_price - p1.avg_price
+               - ISNULL(t.total_cost_per_bag, 8500) AS FLOAT) > 0
+    ORDER BY raw_profit_pct DESC;
+
+    DROP TABLE IF EXISTS #StatePrices;
   `;
 
-  const conn = await pool.connect();
-  try {
-    // Build temp table on this connection
-    await conn.request().batch(buildSql);
-
-    // Self-join + transport on SAME connection — #StatePrices still exists
-    const qSql = `
-      SELECT TOP ${Math.min(maxResults * 3, 300)}
-        p1.item_id,        p1.item_name,      p1.unit,          p1.category_id,
-        p1.buy_market_id   AS buy_market_id,
-        p1.buy_market      AS buy_market,
-        p1.state           AS buy_state,
-        CAST(p1.avg_price  AS FLOAT) AS buy_price,
-        p1.latest_date     AS buy_date,
-        p2.sell_market_id  AS sell_market_id,
-        p2.sell_market     AS sell_market,
-        p2.state           AS sell_state,
-        CAST(p2.avg_price  AS FLOAT) AS sell_price,
-        p2.latest_date     AS sell_date,
-        ISNULL(CAST(t.road_distance_km   AS FLOAT), 500)        AS distance_km,
-        ISNULL(CAST(t.total_cost_per_bag AS FLOAT), 8500)       AS transport_cost,
-        ISNULL(t.distance_band, 'Inter-State')                  AS distance_band,
-        ISNULL(CAST(t.rate_per_km        AS FLOAT), 17.0)       AS rate_per_km,
-        ISNULL(CAST(t.road_quality_mult  AS FLOAT), 1.0)        AS road_quality_mult,
-        ISNULL(CAST(t.fuel_haulage_cost  AS FLOAT), 5950)       AS fuel_haulage_cost,
-        ISNULL(CAST(t.checkpoint_cost    AS FLOAT), 850)        AS checkpoint_cost_val,
-        ISNULL(CAST(t.fixed_cost         AS FLOAT), 1700)       AS fixed_cost_val,
-        CAST(p2.avg_price - p1.avg_price AS FLOAT)              AS gross_profit,
-        CAST(p2.avg_price - p1.avg_price
-             - ISNULL(t.total_cost_per_bag, 8500) AS FLOAT)     AS raw_net_profit,
-        ROUND(
-          CAST(p2.avg_price - p1.avg_price
-               - ISNULL(t.total_cost_per_bag, 8500) AS FLOAT)
-          / CAST(p1.avg_price AS FLOAT) * 100, 1
-        )                                                        AS raw_profit_pct
-      FROM #StatePrices p1
-      JOIN #StatePrices p2
-        ON  p1.item_id   = p2.item_id
-        AND p1.state    != p2.state
-        AND p2.avg_price > p1.avg_price
-        ${stateWhere}
-      LEFT JOIN dbo.vw_Market_Transport t
-        ON  t.market_a_id = p1.buy_market_id
-        AND t.market_b_id = p2.sell_market_id
-      WHERE CAST(p2.avg_price - p1.avg_price
-                 - ISNULL(t.total_cost_per_bag, 8500) AS FLOAT) > 0
-      ORDER BY raw_profit_pct DESC;
-
-      DROP TABLE IF EXISTS #StatePrices;
-    `;
-
-    const qResult = await conn.request().query(qSql);
-    const results: any[] = qResult.recordset;
-
-  } finally {
-    conn.close();  // release connection back to pool
-  }
+  // Single batch = single connection = #StatePrices lives for all 4 statements
+  const batchResult = await pool.request().batch(batchSql);
+  // .batch() returns the LAST resultset when multiple SELECT statements exist
+  const results: any[] = batchResult.recordset || [];
 
   // Map to ArbitrageOpportunity with category-aware transport
   return results
