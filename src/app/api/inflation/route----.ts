@@ -366,24 +366,8 @@ async function fetchFromInflationCache(months: number): Promise<{
       const [yearStr, monthStr] = periodLabel.split("-");
       const year  = parseInt(yearStr  || "2026");
       const month = parseInt(monthStr || "1");
-      const nbsRate  = NBS_OFFICIAL_INFLATION[periodLabel] ?? null;
-      const rawYoy   = parseFloat(r.naijamarket_yoy)  || 0;
-      const momRate  = parseFloat(r.naijamarket_mom)  || 0;
-
-      // YoY PROXY: Our data starts Jul 2025 so we have no year-ago prices yet.
-      // True YoY will be available from Jul 2026 onwards.
-      // Until then: annualize the MoM rate — (1 + mom/100)^12 - 1
-      // e.g. 0.71% MoM → (1.0071^12 - 1) × 100 = 8.89% ≈ NBS rate. Mathematically valid.
-      // When actual YoY exists (rawYoy != 0), use it directly.
-      let yoyRate: number;
-      if (rawYoy !== 0) {
-        yoyRate = rawYoy;
-      } else if (momRate !== 0) {
-        yoyRate = (Math.pow(1 + momRate / 100, 12) - 1) * 100;
-      } else {
-        // Last resort: use NBS rate for this month (shows market is tracking official data)
-        yoyRate = nbsRate ?? 0;
-      }
+      const nbsRate = NBS_OFFICIAL_INFLATION[periodLabel] ?? null;
+      const yoyRate = parseFloat(r.naijamarket_yoy) || 0;
 
       return {
         month:           periodLabel,
@@ -629,7 +613,7 @@ function buildFromPrecomputed(
     topDeflators:      [],
     basketComposition: basketItems,
     categoryBreakdown: calculateCategoryBreakdown(basketItems),
-    dataSource:        `NaijaMarket Intel (Real-time)`,
+    dataSource:        `Azure SQL (vw_Inflation_Comparison - ${periodLabel})`,
     recordCount:       latest?.daily_records ?? 0,
   };
 }
@@ -1007,7 +991,7 @@ export async function GET(request: NextRequest) {
     const cacheResult = await fetchFromInflationCache(periodMonths);
     if (cacheResult.success && cacheResult.data.length >= 2) {
       console.log(`[inflation v5] Using Inflation_Cache: ${cacheResult.data.length} months`);
-      dataSource = `NaijaMarket Intel (Real-time)`;
+      dataSource = `Azure SQL (Inflation_Cache - ${periodLabel})`;
 
       const displayData = cacheResult.data.slice(-periodMonths);
       const latest      = displayData[displayData.length - 1];
