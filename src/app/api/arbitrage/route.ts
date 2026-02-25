@@ -47,20 +47,31 @@ const SQL_CONFIG: sql.config = {
 let _pool: sql.ConnectionPool | null = null;
 
 async function getPool(): Promise<sql.ConnectionPool | null> {
-  if (_pool && _pool.connected) return _pool;
+  // Check pool is truly healthy — .connected can be stale after Vercel cold start
+  if (_pool && _pool.connected) {
+    try {
+      // Lightweight ping to confirm connection is alive
+      await _pool.request().query("SELECT 1 AS ping");
+      return _pool;
+    } catch {
+      // Connection dropped — close and recreate
+      console.warn("[arbitrage v13] Pool ping failed — reconnecting");
+      try { await _pool.close(); } catch {}
+      _pool = null;
+    }
+  }
 
-  // Guard: don't attempt connection if credentials missing
   if (!SQL_CONFIG.user || !SQL_CONFIG.password) {
-    console.warn("[arbitrage v12] SQL credentials not set in env vars");
+    console.warn("[arbitrage v13] SQL credentials not set in env vars");
     return null;
   }
 
   try {
     _pool = await new sql.ConnectionPool(SQL_CONFIG).connect();
-    console.log("[arbitrage v12] Connection pool established");
+    console.log("[arbitrage v13] Connection pool established");
     return _pool;
   } catch (err) {
-    console.error("[arbitrage v12] Failed to create connection pool:", err);
+    console.error("[arbitrage v13] Failed to create connection pool:", err);
     _pool = null;
     return null;
   }
@@ -355,8 +366,18 @@ async function findArbitrageOpportunities(
   // DROP TABLE produces no recordset → batchResult.recordset = undefined → crash.
   // SELECT TOP must be the FINAL statement so batchResult.recordset = our rows.
 
-  const batchResult = await pool.request().batch(batchSql);
-  const results: any[] = batchResult?.recordset || [];
+  let results: any[] = [];
+  try {
+    const batchResult = await pool.request().batch(batchSql);
+    results = batchResult?.recordset || [];
+    console.log(`[arbitrage v13] Batch OK — ${results.length} rows returned`);
+  } catch (batchErr: any) {
+    console.error("[arbitrage v13] Batch FAILED:", batchErr?.message || batchErr);
+    console.error("[arbitrage v13] Error number:", batchErr?.number, "| State:", batchErr?.state);
+    try { await pool.close(); } catch {}
+    _pool = null;
+    throw batchErr;
+  }
 
   // ── JS-level filtering (item, category, state) ─────────────────────────
   // Much safer than injecting dynamic WHERE into batch SQL.
