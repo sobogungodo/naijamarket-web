@@ -2,7 +2,7 @@
 // NAIJAFOOD INTEL - ARBITRAGE OPPORTUNITIES API
 // File: src/app/api/arbitrage/route.ts
 // Bloomberg Equivalent: ARBI <GO>
-// Version: 12.1 - category name→ID reverse-map fix
+// Version: 12.2 - DROP TABLE only at batch START (not end), SELECT is last stmt
 // Date: 2026-02-19
 //
 // WHAT'S NEW IN v6.0:
@@ -351,14 +351,14 @@ async function findArbitrageOpportunities(
     WHERE CAST(p2.avg_price - p1.avg_price
                - ISNULL(t.total_cost_per_bag, 8500) AS FLOAT) > 0
     ORDER BY raw_profit_pct DESC;
-
-    DROP TABLE IF EXISTS #StatePrices;
   `;
+  // ⚠️  DROP TABLE is at the TOP of the batch (cleanup of previous run).
+  // It must NOT appear at the end — mssql .batch() returns the last resultset.
+  // DROP TABLE produces no recordset → batchResult.recordset = undefined → crash.
+  // SELECT TOP must be the FINAL statement so batchResult.recordset = our rows.
 
-  // Single batch = single connection = #StatePrices lives for all 4 statements
   const batchResult = await pool.request().batch(batchSql);
-  // .batch() returns the LAST resultset when multiple SELECT statements exist
-  const results: any[] = batchResult.recordset || [];
+  const results: any[] = batchResult?.recordset || [];
 
   // Map to ArbitrageOpportunity with category-aware transport
   return results
