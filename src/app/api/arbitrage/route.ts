@@ -2,7 +2,7 @@
 // NAIJAFOOD INTEL - ARBITRAGE OPPORTUNITIES API
 // File: src/app/api/arbitrage/route.ts
 // Bloomberg Equivalent: ARBI <GO>
-// Version: 9.0 - State aggregation, no correlated subqueries, safe LEFT JOIN transport
+// Version: 9.0 - State aggregation + lp.* aliases fix for item/category filter
 // Date: 2026-02-19
 //
 // WHAT'S NEW IN v6.0:
@@ -220,10 +220,10 @@ async function findArbitrageOpportunities(
   // Build dynamic WHERE filters
   const conditions: string[] = [];
   if (filterItem) {
-    conditions.push(`AND ic.item_name LIKE '%${filterItem.replace(/'/g, "''")}%'`);
+    conditions.push(`AND lp.item_name LIKE '%${filterItem.replace(/'/g, "''")}%'`);
   }
   if (filterCategory) {
-    conditions.push(`AND ic.category_id = '${filterCategory.replace(/'/g, "''")}'`);
+    conditions.push(`AND lp.category_id = '${filterCategory.replace(/'/g, "''")}'`);
   }
   const extraWhere = conditions.join(" ");
 
@@ -237,11 +237,8 @@ async function findArbitrageOpportunities(
   }
   const stateWhere = stateConditions.join(" ");
 
-  // ── v9: State-level aggregation — NO correlated subqueries, NO Markets join ──
-  // 1. Aggregate LPS to state level: ~18K rows (500 items × 37 states)
-  // 2. Self-join on state: 18K×18K = manageable, filter reduces to ~500 rows
-  // 3. Transport cost: from vw_Market_Transport state-pair lookup (LEFT JOIN safe)
-  // 4. No dbo.Markets join, no ROW_NUMBER, no correlated subqueries
+  // v9: state-level aggregation before self-join — eliminates cartesian explosion
+  // extraWhere and stateWhere use lp.* aliases (Latest_Prices_Summary)
   const sql = `
     WITH
     StatePrices AS (
@@ -251,12 +248,12 @@ async function findArbitrageOpportunities(
         lp.unit,
         lp.category_id,
         lp.state,
-        AVG(lp.price_naira)           AS avg_price,
-        MAX(lp.price_date)            AS latest_date,
-        MIN(lp.market_name)           AS buy_market,
-        MAX(lp.market_name)           AS sell_market,
-        MIN(lp.market_id)             AS buy_market_id,
-        MAX(lp.market_id)             AS sell_market_id
+        AVG(lp.price_naira)        AS avg_price,
+        MAX(lp.price_date)         AS latest_date,
+        MIN(lp.market_name)        AS buy_market,
+        MAX(lp.market_name)        AS sell_market,
+        MIN(lp.market_id)          AS buy_market_id,
+        MAX(lp.market_id)          AS sell_market_id
       FROM dbo.Latest_Prices_Summary lp
       WHERE lp.price_naira > 0
         AND lp.category_id IN (${FOOD_CAT_SQL})
@@ -269,21 +266,21 @@ async function findArbitrageOpportunities(
         p1.item_name,
         p1.unit,
         p1.category_id,
-        p1.state                          AS buy_state,
-        p1.buy_market                     AS buy_market,
-        p1.buy_market_id                  AS buy_market_id,
-        CAST(p1.avg_price AS FLOAT)       AS buy_price,
-        p1.latest_date                    AS buy_date,
-        p2.state                          AS sell_state,
-        p2.sell_market                    AS sell_market,
-        p2.sell_market_id                 AS sell_market_id,
-        CAST(p2.avg_price AS FLOAT)       AS sell_price,
-        p2.latest_date                    AS sell_date,
-        CAST(p2.avg_price - p1.avg_price AS FLOAT)  AS gross_profit
+        p1.state                        AS buy_state,
+        p1.buy_market                   AS buy_market,
+        p1.buy_market_id                AS buy_market_id,
+        CAST(p1.avg_price AS FLOAT)     AS buy_price,
+        p1.latest_date                  AS buy_date,
+        p2.state                        AS sell_state,
+        p2.sell_market                  AS sell_market,
+        p2.sell_market_id               AS sell_market_id,
+        CAST(p2.avg_price AS FLOAT)     AS sell_price,
+        p2.latest_date                  AS sell_date,
+        CAST(p2.avg_price - p1.avg_price AS FLOAT) AS gross_profit
       FROM StatePrices p1
       JOIN StatePrices p2
-        ON  p1.item_id  = p2.item_id
-        AND p1.state   != p2.state
+        ON  p1.item_id   = p2.item_id
+        AND p1.state    != p2.state
         AND p2.avg_price > p1.avg_price
       ${stateWhere}
     )
@@ -302,21 +299,21 @@ async function findArbitrageOpportunities(
       sp.sell_state,
       sp.sell_price,
       sp.sell_date,
-      ISNULL(CAST(t.road_distance_km   AS FLOAT), 500)   AS distance_km,
-      ISNULL(CAST(t.total_cost_per_bag AS FLOAT), 8500)  AS transport_cost,
-      ISNULL(t.distance_band, 'Inter-State')             AS distance_band,
-      ISNULL(CAST(t.rate_per_km        AS FLOAT), 17.0)  AS rate_per_km,
-      1.0                                                AS road_quality_mult,
-      ISNULL(CAST(t.total_cost_per_bag AS FLOAT)*0.70, 5950) AS fuel_haulage_cost,
-      ISNULL(CAST(t.total_cost_per_bag AS FLOAT)*0.10, 850)  AS checkpoint_cost_val,
-      ISNULL(CAST(t.total_cost_per_bag AS FLOAT)*0.20, 1700) AS fixed_cost_val,
-      sp.gross_profit                                     AS gross_profit,
+      ISNULL(CAST(t.road_distance_km   AS FLOAT), 500)        AS distance_km,
+      ISNULL(CAST(t.total_cost_per_bag AS FLOAT), 8500)       AS transport_cost,
+      ISNULL(t.distance_band, 'Inter-State')                  AS distance_band,
+      ISNULL(CAST(t.rate_per_km        AS FLOAT), 17.0)       AS rate_per_km,
+      1.0                                                      AS road_quality_mult,
+      ISNULL(CAST(t.total_cost_per_bag AS FLOAT)*0.70, 5950)  AS fuel_haulage_cost,
+      ISNULL(CAST(t.total_cost_per_bag AS FLOAT)*0.10, 850)   AS checkpoint_cost_val,
+      ISNULL(CAST(t.total_cost_per_bag AS FLOAT)*0.20, 1700)  AS fixed_cost_val,
+      sp.gross_profit                                          AS gross_profit,
       sp.gross_profit - ISNULL(CAST(t.total_cost_per_bag AS FLOAT), 8500)
-                                                         AS raw_net_profit,
+                                                               AS raw_net_profit,
       ROUND(
         (sp.gross_profit - ISNULL(CAST(t.total_cost_per_bag AS FLOAT), 8500))
         / sp.buy_price * 100, 1
-      )                                                  AS raw_profit_pct
+      )                                                        AS raw_profit_pct
     FROM StatePairs sp
     LEFT JOIN dbo.vw_Market_Transport t
       ON  t.market_a_id = sp.buy_market_id
@@ -447,7 +444,7 @@ export async function GET(request: NextRequest) {
           generatedAt: new Date().toISOString(),
           transportModel: "Precomputed Market_Distances v6.0 (Feb 2026)",
           dieselPrice: "₦1,100/litre",
-          marketPairs: "37 states × 37 states = 1,332 state pairs (aggregated)",
+          marketPairs: "37 states × 37 states = 1,332 state pairs",
           dataSource: "Latest_Prices_Summary (state-aggregated) + vw_Market_Transport v9.0",
           categoryMultipliers: "Applied (livestock 10×, frozen 3.5×, perishables 2×)",
         },
