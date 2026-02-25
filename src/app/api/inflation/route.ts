@@ -569,11 +569,11 @@ async function fetchPrecomputedInflation(months: number): Promise<{ data: Precom
 }
 
 // buildFromPrecomputed is unchanged from v4.0
-function buildFromPrecomputed(
+async function buildFromPrecomputed(
   precomputed: PrecomputedInflation[],
   periodLabel: string,
   period: string,
-): InflationResponse {
+): Promise<InflationResponse> {
   const now = new Date();
 
   const monthlyTrend: MonthlyInflation[] = precomputed.map(p => {
@@ -1221,7 +1221,7 @@ export async function GET(request: NextRequest) {
     if (precomputed.success && precomputed.data.length >= 2) {
       console.log(`[inflation v5] Using vw_Inflation_Comparison: ${precomputed.data.length} months`);
       const displayData = precomputed.data.slice(-periodMonths);
-      response = buildFromPrecomputed(displayData, periodLabel, period);
+      response = await buildFromPrecomputed(displayData, periodLabel, period);
 
       const elapsedMs = Date.now() - startTime;
       return NextResponse.json(response, {
