@@ -209,6 +209,24 @@ function Nav() {
         </button>
       </div>
 
+      {/* ── Trust Bar — sits directly below logo/nav links ── */}
+      <div className="nm-trust-bar">
+        <div className="nm-trust-bar-inner">
+          {[
+            { dot: "green", text: "GPS-Verified Data" },
+            { dot: "green", text: "5,000+ Active Traders" },
+            { dot: "blue",  text: "Aligned with NBS at 8.9%" },
+            { dot: "green", text: "37 States Covered" },
+            { dot: "amber", text: "Updated 3× Daily" },
+          ].map((item, i) => (
+            <span key={i} className="nm-trust-bar-item">
+              <span className={`nm-trust-dot nm-trust-dot-${item.dot}`} />
+              {item.text}
+            </span>
+          ))}
+        </div>
+      </div>
+
       {menuOpen && (
         <div className="nm-mobile-menu">
           <a href="#features" onClick={() => setMenuOpen(false)}>Features</a>
@@ -461,30 +479,6 @@ function Hero() {
         </div>
       </div>
     </section>
-  );
-}
-
-/* ═══════════════ Trust Bar ═══════════════ */
-function TrustBar() {
-  const { ref, visible } = useInView();
-  const items = [
-    { icon: "🛡️", text: "GPS-Verified Data" },
-    { icon: "👥", text: "5,000+ Active Traders" },
-    { icon: "📊", text: "Aligned with NBS at 8.9%" },
-    { icon: "🇳🇬", text: "37 States Covered" },
-    { icon: "⚡", text: "Updated 3× Daily" },
-  ];
-  return (
-    <div ref={ref} className={`nm-trust${visible ? " nm-visible" : ""}`}>
-      <div className="nm-trust-inner">
-        {items.map((item, i) => (
-          <div key={i} className="nm-trust-item">
-            <span>{item.icon}</span>
-            <span>{item.text}</span>
-          </div>
-        ))}
-      </div>
-    </div>
   );
 }
 
@@ -767,7 +761,6 @@ export default function LandingPage() {
       <style>{PAGE_STYLES}</style>
       <div className="nm-landing">
         <Nav />
-        <TrustBar />
         <Hero />
         <FeaturesSection />
         <HowItWorksSection />
@@ -1066,7 +1059,7 @@ html { scroll-behavior: smooth; }
   align-items: center;
   position: relative;
   overflow: hidden;
-  padding: 110px 16px 48px;
+  padding: 145px 16px 48px;
 }
 .nm-hero-grid-bg {
   position: absolute;
@@ -1384,34 +1377,39 @@ html { scroll-behavior: smooth; }
 }
 .nm-wa-try:hover { background: #20BD5A; }
 
-/* ── Trust Bar ── */
-.nm-trust {
-  border-top: 1px solid var(--nm-border);
-  border-bottom: 1px solid var(--nm-border);
-  background: rgba(0, 200, 83, 0.02);
-  padding: 16px;
-  opacity: 0;
-  transform: translateY(8px);
-  transition: all 0.6s ease;
+/* ── Trust Bar (inside fixed nav, below logo row) ── */
+.nm-trust-bar {
+  border-top: 1px solid rgba(0, 200, 83, 0.12);
+  background: rgba(0, 0, 0, 0.35);
+  padding: 7px 16px;
 }
-.nm-trust.nm-visible { opacity: 1; transform: translateY(0); }
-.nm-trust-inner {
+.nm-trust-bar-inner {
   max-width: 1280px;
   margin: 0 auto;
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
-  gap: 12px 24px;
+  align-items: center;
+  gap: 6px 20px;
 }
-.nm-trust-item {
-  display: flex;
+.nm-trust-bar-item {
+  display: inline-flex;
   align-items: center;
   gap: 6px;
-  font-size: 12px;
-  color: var(--nm-text2);
+  font-size: 11px;
+  color: var(--nm-text3);
   font-weight: 500;
+  font-family: var(--nm-mono);
   white-space: nowrap;
 }
+.nm-trust-dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.nm-trust-dot-green { background: #00C853; animation: nm-pulse 2.5s infinite; }
+.nm-trust-dot-blue  { background: #00B0FF; }
+.nm-trust-dot-amber { background: #FFB300; animation: nm-pulse 2.5s infinite; }
 
 /* ── Sections ── */
 .nm-section { padding: 64px 16px; }

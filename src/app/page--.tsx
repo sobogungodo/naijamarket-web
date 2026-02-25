@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, FormEvent } from "react";
 import Link from "next/link";
 import EmailSignup from "@/components/EmailSignup";
+import { ThemeToggle } from "@/components/ThemeToggle";
 
 // ============================================================================
 // NaijaMarket Intel — Landing Page v2.0
@@ -193,6 +194,7 @@ function Nav() {
           <a href="#pricing">Pricing</a>
           <a href="#how-it-works">How It Works</a>
           <Link href="/login" className="nm-nav-signin">Sign In</Link>
+          <ThemeToggle />
           <Link href="/register" className="nm-btn-green nm-btn-sm">
             Get Started Free
           </Link>
@@ -451,9 +453,7 @@ function Hero() {
             ))}
           </div>
 
-          <div className="nm-hero-signup">
-            <EmailSignup variant="inline" source="hero" />
-          </div>
+
         </div>
 
         <div className="nm-hero-demo">
@@ -736,9 +736,7 @@ function Footer() {
             Real-time, GPS-verified commodity price intelligence for Nigeria.
             The Bloomberg of Nigerian Commodities.
           </p>
-          <div className="nm-footer-signup">
-            <EmailSignup variant="footer" source="footer" />
-          </div>
+
         </div>
         {columns.map((col, i) => (
           <div key={i} className="nm-footer-col">
@@ -769,8 +767,8 @@ export default function LandingPage() {
       <style>{PAGE_STYLES}</style>
       <div className="nm-landing">
         <Nav />
-        <Hero />
         <TrustBar />
+        <Hero />
         <FeaturesSection />
         <HowItWorksSection />
         <PricingSection />
@@ -805,6 +803,34 @@ const PAGE_STYLES = `
   --nm-radius: 12px;
 }
 
+/* ── Light Mode Overrides ── */
+html.light :root,
+html.light {
+  --nm-bg: #f0f4f8;
+  --nm-bg2: #ffffff;
+  --nm-card: rgba(255, 255, 255, 0.9);
+  --nm-border: rgba(0, 0, 0, 0.08);
+  --nm-green: #00a846;
+  --nm-green-dim: rgba(0, 168, 70, 0.1);
+  --nm-text: #0f172a;
+  --nm-text2: #334155;
+  --nm-text3: #64748b;
+  --nm-text4: #94a3b8;
+}
+
+html:not(.dark) {
+  --nm-bg: #f0f4f8;
+  --nm-bg2: #ffffff;
+  --nm-card: rgba(255, 255, 255, 0.9);
+  --nm-border: rgba(0, 0, 0, 0.08);
+  --nm-green: #00a846;
+  --nm-green-dim: rgba(0, 168, 70, 0.1);
+  --nm-text: #0f172a;
+  --nm-text2: #334155;
+  --nm-text3: #64748b;
+  --nm-text4: #94a3b8;
+}
+
 * { margin: 0; padding: 0; box-sizing: border-box; }
 html { scroll-behavior: smooth; }
 ::selection { background: rgba(0, 200, 83, 0.3); color: #fff; }
@@ -819,6 +845,11 @@ html { scroll-behavior: smooth; }
   color: var(--nm-text);
   font-family: var(--nm-font);
   overflow-x: hidden;
+  transition: background 0.2s ease, color 0.2s ease;
+}
+.nm-nav-s {
+  background: var(--nm-bg) !important;
+  opacity: 0.97;
 }
 .nm-g { color: var(--nm-green); }
 .nm-gradient-text {
@@ -880,7 +911,7 @@ html { scroll-behavior: smooth; }
   transition: all 0.3s ease;
 }
 .nm-nav-s {
-  background: rgba(10, 15, 20, 0.95);
+  background: rgba(var(--nm-bg-rgb, 10, 15, 20), 0.95);
   backdrop-filter: blur(20px);
   border-bottom: 1px solid rgba(0, 200, 83, 0.08);
 }
@@ -1096,7 +1127,7 @@ html { scroll-behavior: smooth; }
   font-size: clamp(30px, 7vw, 54px);
   font-weight: 800;
   line-height: 1.08;
-  color: #fff;
+  color: var(--nm-text);
   letter-spacing: -1.5px;
   margin-bottom: 16px;
 }
@@ -1122,7 +1153,7 @@ html { scroll-behavior: smooth; }
 .nm-stat-val {
   font-size: 22px;
   font-weight: 800;
-  color: #fff;
+  color: var(--nm-text);
   font-family: var(--nm-mono);
   line-height: 1;
 }
@@ -1239,14 +1270,15 @@ html { scroll-behavior: smooth; }
   animation: nm-spin 0.6s linear infinite;
 }
 .nm-ck-results { animation: nm-fade-up 0.4s ease; }
-.nm-ck-item-name { font-size: 13px; font-weight: 700; color: #fff; margin-bottom: 8px; }
+.nm-ck-item-name { font-size: 13px; font-weight: 700; color: var(--nm-text); margin-bottom: 8px; }
 .nm-ck-table { font-family: var(--nm-mono); font-size: 11px; }
 .nm-ck-row {
   display: grid;
-  grid-template-columns: 2fr 1fr 1.2fr 1fr;
+  grid-template-columns: 2fr 1fr 1.2fr 0.8fr;
   padding: 7px 0;
   border-bottom: 1px solid rgba(255, 255, 255, 0.03);
   animation: nm-fade-up 0.3s ease both;
+  align-items: center;
 }
 .nm-ck-row-h {
   color: var(--nm-text4);
@@ -1256,9 +1288,11 @@ html { scroll-behavior: smooth; }
   border-bottom-color: var(--nm-border);
   animation: none;
 }
+.nm-ck-row-h span:nth-child(3),
+.nm-ck-row-h span:nth-child(4) { text-align: right; }
 .nm-ck-mkt { color: var(--nm-text); font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .nm-ck-state { color: var(--nm-text3); }
-.nm-ck-price { color: #fff; font-weight: 600; text-align: right; }
+.nm-ck-price { color: var(--nm-text); font-weight: 600; text-align: right; }
 .nm-ck-up { color: #00C853; font-weight: 600; text-align: right; }
 .nm-ck-down { color: #FF5252; font-weight: 600; text-align: right; }
 .nm-ck-footer {
@@ -1299,10 +1333,10 @@ html { scroll-behavior: smooth; }
   justify-content: center;
   font-size: 11px;
   font-weight: 800;
-  color: #fff;
+  color: var(--nm-text);
   font-family: var(--nm-mono);
 }
-.nm-wa-name { font-size: 13px; font-weight: 700; color: #fff; }
+.nm-wa-name { font-size: 13px; font-weight: 700; color: var(--nm-text); }
 .nm-wa-status { font-size: 10px; color: rgba(255, 255, 255, 0.6); }
 .nm-wa-body {
   padding: 14px;
@@ -1323,7 +1357,7 @@ html { scroll-behavior: smooth; }
 .nm-wa-user {
   align-self: flex-end;
   background: #005C4B;
-  color: #fff;
+  color: var(--nm-text);
   border-bottom-right-radius: 2px;
   font-family: var(--nm-mono);
   font-weight: 600;
@@ -1341,7 +1375,7 @@ html { scroll-behavior: smooth; }
   text-align: center;
   padding: 12px;
   background: #25D366;
-  color: #fff;
+  color: var(--nm-text);
   font-weight: 700;
   font-size: 13px;
   text-decoration: none;
@@ -1397,7 +1431,7 @@ html { scroll-behavior: smooth; }
 .nm-section-title {
   font-size: clamp(24px, 5vw, 40px);
   font-weight: 800;
-  color: #fff;
+  color: var(--nm-text);
   margin-top: 10px;
   letter-spacing: -1px;
   line-height: 1.15;
@@ -1438,7 +1472,7 @@ html { scroll-behavior: smooth; }
   filter: blur(28px);
 }
 .nm-feature-icon { font-size: 28px; margin-bottom: 12px; }
-.nm-feature-title { font-size: 16px; font-weight: 700; color: #fff; margin-bottom: 6px; }
+.nm-feature-title { font-size: 16px; font-weight: 700; color: var(--nm-text); margin-bottom: 6px; }
 .nm-feature-desc { font-size: 13px; color: var(--nm-text3); line-height: 1.6; }
 
 /* ── Steps ── */
@@ -1472,7 +1506,7 @@ html { scroll-behavior: smooth; }
   justify-content: center;
   font-size: 24px;
 }
-.nm-step-title { font-size: 16px; font-weight: 700; color: #fff; margin-bottom: 8px; }
+.nm-step-title { font-size: 16px; font-weight: 700; color: var(--nm-text); margin-bottom: 8px; }
 .nm-step-desc {
   font-size: 13px;
   color: var(--nm-text3);
@@ -1526,7 +1560,7 @@ html { scroll-behavior: smooth; }
   margin-bottom: 6px;
 }
 .nm-price-amount { margin-bottom: 18px; }
-.nm-price-num { font-size: 28px; font-weight: 800; color: #fff; }
+.nm-price-num { font-size: 28px; font-weight: 800; color: var(--nm-text); }
 .nm-price-period { font-size: 13px; color: var(--nm-text3); }
 .nm-price-features { list-style: none; margin-bottom: 20px; }
 .nm-price-features li {
@@ -1585,10 +1619,10 @@ html { scroll-behavior: smooth; }
   justify-content: center;
   font-size: 12px;
   font-weight: 700;
-  color: #fff;
+  color: var(--nm-text);
   font-family: var(--nm-mono);
 }
-.nm-test-name { font-size: 13px; font-weight: 700; color: #fff; }
+.nm-test-name { font-size: 13px; font-weight: 700; color: var(--nm-text); }
 .nm-test-role { font-size: 11px; color: var(--nm-text3); }
 
 /* ── CTA ── */
@@ -1621,7 +1655,7 @@ html { scroll-behavior: smooth; }
 .nm-cta-title {
   font-size: clamp(26px, 5vw, 38px);
   font-weight: 800;
-  color: #fff;
+  color: var(--nm-text);
   letter-spacing: -1px;
   margin-bottom: 12px;
   position: relative;
