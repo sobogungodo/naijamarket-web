@@ -2,7 +2,7 @@
 // NAIJAFOOD INTEL - ARBITRAGE OPPORTUNITIES API
 // File: src/app/api/arbitrage/route.ts
 // Bloomberg Equivalent: ARBI <GO>
-// Version: 12.0 - pool.request().batch() — single connection, temp table safe
+// Version: 12.1 - category name→ID reverse-map fix
 // Date: 2026-02-19
 //
 // WHAT'S NEW IN v6.0:
@@ -258,7 +258,12 @@ async function findArbitrageOpportunities(
     conditions.push(`AND ic.item_name LIKE '%${filterItem.replace(/'/g, "''")}%'`);
   }
   if (filterCategory) {
-    conditions.push(`AND ic.category_id = '${filterCategory.replace(/'/g, "''")}'`);
+    // Frontend may send category NAME ("Flour & Bakery") or ID ("CAT009")
+    // Reverse-map name → ID if needed
+    const catId = filterCategory.startsWith("CAT")
+      ? filterCategory
+      : Object.entries(CATEGORY_MAP).find(([, v]) => v === filterCategory)?.[0] || filterCategory;
+    conditions.push(`AND lp.category_id = '${catId.replace(/'/g, "''")}'`);
   }
   const extraWhere = conditions.join(" ");
 
