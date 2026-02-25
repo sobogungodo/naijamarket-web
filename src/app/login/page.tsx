@@ -1,10 +1,11 @@
 // src/app/login/page.tsx
 // NaijaMarket Intel - Login Page
-// FIXED: 2026-01-31 - Added Suspense boundary for useSearchParams
+// UPDATED: 2026-02-25 - Replaced Email+Password with Email+OTP flow
+//                       Email login now mirrors Phone+OTP pattern
 //
 // Two login methods:
-// 1. Phone + WhatsApp OTP (All tiers) - Default
-// 2. Email + Password (BUSINESS, CORPORATE, ENTERPRISE only)
+// 1. Phone + WhatsApp OTP (All tiers)
+// 2. Email + Email OTP (BUSINESS, CORPORATE, ENTERPRISE)
 
 "use client";
 
@@ -39,6 +40,7 @@ const COUNTRY_CODES = [
 
 type AuthMethod = "phone" | "email";
 type PhoneStep = "phone" | "otp";
+type EmailStep = "email" | "otp"; // NEW: email flow now has two steps too
 
 // ============================================================================
 // ICONS (Inline SVG - no dependencies)
@@ -46,34 +48,15 @@ type PhoneStep = "phone" | "otp";
 
 const PhoneIcon = () => (
   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} 
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
       d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z" />
   </svg>
 );
 
 const MailIcon = () => (
   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} 
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
       d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-  </svg>
-);
-
-const LockIcon = () => (
-  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} 
-      d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-  </svg>
-);
-
-const EyeIcon = ({ open }: { open: boolean }) => (
-  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-    {open ? (
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} 
-        d="M15 12a3 3 0 11-6 0 3 3 0 016 0z M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-    ) : (
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} 
-        d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
-    )}
   </svg>
 );
 
@@ -86,7 +69,7 @@ const LoadingSpinner = () => (
 
 const WhatsAppIcon = () => (
   <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
-    <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/>
+    <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z" />
   </svg>
 );
 
@@ -107,17 +90,26 @@ function LoginForm() {
   const [phoneStep, setPhoneStep] = useState<PhoneStep>("phone");
   const [countryCode, setCountryCode] = useState("+234");
   const [phone, setPhone] = useState("");
-  const [otp, setOtp] = useState("");
+  const [phoneOtp, setPhoneOtp] = useState("");
 
-  // Email login state
+  // Email login state — NOW TWO STEP (email → OTP)
+  const [emailStep, setEmailStep] = useState<EmailStep>("email");
   const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [showPassword, setShowPassword] = useState(false);
+  const [emailOtp, setEmailOtp] = useState("");
+  const [resendCooldown, setResendCooldown] = useState(0);
 
   // Common state
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+
+  // Resend cooldown timer
+  useEffect(() => {
+    if (resendCooldown > 0) {
+      const timer = setTimeout(() => setResendCooldown(resendCooldown - 1), 1000);
+      return () => clearTimeout(timer);
+    }
+  }, [resendCooldown]);
 
   // Handle URL error params
   useEffect(() => {
@@ -136,7 +128,7 @@ function LoginForm() {
   // PHONE LOGIN HANDLERS
   // ============================================================================
 
-  const handleSendOtp = async (e: React.FormEvent) => {
+  const handleSendPhoneOtp = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError("");
@@ -150,10 +142,7 @@ function LoginForm() {
       });
 
       const data = await res.json();
-
-      if (!res.ok) {
-        throw new Error(data.error || "Failed to send OTP");
-      }
+      if (!res.ok) throw new Error(data.error || "Failed to send OTP");
 
       setSuccess("OTP sent to your WhatsApp! Check your messages.");
       setPhoneStep("otp");
@@ -164,46 +153,36 @@ function LoginForm() {
     }
   };
 
-  const handleVerifyOtp = async (e: React.FormEvent) => {
+  const handleVerifyPhoneOtp = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError("");
 
     try {
-      // First verify OTP
+      // Step 1: Verify OTP
       const verifyRes = await fetch("/api/auth/verify-otp", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phone, countryCode, otp }),
+        body: JSON.stringify({ phone, countryCode, otp: phoneOtp }),
       });
 
       const verifyData = await verifyRes.json();
+      if (!verifyRes.ok) throw new Error(verifyData.error || "Invalid OTP");
 
-      if (!verifyRes.ok) {
-        throw new Error(verifyData.error || "Invalid OTP");
-      }
-
-      // Clear stale session cookies BEFORE signing in
-      // This prevents middleware from trusting old cached validation
+      // Clear stale session cookies
       document.cookie = "session_validated=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT";
 
-      // Then sign in with NextAuth
+      // Step 2: Sign in with NextAuth
       const result = await signIn("phone-otp", {
         phone,
         countryCode,
-        otp,
+        otp: phoneOtp,
         redirect: false,
       });
 
-      if (result?.error) {
-        throw new Error(result.error);
-      }
+      if (result?.error) throw new Error(result.error);
 
       setSuccess("Login successful! Redirecting...");
-
-      // Use window.location for a clean full-page navigation
-      // router.push + router.refresh race each other, causing the
-      // "first login after timeout kicks you out" bug
       window.location.href = callbackUrl;
     } catch (err: any) {
       setError(err.message);
@@ -213,31 +192,90 @@ function LoginForm() {
   };
 
   // ============================================================================
-  // EMAIL LOGIN HANDLERS
+  // EMAIL LOGIN HANDLERS (NEW: OTP-BASED)
   // ============================================================================
 
-  const handleEmailLogin = async (e: React.FormEvent) => {
+  const handleSendEmailOtp = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError("");
     setSuccess("");
 
     try {
-      // Clear stale session cookies BEFORE signing in
+      const res = await fetch("/api/auth/send-email-otp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, purpose: "login" }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to send OTP");
+
+      setSuccess(`Verification code sent to ${email}. Check your inbox.`);
+      setEmailStep("otp");
+      setResendCooldown(60); // 60s cooldown before resend allowed
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleVerifyEmailOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setError("");
+
+    try {
+      // Step 1: Call our login API to verify OTP + get session token
+      const loginRes = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type: "email", email, otp: emailOtp }),
+      });
+
+      const loginData = await loginRes.json();
+      if (!loginRes.ok) throw new Error(loginData.error || "Login failed");
+
+      // Clear stale session cookies
       document.cookie = "session_validated=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT";
 
-      const result = await signIn("email-password", {
-        email,
-        password,
+      // Step 2: Sign in with NextAuth using session token
+      const result = await signIn("credentials", {
+        session_token: loginData.session_token,
+        consumer_id: loginData.consumer.id,
         redirect: false,
       });
 
-      if (result?.error) {
-        throw new Error(result.error);
-      }
+      if (result?.error) throw new Error(result.error);
 
       setSuccess("Login successful! Redirecting...");
       window.location.href = callbackUrl;
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleResendEmailOtp = async () => {
+    if (resendCooldown > 0) return;
+    setLoading(true);
+    setError("");
+
+    try {
+      const res = await fetch("/api/auth/send-email-otp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, purpose: "login" }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to resend OTP");
+
+      setSuccess("New verification code sent! Check your inbox.");
+      setEmailOtp("");
+      setResendCooldown(60);
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -299,13 +337,13 @@ function LoginForm() {
           </div>
         )}
 
-        {/* ================================================================
+        {/* ==================================================================
             PHONE + OTP LOGIN
-            ================================================================ */}
+            ================================================================== */}
         {authMethod === "phone" && (
           <>
             {phoneStep === "phone" ? (
-              <form onSubmit={handleSendOtp} className="space-y-4">
+              <form onSubmit={handleSendPhoneOtp} className="space-y-4">
                 <div>
                   <label className="block text-sm text-gray-400 mb-2">
                     Phone Number
@@ -338,9 +376,7 @@ function LoginForm() {
                   disabled={loading || !phone}
                   className="w-full bg-naija-green hover:bg-naija-green/90 disabled:bg-gray-600 disabled:cursor-not-allowed text-black font-semibold py-3 px-6 rounded-lg flex items-center justify-center gap-2 transition-colors"
                 >
-                  {loading ? (
-                    <LoadingSpinner />
-                  ) : (
+                  {loading ? <LoadingSpinner /> : (
                     <>
                       <WhatsAppIcon />
                       Send OTP via WhatsApp
@@ -353,15 +389,15 @@ function LoginForm() {
                 </p>
               </form>
             ) : (
-              <form onSubmit={handleVerifyOtp} className="space-y-4">
+              <form onSubmit={handleVerifyPhoneOtp} className="space-y-4">
                 <div>
                   <label className="block text-sm text-gray-400 mb-2">
                     Enter OTP sent to WhatsApp
                   </label>
                   <input
                     type="text"
-                    value={otp}
-                    onChange={(e) => setOtp(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                    value={phoneOtp}
+                    onChange={(e) => setPhoneOtp(e.target.value.replace(/\D/g, "").slice(0, 6))}
                     placeholder="123456"
                     maxLength={6}
                     className="w-full bg-terminal-bg border border-terminal-border rounded-lg px-4 py-3 text-white text-center text-2xl tracking-widest placeholder-gray-500 focus:outline-none focus:border-naija-green font-mono"
@@ -375,7 +411,7 @@ function LoginForm() {
 
                 <button
                   type="submit"
-                  disabled={loading || otp.length !== 6}
+                  disabled={loading || phoneOtp.length !== 6}
                   className="w-full bg-naija-green hover:bg-naija-green/90 disabled:bg-gray-600 disabled:cursor-not-allowed text-black font-semibold py-3 px-6 rounded-lg flex items-center justify-center gap-2 transition-colors"
                 >
                   {loading ? <LoadingSpinner /> : "Verify & Login"}
@@ -385,7 +421,7 @@ function LoginForm() {
                   type="button"
                   onClick={() => {
                     setPhoneStep("phone");
-                    setOtp("");
+                    setPhoneOtp("");
                     setError("");
                     setSuccess("");
                   }}
@@ -398,87 +434,134 @@ function LoginForm() {
           </>
         )}
 
-        {/* ================================================================
-            EMAIL + PASSWORD LOGIN (Business+ Only)
-            ================================================================ */}
+        {/* ==================================================================
+            EMAIL + OTP LOGIN (UPDATED: no more password)
+            ================================================================== */}
         {authMethod === "email" && (
-          <form onSubmit={handleEmailLogin} className="space-y-4">
-            {/* Tier Notice */}
-            <div className="p-3 bg-blue-500/10 border border-blue-500/30 rounded-lg text-sm">
-              <p className="text-blue-400 font-medium flex items-center gap-2">
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-                Business+ Feature
-              </p>
-              <p className="text-gray-400 text-xs mt-1">
-                Email login is available for Business, Corporate, and Enterprise tiers.
-                Other tiers please use Phone + OTP.
-              </p>
-            </div>
-
-            <div>
-              <label className="block text-sm text-gray-400 mb-2">
-                Email Address
-              </label>
-              <div className="relative">
-                <div className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500">
-                  <MailIcon />
+          <>
+            {emailStep === "email" ? (
+              <form onSubmit={handleSendEmailOtp} className="space-y-4">
+                {/* Tier Notice */}
+                <div className="p-3 bg-blue-500/10 border border-blue-500/30 rounded-lg text-sm">
+                  <p className="text-blue-400 font-medium flex items-center gap-2">
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    Business+ Feature
+                  </p>
+                  <p className="text-gray-400 text-xs mt-1">
+                    Email login is available for Business, Corporate, and Enterprise tiers.
+                  </p>
                 </div>
-                <input
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="you@company.com"
-                  className="w-full bg-terminal-bg border border-terminal-border rounded-lg pl-10 pr-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-naija-green"
-                  required
-                />
-              </div>
-            </div>
 
-            <div>
-              <label className="block text-sm text-gray-400 mb-2">
-                Password
-              </label>
-              <div className="relative">
-                <div className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500">
-                  <LockIcon />
+                <div>
+                  <label className="block text-sm text-gray-400 mb-2">
+                    Email Address
+                  </label>
+                  <div className="relative">
+                    <div className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500">
+                      <MailIcon />
+                    </div>
+                    <input
+                      type="email"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      placeholder="you@company.com"
+                      className="w-full bg-terminal-bg border border-terminal-border rounded-lg pl-10 pr-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-naija-green"
+                      required
+                      autoFocus
+                    />
+                  </div>
                 </div>
-                <input
-                  type={showPassword ? "text" : "password"}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="••••••••"
-                  className="w-full bg-terminal-bg border border-terminal-border rounded-lg pl-10 pr-12 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-naija-green"
-                  required
-                />
+
+                <button
+                  type="submit"
+                  disabled={loading || !email}
+                  className="w-full bg-naija-green hover:bg-naija-green/90 disabled:bg-gray-600 disabled:cursor-not-allowed text-black font-semibold py-3 px-6 rounded-lg flex items-center justify-center gap-2 transition-colors"
+                >
+                  {loading ? <LoadingSpinner /> : (
+                    <>
+                      <MailIcon />
+                      Send Verification Code
+                    </>
+                  )}
+                </button>
+
+                <p className="text-center text-gray-500 text-xs mt-4">
+                  We&apos;ll send a 6-digit code to your email
+                </p>
+              </form>
+            ) : (
+              // EMAIL OTP VERIFICATION STEP
+              <form onSubmit={handleVerifyEmailOtp} className="space-y-4">
+                <div className="text-center mb-2">
+                  <p className="text-gray-400 text-sm">
+                    Code sent to{" "}
+                    <span className="text-naija-green font-medium">{email}</span>
+                  </p>
+                </div>
+
+                <div>
+                  <label className="block text-sm text-gray-400 mb-2">
+                    Enter 6-digit code
+                  </label>
+                  <input
+                    type="text"
+                    value={emailOtp}
+                    onChange={(e) => setEmailOtp(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                    placeholder="123456"
+                    maxLength={6}
+                    className="w-full bg-terminal-bg border border-terminal-border rounded-lg px-4 py-3 text-white text-center text-2xl tracking-widest placeholder-gray-500 focus:outline-none focus:border-naija-green font-mono"
+                    required
+                    autoFocus
+                  />
+                  <p className="text-center text-gray-500 text-xs mt-2">
+                    Check your inbox (and spam folder) for the 6-digit code
+                  </p>
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={loading || emailOtp.length !== 6}
+                  className="w-full bg-naija-green hover:bg-naija-green/90 disabled:bg-gray-600 disabled:cursor-not-allowed text-black font-semibold py-3 px-6 rounded-lg flex items-center justify-center gap-2 transition-colors"
+                >
+                  {loading ? <LoadingSpinner /> : "Verify & Login"}
+                </button>
+
+                {/* Resend Code */}
+                <div className="text-center">
+                  {resendCooldown > 0 ? (
+                    <p className="text-gray-500 text-sm">
+                      Resend code in{" "}
+                      <span className="text-naija-gold font-mono">{resendCooldown}s</span>
+                    </p>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={handleResendEmailOtp}
+                      disabled={loading}
+                      className="text-naija-green hover:underline text-sm disabled:text-gray-500"
+                    >
+                      Resend verification code
+                    </button>
+                  )}
+                </div>
+
                 <button
                   type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300"
+                  onClick={() => {
+                    setEmailStep("email");
+                    setEmailOtp("");
+                    setError("");
+                    setSuccess("");
+                  }}
+                  className="w-full text-gray-400 hover:text-white text-sm py-2"
                 >
-                  <EyeIcon open={showPassword} />
+                  ← Change email
                 </button>
-              </div>
-            </div>
-
-            <div className="flex justify-end">
-              <Link
-                href="/forgot-password"
-                className="text-sm text-naija-green hover:underline"
-              >
-                Forgot password?
-              </Link>
-            </div>
-
-            <button
-              type="submit"
-              disabled={loading || !email || !password}
-              className="w-full bg-naija-green hover:bg-naija-green/90 disabled:bg-gray-600 disabled:cursor-not-allowed text-black font-semibold py-3 px-6 rounded-lg flex items-center justify-center gap-2 transition-colors"
-            >
-              {loading ? <LoadingSpinner /> : "Sign In with Email"}
-            </button>
-          </form>
+              </form>
+            )}
+          </>
         )}
 
         {/* Divider */}

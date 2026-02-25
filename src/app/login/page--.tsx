@@ -183,6 +183,10 @@ function LoginForm() {
         throw new Error(verifyData.error || "Invalid OTP");
       }
 
+      // Clear stale session cookies BEFORE signing in
+      // This prevents middleware from trusting old cached validation
+      document.cookie = "session_validated=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT";
+
       // Then sign in with NextAuth
       const result = await signIn("phone-otp", {
         phone,
@@ -196,8 +200,11 @@ function LoginForm() {
       }
 
       setSuccess("Login successful! Redirecting...");
-      router.push(callbackUrl);
-      router.refresh();
+
+      // Use window.location for a clean full-page navigation
+      // router.push + router.refresh race each other, causing the
+      // "first login after timeout kicks you out" bug
+      window.location.href = callbackUrl;
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -216,6 +223,9 @@ function LoginForm() {
     setSuccess("");
 
     try {
+      // Clear stale session cookies BEFORE signing in
+      document.cookie = "session_validated=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT";
+
       const result = await signIn("email-password", {
         email,
         password,
@@ -227,8 +237,7 @@ function LoginForm() {
       }
 
       setSuccess("Login successful! Redirecting...");
-      router.push(callbackUrl);
-      router.refresh();
+      window.location.href = callbackUrl;
     } catch (err: any) {
       setError(err.message);
     } finally {

@@ -1,10 +1,11 @@
 // src/app/api/auth/[...nextauth]/route.ts
 // NaijaMarket Intel - NextAuth Configuration
-// UPDATED: 2026-02-02 - Works with existing Prisma schema (no session columns)
-// 
+// UPDATED: 2026-02-25 - Replaced email+password with email+OTP via session_token
+//
 // LOGIN METHODS:
-// 1. Phone + WhatsApp OTP (All tiers)
-// 2. Email + Password (BUSINESS, CORPORATE, ENTERPRISE only)
+// 1. phone-otp    → Phone + WhatsApp OTP (All tiers)
+// 2. email-otp    → Email + OTP via session_token (Business+ tiers) ← NEW
+// 3. email-password → DEPRECATED — kept for backwards compat, remove later
 
 import NextAuth, { NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
@@ -18,35 +19,22 @@ const prisma = new PrismaClient();
 // CONSTANTS
 // ============================================================================
 
-// Tiers that can use email login
 const EMAIL_LOGIN_TIERS = ["BUSINESS", "CORPORATE", "ENTERPRISE", "OGA_BOSS", "GOVERNMENT"];
 
 // ============================================================================
-// HELPER FUNCTIONS
+// HELPERS
 // ============================================================================
 
 function formatPhoneNumber(phone: string, countryCode?: string): string {
   let cleaned = phone.replace(/[\s\-\(\)]/g, "");
-  
-  if (cleaned.startsWith("+")) {
-    return cleaned.substring(1);
-  }
-  
+  if (cleaned.startsWith("+")) return cleaned.substring(1);
   if (countryCode) {
-    const cleanCountryCode = countryCode.replace("+", "");
-    if (cleaned.startsWith("0")) {
-      cleaned = cleaned.substring(1);
-    }
-    if (cleaned.startsWith(cleanCountryCode)) {
-      return cleaned;
-    }
-    return cleanCountryCode + cleaned;
+    const cleanCC = countryCode.replace("+", "");
+    if (cleaned.startsWith("0")) cleaned = cleaned.substring(1);
+    if (cleaned.startsWith(cleanCC)) return cleaned;
+    return cleanCC + cleaned;
   }
-  
-  if (cleaned.startsWith("0")) {
-    return "234" + cleaned.substring(1);
-  }
-  
+  if (cleaned.startsWith("0")) return "234" + cleaned.substring(1);
   return cleaned;
 }
 
@@ -60,57 +48,57 @@ function generateSessionToken(): string {
 
 const authOptions: NextAuthOptions = {
   providers: [
-    // ========================================================================
-    // PROVIDER 1: Phone + OTP (All Tiers)
-    // ========================================================================
+
+    // =========================================================================
+    // PROVIDER 1: Phone + OTP (All Tiers) — UNCHANGED
+    // =========================================================================
     CredentialsProvider({
       id: "phone-otp",
       name: "Phone OTP",
       credentials: {
-        phone: { label: "Phone Number", type: "text" },
+        phone:       { label: "Phone Number", type: "text" },
         countryCode: { label: "Country Code", type: "text" },
-        otp: { label: "OTP Code", type: "text" },
+        otp:         { label: "OTP Code",     type: "text" },
       },
-      async authorize(credentials, req) {
+      async authorize(credentials) {
         if (!credentials?.phone || !credentials?.otp) {
           throw new Error("Phone number and OTP are required");
         }
 
         const phone = formatPhoneNumber(credentials.phone, credentials.countryCode);
-        const otp = credentials.otp;
+        const otp   = credentials.otp;
 
-        console.log("[AUTH:PHONE] ═══════════════════════════════════════════════");
+        console.log("[AUTH:PHONE] ══════════════════════════════════════════════");
         console.log("[AUTH:PHONE] Login attempt for:", phone);
 
         try {
-          // Check OTP in OTP_Codes table
-          const otpRecord = await prisma.oTP_Codes.findFirst({
+          // Check verified OTP
+          let otpRecord = await prisma.oTP_Codes.findFirst({
             where: {
               identifier: phone,
-              code: otp,
-              type: "phone",
-              verified: true,
-              expires_at: { gt: new Date() }
+              code:       otp,
+              type:       "phone",
+              verified:   true,
+              expires_at: { gt: new Date() },
             },
-            orderBy: { created_at: "desc" }
+            orderBy: { created_at: "desc" },
           });
 
+          // Also accept unverified (just-entered) OTP and mark it
           if (!otpRecord) {
-            // Try to verify unverified OTP
-            const unverifiedOtp = await prisma.oTP_Codes.findFirst({
+            const unverified = await prisma.oTP_Codes.findFirst({
               where: {
                 identifier: phone,
-                code: otp,
-                type: "phone",
-                verified: false,
-                expires_at: { gt: new Date() }
-              }
+                code:       otp,
+                type:       "phone",
+                verified:   false,
+                expires_at: { gt: new Date() },
+              },
             });
-            
-            if (unverifiedOtp) {
+            if (unverified) {
               await prisma.oTP_Codes.update({
-                where: { id: unverifiedOtp.id },
-                data: { verified: true }
+                where: { id: unverified.id },
+                data:  { verified: true },
               });
             } else {
               throw new Error("Invalid or expired OTP");
@@ -119,195 +107,276 @@ const authOptions: NextAuthOptions = {
 
           console.log("[AUTH:PHONE] ✅ OTP verified");
 
-          // Find consumer by phone
+          // Find consumer — exact match first, then suffix fallback
           let consumer = await prisma.consumers.findFirst({
-            where: { phone_number: phone }
+            where: { phone_number: phone },
           });
-
           if (!consumer) {
-            // Try partial match
-            const phoneLastDigits = phone.slice(-9);
+            const last9 = phone.slice(-9);
             consumer = await prisma.consumers.findFirst({
-              where: { phone_number: { endsWith: phoneLastDigits } }
+              where: { phone_number: { endsWith: last9 } },
             });
           }
-
           if (!consumer) {
             throw new Error("No account found with this phone number. Please register first.");
           }
 
-          // Check account status
           if (consumer.account_status === "BLOCKED" || consumer.account_status === "BANNED") {
             throw new Error("Your account has been suspended. Please contact support.");
           }
 
-          // Generate session token (stored in JWT, not database for now)
-          const sessionToken = generateSessionToken();
-
-          // Update last activity (only using columns that exist)
           await prisma.consumers.update({
             where: { consumer_id: consumer.consumer_id },
-            data: {
-              updated_at: new Date()
-            }
+            data:  { updated_at: new Date() },
           });
 
-          const displayName = consumer.full_name 
-            || `${consumer.first_name || ''} ${consumer.last_name || ''}`.trim() 
-            || `User ${phone.slice(-4)}`;
+          const displayName =
+            consumer.full_name ||
+            `${consumer.first_name || ""} ${consumer.last_name || ""}`.trim() ||
+            `User ${phone.slice(-4)}`;
 
-          console.log("[AUTH:PHONE] ✅ SUCCESS -", displayName, "| Tier:", consumer.subscription_tier);
+          console.log("[AUTH:PHONE] ✅ SUCCESS —", displayName, "| Tier:", consumer.subscription_tier);
 
           return {
-            id: consumer.consumer_id,
-            phone: consumer.phone_number,
-            email: consumer.email || null,
-            name: displayName,
-            tier: consumer.subscription_tier || "FREE",
-            status: consumer.account_status || "ACTIVE",
-            sessionToken: sessionToken,
-            authMethod: "phone",
+            id:           consumer.consumer_id,
+            phone:        consumer.phone_number,
+            email:        consumer.email || null,
+            name:         displayName,
+            tier:         consumer.subscription_tier || "FREE",
+            status:       consumer.account_status   || "ACTIVE",
+            sessionToken: generateSessionToken(),
+            authMethod:   "phone",
           };
         } catch (error: any) {
-          console.error("[AUTH:PHONE] ❌ Error:", error.message);
+          console.error("[AUTH:PHONE] ❌", error.message);
           throw new Error(error.message || "Authentication failed");
         }
       },
     }),
 
-    // ========================================================================
-    // PROVIDER 2: Email + Password (Business+ Tiers Only)
-    // ========================================================================
+    // =========================================================================
+    // PROVIDER 2: Email + OTP via session_token (Business+ Tiers) — NEW
+    // =========================================================================
+    // Flow:
+    //   1. User clicks Email tab → enters email
+    //   2. /api/auth/send-email-otp sends 6-digit code
+    //   3. User enters code → /api/auth/login validates it,
+    //      creates session_token in Consumers table, returns it
+    //   4. Frontend calls signIn("email-otp", { session_token, consumer_id })
+    //   5. THIS provider validates the token against the DB
     CredentialsProvider({
-      id: "email-password",
-      name: "Email and Password",
+      id: "email-otp",
+      name: "Email OTP",
       credentials: {
-        email: { label: "Email", type: "email" },
-        password: { label: "Password", type: "password" },
+        session_token: { label: "Session Token", type: "text" },
+        consumer_id:   { label: "Consumer ID",   type: "text" },
       },
-      async authorize(credentials, req) {
-        if (!credentials?.email || !credentials?.password) {
-          throw new Error("Email and password are required");
+      async authorize(credentials) {
+        if (!credentials?.session_token || !credentials?.consumer_id) {
+          throw new Error("Session token and consumer ID are required");
         }
 
-        const email = credentials.email.toLowerCase().trim();
-        const password = credentials.password;
+        const { session_token, consumer_id } = credentials;
 
-        console.log("[AUTH:EMAIL] ═══════════════════════════════════════════════");
-        console.log("[AUTH:EMAIL] Login attempt for:", email);
+        console.log("[AUTH:EMAIL-OTP] ══════════════════════════════════════════");
+        console.log("[AUTH:EMAIL-OTP] Validating session token for:", consumer_id);
 
         try {
-          // Find consumer by email
+          // Validate session_token against DB
+          // /api/auth/login stored it in Consumers.session_token
           const consumer = await prisma.consumers.findFirst({
-            where: { email: email }
+            where: {
+              consumer_id:   consumer_id,
+              session_token: session_token,
+            },
           });
 
           if (!consumer) {
-            console.log("[AUTH:EMAIL] ❌ No account found for email");
-            throw new Error("No account found with this email. Please use phone login or register first.");
+            console.log("[AUTH:EMAIL-OTP] ❌ Invalid session token");
+            throw new Error("Invalid or expired login session. Please try again.");
           }
 
-          // Check if email login is allowed for this tier
+          // Tier check — email login is Business+ only
           const tier = (consumer.subscription_tier || "FREE").toUpperCase();
           if (!EMAIL_LOGIN_TIERS.includes(tier)) {
-            console.log("[AUTH:EMAIL] ❌ Email login not allowed for tier:", tier);
-            throw new Error(`Email login is available for Business, Corporate, and Enterprise tiers only. Your tier: ${consumer.subscription_tier}. Please use phone login.`);
+            console.log("[AUTH:EMAIL-OTP] ❌ Tier not allowed:", tier);
+            throw new Error(
+              `Email login is available for Business, Corporate, and Enterprise tiers only. ` +
+              `Your tier: ${consumer.subscription_tier}. Please use phone login.`
+            );
           }
 
-          // Check if email is verified
-          if (!consumer.email_verified) {
-            console.log("[AUTH:EMAIL] ❌ Email not verified");
-            throw new Error("Please verify your email before using email login.");
-          }
-
-          // Check account status
+          // Account status check
           if (consumer.account_status === "BLOCKED" || consumer.account_status === "BANNED") {
             throw new Error("Your account has been suspended. Please contact support.");
           }
 
-          // Verify password
-          if (!consumer.password_hash) {
-            console.log("[AUTH:EMAIL] ❌ No password set");
-            throw new Error("No password set for this account. Please use phone login.");
-          }
-
-          const passwordValid = await bcrypt.compare(password, consumer.password_hash);
-
-          if (!passwordValid) {
-            console.log("[AUTH:EMAIL] ❌ Invalid password");
-            throw new Error("Invalid password. Please try again.");
-          }
-
-          console.log("[AUTH:EMAIL] ✅ Password verified");
-
-          // Generate session token (stored in JWT)
-          const sessionToken = generateSessionToken();
-
           // Update last activity
           await prisma.consumers.update({
             where: { consumer_id: consumer.consumer_id },
-            data: {
-              updated_at: new Date()
-            }
+            data:  { updated_at: new Date(), last_activity_at: new Date() },
           });
 
-          const displayName = consumer.full_name 
-            || `${consumer.first_name || ''} ${consumer.last_name || ''}`.trim() 
-            || email.split('@')[0];
+          const displayName =
+            consumer.full_name ||
+            `${consumer.first_name || ""} ${consumer.last_name || ""}`.trim() ||
+            (consumer.email ? consumer.email.split("@")[0] : "User");
 
-          console.log("[AUTH:EMAIL] ✅ SUCCESS -", displayName, "| Tier:", consumer.subscription_tier);
+          console.log("[AUTH:EMAIL-OTP] ✅ SUCCESS —", displayName, "| Tier:", consumer.subscription_tier);
 
           return {
-            id: consumer.consumer_id,
-            phone: consumer.phone_number || null,
-            email: consumer.email,
-            name: displayName,
-            tier: consumer.subscription_tier || "FREE",
-            status: consumer.account_status || "ACTIVE",
-            sessionToken: sessionToken,
-            authMethod: "email",
+            id:           consumer.consumer_id,
+            phone:        consumer.phone_number || null,
+            email:        consumer.email,
+            name:         displayName,
+            tier:         consumer.subscription_tier || "FREE",
+            status:       consumer.account_status   || "ACTIVE",
+            sessionToken: session_token,   // reuse the same token
+            authMethod:   "email-otp",
           };
         } catch (error: any) {
-          console.error("[AUTH:EMAIL] ❌ Error:", error.message);
+          console.error("[AUTH:EMAIL-OTP] ❌", error.message);
+          throw new Error(error.message || "Authentication failed");
+        }
+      },
+    }),
+
+    // =========================================================================
+    // PROVIDER 3: Email + Password — DEPRECATED
+    // Kept for backwards compat. Remove after all users migrate to email-otp.
+    // =========================================================================
+    CredentialsProvider({
+      id: "email-password",
+      name: "Email and Password",
+      credentials: {
+        email:    { label: "Email",    type: "email"    },
+        password: { label: "Password", type: "password" },
+      },
+      async authorize(credentials) {
+        if (!credentials?.email || !credentials?.password) {
+          throw new Error("Email and password are required");
+        }
+
+        const email    = credentials.email.toLowerCase().trim();
+        const password = credentials.password;
+
+        console.log("[AUTH:EMAIL-PWD] ══════════════════════════════════════════");
+        console.log("[AUTH:EMAIL-PWD] Login attempt for:", email);
+
+        try {
+          const consumer = await prisma.consumers.findFirst({
+            where: { email },
+          });
+
+          if (!consumer) {
+            throw new Error("No account found with this email. Please use phone login or register first.");
+          }
+
+          const tier = (consumer.subscription_tier || "FREE").toUpperCase();
+          if (!EMAIL_LOGIN_TIERS.includes(tier)) {
+            throw new Error(
+              `Email login requires Business tier or above. ` +
+              `Your tier: ${consumer.subscription_tier}. Please use phone login.`
+            );
+          }
+
+          if (!consumer.email_verified) {
+            throw new Error("Please verify your email before logging in.");
+          }
+
+          if (consumer.account_status === "BLOCKED" || consumer.account_status === "BANNED") {
+            throw new Error("Your account has been suspended. Please contact support.");
+          }
+
+          if (!consumer.password_hash) {
+            // No password — redirect them to email OTP
+            throw new Error("This account uses email OTP login. Please use the Email Login tab and click 'Send Verification Code'.");
+          }
+
+          const passwordValid = await bcrypt.compare(password, consumer.password_hash);
+          if (!passwordValid) {
+            throw new Error("Invalid password. Please try again.");
+          }
+
+          await prisma.consumers.update({
+            where: { consumer_id: consumer.consumer_id },
+            data:  { updated_at: new Date() },
+          });
+
+          const displayName =
+            consumer.full_name ||
+            `${consumer.first_name || ""} ${consumer.last_name || ""}`.trim() ||
+            email.split("@")[0];
+
+          console.log("[AUTH:EMAIL-PWD] ✅ SUCCESS —", displayName);
+
+          return {
+            id:           consumer.consumer_id,
+            phone:        consumer.phone_number || null,
+            email:        consumer.email,
+            name:         displayName,
+            tier:         consumer.subscription_tier || "FREE",
+            status:       consumer.account_status   || "ACTIVE",
+            sessionToken: generateSessionToken(),
+            authMethod:   "email-password",
+          };
+        } catch (error: any) {
+          console.error("[AUTH:EMAIL-PWD] ❌", error.message);
           throw new Error(error.message || "Authentication failed");
         }
       },
     }),
   ],
 
+  // ============================================================================
+  // SESSION
+  // ============================================================================
   session: {
     strategy: "jwt",
     maxAge: 24 * 60 * 60, // 24 hours
   },
 
+  // ============================================================================
+  // CALLBACKS
+  // ============================================================================
   callbacks: {
     async jwt({ token, user }) {
+      // On first sign-in, attach user fields to JWT
       if (user) {
-        token.id = user.id;
-        token.phone = (user as any).phone;
-        token.email = (user as any).email;
-        token.tier = (user as any).tier;
-        token.status = (user as any).status;
-        token.name = user.name;
+        token.id           = user.id;
+        token.phone        = (user as any).phone;
+        token.email        = (user as any).email;
+        token.tier         = (user as any).tier;
+        token.status       = (user as any).status;
+        token.name         = user.name;
         token.sessionToken = (user as any).sessionToken;
-        token.authMethod = (user as any).authMethod;
+        token.authMethod   = (user as any).authMethod;
       }
 
-      // Refresh tier from database periodically
+      // Refresh live data from DB on every JWT refresh
       if (token.id) {
         try {
           const consumer = await prisma.consumers.findFirst({
-            where: { consumer_id: token.id as string }
+            where: { consumer_id: token.id as string },
+            select: {
+              subscription_tier: true,
+              account_status:    true,
+              email:             true,
+              full_name:         true,
+              first_name:        true,
+              last_name:         true,
+            },
           });
 
           if (consumer) {
-            token.tier = consumer.subscription_tier || "FREE";
-            token.status = consumer.account_status || "ACTIVE";
-            token.email = consumer.email || token.email;
-            
-            const newName = consumer.full_name 
-              || `${consumer.first_name || ''} ${consumer.last_name || ''}`.trim();
-            if (newName) token.name = newName;
+            token.tier   = consumer.subscription_tier || "FREE";
+            token.status = consumer.account_status    || "ACTIVE";
+            token.email  = consumer.email             || token.email;
+
+            const refreshedName =
+              consumer.full_name ||
+              `${consumer.first_name || ""} ${consumer.last_name || ""}`.trim();
+            if (refreshedName) token.name = refreshedName;
           }
         } catch (error) {
           console.error("[JWT] Error refreshing user data:", error);
@@ -319,14 +388,14 @@ const authOptions: NextAuthOptions = {
 
     async session({ session, token }) {
       if (session.user) {
-        (session.user as any).id = token.id;
-        (session.user as any).phone = token.phone;
-        (session.user as any).email = token.email;
-        (session.user as any).tier = token.tier;
-        (session.user as any).status = token.status;
+        (session.user as any).id           = token.id;
+        (session.user as any).phone        = token.phone;
+        (session.user as any).email        = token.email;
+        (session.user as any).tier         = token.tier;
+        (session.user as any).status       = token.status;
         (session.user as any).sessionToken = token.sessionToken;
-        (session.user as any).authMethod = token.authMethod;
-        session.user.name = token.name as string;
+        (session.user as any).authMethod   = token.authMethod;
+        session.user.name                  = token.name as string;
       }
       return session;
     },
@@ -334,7 +403,7 @@ const authOptions: NextAuthOptions = {
 
   pages: {
     signIn: "/login",
-    error: "/login",
+    error:  "/login",
   },
 
   debug: process.env.NODE_ENV === "development",

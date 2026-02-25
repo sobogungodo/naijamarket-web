@@ -1,12 +1,10 @@
 // src/app/api/auth/[...nextauth]/route.ts
 // NaijaMarket Intel - NextAuth Configuration
-// UPDATED: 2026-01-31 - Added Email+Password LOGIN for Business+ tiers
+// UPDATED: 2026-02-02 - Works with existing Prisma schema (no session columns)
 // 
 // LOGIN METHODS:
-// 1. Phone + WhatsApp OTP (All tiers) - EXISTING
-// 2. Email + Password (BUSINESS, CORPORATE, ENTERPRISE only) - NEW
-//
-// Both methods share the same session_token for single-session enforcement
+// 1. Phone + WhatsApp OTP (All tiers)
+// 2. Email + Password (BUSINESS, CORPORATE, ENTERPRISE only)
 
 import NextAuth, { NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
@@ -22,10 +20,6 @@ const prisma = new PrismaClient();
 
 // Tiers that can use email login
 const EMAIL_LOGIN_TIERS = ["BUSINESS", "CORPORATE", "ENTERPRISE", "OGA_BOSS", "GOVERNMENT"];
-
-// Rate limiting
-const MAX_LOGIN_ATTEMPTS = 5;
-const LOCKOUT_DURATION_MINUTES = 15;
 
 // ============================================================================
 // HELPER FUNCTIONS
@@ -67,7 +61,7 @@ function generateSessionToken(): string {
 const authOptions: NextAuthOptions = {
   providers: [
     // ========================================================================
-    // PROVIDER 1: Phone + OTP (All Tiers) - EXISTING
+    // PROVIDER 1: Phone + OTP (All Tiers)
     // ========================================================================
     CredentialsProvider({
       id: "phone-otp",
@@ -147,40 +141,19 @@ const authOptions: NextAuthOptions = {
             throw new Error("Your account has been suspended. Please contact support.");
           }
 
-          // Log old session to history if exists
-          if (consumer.session_token) {
-            try {
-              await prisma.$executeRaw`
-                INSERT INTO Consumer_Session_History 
-                  (consumer_id, phone_number, session_token, login_at, logout_at, logout_reason)
-                VALUES (${consumer.consumer_id}, ${consumer.phone_number}, ${consumer.session_token}, 
-                        ${consumer.session_created_at}, GETDATE(), 'NEW_LOGIN')
-              `;
-            } catch (e) { /* History table may not exist */ }
-          }
+          // Generate session token (stored in JWT, not database for now)
+          const sessionToken = generateSessionToken();
 
-          // Generate new session token
-          const newSessionToken = generateSessionToken();
-          const ipAddress = String(req?.headers?.["x-forwarded-for"] || "unknown").substring(0, 45);
-          const userAgent = String(req?.headers?.["user-agent"] || "unknown").substring(0, 500);
-
+          // Update last activity (only using columns that exist)
           await prisma.consumers.update({
-            where: { id: consumer.id },
+            where: { consumer_id: consumer.consumer_id },
             data: {
-              session_token: newSessionToken,
-              session_created_at: new Date(),
-              session_ip_address: ipAddress,
-              session_user_agent: userAgent,
-              last_active_at: new Date(),
-              updated_at: new Date(),
-              failed_login_attempts: 0,
-              locked_until: null
+              updated_at: new Date()
             }
           });
 
           const displayName = consumer.full_name 
             || `${consumer.first_name || ''} ${consumer.last_name || ''}`.trim() 
-            || consumer.consumer_name
             || `User ${phone.slice(-4)}`;
 
           console.log("[AUTH:PHONE] ✅ SUCCESS -", displayName, "| Tier:", consumer.subscription_tier);
@@ -192,7 +165,7 @@ const authOptions: NextAuthOptions = {
             name: displayName,
             tier: consumer.subscription_tier || "FREE",
             status: consumer.account_status || "ACTIVE",
-            sessionToken: newSessionToken,
+            sessionToken: sessionToken,
             authMethod: "phone",
           };
         } catch (error: any) {
@@ -203,7 +176,7 @@ const authOptions: NextAuthOptions = {
     }),
 
     // ========================================================================
-    // PROVIDER 2: Email + Password (Business+ Tiers Only) - NEW
+    // PROVIDER 2: Email + Password (Business+ Tiers Only)
     // ========================================================================
     CredentialsProvider({
       id: "email-password",
@@ -252,87 +225,34 @@ const authOptions: NextAuthOptions = {
             throw new Error("Your account has been suspended. Please contact support.");
           }
 
-          // Check account lockout
-          if (consumer.locked_until) {
-            const lockUntil = new Date(consumer.locked_until);
-            if (lockUntil > new Date()) {
-              const minutesLeft = Math.ceil((lockUntil.getTime() - Date.now()) / 60000);
-              console.log("[AUTH:EMAIL] ❌ Account locked for", minutesLeft, "more minutes");
-              throw new Error(`Account temporarily locked. Please try again in ${minutesLeft} minutes.`);
-            }
-          }
-
           // Verify password
           if (!consumer.password_hash) {
             console.log("[AUTH:EMAIL] ❌ No password set");
-            throw new Error("No password set for this account. Please use 'Forgot Password' to set one, or use phone login.");
+            throw new Error("No password set for this account. Please use phone login.");
           }
 
           const passwordValid = await bcrypt.compare(password, consumer.password_hash);
 
           if (!passwordValid) {
-            // Increment failed attempts
-            const newAttempts = (consumer.failed_login_attempts || 0) + 1;
-            
-            if (newAttempts >= MAX_LOGIN_ATTEMPTS) {
-              // Lock account
-              const lockUntil = new Date(Date.now() + LOCKOUT_DURATION_MINUTES * 60 * 1000);
-              await prisma.consumers.update({
-                where: { id: consumer.id },
-                data: { 
-                  failed_login_attempts: newAttempts,
-                  locked_until: lockUntil
-                }
-              });
-              console.log("[AUTH:EMAIL] ❌ Account locked after", newAttempts, "attempts");
-              throw new Error(`Too many failed attempts. Account locked for ${LOCKOUT_DURATION_MINUTES} minutes.`);
-            } else {
-              await prisma.consumers.update({
-                where: { id: consumer.id },
-                data: { failed_login_attempts: newAttempts }
-              });
-              const remaining = MAX_LOGIN_ATTEMPTS - newAttempts;
-              console.log("[AUTH:EMAIL] ❌ Invalid password. Attempts remaining:", remaining);
-              throw new Error(`Invalid password. ${remaining} attempts remaining.`);
-            }
+            console.log("[AUTH:EMAIL] ❌ Invalid password");
+            throw new Error("Invalid password. Please try again.");
           }
 
           console.log("[AUTH:EMAIL] ✅ Password verified");
 
-          // Log old session to history if exists
-          if (consumer.session_token) {
-            try {
-              await prisma.$executeRaw`
-                INSERT INTO Consumer_Session_History 
-                  (consumer_id, phone_number, session_token, login_at, logout_at, logout_reason)
-                VALUES (${consumer.consumer_id}, ${consumer.phone_number}, ${consumer.session_token}, 
-                        ${consumer.session_created_at}, GETDATE(), 'NEW_LOGIN')
-              `;
-            } catch (e) { /* History table may not exist */ }
-          }
+          // Generate session token (stored in JWT)
+          const sessionToken = generateSessionToken();
 
-          // Generate new session token
-          const newSessionToken = generateSessionToken();
-          const ipAddress = String(req?.headers?.["x-forwarded-for"] || "unknown").substring(0, 45);
-          const userAgent = String(req?.headers?.["user-agent"] || "unknown").substring(0, 500);
-
+          // Update last activity
           await prisma.consumers.update({
-            where: { id: consumer.id },
+            where: { consumer_id: consumer.consumer_id },
             data: {
-              session_token: newSessionToken,
-              session_created_at: new Date(),
-              session_ip_address: ipAddress,
-              session_user_agent: userAgent,
-              last_active_at: new Date(),
-              updated_at: new Date(),
-              failed_login_attempts: 0,
-              locked_until: null
+              updated_at: new Date()
             }
           });
 
           const displayName = consumer.full_name 
             || `${consumer.first_name || ''} ${consumer.last_name || ''}`.trim() 
-            || consumer.consumer_name
             || email.split('@')[0];
 
           console.log("[AUTH:EMAIL] ✅ SUCCESS -", displayName, "| Tier:", consumer.subscription_tier);
@@ -344,7 +264,7 @@ const authOptions: NextAuthOptions = {
             name: displayName,
             tier: consumer.subscription_tier || "FREE",
             status: consumer.account_status || "ACTIVE",
-            sessionToken: newSessionToken,
+            sessionToken: sessionToken,
             authMethod: "email",
           };
         } catch (error: any) {
@@ -386,8 +306,7 @@ const authOptions: NextAuthOptions = {
             token.email = consumer.email || token.email;
             
             const newName = consumer.full_name 
-              || `${consumer.first_name || ''} ${consumer.last_name || ''}`.trim()
-              || consumer.consumer_name;
+              || `${consumer.first_name || ''} ${consumer.last_name || ''}`.trim();
             if (newName) token.name = newName;
           }
         } catch (error) {
