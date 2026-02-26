@@ -48,8 +48,8 @@ const SQL_CONFIG: sql.config = {
     encrypt:                true,
     trustServerCertificate: false,
   },
-  connectionTimeout: 8000,   // FIX: was 30000 — matched Vercel timeout exactly, causing HTML timeout responses
-  requestTimeout:    20000,  // FIX: was 30000 — leaves 10s headroom for fallbacks + response
+  connectionTimeout: 30000,
+  requestTimeout:    30000,
   // Connection pool config — S0 tier max DTUs allow ~5 concurrent connections safely
   pool: {
     max:               5,
@@ -645,8 +645,8 @@ async function buildFromPrecomputed(
     },
     topInflators:      inflators,
     topDeflators:      [],
-    basketComposition: [],  // FIX: basketItems was undefined (ReferenceError) — vw fallback has no basket data
-    categoryBreakdown: [],  // FIX: same
+    basketComposition: basketItems,
+    categoryBreakdown: calculateCategoryBreakdown(basketItems),
     dataSource:        `NaijaMarket Intel (Real-time)`,
     recordCount:       latest?.daily_records ?? 0,
   };
