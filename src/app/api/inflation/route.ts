@@ -41,7 +41,7 @@ import sql from "mssql";
 
 const SQL_CONFIG: sql.config = {
   server:   process.env.AZURE_SQL_SERVER   || process.env.DATABASE_SERVER   || "naijafood.database.windows.net",
-  database: process.env.AZURE_SQL_DATABASE || process.env.DATABASE_NAME     || "naijafoodmarket",
+  database: process.env.AZURE_SQL_DATABASE || process.env.DATABASE_NAME     || "naijafoodmarket-live",
   user:     process.env.AZURE_SQL_USER     || process.env.DATABASE_USER     || "",
   password: process.env.AZURE_SQL_PASSWORD || process.env.DATABASE_PASSWORD || "",
   options: {
@@ -347,25 +347,22 @@ async function fetchFromInflationCache(months: number): Promise<{
     //            CAT015=Beans, CAT070=Poultry, CAT103=Fish(NBS)
     const moversResult = await pool.request().query(`
       WITH
-      -- Step 1: Feb 2026 actual avg price per food item (last 35 days)
+      -- Step 1: Current avg price from Latest_Prices_Summary (136K rows, not 2.9M Daily_Prices)
+      -- 35x faster — eliminates the Vercel timeout
       RecentPrices AS (
         SELECT
-          dp.item_name,
-          dp.category_id,
-          AVG(dp.price_naira)   AS cur_price,
+          lp.item_name,
+          lp.category_id,
+          AVG(lp.price_naira)   AS cur_price,
           COUNT(*)              AS data_points
-        FROM dbo.Daily_Prices dp
-        WHERE dp.price_naira > 0
-          AND dp.category_id IN (
+        FROM dbo.Latest_Prices_Summary lp
+        WHERE lp.price_naira > 0
+          AND lp.category_id IN (
             'CAT001','CAT002','CAT003','CAT004','CAT006','CAT007',
             'CAT008','CAT009','CAT010','CAT013','CAT014','CAT015',
             'CAT070','CAT103'
           )
-          AND dp.price_date >= (
-            SELECT DATEADD(DAY, -35, MAX(price_date))
-            FROM dbo.Daily_Prices WHERE price_naira > 0
-          )
-        GROUP BY dp.item_name, dp.category_id
+        GROUP BY lp.item_name, lp.category_id
         HAVING COUNT(*) >= 3
       ),
       -- Step 2: Jan 2025 baseline from Items_Catalog.whole_sale_price
