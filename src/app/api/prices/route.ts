@@ -263,7 +263,7 @@ function mapRow(p: any, prefix: string): PriceRecord {
   const categoryName = CATEGORY_MAP[categoryId] || "Food";
 
   return {
-    id:            `${prefix}-${p.id || p.price_id || Math.random()}`,
+    id:            `${prefix}-${p.summary_id || p.price_id || Math.random()}`,
     item_name:     String(p.item_name   || "Unknown"),
     item_variant:  p.unit               || null,
     category:      categoryName,
@@ -368,7 +368,7 @@ async function fetchFromSummaryTable(
     const queryText = `
       WITH Filtered AS (
         SELECT
-          id, item_name, market_name, state, category_id, unit,
+          summary_id AS id, item_name, market_name, state, category_id, unit,
           CAST(price_naira            AS FLOAT) AS price_naira,
           CAST(COALESCE(previous_price,  price_naira) AS FLOAT) AS previous_price,
           CAST(COALESCE(price_change_pct, 0)          AS FLOAT) AS price_change_pct,
