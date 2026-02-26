@@ -170,7 +170,10 @@ function PricesPageContent() {
     }
   }, [searchQuery, categoryFilter, stateFilter, marketFilter, trendFilter, sortBy]);
 
-  // Initial load
+  // Track whether this is the initial mount
+  const isInitialMount = useRef(true);
+
+  // Initial load — no debounce, fires immediately
   useEffect(() => {
     fetchPrices(false);
   }, []);
@@ -183,11 +186,16 @@ function PricesPageContent() {
     if (urlMarket) setMarketFilter(urlMarket);
   }, [urlItem, urlCategory, urlState, urlMarket]);
 
-  // Re-fetch when filters change (debounced)
+  // Re-fetch when filters change — 600ms debounce (was 300ms)
+  // Skips the very first render to avoid double-fetching on mount.
   useEffect(() => {
+    if (isInitialMount.current) {
+      isInitialMount.current = false;
+      return;
+    }
     const debounce = setTimeout(() => {
       fetchPrices(false);
-    }, 300);
+    }, 600);  // 600ms: enough time for user to finish typing, short enough to feel responsive
     return () => clearTimeout(debounce);
   }, [searchQuery, categoryFilter, stateFilter, marketFilter, trendFilter, sortBy]);
 

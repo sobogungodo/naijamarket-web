@@ -1,7 +1,7 @@
 // ============================================================================
 // src/app/api/prices/route.ts
 // NaijaFood Intel - Live Prices API
-// Version: 9.3.0 - FOOD-ONLY filter on all queries
+// Version: 10.0.0 - No demo data, Latest_Prices_Summary only, no mock fallback
 // ============================================================================
 // Changes from v9.2:
 // - Added FOOD FILTER clause to Summary + Daily + Filters queries
@@ -85,6 +85,21 @@ async function getPrisma() {
 }
 
 // ============================================================================
+// PARSE PRICE DATE — handles Date objects, strings, and nulls from Prisma
+// ============================================================================
+
+function parsePriceDate(val: any): string {
+  if (!val) return new Date().toISOString();
+  // Prisma raw queries may return Date objects OR date strings
+  if (val instanceof Date) return val.toISOString();
+  // Try parsing as string
+  const parsed = new Date(val);
+  if (!isNaN(parsed.getTime())) return parsed.toISOString();
+  // Final fallback
+  return new Date().toISOString();
+}
+
+// ============================================================================
 // MAP ROW → PriceRecord
 // ============================================================================
 
@@ -110,7 +125,7 @@ function mapRow(p: any, prefix: string): PriceRecord {
     high_24h: Math.round(price * 1.03),
     confidence: Math.round(Number(p.confidence_score) || 85),
     validators: 3,
-    updated_at: p.price_date instanceof Date ? p.price_date.toISOString() : new Date().toISOString(),
+    updated_at: parsePriceDate(p.price_date),
     source: prefix === "lps" ? "Latest_Prices_Summary" : "Daily_Prices",
     unit: p.unit || "",
     trend: p.trend || (changePercent > 0 ? "↑" : changePercent < 0 ? "↓" : "→"),
@@ -277,77 +292,8 @@ async function fetchFromDailyPrices(
 }
 
 // ============================================================================
-// MOCK DATA — FOOD ONLY
+// (Mock data removed in v10.0 - all data from Latest_Prices_Summary)
 // ============================================================================
-
-function generateMockData(): { prices: PriceRecord[]; filters: FilterOptions } {
-  const items = [
-    { name: "Rice (50kg) - Foreign", variant: "50kg bag", category: "Grains & Cereals", basePrice: 82000 },
-    { name: "Rice (50kg) - Local", variant: "50kg bag", category: "Grains & Cereals", basePrice: 65000 },
-    { name: "Beans - Brown", variant: "per kg", category: "Beans & Legumes", basePrice: 2800 },
-    { name: "Garri - White", variant: "50kg bag", category: "Grains & Cereals", basePrice: 45000 },
-    { name: "Yam - Large Tuber", variant: "each", category: "Tubers & Yam", basePrice: 2500 },
-    { name: "Palm Oil", variant: "25 Litres", category: "Oils & Fats", basePrice: 45000 },
-    { name: "Tomatoes", variant: "Big Basket", category: "Vegetables & Peppers", basePrice: 35000 },
-    { name: "Pepper - Rodo", variant: "Big Basket", category: "Vegetables & Peppers", basePrice: 28000 },
-    { name: "Frozen Chicken", variant: "Full Carton", category: "Frozen Foods & Poultry", basePrice: 55000 },
-    { name: "Plantain - Unripe", variant: "per kg", category: "Plantain", basePrice: 1200 },
-    { name: "Stockfish Head", variant: "Bundle", category: "Dried Fish & Stockfish", basePrice: 18000 },
-    { name: "Evaporated Milk - Peak", variant: "170g", category: "Dairy & Milk", basePrice: 450 },
-    { name: "Bread - Sliced", variant: "500g", category: "Bread", basePrice: 1800 },
-  ];
-
-  const markets = [
-    { name: "Mile 12 Market", state: "Lagos" },
-    { name: "Kano Main Market", state: "Kano" },
-    { name: "Onitsha Main Market", state: "Anambra" },
-    { name: "Wuse Market", state: "FCT" },
-    { name: "Bodija Market", state: "Oyo" },
-  ];
-
-  const prices: PriceRecord[] = [];
-  let id = 1;
-  for (const item of items) {
-    for (const market of markets) {
-      const variation = (Math.random() - 0.5) * 0.15;
-      const price = Math.round(item.basePrice * (1 + variation));
-      const change = (Math.random() - 0.45) * 8;
-      prices.push({
-        id: `mock-${id++}`,
-        item_name: item.name,
-        item_variant: item.variant,
-        category: item.category,
-        market_name: market.name,
-        state: market.state,
-        price_naira: price,
-        change_percent: Number(change.toFixed(2)),
-        change_amount: Math.round(price * change / 100),
-        low_24h: Math.round(price * 0.96),
-        high_24h: Math.round(price * 1.04),
-        confidence: Math.floor(75 + Math.random() * 20),
-        validators: Math.floor(2 + Math.random() * 3),
-        updated_at: new Date().toISOString(),
-        source: "Demo_Data",
-        unit: item.variant,
-        trend: change > 0 ? "↑" : change < 0 ? "↓" : "→",
-      });
-    }
-  }
-
-  return {
-    prices,
-    filters: {
-      categories: [...new Set(items.map(i => i.category))].sort(),
-      states: [...new Set(markets.map(m => m.state))].sort(),
-      markets: markets.map(m => m.name).sort(),
-      stateMarkets: markets.reduce((acc, m) => {
-        if (!acc[m.state]) acc[m.state] = [];
-        acc[m.state].push(m.name);
-        return acc;
-      }, {} as Record<string, string[]>),
-    },
-  };
-}
 
 // ============================================================================
 // GET HANDLER
@@ -371,19 +317,19 @@ export async function GET(request: NextRequest) {
 
     let prices: PriceRecord[] = [];
     let filters: FilterOptions = { categories: [], states: [], markets: [], stateMarkets: {} };
-    let source = "Demo_Data";
+    let source = "Latest_Prices_Summary";
 
     filters = await fetchFilterOptions();
-    console.log(`[v9.3] Filters: ${filters.categories.length} food cats, ${filters.states.length} states`);
+    console.log(`[v10.0] Filters: ${filters.categories.length} food cats, ${filters.states.length} states`);
 
-    // Summary table (food-filtered)
+    // PRIMARY: Summary table (food-filtered)
     const summaryResult = await fetchFromSummaryTable(search, categoryId, state, market);
     if (summaryResult.success && summaryResult.prices.length > 0) {
       prices = summaryResult.prices;
       source = "Latest_Prices_Summary";
     }
 
-    // Fallback: Daily_Prices (food-filtered)
+    // FALLBACK: Daily_Prices (food-filtered)
     if (prices.length === 0) {
       const dailyResult = await fetchFromDailyPrices(search, categoryId, state, market);
       if (dailyResult.success) {
@@ -392,13 +338,7 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Final fallback: mock (food-only)
-    if (prices.length === 0 && !search && !category && !state && !market) {
-      const mock = generateMockData();
-      prices = mock.prices;
-      filters = mock.filters;
-      source = "Demo_Data";
-    }
+    // NO MOCK FALLBACK — if no data, return empty with real filters
 
     // Trend filter + sort
     let filtered = [...prices];
@@ -427,13 +367,18 @@ export async function GET(request: NextRequest) {
     });
 
   } catch (error: any) {
-    console.error("[v9.3] Error:", error);
-    const mock = generateMockData();
+    console.error("[v10.0] Error:", error);
     return NextResponse.json({
       success: true,
-      data: mock.prices,
-      filters: mock.filters,
-      source: "Demo_Data_Fallback",
+      data: [],
+      pagination: { total: 0, limit: 500, offset: 0, hasMore: false },
+      filters: {
+        categories: Object.values(CATEGORY_MAP).sort(),
+        states: [],
+        markets: [],
+        stateMarkets: {},
+      },
+      source: "Error",
       error: error.message,
       timestamp: new Date().toISOString(),
     });

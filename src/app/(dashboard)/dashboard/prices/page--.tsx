@@ -1,12 +1,13 @@
 // ============================================================================
 // src/app/(dashboard)/dashboard/prices/page.tsx
 // NaijaMarket Intel - Live Prices Page
-// Version: 6.1.0 - FIXED dropdown click handlers
+// Version: 6.2.0 - Fixed UPDATED column, added hourly auto-refresh 6AM-10PM WAT
 // ============================================================================
 
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, Suspense } from "react";
+import { useSearchParams } from "next/navigation";
 import { 
   Search, 
   Filter, 
@@ -63,13 +64,21 @@ interface FilterOptions {
   categories: string[];
   states: string[];
   markets: string[];
+  stateMarkets: Record<string, string[]>;
 }
 
 // ============================================================================
 // PRICES PAGE
 // ============================================================================
 
-export default function PricesPage() {
+function PricesPageContent() {
+  // Read URL query params (from Screener, Watchlist, etc.)
+  const searchParams = useSearchParams();
+  const urlItem = searchParams.get("item") || "";
+  const urlCategory = searchParams.get("category") || "";
+  const urlState = searchParams.get("state") || "";
+  const urlMarket = searchParams.get("market") || "";
+
   // Data state
   const [prices, setPrices] = useState<PriceItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -82,13 +91,14 @@ export default function PricesPage() {
     categories: [],
     states: [],
     markets: [],
+    stateMarkets: {},
   });
 
-  // Filter state
-  const [searchQuery, setSearchQuery] = useState("");
-  const [categoryFilter, setCategoryFilter] = useState("");
-  const [stateFilter, setStateFilter] = useState("");
-  const [marketFilter, setMarketFilter] = useState("");
+  // Filter state — pre-filled from URL if navigating from Screener/Watchlist
+  const [searchQuery, setSearchQuery] = useState(urlItem);
+  const [categoryFilter, setCategoryFilter] = useState(urlCategory);
+  const [stateFilter, setStateFilter] = useState(urlState);
+  const [marketFilter, setMarketFilter] = useState(urlMarket);
   const [trendFilter, setTrendFilter] = useState("all");
   const [sortBy, setSortBy] = useState("updated");
 
@@ -145,6 +155,7 @@ export default function PricesPage() {
             categories: result.filters.categories || [],
             states: result.filters.states || [],
             markets: result.filters.markets || [],
+            stateMarkets: result.filters.stateMarkets || {},
           });
         }
       } else {
@@ -164,6 +175,14 @@ export default function PricesPage() {
     fetchPrices(false);
   }, []);
 
+  // Sync URL params when navigating from other pages (Screener, Watchlist, etc.)
+  useEffect(() => {
+    if (urlItem) setSearchQuery(urlItem);
+    if (urlCategory) setCategoryFilter(urlCategory);
+    if (urlState) setStateFilter(urlState);
+    if (urlMarket) setMarketFilter(urlMarket);
+  }, [urlItem, urlCategory, urlState, urlMarket]);
+
   // Re-fetch when filters change (debounced)
   useEffect(() => {
     const debounce = setTimeout(() => {
@@ -171,6 +190,23 @@ export default function PricesPage() {
     }, 300);
     return () => clearTimeout(debounce);
   }, [searchQuery, categoryFilter, stateFilter, marketFilter, trendFilter, sortBy]);
+
+  // Auto-refresh every hour between 6AM-10PM WAT (UTC+1)
+  // Prices update 3× daily; hourly refresh ensures users see fresh data
+  useEffect(() => {
+    const checkAndRefresh = () => {
+      const now = new Date();
+      // WAT = UTC+1. Get current hour in WAT.
+      const watHour = (now.getUTCHours() + 1) % 24;
+      if (watHour >= 6 && watHour <= 22) {
+        fetchPrices(true);
+      }
+    };
+
+    // Refresh every 60 minutes
+    const interval = setInterval(checkAndRefresh, 60 * 60 * 1000);
+    return () => clearInterval(interval);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ============================================================================
   // CLOSE DROPDOWNS ON OUTSIDE CLICK - FIXED VERSION
@@ -195,6 +231,15 @@ export default function PricesPage() {
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
+
+  // Clear market filter if selected market isn't in the newly selected state
+  useEffect(() => {
+    if (stateFilter && marketFilter && filterOptions.stateMarkets[stateFilter]) {
+      if (!filterOptions.stateMarkets[stateFilter].includes(marketFilter)) {
+        setMarketFilter("");
+      }
+    }
+  }, [stateFilter]);
 
   // ============================================================================
   // HANDLERS
@@ -257,23 +302,39 @@ export default function PricesPage() {
 
   const hasActiveFilters = searchQuery || categoryFilter || stateFilter || marketFilter || trendFilter !== "all";
 
-  // Format time ago
-  const formatTimeAgo = (dateStr: string): string => {
+  // When a state is selected, only show markets from that state
+  const availableMarkets = stateFilter && filterOptions.stateMarkets[stateFilter]
+    ? filterOptions.stateMarkets[stateFilter]
+    : filterOptions.markets;
+
+  // Format update timestamp — shows actual time (not "X hrs ago")
+  // Data updates 3× daily so "16 hr ago" looks stale; "Today 6:00 AM" is clearer
+  const formatUpdateTime = (dateStr: string): string => {
     try {
       const date = new Date(dateStr);
       if (isNaN(date.getTime())) return dateStr;
-      
+
       const now = new Date();
-      const diffMs = now.getTime() - date.getTime();
-      const diffMins = Math.floor(diffMs / 60000);
-      const diffHours = Math.floor(diffMs / 3600000);
-      const diffDays = Math.floor(diffMs / 86400000);
-      
-      if (diffMins < 1) return "Just now";
-      if (diffMins < 60) return `${diffMins} min ago`;
-      if (diffHours < 24) return `${diffHours} hr ago`;
-      if (diffDays < 30) return `${diffDays} day${diffDays > 1 ? "s" : ""} ago`;
-      return date.toLocaleDateString();
+      const isToday = date.toDateString() === now.toDateString();
+      const yesterday = new Date(now);
+      yesterday.setDate(yesterday.getDate() - 1);
+      const isYesterday = date.toDateString() === yesterday.toDateString();
+
+      const timeStr = date.toLocaleTimeString("en-NG", {
+        hour: "numeric",
+        minute: "2-digit",
+        hour12: true,
+        timeZone: "Africa/Lagos",
+      });
+
+      if (isToday) return `Today ${timeStr}`;
+      if (isYesterday) return `Yesterday ${timeStr}`;
+
+      return date.toLocaleDateString("en-NG", {
+        month: "short",
+        day: "numeric",
+        timeZone: "Africa/Lagos",
+      }) + ` ${timeStr}`;
     } catch {
       return dateStr;
     }
@@ -302,9 +363,9 @@ export default function PricesPage() {
       {/* Page Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-display font-bold text-white">Live Prices</h1>
+          <h1 className="text-2xl font-display font-bold text-white">Latest Prices</h1>
           <p className="text-sm text-gray-500 mt-1 flex items-center gap-2">
-            Real-time commodity prices from {filterOptions.markets.length || 224} markets
+            Commodity prices from {filterOptions.markets.length || 224} markets · Updated 3× daily
             {dataSource && dataSource !== "loading" && (
               <span className={`flex items-center gap-1 text-xs px-2 py-0.5 rounded bg-terminal-muted ${sourceInfo.color}`}>
                 <Database className="w-3 h-3" />
@@ -465,10 +526,10 @@ export default function PricesPage() {
                   onClick={() => { setMarketFilter(""); setShowMarketDropdown(false); }}
                   className="w-full px-3 py-2 text-left text-sm text-gray-400 hover:bg-terminal-muted hover:text-white border-b border-terminal-border"
                 >
-                  All Markets
+                  {stateFilter ? `All ${stateFilter} Markets` : "All Markets"}
                 </button>
-                {filterOptions.markets.length > 0 ? (
-                  filterOptions.markets.map(m => (
+                {availableMarkets.length > 0 ? (
+                  availableMarkets.map(m => (
                     <button
                       key={m}
                       onClick={() => { setMarketFilter(m); setShowMarketDropdown(false); }}
@@ -481,7 +542,9 @@ export default function PricesPage() {
                     </button>
                   ))
                 ) : (
-                  <div className="px-3 py-2 text-sm text-gray-500">Loading markets...</div>
+                  <div className="px-3 py-2 text-sm text-gray-500">
+                    {stateFilter ? `No markets found in ${stateFilter}` : "Loading markets..."}
+                  </div>
                 )}
               </div>
             )}
@@ -725,7 +788,7 @@ export default function PricesPage() {
 
                     {/* Updated */}
                     <td className="px-2 py-3 text-center">
-                      <div className="text-xs text-gray-500">{formatTimeAgo(item.updated_at)}</div>
+                      <div className="text-xs text-gray-400">{formatUpdateTime(item.updated_at)}</div>
                       <div className="text-xs text-gray-600">{item.source.replace(/_/g, " ")}</div>
                     </td>
 
@@ -800,5 +863,24 @@ export default function PricesPage() {
         />
       )}
     </div>
+  );
+}
+
+// ============================================================================
+// SUSPENSE WRAPPER (required for useSearchParams in Next.js App Router)
+// ============================================================================
+
+export default function PricesPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-8 h-8 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+          <p className="text-gray-400 text-sm">Loading prices...</p>
+        </div>
+      </div>
+    }>
+      <PricesPageContent />
+    </Suspense>
   );
 }
