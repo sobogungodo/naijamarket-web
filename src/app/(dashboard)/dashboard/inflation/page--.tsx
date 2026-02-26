@@ -523,84 +523,43 @@ export default function InflationPage() {
           <div className="flex items-center gap-2 mb-4">
             <Globe2 className="w-5 h-5 text-blue-400" />
             <h3 className="font-semibold">Regional Inflation</h3>
-            {loading && <RefreshCw className="w-4 h-4 text-gray-600 animate-spin ml-auto" />}
           </div>
           <div className="space-y-3">
-            {(data?.regionalBreakdown ?? []).length > 0 ? (
-              (data?.regionalBreakdown ?? []).map((region) => (
-                <div
-                  key={region.region}
-                  className="flex items-center justify-between p-3 bg-[#252525] rounded-lg hover:bg-[#2a2a2a] cursor-pointer transition-colors"
-                  onClick={() => setSelectedRegion(region.region)}
-                >
-                  <div className="flex items-center gap-3">
-                    <div className={`w-10 h-10 rounded-lg flex items-center justify-center text-sm font-bold ${
-                      region.inflationRate > 15 ? "bg-red-900/50 text-red-400" :
-                      region.inflationRate < 8  ? "bg-emerald-900/50 text-emerald-400" :
-                      "bg-orange-900/50 text-orange-400"
-                    }`}>
-                      {region.region}
-                    </div>
-                    <div>
-                      <p className="font-medium">{region.regionName}</p>
-                      <p className="text-xs text-gray-500">
-                        {region.marketCount > 0 ? `${region.marketCount} markets` : "—"}
-                        {region.topInflator ? ` · ${region.topInflator}` : ""}
-                      </p>
-                    </div>
+            {(data?.regionalBreakdown ?? []).map((region) => (
+              <div 
+                key={region.region} 
+                className="flex items-center justify-between p-3 bg-[#252525] rounded-lg hover:bg-[#2a2a2a] cursor-pointer transition-colors"
+                onClick={() => setSelectedRegion(region.region)}
+              >
+                <div className="flex items-center gap-3">
+                  <div className={`w-10 h-10 rounded-lg flex items-center justify-center text-sm font-bold ${
+                    region.inflationRate > 15 ? "bg-red-900/50 text-red-400" :
+                    region.inflationRate < 8 ? "bg-emerald-900/50 text-emerald-400" :
+                    "bg-orange-900/50 text-orange-400"
+                  }`}>
+                    {region.region}
                   </div>
-                  <div className="text-right">
-                    <p className={`font-bold ${
-                      region.inflationRate > 15 ? "text-red-400" :
-                      region.inflationRate < 8  ? "text-emerald-400" : "text-orange-400"
-                    }`}>
-                      {formatPercent(region.inflationRate, false)}
-                    </p>
-                    <p className={`text-xs flex items-center justify-end gap-1 ${
-                      region.monthOverMonth > 0 ? "text-red-400" : "text-emerald-400"
-                    }`}>
-                      {region.trend === "up"
-                        ? <ArrowUp className="w-3 h-3" />
-                        : <ArrowDown className="w-3 h-3" />}
-                      {formatPercent(region.monthOverMonth)} MoM
-                    </p>
+                  <div>
+                    <p className="font-medium">{region.regionName}</p>
+                    <p className="text-xs text-gray-500">{region.marketCount} markets</p>
                   </div>
                 </div>
-              ))
-            ) : loading ? (
-              /* Skeleton while first load */
-              [...Array(6)].map((_, i) => (
-                <div key={i} className="flex items-center justify-between p-3 bg-[#252525] rounded-lg animate-pulse">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-lg bg-gray-700" />
-                    <div>
-                      <div className="h-4 w-24 bg-gray-700 rounded mb-1.5" />
-                      <div className="h-3 w-16 bg-gray-800 rounded" />
-                    </div>
-                  </div>
-                  <div className="space-y-1.5 items-end flex flex-col">
-                    <div className="h-5 w-14 bg-gray-700 rounded" />
-                    <div className="h-3 w-16 bg-gray-800 rounded" />
-                  </div>
+                <div className="text-right">
+                  <p className={`font-bold ${
+                    region.inflationRate > 15 ? "text-red-400" :
+                    region.inflationRate < 8 ? "text-emerald-400" : "text-orange-400"
+                  }`}>
+                    {formatPercent(region.inflationRate, false)}
+                  </p>
+                  <p className={`text-xs flex items-center justify-end gap-1 ${
+                    region.monthOverMonth > 0 ? "text-red-400" : "text-emerald-400"
+                  }`}>
+                    {region.trend === "up" ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />}
+                    {formatPercent(region.monthOverMonth)} MoM
+                  </p>
                 </div>
-              ))
-            ) : (
-              /* Empty state — data loaded but no regional rows */
-              <div className="flex flex-col items-center justify-center py-10 text-center">
-                <Globe2 className="w-10 h-10 text-gray-700 mb-3" />
-                <p className="text-gray-400 font-medium mb-1">Regional data unavailable</p>
-                <p className="text-gray-600 text-xs max-w-[230px] leading-relaxed">
-                  State-level price data may not be indexed yet. Check Vercel logs for{" "}
-                  <span className="font-mono text-gray-500 text-[11px]">[inflation v5] Regional</span>.
-                </p>
-                <button
-                  onClick={fetchInflation}
-                  className="mt-4 px-3 py-1.5 text-xs bg-[#252525] border border-gray-700 rounded-lg hover:bg-[#2a2a2a] text-gray-400 flex items-center gap-1.5"
-                >
-                  <RefreshCw className="w-3 h-3" /> Retry
-                </button>
               </div>
-            )}
+            ))}
           </div>
         </div>
         

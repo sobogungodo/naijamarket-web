@@ -48,8 +48,8 @@ const SQL_CONFIG: sql.config = {
     encrypt:                true,
     trustServerCertificate: false,
   },
-  connectionTimeout: 8000,   // FIX: was 30000 — matched Vercel timeout exactly, causing HTML timeout responses
-  requestTimeout:    20000,  // FIX: was 30000 — leaves 10s headroom for fallbacks + response
+  connectionTimeout: 8000,   // FIX: was 30000 — matched Vercel timeout, causing HTML timeout responses
+  requestTimeout:    20000,  // FIX: was 30000 — leaves 10s headroom for fallbacks
   // Connection pool config — S0 tier max DTUs allow ~5 concurrent connections safely
   pool: {
     max:               5,
@@ -645,7 +645,7 @@ async function buildFromPrecomputed(
     },
     topInflators:      inflators,
     topDeflators:      [],
-    basketComposition: [],  // FIX: basketItems was undefined (ReferenceError) — vw fallback has no basket data
+    basketComposition: [],  // FIX: basketItems was undefined — vw fallback has no basket data
     categoryBreakdown: [],  // FIX: same
     dataSource:        `NaijaMarket Intel (Real-time)`,
     recordCount:       latest?.daily_records ?? 0,
@@ -1011,150 +1011,188 @@ function calculateBasketComposition(data: PriceRecord[]): BasketItem[] {
 // Falls back to empty array on any error — never shows fabricated numbers.
 // ============================================================================
 
+// ============================================================================
+// SHARED HELPERS FOR REGIONAL INFLATION
+// ============================================================================
+
+const REGION_NAMES_MAP: Record<string, string> = {
+  "NC": "North Central", "NW": "North West", "NE": "North East",
+  "SW": "South West",    "SS": "South South", "SE": "South East",
+};
+
+// Shared CTE blocks reused in both regional query variants
+const ZONE_CASE_SQL = `
+  CASE
+    WHEN state IN ('Lagos','Oyo','Ogun','Osun','Ondo','Ekiti')                        THEN 'SW'
+    WHEN state IN ('Anambra','Enugu','Imo','Abia','Ebonyi')                           THEN 'SE'
+    WHEN state IN ('FCT','FCT Abuja','Abuja','Benue','Kogi','Kwara','Nasarawa','Niger','Plateau') THEN 'NC'
+    WHEN state IN ('Kano','Kaduna','Katsina','Kebbi','Sokoto','Zamfara','Jigawa')      THEN 'NW'
+    WHEN state IN ('Borno','Yobe','Adamawa','Bauchi','Gombe','Taraba')                THEN 'NE'
+    WHEN state IN ('Rivers','Delta','Bayelsa','Akwa Ibom','Cross River','Edo')        THEN 'SS'
+    ELSE NULL
+  END`;
+
+const FOOD_CATS = `'CAT001','CAT002','CAT003','CAT004','CAT006','CAT007','CAT008','CAT009','CAT010','CAT013','CAT014','CAT015','CAT070','CAT103'`;
+
+function mapRegionalRows(rows: any[]): RegionalInflation[] {
+  return rows.map((r: any) => {
+    const rate = parseFloat(r.inflation_rate) || 0;
+    const mom  = parseFloat(r.mom_rate)       || 0;
+    return {
+      region:         String(r.zone),
+      regionName:     REGION_NAMES_MAP[r.zone] ?? String(r.zone),
+      inflationRate:  Math.round(rate * 10) / 10,
+      monthOverMonth: Math.round(mom  * 10) / 10,
+      trend:          mom > 0.5 ? "up" : mom < -0.5 ? "down" : "stable",
+      marketCount:    parseInt(r.market_count) || 0,
+      topInflator:    r.top_inflator ? String(r.top_inflator) : null,
+    } as RegionalInflation;
+  });
+}
+
 async function fetchRegionalInflation(): Promise<RegionalInflation[]> {
   const pool = await getPool();
   if (!pool) return [];
 
+  // ── TIER 1: Latest_Prices_Summary (fast — 136K rows) ─────────────────────
+  // Requires: Latest_Prices_Summary has a `state` column matching Daily_Prices.
+  // If the table exists but has no state data, this returns 0 rows and we fall through.
   try {
-    // Lightweight regional query — uses Latest_Prices_Summary cache table (136K rows)
-    // instead of full Daily_Prices (2.9M rows). Falls back to [] on timeout.
-    const result = await pool.request()
-      .query(`
+    const tier1 = await pool.request().query(`
       WITH
-      -- Zone mapping for all 37 states
-      StateZone AS (
-        SELECT state,
-          CASE
-            WHEN state IN ('Lagos','Oyo','Ogun','Osun','Ondo','Ekiti')
-              THEN 'SW'
-            WHEN state IN ('Anambra','Enugu','Imo','Abia','Ebonyi')
-              THEN 'SE'
-            WHEN state IN ('FCT','FCT Abuja','Benue','Kogi','Kwara','Nasarawa','Niger','Plateau')
-              THEN 'NC'
-            WHEN state IN ('Kano','Kaduna','Katsina','Kebbi','Sokoto','Zamfara','Jigawa')
-              THEN 'NW'
-            WHEN state IN ('Borno','Yobe','Adamawa','Bauchi','Gombe','Taraba')
-              THEN 'NE'
-            WHEN state IN ('Rivers','Delta','Bayelsa','Akwa Ibom','Cross River','Edo')
-              THEN 'SS'
-            ELSE NULL
-          END AS zone
-        FROM (SELECT DISTINCT state FROM dbo.Daily_Prices WHERE state IS NOT NULL) s
-      ),
-      -- Jan 2025 reference prices from Items_Catalog (one row per item)
       Baseline AS (
-        SELECT
-          item_name,
-          COALESCE(
-            NULLIF(whole_sale_price,      0),
-            NULLIF(Ave_Measurement_Price, 0),
-            NULLIF(average_unit_price,    0)
-          ) AS baseline_price
+        SELECT item_name,
+          COALESCE(NULLIF(whole_sale_price,0), NULLIF(Ave_Measurement_Price,0), NULLIF(average_unit_price,0)) AS baseline_price
         FROM dbo.Items_Catalog
-        WHERE category_id IN (
-          'CAT001','CAT002','CAT003','CAT004','CAT006','CAT007',
-          'CAT008','CAT009','CAT010','CAT013','CAT014','CAT015',
-          'CAT070','CAT103'
-        )
-        AND COALESCE(
-              NULLIF(whole_sale_price,      0),
-              NULLIF(Ave_Measurement_Price, 0),
-              NULLIF(average_unit_price,    0)
-            ) IS NOT NULL
+        WHERE category_id IN (${FOOD_CATS})
+          AND COALESCE(NULLIF(whole_sale_price,0), NULLIF(Ave_Measurement_Price,0), NULLIF(average_unit_price,0)) IS NOT NULL
       ),
-      -- Feb 2026 actual prices per item per zone
-      -- Uses Latest_Prices_Summary (136K rows) NOT Daily_Prices (2.9M rows) — 20x faster
       RecentByZone AS (
         SELECT
-          sz.zone,
+          ${ZONE_CASE_SQL} AS zone,
           lp.item_name,
-          AVG(lp.price_naira)             AS cur_price,
-          COUNT(DISTINCT lp.market_name)  AS market_count
+          AVG(lp.price_naira)            AS cur_price,
+          COUNT(DISTINCT lp.market_name) AS market_count
         FROM dbo.Latest_Prices_Summary lp
-        JOIN StateZone sz ON sz.state = lp.state
         WHERE lp.price_naira > 0
-          AND sz.zone IS NOT NULL
-          AND lp.category_id IN (
-            'CAT001','CAT002','CAT003','CAT004','CAT006','CAT007',
-            'CAT008','CAT009','CAT010','CAT013','CAT014','CAT015',
-            'CAT070','CAT103'
-          )
-        GROUP BY sz.zone, lp.item_name
+          AND lp.state IS NOT NULL
+          AND lp.category_id IN (${FOOD_CATS})
+        GROUP BY ${ZONE_CASE_SQL}, lp.item_name
       ),
-      -- Per item per zone: annualised 13-month rate vs Jan 2025 catalog
       ItemRates AS (
-        SELECT
-          r.zone,
-          r.item_name,
-          r.cur_price,
-          b.baseline_price                                              AS prev_price,
-          r.market_count,
-          -- 13-month annualised rate: (cur/baseline)^(12/13) - 1
-          (POWER(CAST(r.cur_price / b.baseline_price AS FLOAT),
-                 12.0 / 13) - 1) * 100                                AS ann_yoy_pct,
-          (r.cur_price - b.baseline_price) / b.baseline_price * 100   AS total_change_pct
+        SELECT r.zone, r.item_name, r.cur_price, b.baseline_price AS prev_price, r.market_count,
+          (POWER(CAST(r.cur_price / b.baseline_price AS FLOAT), 12.0/13) - 1) * 100 AS ann_yoy_pct,
+          (r.cur_price - b.baseline_price) / b.baseline_price * 100                 AS total_change_pct
         FROM RecentByZone r
         JOIN Baseline b ON b.item_name = r.item_name
-        WHERE b.baseline_price > 0
-          AND r.cur_price > 0
+        WHERE b.baseline_price > 0 AND r.cur_price > 0 AND r.zone IS NOT NULL
           AND ABS((r.cur_price - b.baseline_price) / b.baseline_price) < 5
       ),
-      -- Zone summary
       RegionSummary AS (
-        SELECT
-          zone,
-          AVG(ann_yoy_pct)          AS avg_ann_yoy,
-          -- avg_mom_pct: (cur/baseline)^(1/13) - 1
-          AVG((POWER(CAST(cur_price / prev_price AS FLOAT),
-                     1.0 / 13) - 1) * 100)  AS avg_mom_pct,
-          SUM(market_count)         AS total_markets,
-          COUNT(DISTINCT item_name) AS item_count
-        FROM ItemRates
-        WHERE ann_yoy_pct BETWEEN -50 AND 200
+        SELECT zone,
+          AVG(ann_yoy_pct) AS avg_ann_yoy,
+          AVG((POWER(CAST(cur_price/prev_price AS FLOAT), 1.0/13) - 1) * 100) AS avg_mom_pct,
+          SUM(market_count) AS total_markets
+        FROM ItemRates WHERE ann_yoy_pct BETWEEN -50 AND 200
         GROUP BY zone
       ),
-      -- Top inflating item per zone (highest total_change_pct)
       TopInflator AS (
         SELECT zone, item_name,
           ROW_NUMBER() OVER (PARTITION BY zone ORDER BY total_change_pct DESC) AS rn
-        FROM ItemRates
-        WHERE total_change_pct > 0
+        FROM ItemRates WHERE total_change_pct > 0
       )
-      SELECT
-        rs.zone,
-        ROUND(rs.avg_ann_yoy,  2)  AS inflation_rate,
-        ROUND(rs.avg_mom_pct,  2)  AS mom_rate,
-        rs.total_markets           AS market_count,
-        ti.item_name               AS top_inflator
+      SELECT rs.zone,
+        ROUND(rs.avg_ann_yoy, 2) AS inflation_rate,
+        ROUND(rs.avg_mom_pct, 2) AS mom_rate,
+        rs.total_markets          AS market_count,
+        ti.item_name              AS top_inflator
       FROM RegionSummary rs
-      LEFT JOIN TopInflator ti
-        ON  ti.zone = rs.zone
-        AND ti.rn   = 1
+      LEFT JOIN TopInflator ti ON ti.zone = rs.zone AND ti.rn = 1
       ORDER BY rs.avg_ann_yoy DESC
     `);
 
-    const REGION_NAMES: Record<string, string> = {
-      "NC": "North Central", "NW": "North West", "NE": "North East",
-      "SW": "South West",    "SS": "South South", "SE": "South East",
-    };
-
-    return result.recordset.map((r: any) => {
-      const rate = parseFloat(r.inflation_rate) || 0;
-      const mom  = parseFloat(r.mom_rate)       || 0;
-      return {
-        region:         String(r.zone),
-        regionName:     REGION_NAMES[r.zone] ?? String(r.zone),
-        inflationRate:  Math.round(rate * 10) / 10,
-        monthOverMonth: Math.round(mom  * 10) / 10,
-        trend:          mom > 0.5 ? "up" : mom < -0.5 ? "down" : "stable",
-        marketCount:    parseInt(r.market_count) || 0,
-        topInflator:    String(r.top_inflator || ""),
-      } as RegionalInflation;
-    });
-
+    if (tier1.recordset && tier1.recordset.length >= 2) {
+      console.log(`[inflation v5] Regional via Latest_Prices_Summary: ${tier1.recordset.length} zones`);
+      return mapRegionalRows(tier1.recordset);
+    }
+    console.warn("[inflation v5] Latest_Prices_Summary returned < 2 zones — falling back to Daily_Prices");
   } catch (err) {
-    console.error("[inflation v5] fetchRegionalInflation failed:", err);
-    return [];   // Return empty — NEVER return fabricated data
+    console.warn("[inflation v5] Latest_Prices_Summary regional failed:", (err as Error).message, "— trying Daily_Prices fallback");
+  }
+
+  // ── TIER 2: Daily_Prices fallback (slower — 2.9M rows, but always works) ──
+  // Groups last 60 days of Daily_Prices by zone. Uses avg as "current" price.
+  // Compares to Items_Catalog baseline same as Tier 1.
+  // No requestTimeout override needed — pool requestTimeout (20s) covers this.
+  try {
+    const tier2 = await pool.request().query(`
+      WITH
+      Baseline AS (
+        SELECT item_name,
+          COALESCE(NULLIF(whole_sale_price,0), NULLIF(Ave_Measurement_Price,0), NULLIF(average_unit_price,0)) AS baseline_price
+        FROM dbo.Items_Catalog
+        WHERE category_id IN (${FOOD_CATS})
+          AND COALESCE(NULLIF(whole_sale_price,0), NULLIF(Ave_Measurement_Price,0), NULLIF(average_unit_price,0)) IS NOT NULL
+      ),
+      -- Recent = last 60 days of data (handles months with sparse submissions)
+      RecentCutoff AS (
+        SELECT DATEADD(day, -60, MAX(price_date)) AS cutoff FROM dbo.Daily_Prices WHERE price_naira > 0
+      ),
+      RecentByZone AS (
+        SELECT
+          ${ZONE_CASE_SQL} AS zone,
+          dp.item_name,
+          AVG(CAST(dp.price_naira AS FLOAT))     AS cur_price,
+          COUNT(DISTINCT dp.market_id)            AS market_count
+        FROM dbo.Daily_Prices dp WITH (NOLOCK)
+        CROSS JOIN RecentCutoff rc
+        WHERE dp.price_naira > 0
+          AND dp.state IS NOT NULL
+          AND dp.price_date >= rc.cutoff
+          AND dp.category_id IN (${FOOD_CATS})
+        GROUP BY ${ZONE_CASE_SQL}, dp.item_name
+      ),
+      ItemRates AS (
+        SELECT r.zone, r.item_name, r.cur_price, b.baseline_price AS prev_price, r.market_count,
+          (POWER(CAST(r.cur_price / b.baseline_price AS FLOAT), 12.0/13) - 1) * 100 AS ann_yoy_pct,
+          (r.cur_price - b.baseline_price) / b.baseline_price * 100                 AS total_change_pct
+        FROM RecentByZone r
+        JOIN Baseline b ON b.item_name = r.item_name
+        WHERE b.baseline_price > 0 AND r.cur_price > 0 AND r.zone IS NOT NULL
+          AND ABS((r.cur_price - b.baseline_price) / b.baseline_price) < 5
+      ),
+      RegionSummary AS (
+        SELECT zone,
+          AVG(ann_yoy_pct) AS avg_ann_yoy,
+          AVG((POWER(CAST(cur_price/prev_price AS FLOAT), 1.0/13) - 1) * 100) AS avg_mom_pct,
+          SUM(market_count) AS total_markets
+        FROM ItemRates WHERE ann_yoy_pct BETWEEN -50 AND 200
+        GROUP BY zone
+      ),
+      TopInflator AS (
+        SELECT zone, item_name,
+          ROW_NUMBER() OVER (PARTITION BY zone ORDER BY total_change_pct DESC) AS rn
+        FROM ItemRates WHERE total_change_pct > 0
+      )
+      SELECT rs.zone,
+        ROUND(rs.avg_ann_yoy, 2) AS inflation_rate,
+        ROUND(rs.avg_mom_pct, 2) AS mom_rate,
+        rs.total_markets          AS market_count,
+        ti.item_name              AS top_inflator
+      FROM RegionSummary rs
+      LEFT JOIN TopInflator ti ON ti.zone = rs.zone AND ti.rn = 1
+      ORDER BY rs.avg_ann_yoy DESC
+    `);
+
+    if (tier2.recordset && tier2.recordset.length >= 1) {
+      console.log(`[inflation v5] Regional via Daily_Prices fallback: ${tier2.recordset.length} zones`);
+      return mapRegionalRows(tier2.recordset);
+    }
+    console.warn("[inflation v5] Daily_Prices fallback also returned 0 zones — check state column values in DB");
+    return [];
+  } catch (err) {
+    console.error("[inflation v5] fetchRegionalInflation both tiers failed:", err);
+    return [];
   }
 }
 
