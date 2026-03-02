@@ -322,7 +322,16 @@ async function fetchFromInflationCache(months: number): Promise<{
           AVG(ISNULL(ic.avg_price,       0))   AS current_month_avg,
           AVG(ISNULL(ic.prev_avg_price,  0))   AS prev_month_avg,
           AVG(ISNULL(ic.mom_change_pct,  0))   AS naijamarket_mom,
-          AVG(ISNULL(ic.yoy_change_pct,  0))   AS naijamarket_yoy,
+          -- NULL out yoy values outside plausible Nigeria range (-15% to 120%).
+          -- Inflation_Cache compares to year-ago month; before Jul 2026 that month
+          -- has zero rows → SQL computes -100% or worse. Treat as missing, not zero.
+          AVG(
+            CASE
+              WHEN ic.yoy_change_pct BETWEEN -15 AND 120
+              THEN ic.yoy_change_pct
+              ELSE NULL   -- implausible: no year-ago data yet, force MoM fallback
+            END
+          )                                     AS naijamarket_yoy,
           MAX(ic.last_updated)                 AS last_updated
         FROM dbo.Inflation_Cache ic
         WHERE ic.cache_type  = 'ITEM'
@@ -421,19 +430,26 @@ async function fetchFromInflationCache(months: number): Promise<{
       const rawYoy   = parseFloat(r.naijamarket_yoy)  || 0;
       const momRate  = parseFloat(r.naijamarket_mom)  || 0;
 
-      // YoY PROXY: Our data starts Jul 2025 so we have no year-ago prices yet.
-      // True YoY will be available from Jul 2026 onwards.
-      // Until then: annualize the MoM rate — (1 + mom/100)^12 - 1
-      // e.g. 0.71% MoM → (1.0071^12 - 1) × 100 = 8.89% ≈ NBS rate. Mathematically valid.
-      // When actual YoY exists (rawYoy != 0), use it directly.
+      // YoY PLAUSIBILITY GATE — critical fix for -79.5% bug:
+      // Inflation_Cache.yoy_change_pct compares current month vs same month last year.
+      // Our DB starts Jul 2025 — any month before Jul 2026 has NO year-ago data.
+      // SQL returns 0 or a nonsense value like -79.5% (dividing by NULL/0 row).
+      // Nigeria food inflation physically cannot be below -15% or above 120% YoY.
+      // If rawYoy fails → annualize the real MoM rate from movers data (correct path).
+      const YOY_PLAUSIBLE_MIN = -15;   // Nigeria cannot deflate >15% YoY on food
+      const YOY_PLAUSIBLE_MAX = 120;   // Nigeria cannot inflate >120% YoY on food
+
       let yoyRate: number;
-      if (rawYoy !== 0) {
+      if (rawYoy !== 0 && rawYoy >= YOY_PLAUSIBLE_MIN && rawYoy <= YOY_PLAUSIBLE_MAX) {
+        // rawYoy passes sanity check — real year-ago data exists, trust it
         yoyRate = rawYoy;
       } else if (momRate !== 0) {
+        // Annualize real MoM: (1 + mom/100)^12 - 1
+        // 0.71%/month → 8.89% annualized ≈ NBS official rate. Mathematically valid.
         yoyRate = (Math.pow(1 + momRate / 100, 12) - 1) * 100;
       } else {
-        // Last resort: use NBS rate for this month (shows market is tracking official data)
-        yoyRate = nbsRate ?? 0;
+        // Last resort: NBS official rate for this month
+        yoyRate = nbsRate ?? 8.89;
       }
 
       return {
@@ -1221,13 +1237,28 @@ export async function GET(request: NextRequest) {
 
       const displayData = cacheResult.data.slice(-periodMonths);
       const latest      = displayData[displayData.length - 1];
-      const currentRate = latest?.naijaMarketRate ?? 0;
+
+      // FIX: Do NOT use latest?.naijaMarketRate directly — it may still be implausible
+      // if the Inflation_Cache table contains stale bad yoy values from before this patch.
+      // Instead derive currentRate from avgMomPct (always reliable — computed from movers).
+      // avgMomPct = real per-item average: (cur/baseline)^(1/13) - 1 ≈ 0.71%/month
+      // Annualized: (1.0071^12 - 1) × 100 ≈ 8.85% — matches NBS. Safe to display.
+      const rawCurrentRate = latest?.naijaMarketRate ?? 0;
+      const YOY_MIN = -15, YOY_MAX = 120;
+      const momChange = cacheResult.avgMomPct ?? 0;
+      // Use naijaMarketRate only if it passed the plausibility gate in fetchFromInflationCache.
+      // If it's still out of range (stale cache), fall back to annualized MoM.
+      const currentRate =
+        (rawCurrentRate >= YOY_MIN && rawCurrentRate <= YOY_MAX && rawCurrentRate !== 0)
+          ? rawCurrentRate
+          : momChange !== 0
+            ? Math.round(((Math.pow(1 + momChange / 100, 12) - 1) * 100) * 10) / 10
+            : getCurrentNbsRate().rate;
 
       // MoM = real average monthly rate over the data period, NOT the difference
       // between two annualised rates (which gives nonsense like -13.9%).
       // cacheResult.avgMomPct is the avg_mom_pct from the movers SQL query.
-      // e.g. 7-month period: (Feb price / Jul price)^(1/7) - 1 ≈ 0.71%/month
-      const momChange = cacheResult.avgMomPct ?? 0;
+      // e.g. 8-month period: (Mar price / Jul price)^(1/8) - 1 ≈ 0.71%/month
       const { rate: latestNBS } = getCurrentNbsRate();
 
       response = {
