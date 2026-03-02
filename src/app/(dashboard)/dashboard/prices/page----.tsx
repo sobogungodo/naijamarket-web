@@ -1,7 +1,7 @@
 // ============================================================================
 // src/app/(dashboard)/dashboard/prices/page.tsx
 // NaijaMarket Intel - Live Prices Page
-// Version: 6.1.0 - FIXED dropdown click handlers
+// Version: 6.2.0 - Fixed UPDATED column, added hourly auto-refresh 6AM-10PM WAT
 // ============================================================================
 
 "use client";
@@ -170,7 +170,10 @@ function PricesPageContent() {
     }
   }, [searchQuery, categoryFilter, stateFilter, marketFilter, trendFilter, sortBy]);
 
-  // Initial load
+  // Track whether this is the initial mount
+  const isInitialMount = useRef(true);
+
+  // Initial load — no debounce, fires immediately
   useEffect(() => {
     fetchPrices(false);
   }, []);
@@ -183,13 +186,35 @@ function PricesPageContent() {
     if (urlMarket) setMarketFilter(urlMarket);
   }, [urlItem, urlCategory, urlState, urlMarket]);
 
-  // Re-fetch when filters change (debounced)
+  // Re-fetch when filters change — 600ms debounce (was 300ms)
+  // Skips the very first render to avoid double-fetching on mount.
   useEffect(() => {
+    if (isInitialMount.current) {
+      isInitialMount.current = false;
+      return;
+    }
     const debounce = setTimeout(() => {
       fetchPrices(false);
-    }, 300);
+    }, 600);  // 600ms: enough time for user to finish typing, short enough to feel responsive
     return () => clearTimeout(debounce);
   }, [searchQuery, categoryFilter, stateFilter, marketFilter, trendFilter, sortBy]);
+
+  // Auto-refresh every hour between 6AM-10PM WAT (UTC+1)
+  // Prices update 3× daily; hourly refresh ensures users see fresh data
+  useEffect(() => {
+    const checkAndRefresh = () => {
+      const now = new Date();
+      // WAT = UTC+1. Get current hour in WAT.
+      const watHour = (now.getUTCHours() + 1) % 24;
+      if (watHour >= 6 && watHour <= 22) {
+        fetchPrices(true);
+      }
+    };
+
+    // Refresh every 60 minutes
+    const interval = setInterval(checkAndRefresh, 60 * 60 * 1000);
+    return () => clearInterval(interval);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ============================================================================
   // CLOSE DROPDOWNS ON OUTSIDE CLICK - FIXED VERSION
@@ -290,23 +315,34 @@ function PricesPageContent() {
     ? filterOptions.stateMarkets[stateFilter]
     : filterOptions.markets;
 
-  // Format time ago
-  const formatTimeAgo = (dateStr: string): string => {
+  // Format update timestamp — shows actual time (not "X hrs ago")
+  // Data updates 3× daily so "16 hr ago" looks stale; "Today 6:00 AM" is clearer
+  const formatUpdateTime = (dateStr: string): string => {
     try {
       const date = new Date(dateStr);
       if (isNaN(date.getTime())) return dateStr;
-      
+
       const now = new Date();
-      const diffMs = now.getTime() - date.getTime();
-      const diffMins = Math.floor(diffMs / 60000);
-      const diffHours = Math.floor(diffMs / 3600000);
-      const diffDays = Math.floor(diffMs / 86400000);
-      
-      if (diffMins < 1) return "Just now";
-      if (diffMins < 60) return `${diffMins} min ago`;
-      if (diffHours < 24) return `${diffHours} hr ago`;
-      if (diffDays < 30) return `${diffDays} day${diffDays > 1 ? "s" : ""} ago`;
-      return date.toLocaleDateString();
+      const isToday = date.toDateString() === now.toDateString();
+      const yesterday = new Date(now);
+      yesterday.setDate(yesterday.getDate() - 1);
+      const isYesterday = date.toDateString() === yesterday.toDateString();
+
+      const timeStr = date.toLocaleTimeString("en-NG", {
+        hour: "numeric",
+        minute: "2-digit",
+        hour12: true,
+        timeZone: "Africa/Lagos",
+      });
+
+      if (isToday) return `Today ${timeStr}`;
+      if (isYesterday) return `Yesterday ${timeStr}`;
+
+      return date.toLocaleDateString("en-NG", {
+        month: "short",
+        day: "numeric",
+        timeZone: "Africa/Lagos",
+      }) + ` ${timeStr}`;
     } catch {
       return dateStr;
     }
@@ -335,9 +371,9 @@ function PricesPageContent() {
       {/* Page Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-display font-bold text-white">Live Prices</h1>
+          <h1 className="text-2xl font-display font-bold text-white">Latest Prices</h1>
           <p className="text-sm text-gray-500 mt-1 flex items-center gap-2">
-            Real-time commodity prices from {filterOptions.markets.length || 224} markets
+            Commodity prices from {filterOptions.markets.length || 224} markets · Updated 3× daily
             {dataSource && dataSource !== "loading" && (
               <span className={`flex items-center gap-1 text-xs px-2 py-0.5 rounded bg-terminal-muted ${sourceInfo.color}`}>
                 <Database className="w-3 h-3" />
@@ -760,7 +796,7 @@ function PricesPageContent() {
 
                     {/* Updated */}
                     <td className="px-2 py-3 text-center">
-                      <div className="text-xs text-gray-500">{formatTimeAgo(item.updated_at)}</div>
+                      <div className="text-xs text-gray-400">{formatUpdateTime(item.updated_at)}</div>
                       <div className="text-xs text-gray-600">{item.source.replace(/_/g, " ")}</div>
                     </td>
 
