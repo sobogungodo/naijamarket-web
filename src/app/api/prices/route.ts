@@ -79,7 +79,7 @@ interface PriceRecord {
   change_amount: number;
   low_24h: number;
   high_24h: number;
-  has_real_range: boolean;
+  has_real_range: boolean;  // always false until week_high/week_low added to DB
   confidence: number;
   validators: number;
   updated_at: string;
@@ -273,10 +273,9 @@ function mapRow(p: any, prefix: string): PriceRecord {
     price_naira:   price,
     change_percent: Number(changePct.toFixed(2)),
     change_amount:  Math.round(price - prevPrice),
-    // Use real week_high/week_low from DB if available, else estimate ±3%
-    low_24h:        p.week_low  ? Math.round(Number(p.week_low))  : Math.round(price * 0.97),
-    high_24h:       p.week_high ? Math.round(Number(p.week_high)) : Math.round(price * 1.03),
-    has_real_range: !!(p.week_low && p.week_high),
+    low_24h:        Math.round(price * 0.97),   // ±3% estimate (safe fallback)
+    high_24h:       Math.round(price * 1.03),
+    has_real_range: false,
     confidence:     Math.round(Number(p.confidence_score) || 85),
     validators:     3,
     updated_at:     parsePriceDate(p.price_date),
@@ -378,11 +377,6 @@ async function fetchFromSummaryTable(
           trend,
           CAST(COALESCE(confidence_score, 85) AS FLOAT) AS confidence_score,
           price_date,
-          NULL AS week_low,
-          NULL AS week_high,
-          -- Real weekly range (NULL if columns don't exist — mapRow handles fallback)
-          TRY_CAST(week_low  AS FLOAT) AS week_low,
-          TRY_CAST(week_high AS FLOAT) AS week_high,
           ROW_NUMBER() OVER (${orderBy}) AS rn,
           COUNT(*) OVER ()               AS total_count
         FROM dbo.Latest_Prices_Summary WITH (NOLOCK)
