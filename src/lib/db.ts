@@ -683,4 +683,38 @@ export async function getPayouts(phone: string) {
   };
 }
 
+
+// =============================================================================
+// QUERY / EXECUTE SHIMS
+// Several mobile API routes import { query, execute } from '@/lib/db'.
+// These shim functions proxy to prisma.$queryRawUnsafe / $executeRawUnsafe
+// so those routes work without modification.
+// =============================================================================
+
+/**
+ * Execute a raw SQL SELECT and return rows as an array.
+ * Usage: const rows = await query('SELECT * FROM Traders WHERE phone = ?', [phone])
+ */
+export async function query<T = any>(sql: string, params: any[] = []): Promise<T[]> {
+  try {
+    return await prisma.$queryRawUnsafe<T[]>(sql, ...params);
+  } catch (error) {
+    console.error('[db.query] Error:', error);
+    throw error;
+  }
+}
+
+/**
+ * Execute a raw SQL INSERT/UPDATE/DELETE and return affected row count.
+ * Usage: const affected = await execute('UPDATE Traders SET balance = ? WHERE phone = ?', [100, phone])
+ */
+export async function execute(sql: string, params: any[] = []): Promise<number> {
+  try {
+    return await prisma.$executeRawUnsafe(sql, ...params);
+  } catch (error) {
+    console.error('[db.execute] Error:', error);
+    throw error;
+  }
+}
+
 export default prisma;

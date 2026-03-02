@@ -44,6 +44,7 @@ interface PriceItem {
   change_amount: number;
   low_24h: number;
   high_24h: number;
+  has_real_range?: boolean;
   confidence: number;
   validators: number;
   updated_at: string;
@@ -260,7 +261,7 @@ function PricesPageContent() {
   const handleExport = () => {
     if (prices.length === 0) return;
     
-    const headers = ["Item", "Variant", "Category", "Market", "State", "Price (₦)", "Change (%)", "24H Low", "24H High", "Confidence", "Source", "Updated"];
+    const headers = ["Item", "Variant", "Category", "Market", "State", "Price (₦)", "Change (%)", "Wk Low", "Wk High", "Confidence", "Source", "Updated"];
     const rows = prices.map(p => [
       p.item_name,
       p.item_variant || "",
@@ -669,7 +670,7 @@ function PricesPageContent() {
                 <col style={{ width: "7%" }} />           {/* State */}
                 <col style={{ width: "12%" }} />          {/* Price */}
                 <col style={{ width: "11%" }} />          {/* Change */}
-                <col style={{ width: "11%" }} />          {/* 24H Range */}
+                <col style={{ width: "11%" }} />          {/* Wk Range */}
                 <col style={{ width: "12%" }} />          {/* Confidence */}
                 <col style={{ width: "10%" }} />          {/* Updated */}
                 <col style={{ width: "48px" }} />         {/* Actions */}
@@ -683,7 +684,7 @@ function PricesPageContent() {
                   <th className="py-3 text-center text-xs font-semibold text-gray-400 uppercase tracking-wider">State</th>
                   <th className="py-3 text-center text-xs font-semibold text-gray-400 uppercase tracking-wider">Price (₦)</th>
                   <th className="py-3 text-center text-xs font-semibold text-gray-400 uppercase tracking-wider">Change</th>
-                  <th className="py-3 text-center text-xs font-semibold text-gray-400 uppercase tracking-wider">24H Range</th>
+                  <th className="py-3 text-center text-xs font-semibold text-gray-400 uppercase tracking-wider">Wk Range</th>
                   <th className="py-3 text-center text-xs font-semibold text-gray-400 uppercase tracking-wider">Confidence</th>
                   <th className="py-3 text-center text-xs font-semibold text-gray-400 uppercase tracking-wider">Updated</th>
                   <th className="py-3"></th>
@@ -765,12 +766,19 @@ function PricesPageContent() {
                       </div>
                     </td>
 
-                    {/* 24H Range */}
+                    {/* Wk Range - bright if real data, muted if estimated */}
                     <td className="px-2 py-3 text-center">
-                      <div className="font-mono text-xs text-gray-400 leading-relaxed">
-                        <span>{item.low_24h.toLocaleString()}</span>
-                        <span className="text-gray-600 mx-1">–</span>
-                        <span>{item.high_24h.toLocaleString()}</span>
+                      <div className="font-mono text-xs leading-relaxed">
+                        <span className={item.has_real_range ? "text-gray-300" : "text-gray-600"}>
+                          {item.low_24h.toLocaleString()}
+                        </span>
+                        <span className="text-gray-700 mx-1">–</span>
+                        <span className={item.has_real_range ? "text-gray-300" : "text-gray-600"}>
+                          {item.high_24h.toLocaleString()}
+                        </span>
+                        {!item.has_real_range && (
+                          <div className="text-gray-700 text-[9px] mt-0.5">est.</div>
+                        )}
                       </div>
                     </td>
 
