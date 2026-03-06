@@ -1,47 +1,23 @@
 // ============================================================================
 // src/app/api/morning-brief/send/route.ts
 // NaijaMarket Intel - Morning Brief Sender (Cron Job)
-// Version: 1.0.0 | Date: 2026-02-20
-//
-// Runs daily at 4:30 AM UTC (5:30 AM WAT) via Vercel Cron
-// Generates price briefs and sends via WhatsApp (Twilio)
-//
-// DEFAULT brief: Top 10 movers across all markets
-// PERSONALIZED brief: User's selected markets + items
-//
-// VERCEL CRON (add to vercel.json):
-//   { "path": "/api/morning-brief/send", "schedule": "30 4 * * *" }
-//
-// MANUAL TEST:
-//   GET /api/morning-brief/send?test=1
+// Version: 2.0.0 | Fixed: 2026-03-06
 // ============================================================================
 
 import { NextRequest, NextResponse } from "next/server";
-
-// ============================================================================
-// PRISMA
-// ============================================================================
-
 import { PrismaClient } from "@prisma/client";
+
 const globalForPrisma = globalThis as unknown as { prisma: PrismaClient };
 const prisma = globalForPrisma.prisma || new PrismaClient();
 if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = prisma;
 
-// ============================================================================
-// CONFIG
-// ============================================================================
-
-const TWILIO_SID = process.env.TWILIO_ACCOUNT_SID || "";
+const TWILIO_SID   = process.env.TWILIO_ACCOUNT_SID || "";
 const TWILIO_TOKEN = process.env.TWILIO_AUTH_TOKEN || "";
-const TWILIO_FROM = process.env.TWILIO_WHATSAPP_FROM || "whatsapp:+14155238886";
-const CRON_SECRET = process.env.CRON_SECRET || "";
+const TWILIO_FROM  = process.env.TWILIO_WHATSAPP_FROM || "whatsapp:+14155238886";
+const CRON_SECRET  = process.env.CRON_SECRET || "";
+const SEND_DELAY_MS = 150;
 
-// Rate limit: 1 message per 100ms to avoid Twilio throttle
-const SEND_DELAY_MS = 100;
-
-// ============================================================================
-// HELPERS
-// ============================================================================
+// ── Helpers ──────────────────────────────────────────────────────────────────
 
 function phoneToWA(phone: string): string {
   let c = phone.replace(/\D/g, "");
@@ -56,11 +32,11 @@ function naira(amount: number): string {
 }
 
 function trendEmoji(change: number): string {
-  if (change > 5) return "🔴⬆";
-  if (change > 0) return "📈";
-  if (change < -5) return "🟢⬇";
-  if (change < 0) return "📉";
-  return "➡️";
+  if (change > 5)  return "🔴";
+  if (change > 0)  return "🟡";
+  if (change < -5) return "🟢";
+  if (change < 0)  return "🔵";
+  return "⚪";
 }
 
 function sleep(ms: number): Promise<void> {
@@ -68,146 +44,111 @@ function sleep(ms: number): Promise<void> {
 }
 
 async function sendWhatsApp(phone: string, message: string): Promise<boolean> {
-  if (!TWILIO_SID || !TWILIO_TOKEN) return false;
+  if (!TWILIO_SID || !TWILIO_TOKEN) {
+    console.error("[Brief] Twilio credentials missing");
+    return false;
+  }
   try {
     const res = await fetch(
       `https://api.twilio.com/2010-04-01/Accounts/${TWILIO_SID}/Messages.json`,
       {
         method: "POST",
         headers: {
-          Authorization:
-            "Basic " +
-            Buffer.from(`${TWILIO_SID}:${TWILIO_TOKEN}`).toString("base64"),
+          Authorization: "Basic " + Buffer.from(`${TWILIO_SID}:${TWILIO_TOKEN}`).toString("base64"),
           "Content-Type": "application/x-www-form-urlencoded",
         },
         body: new URLSearchParams({
           From: TWILIO_FROM,
-          To: phoneToWA(phone),
+          To:   phoneToWA(phone),
           Body: message,
         }).toString(),
       }
     );
+    if (!res.ok) {
+      const err = await res.text();
+      console.error(`[Brief] Twilio error for ${phone}:`, err);
+    }
     return res.ok;
-  } catch {
+  } catch (e: any) {
+    console.error(`[Brief] sendWhatsApp exception:`, e.message);
     return false;
   }
 }
 
-// ============================================================================
-// GENERATE DEFAULT BRIEF (Top movers across all markets)
-// ============================================================================
+// ── Generate Default Brief ────────────────────────────────────────────────────
+// Uses Latest_Prices_Summary (fast cache) with correct column names
 
 async function generateDefaultBrief(): Promise<string> {
   const today = new Date();
   const dateStr = today.toLocaleDateString("en-NG", {
-    weekday: "short",
-    day: "numeric",
-    month: "short",
+    weekday: "long", day: "numeric", month: "long",
   });
 
-  // Get top 10 commodities with biggest price changes
-  const topMovers = (await prisma.$queryRaw`
-    WITH LatestPrices AS (
-      SELECT 
-        item_name,
-        market_name,
-        price,
-        ROW_NUMBER() OVER (PARTITION BY item_name, market_name ORDER BY created_at DESC) as rn
-      FROM Daily_Prices
-      WHERE created_at >= DATEADD(day, -1, GETDATE())
-    ),
-    PreviousPrices AS (
-      SELECT 
-        item_name,
-        market_name,
-        price,
-        ROW_NUMBER() OVER (PARTITION BY item_name, market_name ORDER BY created_at DESC) as rn
-      FROM Daily_Prices
-      WHERE created_at >= DATEADD(day, -3, GETDATE())
-        AND created_at < DATEADD(day, -1, GETDATE())
-    )
+  // Top 10 movers — uses price_change_pct from Latest_Prices_Summary
+  const topMovers = await prisma.$queryRaw`
     SELECT TOP 10
-      l.item_name,
-      l.market_name,
-      l.price AS current_price,
-      p.price AS previous_price,
-      CASE 
-        WHEN p.price > 0 THEN ((l.price - p.price) / p.price) * 100
-        ELSE 0
-      END AS change_pct
-    FROM LatestPrices l
-    LEFT JOIN PreviousPrices p 
-      ON l.item_name = p.item_name AND l.market_name = p.market_name AND p.rn = 1
-    WHERE l.rn = 1
-      AND p.price IS NOT NULL
-      AND p.price > 0
-    ORDER BY ABS(CASE WHEN p.price > 0 THEN ((l.price - p.price) / p.price) * 100 ELSE 0 END) DESC
-  `) as any[];
+      item_name,
+      market_name,
+      state,
+      price_naira      AS current_price,
+      price_change_pct AS change_pct,
+      trend
+    FROM dbo.Latest_Prices_Summary
+    WHERE price_change_pct IS NOT NULL
+      AND price_naira > 0
+    ORDER BY ABS(price_change_pct) DESC
+  ` as any[];
 
-  // Get a tip (biggest drop = buying opportunity)
-  const bestDeal = (await prisma.$queryRaw`
-    WITH LatestPrices AS (
-      SELECT 
-        item_name, market_name, price,
-        ROW_NUMBER() OVER (PARTITION BY item_name, market_name ORDER BY created_at DESC) as rn
-      FROM Daily_Prices
-      WHERE created_at >= DATEADD(day, -1, GETDATE())
-    ),
-    PreviousPrices AS (
-      SELECT 
-        item_name, market_name, price,
-        ROW_NUMBER() OVER (PARTITION BY item_name, market_name ORDER BY created_at DESC) as rn
-      FROM Daily_Prices
-      WHERE created_at >= DATEADD(day, -3, GETDATE())
-        AND created_at < DATEADD(day, -1, GETDATE())
-    )
+  // Best buying opportunity (biggest drop)
+  const bestDeal = await prisma.$queryRaw`
     SELECT TOP 1
-      l.item_name, l.market_name,
-      l.price AS current_price,
-      CASE WHEN p.price > 0 THEN ((l.price - p.price) / p.price) * 100 ELSE 0 END AS change_pct
-    FROM LatestPrices l
-    JOIN PreviousPrices p ON l.item_name = p.item_name AND l.market_name = p.market_name AND p.rn = 1
-    WHERE l.rn = 1 AND p.price > 0
-    ORDER BY ((l.price - p.price) / p.price) ASC
-  `) as any[];
+      item_name, market_name,
+      price_naira      AS current_price,
+      price_change_pct AS change_pct
+    FROM dbo.Latest_Prices_Summary
+    WHERE price_change_pct < -2
+      AND price_naira > 0
+    ORDER BY price_change_pct ASC
+  ` as any[];
 
   // Build message
-  let msg = `🌅 *NaijaMarket Morning Brief*\n`;
-  msg += `📅 ${dateStr} | 5:30 AM WAT\n`;
+  let msg = `📊 *NaijaMarket Morning Brief*\n`;
+  msg += `📅 ${dateStr}\n`;
   msg += `━━━━━━━━━━━━━━━━━━━━━━\n\n`;
 
   if (topMovers.length === 0) {
-    msg += `_No price data available yet today._\n\n`;
-    msg += `Check back later or type *price* to query.\n`;
+    msg += `_No price movements recorded yet today._\n\n`;
+    msg += `Visit naijamarketintel.ng for live prices.\n`;
     return msg;
   }
 
-  msg += `📊 *Top Movers Today:*\n\n`;
+  msg += `📈 *Top 10 Price Movers:*\n`;
+  msg += `──────────────────────\n`;
 
   for (const item of topMovers) {
-    const emoji = trendEmoji(item.change_pct);
-    const sign = item.change_pct >= 0 ? "+" : "";
+    const emoji = trendEmoji(Number(item.change_pct) || 0);
+    const sign  = Number(item.change_pct) >= 0 ? "+" : "";
+    const pct   = Number(item.change_pct || 0).toFixed(1);
     msg += `${emoji} *${item.item_name}*\n`;
-    msg += `   ${item.market_name}: ${naira(item.current_price)} (${sign}${item.change_pct.toFixed(1)}%)\n\n`;
+    msg += `   ${item.market_name} — ${naira(Number(item.current_price))} (${sign}${pct}%)\n\n`;
   }
 
-  // Tip
-  if (bestDeal.length > 0 && bestDeal[0].change_pct < -2) {
+  // Buying tip
+  if (bestDeal.length > 0) {
     const deal = bestDeal[0];
+    const pct  = Math.abs(Number(deal.change_pct)).toFixed(1);
     msg += `━━━━━━━━━━━━━━━━━━━━━━\n`;
-    msg += `💡 *Tip:* ${deal.item_name} dropped ${naira(Math.abs(deal.current_price * deal.change_pct / 100))} at ${deal.market_name}. Good day to buy!\n`;
+    msg += `💡 *Buying Tip:* ${deal.item_name} dropped ${pct}% at ${deal.market_name}. Good day to buy!\n`;
   }
 
   msg += `\n━━━━━━━━━━━━━━━━━━━━━━\n`;
-  msg += `Type *price* to check any item\n`;
-  msg += `Type *STOP BRIEF* to unsubscribe`;
+  msg += `🔗 naijamarketintel.ng\n`;
+  msg += `Reply *STOP BRIEF* to unsubscribe`;
 
   return msg;
 }
 
-// ============================================================================
-// GENERATE PERSONALIZED BRIEF (User's selected markets + items)
-// ============================================================================
+// ── Generate Personalized Brief ───────────────────────────────────────────────
 
 async function generatePersonalizedBrief(
   selectedMarkets: string[],
@@ -215,49 +156,27 @@ async function generatePersonalizedBrief(
 ): Promise<string> {
   const today = new Date();
   const dateStr = today.toLocaleDateString("en-NG", {
-    weekday: "short",
-    day: "numeric",
-    month: "short",
+    weekday: "long", day: "numeric", month: "long",
   });
 
-  // Build WHERE clauses
-  const marketPlaceholders = selectedMarkets.map((_, i) => `@m${i}`).join(", ");
-  const itemPlaceholders = selectedItems.length > 0
-    ? selectedItems.map((_, i) => `@i${i}`).join(", ")
-    : null;
+  const marketList = selectedMarkets.map(m => `'${m.replace(/'/g, "''")}'`).join(",");
+  const itemFilter = selectedItems.length > 0
+    ? `AND item_id IN (${selectedItems.map(i => `'${i.replace(/'/g, "''")}'`).join(",")})`
+    : "";
 
-  // Get latest prices for user's markets (and items if selected)
-  let query = `
-    WITH LatestPrices AS (
-      SELECT 
-        item_name, market_name, market_id, price,
-        ROW_NUMBER() OVER (PARTITION BY item_name, market_name ORDER BY created_at DESC) as rn
-      FROM Daily_Prices
-      WHERE created_at >= DATEADD(day, -1, GETDATE())
-        AND market_id IN (${selectedMarkets.map((m) => `'${m.replace(/'/g, "''")}'`).join(",")})
-        ${selectedItems.length > 0 ? `AND item_id IN (${selectedItems.map((i) => `'${i.replace(/'/g, "''")}'`).join(",")})` : ""}
-    ),
-    PreviousPrices AS (
-      SELECT 
-        item_name, market_name, price,
-        ROW_NUMBER() OVER (PARTITION BY item_name, market_name ORDER BY created_at DESC) as rn
-      FROM Daily_Prices
-      WHERE created_at >= DATEADD(day, -3, GETDATE())
-        AND created_at < DATEADD(day, -1, GETDATE())
-        AND market_id IN (${selectedMarkets.map((m) => `'${m.replace(/'/g, "''")}'`).join(",")})
-    )
+  // Query Latest_Prices_Summary with correct columns
+  const prices = await prisma.$queryRawUnsafe(`
     SELECT 
-      l.item_name, l.market_name, l.price AS current_price,
-      p.price AS previous_price,
-      CASE WHEN p.price > 0 THEN ((l.price - p.price) / p.price) * 100 ELSE 0 END AS change_pct
-    FROM LatestPrices l
-    LEFT JOIN PreviousPrices p 
-      ON l.item_name = p.item_name AND l.market_name = p.market_name AND p.rn = 1
-    WHERE l.rn = 1
-    ORDER BY l.market_name, l.item_name
-  `;
-
-  const prices = (await prisma.$queryRawUnsafe(query)) as any[];
+      item_name, market_name, state,
+      price_naira      AS current_price,
+      price_change_pct AS change_pct,
+      trend
+    FROM dbo.Latest_Prices_Summary
+    WHERE market_id IN (${marketList})
+      ${itemFilter}
+      AND price_naira > 0
+    ORDER BY market_name, ABS(ISNULL(price_change_pct, 0)) DESC
+  `) as any[];
 
   // Group by market
   const byMarket: Record<string, any[]> = {};
@@ -266,146 +185,109 @@ async function generatePersonalizedBrief(
     byMarket[p.market_name].push(p);
   }
 
-  // Build message
-  let msg = `🌅 *Your Morning Brief*\n`;
-  msg += `📅 ${dateStr} | 5:30 AM WAT\n`;
+  let msg = `📊 *Your Morning Brief*\n`;
+  msg += `📅 ${dateStr}\n`;
   msg += `━━━━━━━━━━━━━━━━━━━━━━\n\n`;
 
   if (Object.keys(byMarket).length === 0) {
-    msg += `_No price data for your markets yet today._\n\n`;
-    msg += `Check back later or type *price* to query.\n`;
+    msg += `_No price data for your markets today._\n`;
+    msg += `Visit naijamarketintel.ng for live prices.\n`;
     return msg;
   }
 
   for (const [market, items] of Object.entries(byMarket)) {
     msg += `🏪 *${market}*\n`;
-
-    for (const item of items.slice(0, 10)) {
-      const emoji = trendEmoji(item.change_pct || 0);
-      const change =
-        item.previous_price && item.change_pct
-          ? ` (${item.change_pct >= 0 ? "+" : ""}${item.change_pct.toFixed(1)}%)`
-          : "";
-      msg += `  ${emoji} ${item.item_name}: ${naira(item.current_price)}${change}\n`;
+    for (const item of (items as any[]).slice(0, 10)) {
+      const emoji  = trendEmoji(Number(item.change_pct) || 0);
+      const change = item.change_pct != null
+        ? ` (${Number(item.change_pct) >= 0 ? "+" : ""}${Number(item.change_pct).toFixed(1)}%)`
+        : "";
+      msg += `  ${emoji} ${item.item_name}: ${naira(Number(item.current_price))}${change}\n`;
     }
-
     msg += `\n`;
   }
 
-  // Cross-market comparison (find cheapest for each item)
+  // Cross-market savings
   if (Object.keys(byMarket).length > 1) {
-    const itemPrices: Record<string, { market: string; price: number }[]> = {};
+    const itemMap: Record<string, { market: string; price: number }[]> = {};
     for (const p of prices) {
-      if (!itemPrices[p.item_name]) itemPrices[p.item_name] = [];
-      itemPrices[p.item_name].push({ market: p.market_name, price: p.current_price });
+      if (!itemMap[p.item_name]) itemMap[p.item_name] = [];
+      itemMap[p.item_name].push({ market: p.market_name, price: Number(p.current_price) });
     }
-
     const savings: string[] = [];
-    for (const [item, mkts] of Object.entries(itemPrices)) {
+    for (const [item, mkts] of Object.entries(itemMap)) {
       if (mkts.length < 2) continue;
       mkts.sort((a, b) => a.price - b.price);
-      const cheapest = mkts[0];
-      const priciest = mkts[mkts.length - 1];
-      const diff = priciest.price - cheapest.price;
-      if (diff > 0 && diff / priciest.price > 0.03) {
-        savings.push(
-          `💡 *${item}*: ${naira(diff)} cheaper at ${cheapest.market} vs ${priciest.market}`
-        );
+      const diff = mkts[mkts.length-1].price - mkts[0].price;
+      if (diff / mkts[mkts.length-1].price > 0.03) {
+        savings.push(`💡 *${item}*: ${naira(diff)} cheaper at ${mkts[0].market}`);
       }
     }
-
     if (savings.length > 0) {
       msg += `━━━━━━━━━━━━━━━━━━━━━━\n`;
       msg += `🔍 *Best Deals:*\n`;
-      for (const s of savings.slice(0, 3)) {
-        msg += `${s}\n`;
-      }
+      for (const s of savings.slice(0, 3)) msg += `${s}\n`;
       msg += `\n`;
     }
   }
 
   msg += `━━━━━━━━━━━━━━━━━━━━━━\n`;
-  msg += `Type *price* to check any item\n`;
-  msg += `Type *STOP BRIEF* to unsubscribe`;
+  msg += `🔗 naijamarketintel.ng\n`;
+  msg += `Reply *STOP BRIEF* to unsubscribe`;
 
   return msg;
 }
 
-// ============================================================================
-// MAIN CRON HANDLER
-// ============================================================================
+// ── Main Cron Handler ─────────────────────────────────────────────────────────
 
 export async function GET(request: NextRequest) {
-  // Auth
   const auth = request.headers.get("authorization");
   const { searchParams } = new URL(request.url);
-  const isTest = searchParams.get("test") === "1";
-  const testPhone = searchParams.get("phone"); // Send to single phone for testing
+  const isTest    = searchParams.get("test") === "1";
+  const testPhone = searchParams.get("phone");
 
   if (!isTest && CRON_SECRET && auth !== `Bearer ${CRON_SECRET}`) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const t0 = Date.now();
+  const t0    = Date.now();
   const stats = {
     totalSubscribers: 0,
     defaultBriefs: 0,
     personalizedBriefs: 0,
     sent: 0,
     failed: 0,
-    skipped: 0,
     errors: [] as string[],
   };
 
   try {
-    // Get current WAT time to match delivery_time
-    const now = new Date();
-    const watHour = (now.getUTCHours() + 1) % 24; // UTC+1 = WAT
-    const watMin = now.getUTCMinutes();
-    const currentTime = `${String(watHour).padStart(2, "0")}:${String(watMin).padStart(2, "0")}`;
+    console.log(`[Brief] ═══ Morning Brief Send START ═══`);
 
-    console.log(`[Brief] ═══ Morning Brief Send | WAT: ${currentTime} ═══`);
-
-    // Fetch all active subscribers
-    // For cron, we send to all with delivery_time matching current window (±15 min)
+    // Fetch subscribers
     let subscribers: any[];
-
     if (testPhone) {
-      // Test mode: send to specific phone
-      subscribers = (await prisma.$queryRaw`
+      subscribers = await prisma.$queryRaw`
         SELECT * FROM Morning_Brief_Subscriptions
         WHERE phone_number = ${testPhone} AND status = 'ACTIVE'
-      `) as any[];
-
-      // If no subscription exists for test phone, create a default brief
+      ` as any[];
       if (subscribers.length === 0) {
-        subscribers = [{
-          phone_number: testPhone,
-          plan_type: "DEFAULT",
-          selected_markets: "[]",
-          selected_items: "[]",
-        }];
+        subscribers = [{ phone_number: testPhone, plan_type: "DEFAULT", selected_markets: "[]", selected_items: "[]" }];
       }
     } else {
-      subscribers = (await prisma.$queryRaw`
+      subscribers = await prisma.$queryRaw`
         SELECT * FROM Morning_Brief_Subscriptions
         WHERE status = 'ACTIVE'
-      `) as any[];
+      ` as any[];
     }
 
     stats.totalSubscribers = subscribers.length;
-    console.log(`[Brief] Found ${subscribers.length} active subscribers`);
+    console.log(`[Brief] ${subscribers.length} active subscribers`);
 
     if (subscribers.length === 0) {
-      return NextResponse.json({
-        success: true,
-        message: "No active subscribers",
-        stats,
-        duration_ms: Date.now() - t0,
-      });
+      return NextResponse.json({ success: true, message: "No active subscribers", stats });
     }
 
-    // Generate default brief once (shared by all DEFAULT subscribers)
+    // Generate default brief once (shared)
     let defaultBrief: string | null = null;
 
     for (const sub of subscribers) {
@@ -413,14 +295,12 @@ export async function GET(request: NextRequest) {
         let message: string;
 
         if (sub.plan_type === "PERSONALIZED") {
-          // Parse selected markets/items
           let markets: string[] = [];
-          let items: string[] = [];
+          let items:   string[] = [];
           try { markets = JSON.parse(sub.selected_markets || "[]"); } catch {}
-          try { items = JSON.parse(sub.selected_items || "[]"); } catch {}
+          try { items   = JSON.parse(sub.selected_items   || "[]"); } catch {}
 
           if (markets.length === 0) {
-            // Fallback to default if no markets selected
             if (!defaultBrief) defaultBrief = await generateDefaultBrief();
             message = defaultBrief;
             stats.defaultBriefs++;
@@ -429,59 +309,40 @@ export async function GET(request: NextRequest) {
             stats.personalizedBriefs++;
           }
         } else {
-          // Default brief
           if (!defaultBrief) defaultBrief = await generateDefaultBrief();
           message = defaultBrief;
           stats.defaultBriefs++;
         }
 
-        // Send
         const sent = await sendWhatsApp(sub.phone_number, message);
 
         if (sent) {
           stats.sent++;
-          // Update last_sent and counter
           if (sub.brief_id) {
             await prisma.$executeRaw`
               UPDATE Morning_Brief_Subscriptions
               SET last_sent_at = GETDATE(),
-                  total_sent = total_sent + 1,
-                  consecutive_failures = 0,
-                  updated_at = GETDATE()
+                  total_sent   = ISNULL(total_sent, 0) + 1,
+                  updated_at   = GETDATE()
               WHERE brief_id = ${sub.brief_id}
             `;
           }
         } else {
           stats.failed++;
-          if (sub.brief_id) {
-            await prisma.$executeRaw`
-              UPDATE Morning_Brief_Subscriptions
-              SET consecutive_failures = consecutive_failures + 1,
-                  updated_at = GETDATE()
-              WHERE brief_id = ${sub.brief_id}
-            `;
-          }
+          stats.errors.push(`Failed: ${sub.phone_number}`);
         }
 
-        // Rate limit
         await sleep(SEND_DELAY_MS);
+
       } catch (e: any) {
         stats.failed++;
         stats.errors.push(`${sub.phone_number}: ${e.message}`);
+        console.error(`[Brief] Error for ${sub.phone_number}:`, e.message);
       }
     }
 
-    // Auto-pause subscribers with 7+ consecutive failures
-    await prisma.$executeRaw`
-      UPDATE Morning_Brief_Subscriptions
-      SET status = 'PAUSED', updated_at = GETDATE()
-      WHERE consecutive_failures >= 7 AND status = 'ACTIVE'
-    `;
-
     const duration = Date.now() - t0;
-    console.log(
-      `[Brief] ✅ ${duration}ms | sent=${stats.sent} failed=${stats.failed} default=${stats.defaultBriefs} personalized=${stats.personalizedBriefs}`
-    );
+    console.log(`[Brief] ✅ DONE ${duration}ms | sent=${stats.sent} failed=${stats.failed}`);
 
     return NextResponse.json({
       success: true,
@@ -489,11 +350,9 @@ export async function GET(request: NextRequest) {
       duration_ms: duration,
       timestamp: new Date().toISOString(),
     });
+
   } catch (e: any) {
-    console.error("[Brief] Fatal:", e);
-    return NextResponse.json(
-      { success: false, error: e.message, stats },
-      { status: 500 }
-    );
+    console.error("[Brief] FATAL:", e);
+    return NextResponse.json({ success: false, error: e.message, stats }, { status: 500 });
   }
 }
