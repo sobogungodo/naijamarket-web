@@ -2,8 +2,8 @@
 // src/app/api/inflation/route.ts
 // NaijaMarket Intel - Inflation Tracker API
 // Bloomberg Equivalent: ECST <GO> (Economic Statistics)
-// Version: 5.1.0 - DATA AVAILABILITY GATE
-// Updated: 2026-03-02
+// Version: 6.0.0 - CALCULATED_INFLATION PRIMARY SOURCE
+// Updated: 2026-03-09
 //
 // ROOT CAUSE OF THE SPINNER (was v4.0):
 // ─────────────────────────────────────
@@ -24,6 +24,16 @@
 // 3. SECONDARY SOURCE: vw_Inflation_Comparison (unchanged, kept as fallback)
 // 4. ALL EXISTING INTERFACES UNCHANGED — frontend needs zero changes
 // 5. Cache-Control headers — Vercel Edge caches response 5 min (zero DB hits on repeat loads)
+//
+// WHAT CHANGED IN v6.0:
+// ──────────────────────
+// 1. NEW PRIMARY SOURCE: dbo.Calculated_Inflation (10-year historical aggregate)
+//    → 68M raw observations → 108 monthly rows (2017–2025), real Nigeria YoY
+//    → 2017=20.3%, 2023=32.8%, 2024=31.5% — matches naira devaluation reality
+//    → Loaded 2026-03-09 via hist_prices_loader Cloud Shell script
+// 2. FALLBACK ORDER: Calculated_Inflation → Inflation_Cache → vw → raw → mock
+// 3. Movers/basket still sourced from Inflation_Cache (item-level data)
+// 4. ALL EXISTING INTERFACES UNCHANGED — frontend needs zero changes
 //
 // PREREQUISITE: Run STEP1_SQL_Performance_Fix.sql in SSMS to populate
 // dbo.Inflation_Cache and dbo.Latest_Prices_Summary before deploying.
@@ -569,6 +579,83 @@ async function fetchFromInflationCache(months: number): Promise<{
     return empty;
   }
 }
+
+// ============================================================================
+// DATA SOURCE 0 (HISTORICAL PRIMARY — FASTEST FOR TREND): dbo.Calculated_Inflation
+// Pre-computed 10-year monthly YoY aggregates loaded from Historical_Monthly_Summary.
+// 108 rows (9 years × 12 months). Query time: <10ms.
+// Covers 2017–2025 with real Nigeria market YoY data.
+// Added in v6.0 to expose the 68M-observation historical dataset.
+// ============================================================================
+
+async function fetchFromCalculatedInflation(months: number): Promise<{
+  data: MonthlyInflation[];
+  success: boolean;
+}> {
+  const empty = { data: [], success: false };
+  const pool  = await getPool();
+  if (!pool) return empty;
+
+  try {
+    const result = await pool.request()
+      .input("months", sql.Int, months + 2)
+      .query(`
+        SELECT TOP (@months)
+          yr, mth, month_name,
+          CAST(current_month_avg       AS FLOAT) AS current_month_avg,
+          CAST(same_month_last_year_avg AS FLOAT) AS same_month_last_year_avg,
+          CAST(yoy_inflation            AS FLOAT) AS yoy_inflation,
+          CAST(prev_month_avg           AS FLOAT) AS prev_month_avg,
+          CAST(mom_inflation            AS FLOAT) AS mom_inflation,
+          daily_records
+        FROM dbo.Calculated_Inflation
+        WHERE yoy_inflation IS NOT NULL
+          AND yoy_inflation BETWEEN -20 AND 150  -- Nigeria plausible range
+        ORDER BY yr DESC, mth DESC
+      `);
+
+    if (!result.recordset || result.recordset.length === 0) {
+      console.warn("[inflation v6] Calculated_Inflation empty — run inflation loader");
+      return empty;
+    }
+
+    // Reverse to chronological order, then take last N months
+    const rows = [...result.recordset].reverse().slice(-months);
+
+    const data: MonthlyInflation[] = rows.map((r: any) => {
+      const yr  = parseInt(r.yr);
+      const mth = parseInt(r.mth);
+      const periodLabel = `${yr}-${String(mth).padStart(2, "0")}`;
+      const nbsRate     = NBS_OFFICIAL_INFLATION[periodLabel] ?? null;
+      const yoyRate     = parseFloat(r.yoy_inflation)     || 0;
+      const momRate     = parseFloat(r.mom_inflation)     || 0;
+      const curAvg      = parseFloat(r.current_month_avg) || 0;
+      const lyAvg       = parseFloat(r.same_month_last_year_avg) || 0;
+      const prevAvg     = parseFloat(r.prev_month_avg)   || 0;
+
+      return {
+        month:           periodLabel,
+        monthName:       `${getMonthName(mth)} ${yr}`,
+        year:            yr,
+        naijaMarketRate: Math.round(yoyRate * 10) / 10,
+        nbsRate,
+        difference:      nbsRate !== null ? Math.round((yoyRate - nbsRate) * 10) / 10 : null,
+        avgPrice:        Math.round(curAvg),
+        prevAvgPrice:    Math.round(lyAvg > 0 ? lyAvg : prevAvg),
+        priceChange:     Math.round(curAvg - (lyAvg > 0 ? lyAvg : prevAvg)),
+      };
+    });
+
+    console.log(`[inflation v6] Calculated_Inflation: ${data.length} months (${data[0]?.monthName} → ${data[data.length-1]?.monthName})`);
+    return { data, success: data.length >= 2 };
+
+  } catch (err) {
+    console.error("[inflation v6] Calculated_Inflation query error:", err);
+    return empty;
+  }
+  // NOTE: No pool.close() — global pool must stay alive between requests
+}
+
 
 // ============================================================================
 // DATA SOURCE 2 (SECONDARY): vw_Inflation_Comparison (unchanged from v4.0)
@@ -1237,12 +1324,69 @@ export async function GET(request: NextRequest) {
     let dataSource = "Unknown";
     let response:   InflationResponse;
 
-    console.log(`[inflation v5] period=${period} (${periodMonths}mo) region=${region}`);
+    console.log(`[inflation v6] period=${period} (${periodMonths}mo) region=${region}`);
 
-    // ── STEP 0: Inflation_Cache (fastest — pre-computed TABLE) ────────────
-    const cacheResult = await fetchFromInflationCache(periodMonths);
+    // ── STEP 0: Calculated_Inflation (10-year historical — FASTEST) ─────────
+    // Real Nigeria market YoY: 2017–2025, 68M observations → 108 monthly aggregates.
+    // Movers/basket from Inflation_Cache (item-level; runs in parallel).
+    const [calcResult, cacheResult] = await Promise.all([
+      fetchFromCalculatedInflation(periodMonths),
+      fetchFromInflationCache(periodMonths),
+    ]);
+
+    if (calcResult.success && calcResult.data.length >= 2) {
+      console.log(`[inflation v6] Using Calculated_Inflation: ${calcResult.data.length} months`);
+      dataSource = `NaijaMarket Intel (10-Year Historical Data)`;
+
+      const displayData = calcResult.data.slice(-periodMonths);
+      const latest      = displayData[displayData.length - 1];
+      const prevMonth   = displayData[displayData.length - 2];
+      const rawYoy      = latest?.naijaMarketRate ?? 0;
+      const momChange   = (latest && prevMonth)
+        ? Math.round((latest.naijaMarketRate - prevMonth.naijaMarketRate) * 10) / 10
+        : (cacheResult.avgMomPct ?? 0);
+      const { rate: latestNBS } = getCurrentNbsRate();
+      const elapsedMs = Date.now() - startTime;
+
+      return NextResponse.json({
+        success:     true,
+        timestamp:   new Date().toISOString(),
+        period,
+        periodLabel,
+        currentInflation: {
+          rate:           Math.round(rawYoy    * 10) / 10,
+          monthOverMonth: Math.round(momChange  * 10) / 10,
+          yearOverYear:   Math.round(rawYoy    * 10) / 10,
+          trend:          momChange > 0.5 ? "up" : momChange < -0.5 ? "down" : "stable",
+          asOf:           latest?.monthName ?? "",
+        },
+        monthlyTrend:      displayData,
+        regionalBreakdown: await fetchRegionalInflation().catch(() => []),
+        nbsComparison: {
+          naijaMarket:    Math.round(rawYoy * 10) / 10,
+          nbs:            latestNBS,
+          difference:     Math.round((rawYoy - latestNBS) * 10) / 10,
+          interpretation: getNbsInterpretation(rawYoy, latestNBS),
+        },
+        topInflators:      cacheResult.success ? cacheResult.topInflators      : [],
+        topDeflators:      cacheResult.success ? cacheResult.topDeflators      : [],
+        basketComposition: cacheResult.success ? cacheResult.basketComposition : [],
+        categoryBreakdown: cacheResult.success ? calculateCategoryBreakdown(cacheResult.basketComposition) : [],
+        dataSource,
+        recordCount: displayData.length,
+      }, {
+        status:  200,
+        headers: {
+          "Cache-Control":   "s-maxage=300, stale-while-revalidate=60",
+          "X-Data-Source":   "calculated-inflation",
+          "X-Response-Time": `${elapsedMs}ms`,
+        },
+      });
+    }
+
+    // ── STEP 1: Inflation_Cache (fastest recent — pre-computed TABLE) ─────
     if (cacheResult.success && cacheResult.data.length >= 2) {
-      console.log(`[inflation v5] Using Inflation_Cache: ${cacheResult.data.length} months`);
+      console.log(`[inflation v6] Using Inflation_Cache: ${cacheResult.data.length} months`);
       dataSource = `NaijaMarket Intel (Real-time)`;
 
       const displayData = cacheResult.data.slice(-periodMonths);
