@@ -1,7 +1,7 @@
 // ============================================================================
 // src/app/(dashboard)/dashboard/prices/page.tsx
 // NaijaMarket Intel - Live Prices Page
-// Version: 6.2.0 - Fixed UPDATED column, added hourly auto-refresh 6AM-10PM WAT
+// Version: 6.3.0 - Fixed price number formatting (en-NG locale), +0% change fix
 // ============================================================================
 
 "use client";
@@ -27,6 +27,25 @@ import {
   AlertCircle
 } from "lucide-react";
 import PriceHistoryModal from "@/components/PriceHistoryModal";
+
+// ============================================================================
+// HELPERS
+// ============================================================================
+
+// Force en-US locale so numbers always render as 80,000.00 not 80 000,00
+// (Vercel servers may use a non-English system locale)
+const fmt = new Intl.NumberFormat('en-US', {
+  minimumFractionDigits: 0,
+  maximumFractionDigits: 0,
+});
+
+const fmt2 = new Intl.NumberFormat('en-US', {
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+});
+
+const formatNaira = (value: number): string => fmt2.format(value);
+const formatNairaInt = (value: number): string => fmt.format(value);
 
 // ============================================================================
 // TYPES
@@ -746,7 +765,7 @@ function PricesPageContent() {
                     {/* Price */}
                     <td className="px-3 py-3 text-center">
                       <span className="font-mono text-white text-base font-semibold">
-                        {item.price_naira.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        {formatNaira(item.price_naira)}
                       </span>
                     </td>
 
@@ -762,7 +781,7 @@ function PricesPageContent() {
                         <span className="font-mono">{item.change_percent >= 0 ? "+" : ""}{item.change_percent.toFixed(2)}%</span>
                       </div>
                       <div className="text-xs text-gray-500 mt-0.5 font-mono">
-                        {item.change_amount >= 0 ? "+" : ""}₦{Math.abs(item.change_amount).toLocaleString()}
+                        {item.change_amount >= 0 ? "+" : ""}₦{formatNairaInt(Math.abs(item.change_amount))}
                       </div>
                     </td>
 
@@ -770,11 +789,11 @@ function PricesPageContent() {
                     <td className="px-2 py-3 text-center">
                       <div className="font-mono text-xs leading-relaxed">
                         <span className={item.has_real_range ? "text-gray-300" : "text-gray-600"}>
-                          {item.low_24h.toLocaleString()}
+                          {formatNairaInt(item.low_24h)}
                         </span>
                         <span className="text-gray-700 mx-1">–</span>
                         <span className={item.has_real_range ? "text-gray-300" : "text-gray-600"}>
-                          {item.high_24h.toLocaleString()}
+                          {formatNairaInt(item.high_24h)}
                         </span>
                         {!item.has_real_range && (
                           <div className="text-gray-700 text-[9px] mt-0.5">est.</div>
