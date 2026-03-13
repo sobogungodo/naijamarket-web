@@ -1,10 +1,13 @@
 "use client";
 
+// ============================================================================
 // src/components/ThemeProvider.tsx
-// Wraps app in next-themes provider for light/dark mode
+// NaijaMarket Intel — Theme Provider wrapper
+// Thin wrapper around next-themes so we can keep layout.tsx as a server component
+// ============================================================================
 
 import { ThemeProvider as NextThemesProvider } from "next-themes";
-import { type ThemeProviderProps } from "next-themes";
+import type { ThemeProviderProps } from "next-themes";
 
 export function ThemeProvider({ children, ...props }: ThemeProviderProps) {
   return <NextThemesProvider {...props}>{children}</NextThemesProvider>;
