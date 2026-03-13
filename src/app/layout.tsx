@@ -8,11 +8,11 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import { Suspense } from "react";
-import { Providers } from "@/components/Providers";
+import Providers from "@/components/Providers";
 import { ThemeProvider } from "@/components/ThemeProvider";
-import { AuthShell } from "@/components/AuthShell";
+import AuthShell from "@/components/AuthShell";
 import { SingleSessionProvider } from "@/components/SingleSessionProvider";
-import { SessionExpiredModal } from "@/components/SessionExpiredModal";
+import SessionExpiredModal from "@/components/SessionExpiredModal";
 import { Toaster } from "sonner";
 import "@/styles/globals.css";
 
