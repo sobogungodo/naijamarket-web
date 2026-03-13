@@ -32,7 +32,7 @@ interface SupplierMetric {
 }
 
 interface DashboardStats {
-  total_items: number;
+  total_commodities: number;
   total_markets: number;
   avg_supply_score: number;
   critical_alerts: number;
@@ -166,7 +166,7 @@ export default function SupplierDashboardPage() {
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
           {[
             { label: "Markets", value: stats.total_markets, icon: MapPin, color: "text-blue-600" },
-            { label: "Commodities", value: stats.total_items, icon: Package, color: "text-purple-600" },
+            { label: "Commodities", value: stats.total_commodities, icon: Package, color: "text-purple-600" },
             { label: "Avg Supply Score", value: stats.avg_supply_score + "/100", icon: Gauge, color: scoreColor(stats.avg_supply_score) },
             { label: "Critical Alerts", value: stats.critical_alerts, icon: ShieldAlert, color: "text-red-600" },
             { label: "Warnings", value: stats.warning_alerts, icon: AlertTriangle, color: "text-orange-600" },
@@ -258,7 +258,6 @@ export default function SupplierDashboardPage() {
                   <tr key={i} className="hover:bg-gray-50 dark:hover:bg-gray-900/50">
                     <td className="p-3">
                       <p className="font-medium">{m.item_name}</p>
-                      <p className="text-xs text-gray-500">{m.category_name}</p>
                     </td>
                     <td className="p-3">
                       <p>{m.market_name}</p>
@@ -266,7 +265,6 @@ export default function SupplierDashboardPage() {
                     </td>
                     <td className="p-3 text-right font-mono">
                       ₦{m.avg_price?.toLocaleString()}
-                      <p className="text-xs text-gray-500">₦{m.min_price?.toLocaleString()} – ₦{m.max_price?.toLocaleString()}</p>
                     </td>
                     <td className="p-3">
                       <div className="flex flex-col items-center">
