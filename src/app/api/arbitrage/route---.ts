@@ -2,7 +2,7 @@
 // NAIJAFOOD INTEL - ARBITRAGE OPPORTUNITIES API
 // File: src/app/api/arbitrage/route.ts
 // Bloomberg Equivalent: ARBI <GO>
-// Version: 6.0 - Precomputed transport costs from Market_Distances table
+// Version: 12.2 - DROP TABLE only at batch START (not end), SELECT is last stmt
 // Date: 2026-02-19
 //
 // WHAT'S NEW IN v6.0:
@@ -18,19 +18,63 @@
 // ============================================================================
 
 import { NextRequest, NextResponse } from "next/server";
+import sql from "mssql";
 
 // ============================================================================
-// SINGLETON PRISMA
+// MSSQL CONNECTION POOL (single pool — temp tables persist within a request)
 // ============================================================================
 
-let prismaClient: any = null;
+// ── Exact same config as inflation route (which works) ─────────────────────
+const SQL_CONFIG: sql.config = {
+  server:   process.env.AZURE_SQL_SERVER   || process.env.DATABASE_SERVER   || "naijafood.database.windows.net",
+  database: process.env.AZURE_SQL_DATABASE || process.env.DATABASE_NAME     || "naijafoodmarket",
+  user:     process.env.AZURE_SQL_USER     || process.env.DATABASE_USER     || "",
+  password: process.env.AZURE_SQL_PASSWORD || process.env.DATABASE_PASSWORD || "",
+  options: {
+    encrypt:                true,
+    trustServerCertificate: false,
+  },
+  connectionTimeout: 30000,
+  requestTimeout:    60000,   // temp table build needs more time
+  pool: {
+    max:                  5,
+    min:                  1,
+    idleTimeoutMillis:    60000,
+    acquireTimeoutMillis: 30000,
+  },
+};
 
-async function getPrisma() {
-  if (!prismaClient) {
-    const { PrismaClient } = await import("@prisma/client");
-    prismaClient = new PrismaClient();
+let _pool: sql.ConnectionPool | null = null;
+
+async function getPool(): Promise<sql.ConnectionPool | null> {
+  // Check pool is truly healthy — .connected can be stale after Vercel cold start
+  if (_pool && _pool.connected) {
+    try {
+      // Lightweight ping to confirm connection is alive
+      await _pool.request().query("SELECT 1 AS ping");
+      return _pool;
+    } catch {
+      // Connection dropped — close and recreate
+      console.warn("[arbitrage v13] Pool ping failed — reconnecting");
+      try { await _pool.close(); } catch {}
+      _pool = null;
+    }
   }
-  return prismaClient;
+
+  if (!SQL_CONFIG.user || !SQL_CONFIG.password) {
+    console.warn("[arbitrage v13] SQL credentials not set in env vars");
+    return null;
+  }
+
+  try {
+    _pool = await new sql.ConnectionPool(SQL_CONFIG).connect();
+    console.log("[arbitrage v13] Connection pool established");
+    return _pool;
+  } catch (err) {
+    console.error("[arbitrage v13] Failed to create connection pool:", err);
+    _pool = null;
+    return null;
+  }
 }
 
 // ============================================================================
@@ -208,7 +252,7 @@ function calculateConfidence(priceDate: string | Date | null): ConfidenceResult 
 // ============================================================================
 
 async function findArbitrageOpportunities(
-  prisma: any,
+  _prisma: any,   // kept for signature compat — internally uses mssql pool
   minProfitPct: number,
   maxResults: number,
   filterItem?: string,
@@ -216,6 +260,8 @@ async function findArbitrageOpportunities(
   filterBuyState?: string,
   filterSellState?: string
 ): Promise<ArbitrageOpportunity[]> {
+  const pool = await getPool();
+  if (!pool) return [];
 
   // Build dynamic WHERE filters
   const conditions: string[] = [];
@@ -223,7 +269,12 @@ async function findArbitrageOpportunities(
     conditions.push(`AND ic.item_name LIKE '%${filterItem.replace(/'/g, "''")}%'`);
   }
   if (filterCategory) {
-    conditions.push(`AND ic.category_id = '${filterCategory.replace(/'/g, "''")}'`);
+    // Frontend may send category NAME ("Flour & Bakery") or ID ("CAT009")
+    // Reverse-map name → ID if needed
+    const catId = filterCategory.startsWith("CAT")
+      ? filterCategory
+      : Object.entries(CATEGORY_MAP).find(([, v]) => v === filterCategory)?.[0] || filterCategory;
+    conditions.push(`AND lp.category_id = '${catId.replace(/'/g, "''")}'`);
   }
   const extraWhere = conditions.join(" ");
 
@@ -237,87 +288,122 @@ async function findArbitrageOpportunities(
   }
   const stateWhere = stateConditions.join(" ");
 
-  // Single SQL: latest prices × latest prices × precomputed transport
-  const sql = `
-    WITH LatestPrices AS (
-      SELECT 
-        dp.item_id,
-        dp.market_id,
-        dp.price_naira,
-        dp.price_date,
-        dp.time_slot,
-        ic.item_name,
-        ic.unit,
-        ic.category_id,
-        m.market_name,
-        m.state,
-        ROW_NUMBER() OVER (
-          PARTITION BY dp.item_id, dp.market_id 
-          ORDER BY dp.price_date DESC, dp.time_slot DESC
-        ) AS rn
-      FROM dbo.Daily_Prices dp
-      JOIN dbo.Items_Catalog ic ON dp.item_id = ic.item_id
-      JOIN dbo.Markets m ON dp.market_id = m.market_id
-      WHERE dp.price_naira > 0
-        AND dp.price_date >= DATEADD(DAY, -7, CAST(GETDATE() AS DATE))
-        AND ic.category_id IN (${FOOD_CAT_SQL})
-        ${extraWhere}
-    )
+
+  // ── v12 KEY FIX: pool.request().batch() sends ALL statements as ONE T-SQL batch
+  // on a SINGLE connection — #StatePrices persists for the full batch.
+  // pool.connect() returns the pool itself (not a single connection) in mssql.
+  // pool.request().batch() is the correct pattern for multi-statement + temp tables.
+  const batchSql = `
+    -- Cleanup any leftover from failed previous run
+    IF OBJECT_ID('tempdb..#StatePrices') IS NOT NULL DROP TABLE #StatePrices;
+
+    -- Step 1: Materialize state averages (258ms in SSMS benchmark)
+    SELECT
+      lp.item_id, lp.item_name, lp.unit, lp.category_id, lp.state,
+      AVG(lp.price_naira)        AS avg_price,
+      MAX(lp.price_date)         AS latest_date,
+      MIN(lp.market_name)        AS buy_market,
+      MAX(lp.market_name)        AS sell_market,
+      MIN(lp.market_id)          AS buy_market_id,
+      MAX(lp.market_id)          AS sell_market_id
+    INTO #StatePrices
+    FROM dbo.Latest_Prices_Summary lp
+    WHERE lp.price_naira > 0
+      AND lp.category_id IN (${FOOD_CAT_SQL})
+    GROUP BY lp.item_id, lp.item_name, lp.unit, lp.category_id, lp.state;
+
+    -- Step 2: Index for self-join (49ms in SSMS benchmark)
+    CREATE INDEX IX_SP ON #StatePrices (item_id, avg_price)
+    INCLUDE (item_name, unit, category_id, state, latest_date,
+             buy_market, sell_market, buy_market_id, sell_market_id);
+
+    -- Step 3: Self-join + transport (same batch = same connection = #StatePrices alive)
     SELECT TOP ${Math.min(maxResults * 3, 300)}
       p1.item_id,
       p1.item_name,
       p1.unit,
       p1.category_id,
-      
-      p1.market_id   AS buy_market_id,
-      p1.market_name AS buy_market,
-      p1.state       AS buy_state,
-      CAST(p1.price_naira AS FLOAT) AS buy_price,
-      p1.price_date  AS buy_date,
-      
-      p2.market_id   AS sell_market_id,
-      p2.market_name AS sell_market,
-      p2.state       AS sell_state,
-      CAST(p2.price_naira AS FLOAT) AS sell_price,
-      p2.price_date  AS sell_date,
-      
-      CAST(t.road_distance_km AS FLOAT)    AS distance_km,
-      CAST(t.total_cost_per_bag AS FLOAT)  AS transport_cost,
-      t.distance_band,
-      CAST(t.rate_per_km AS FLOAT)         AS rate_per_km,
-      CAST(t.road_quality_mult AS FLOAT)   AS road_quality_mult,
-      CAST(t.fuel_haulage_cost AS FLOAT)   AS fuel_haulage_cost,
-      CAST(t.checkpoint_cost AS FLOAT)     AS checkpoint_cost_val,
-      CAST(t.fixed_cost AS FLOAT)          AS fixed_cost_val,
-      
-      CAST(p2.price_naira - p1.price_naira AS FLOAT) AS gross_profit,
-      CAST(p2.price_naira - p1.price_naira - t.total_cost_per_bag AS FLOAT) AS raw_net_profit,
+      p1.buy_market_id                                              AS buy_market_id,
+      p1.buy_market                                                 AS buy_market,
+      p1.state                                                      AS buy_state,
+      CAST(p1.avg_price  AS FLOAT)                                  AS buy_price,
+      p1.latest_date                                                AS buy_date,
+      p2.sell_market_id                                             AS sell_market_id,
+      p2.sell_market                                                AS sell_market,
+      p2.state                                                      AS sell_state,
+      CAST(p2.avg_price  AS FLOAT)                                  AS sell_price,
+      p2.latest_date                                                AS sell_date,
+      ISNULL(CAST(t.road_distance_km   AS FLOAT), 500)             AS distance_km,
+      ISNULL(CAST(t.total_cost_per_bag AS FLOAT), 8500)            AS transport_cost,
+      ISNULL(t.distance_band, 'Inter-State')                       AS distance_band,
+      ISNULL(CAST(t.rate_per_km        AS FLOAT), 17.0)            AS rate_per_km,
+      ISNULL(CAST(t.road_quality_mult  AS FLOAT), 1.0)             AS road_quality_mult,
+      ISNULL(CAST(t.fuel_haulage_cost  AS FLOAT), 5950)            AS fuel_haulage_cost,
+      ISNULL(CAST(t.checkpoint_cost    AS FLOAT), 850)             AS checkpoint_cost_val,
+      ISNULL(CAST(t.fixed_cost         AS FLOAT), 1700)            AS fixed_cost_val,
+      CAST(p2.avg_price - p1.avg_price AS FLOAT)                   AS gross_profit,
+      CAST(p2.avg_price - p1.avg_price
+           - ISNULL(t.total_cost_per_bag, 8500) AS FLOAT)          AS raw_net_profit,
       ROUND(
-        ((CAST(p2.price_naira AS FLOAT) - CAST(p1.price_naira AS FLOAT) - CAST(t.total_cost_per_bag AS FLOAT)) 
-         / CAST(p1.price_naira AS FLOAT)) * 100, 1
-      ) AS raw_profit_pct
-
-    FROM LatestPrices p1
-    JOIN LatestPrices p2 
-      ON  p1.item_id = p2.item_id 
-      AND p1.market_id != p2.market_id
-      AND p2.price_naira > p1.price_naira
-      AND p1.rn = 1 
-      AND p2.rn = 1
-    JOIN dbo.vw_Market_Transport t
-      ON  t.market_a_id = p1.market_id 
-      AND t.market_b_id = p2.market_id
-    WHERE (CAST(p2.price_naira AS FLOAT) - CAST(p1.price_naira AS FLOAT) - CAST(t.total_cost_per_bag AS FLOAT)) > 0
-      ${stateWhere}
-    ORDER BY 
-      ((CAST(p2.price_naira AS FLOAT) - CAST(p1.price_naira AS FLOAT) - CAST(t.total_cost_per_bag AS FLOAT)) 
-       / CAST(p1.price_naira AS FLOAT)) DESC
+        CAST(p2.avg_price - p1.avg_price
+             - ISNULL(t.total_cost_per_bag, 8500) AS FLOAT)
+        / CAST(p1.avg_price AS FLOAT) * 100, 1
+      )                                                             AS raw_profit_pct
+    FROM #StatePrices p1
+    JOIN #StatePrices p2
+      ON  p1.item_id   = p2.item_id
+      AND p1.state    != p2.state
+      AND p2.avg_price > p1.avg_price
+    LEFT JOIN dbo.vw_Market_Transport t
+      ON  t.market_a_id = p1.buy_market_id
+      AND t.market_b_id = p2.sell_market_id
+    WHERE CAST(p2.avg_price - p1.avg_price
+               - ISNULL(t.total_cost_per_bag, 8500) AS FLOAT) > 0
+    ORDER BY raw_profit_pct DESC;
   `;
+  // ⚠️  DROP TABLE is at the TOP of the batch (cleanup of previous run).
+  // It must NOT appear at the end — mssql .batch() returns the last resultset.
+  // DROP TABLE produces no recordset → batchResult.recordset = undefined → crash.
+  // SELECT TOP must be the FINAL statement so batchResult.recordset = our rows.
 
-  const results = await prisma.$queryRawUnsafe(sql) as any[];
+  let results: any[] = [];
+  try {
+    const batchResult = await pool.request().batch(batchSql);
+    results = batchResult?.recordset || [];
+    console.log(`[arbitrage v13] Batch OK — ${results.length} rows returned`);
+  } catch (batchErr: any) {
+    console.error("[arbitrage v13] Batch FAILED:", batchErr?.message || batchErr);
+    console.error("[arbitrage v13] Error number:", batchErr?.number, "| State:", batchErr?.state);
+    try { await pool.close(); } catch {}
+    _pool = null;
+    throw batchErr;
+  }
+
+  // ── JS-level filtering (item, category, state) ─────────────────────────
+  // Much safer than injecting dynamic WHERE into batch SQL.
+  // 300 rows max — JS filter is instant (<1ms).
+  const filtered = results.filter((r: any) => {
+    if (filterItem) {
+      const name = String(r.item_name || "").toLowerCase();
+      if (!name.includes(filterItem.toLowerCase())) return false;
+    }
+    if (filterCategory) {
+      const catId = filterCategory.startsWith("CAT")
+        ? filterCategory
+        : Object.entries(CATEGORY_MAP).find(([, v]) => v === filterCategory)?.[0];
+      if (catId && r.category_id !== catId) return false;
+    }
+    if (filterBuyState) {
+      if (String(r.buy_state || "") !== filterBuyState) return false;
+    }
+    if (filterSellState) {
+      if (String(r.sell_state || "") !== filterSellState) return false;
+    }
+    return true;
+  });
 
   // Map to ArbitrageOpportunity with category-aware transport
-  return results
+  return filtered
     .map((r: any) => {
       const buyPrice = parseFloat(r.buy_price) || 0;
       const sellPrice = parseFloat(r.sell_price) || 0;
@@ -380,7 +466,7 @@ async function findArbitrageOpportunities(
 
 export async function GET(request: NextRequest) {
   try {
-    const prisma = await getPrisma();
+    const prisma = null;  // v11: mssql used internally, prisma arg kept for compat
     const url = new URL(request.url);
 
     const tier = (url.searchParams.get("tier") || "BUSINESS").toUpperCase();
@@ -436,8 +522,8 @@ export async function GET(request: NextRequest) {
           generatedAt: new Date().toISOString(),
           transportModel: "Precomputed Market_Distances v6.0 (Feb 2026)",
           dieselPrice: "₦1,100/litre",
-          marketPairs: "25,425 precomputed (226 markets)",
-          dataSource: "Daily_Prices + vw_Market_Transport",
+          marketPairs: "37×37 state pairs via #StatePrices (mssql session)",
+          dataSource: "Latest_Prices_Summary #temp (mssql) + vw_Market_Transport v11.0",
           categoryMultipliers: "Applied (livestock 10×, frozen 3.5×, perishables 2×)",
         },
       },
@@ -459,7 +545,8 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const prisma = await getPrisma();
+    const pool = await getPool();
+    if (!pool) return NextResponse.json({ success: false, error: "db_unavailable" }, { status: 503 });
     const body = await request.json();
     const { buyMarket, sellMarket, itemName, tier = "FREE" } = body;
 
@@ -477,25 +564,19 @@ export async function POST(request: NextRequest) {
     const sellSearch = (sellMarket || "").replace(/'/g, "''");
 
     // Get prices for both markets
-    const results = await prisma.$queryRawUnsafe(`
-      SELECT item_name, market_name, market_id, state, category_id, unit,
-        CAST(price_naira AS FLOAT) as price, price_date
-      FROM (
-        SELECT dp.item_id, ic.item_name, m.market_name, m.market_id, m.state, 
-          ic.category_id, ic.unit, dp.price_naira, dp.price_date,
-          ROW_NUMBER() OVER (PARTITION BY dp.item_id, dp.market_id 
-            ORDER BY dp.price_date DESC, dp.time_slot DESC) AS rn
-        FROM dbo.Daily_Prices dp
-        JOIN dbo.Items_Catalog ic ON dp.item_id = ic.item_id
-        JOIN dbo.Markets m ON dp.market_id = m.market_id
-        WHERE ic.item_name LIKE '%${itemSearch}%'
-          AND (m.market_name LIKE '%${buySearch}%' OR m.market_name LIKE '%${sellSearch}%')
-          AND dp.price_naira > 0
-          AND dp.price_date >= DATEADD(DAY, -7, CAST(GETDATE() AS DATE))
-          AND ic.category_id IN (${FOOD_CAT_SQL})
-      ) sub
-      WHERE rn = 1
-    `) as any[];
+    const postResult = await pool.request().query(`
+      SELECT
+        lp.item_name, lp.market_name, lp.market_id, lp.state,
+        lp.category_id, lp.unit,
+        CAST(lp.price_naira AS FLOAT) AS price,
+        lp.price_date
+      FROM dbo.Latest_Prices_Summary lp
+      WHERE lp.item_name   LIKE '%${itemSearch}%'
+        AND (lp.market_name LIKE '%${buySearch}%' OR lp.market_name LIKE '%${sellSearch}%')
+        AND lp.price_naira > 0
+        AND lp.category_id IN (${FOOD_CAT_SQL})
+    `);
+    const results = postResult.recordset as any[];
 
     if (!results || results.length < 2) {
       return NextResponse.json({
@@ -526,7 +607,7 @@ export async function POST(request: NextRequest) {
     const catId = String(buyPrice.category_id || "");
 
     // Get transport from precomputed table
-    const transportRows = await prisma.$queryRawUnsafe(`
+    const transportResult = await pool.request().query(`
       SELECT 
         CAST(road_distance_km AS FLOAT) AS distance,
         CAST(total_cost_per_bag AS FLOAT) AS total_cost,
@@ -539,7 +620,8 @@ export async function POST(request: NextRequest) {
       FROM dbo.vw_Market_Transport
       WHERE market_a_id = '${String(buyPrice.market_id).replace(/'/g, "''")}'
         AND market_b_id = '${String(sellPrice.market_id).replace(/'/g, "''")}'
-    `) as any[];
+    `);
+    const transportRows = transportResult.recordset as any[];
 
     let transport: TransportResult;
 

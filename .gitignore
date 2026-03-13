@@ -61,3 +61,11 @@ __tests__/
 *.spec.ts
 
 .vercel
+
+# VAPID keys
+.env.vapid
+
+# Backup files
+*.---
+.env.vapid
+xcopy

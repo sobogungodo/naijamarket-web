@@ -1,0 +1,507 @@
+/* src/styles/mobile-responsive.css */
+/* Comprehensive mobile-first responsive styles for NaijaMarket Intel */
+
+/* ============================================================================
+   CSS CUSTOM PROPERTIES (Variables)
+   ============================================================================ */
+:root {
+  /* Spacing scale */
+  --space-xs: 0.25rem;   /* 4px */
+  --space-sm: 0.5rem;    /* 8px */
+  --space-md: 1rem;      /* 16px */
+  --space-lg: 1.5rem;    /* 24px */
+  --space-xl: 2rem;      /* 32px */
+  --space-2xl: 3rem;     /* 48px */
+  
+  /* Typography scale - mobile first */
+  --text-xs: 0.75rem;    /* 12px */
+  --text-sm: 0.875rem;   /* 14px */
+  --text-base: 1rem;     /* 16px */
+  --text-lg: 1.125rem;   /* 18px */
+  --text-xl: 1.25rem;    /* 20px */
+  --text-2xl: 1.5rem;    /* 24px */
+  --text-3xl: 1.875rem;  /* 30px */
+  --text-4xl: 2.25rem;   /* 36px */
+  
+  /* Touch targets (minimum 44px for accessibility) */
+  --touch-target-min: 44px;
+  --touch-target-comfortable: 48px;
+  
+  /* Safe areas for notched phones */
+  --safe-area-top: env(safe-area-inset-top, 0px);
+  --safe-area-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-area-left: env(safe-area-inset-left, 0px);
+  --safe-area-right: env(safe-area-inset-right, 0px);
+  
+  /* Header height */
+  --header-height: 64px;
+  
+  /* Bottom nav height */
+  --bottom-nav-height: 72px;
+}
+
+/* ============================================================================
+   BASE MOBILE STYLES
+   ============================================================================ */
+
+/* Prevent text size adjustment on orientation change */
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+/* Smooth scrolling but respect reduced motion preference */
+@media (prefers-reduced-motion: no-preference) {
+  html {
+    scroll-behavior: smooth;
+  }
+}
+
+/* Better tap highlighting */
+* {
+  -webkit-tap-highlight-color: rgba(34, 197, 94, 0.2);
+}
+
+/* Remove tap highlight on specific elements */
+button, a, [role="button"] {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Prevent pull-to-refresh in standalone mode */
+body.standalone-mode {
+  overscroll-behavior-y: contain;
+}
+
+/* Safe area padding for notched phones */
+body {
+  padding-top: var(--safe-area-top);
+  padding-bottom: var(--safe-area-bottom);
+  padding-left: var(--safe-area-left);
+  padding-right: var(--safe-area-right);
+}
+
+/* ============================================================================
+   TYPOGRAPHY - Mobile First
+   ============================================================================ */
+
+/* Base font size (prevents zoom on input focus on iOS) */
+body {
+  font-size: 16px;
+  line-height: 1.5;
+}
+
+/* Headings - mobile sizes */
+h1 { font-size: var(--text-2xl); line-height: 1.2; }
+h2 { font-size: var(--text-xl); line-height: 1.25; }
+h3 { font-size: var(--text-lg); line-height: 1.3; }
+h4 { font-size: var(--text-base); line-height: 1.4; }
+
+/* Scale up on larger screens */
+@media (min-width: 640px) {
+  h1 { font-size: var(--text-3xl); }
+  h2 { font-size: var(--text-2xl); }
+  h3 { font-size: var(--text-xl); }
+}
+
+@media (min-width: 1024px) {
+  h1 { font-size: var(--text-4xl); }
+  h2 { font-size: var(--text-3xl); }
+  h3 { font-size: var(--text-2xl); }
+}
+
+/* ============================================================================
+   TOUCH-FRIENDLY COMPONENTS
+   ============================================================================ */
+
+/* Buttons - minimum touch target */
+.btn, 
+button:not(.btn-icon),
+[role="button"] {
+  min-height: var(--touch-target-min);
+  min-width: var(--touch-target-min);
+  padding: var(--space-sm) var(--space-md);
+}
+
+/* Icon-only buttons */
+.btn-icon {
+  width: var(--touch-target-comfortable);
+  height: var(--touch-target-comfortable);
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Links in body text - larger touch area */
+.content-area a {
+  padding: var(--space-xs) 0;
+  margin: calc(var(--space-xs) * -1) 0;
+}
+
+/* Form inputs - prevent zoom on iOS */
+input, select, textarea {
+  font-size: 16px;
+  min-height: var(--touch-target-comfortable);
+  padding: var(--space-sm) var(--space-md);
+}
+
+/* Checkbox and radio - larger touch targets */
+input[type="checkbox"],
+input[type="radio"] {
+  width: 24px;
+  height: 24px;
+  margin-right: var(--space-sm);
+}
+
+/* ============================================================================
+   LAYOUT - Mobile First
+   ============================================================================ */
+
+/* Container */
+.container {
+  width: 100%;
+  padding-left: var(--space-md);
+  padding-right: var(--space-md);
+  margin-left: auto;
+  margin-right: auto;
+}
+
+@media (min-width: 640px) {
+  .container {
+    max-width: 640px;
+    padding-left: var(--space-lg);
+    padding-right: var(--space-lg);
+  }
+}
+
+@media (min-width: 768px) {
+  .container {
+    max-width: 768px;
+  }
+}
+
+@media (min-width: 1024px) {
+  .container {
+    max-width: 1024px;
+  }
+}
+
+@media (min-width: 1280px) {
+  .container {
+    max-width: 1280px;
+  }
+}
+
+/* Stack layout (mobile) */
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+/* Grid - mobile first (1 column) */
+.grid-responsive {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--space-md);
+}
+
+@media (min-width: 640px) {
+  .grid-responsive {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (min-width: 1024px) {
+  .grid-responsive {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+/* ============================================================================
+   MOBILE NAVIGATION
+   ============================================================================ */
+
+/* Fixed header */
+.mobile-header {
+  position: fixed;
+  top: var(--safe-area-top);
+  left: 0;
+  right: 0;
+  height: var(--header-height);
+  background: rgba(10, 10, 10, 0.95);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  padding: 0 var(--space-md);
+}
+
+/* Bottom navigation */
+.bottom-nav {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: calc(var(--bottom-nav-height) + var(--safe-area-bottom));
+  padding-bottom: var(--safe-area-bottom);
+  background: rgba(10, 10, 10, 0.98);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: space-around;
+}
+
+/* Nav item */
+.nav-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-xs);
+  padding: var(--space-sm);
+  min-width: 64px;
+  color: #a0a0a0;
+  text-decoration: none;
+  transition: color 0.2s;
+}
+
+.nav-item:active,
+.nav-item.active {
+  color: #22c55e;
+}
+
+.nav-item-icon {
+  width: 24px;
+  height: 24px;
+}
+
+.nav-item-label {
+  font-size: var(--text-xs);
+  font-weight: 500;
+}
+
+/* Content area (account for fixed header and bottom nav) */
+.main-content {
+  padding-top: calc(var(--header-height) + var(--safe-area-top) + var(--space-md));
+  padding-bottom: calc(var(--bottom-nav-height) + var(--safe-area-bottom) + var(--space-md));
+  min-height: 100vh;
+}
+
+/* Hide bottom nav on desktop */
+@media (min-width: 1024px) {
+  .bottom-nav {
+    display: none;
+  }
+  
+  .main-content {
+    padding-bottom: var(--space-xl);
+  }
+}
+
+/* ============================================================================
+   CARDS & LISTS - Mobile Optimized
+   ============================================================================ */
+
+/* Price card */
+.price-card {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  padding: var(--space-md);
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.price-card:active {
+  transform: scale(0.98);
+}
+
+/* List item with touch feedback */
+.list-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  padding: var(--space-md);
+  min-height: var(--touch-target-comfortable);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  transition: background 0.15s;
+}
+
+.list-item:active {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+/* ============================================================================
+   MODALS & OVERLAYS
+   ============================================================================ */
+
+/* Modal backdrop */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.8);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  z-index: 50;
+}
+
+/* Bottom sheet */
+.bottom-sheet {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  max-height: 90vh;
+  background: #1a1a1a;
+  border-radius: 24px 24px 0 0;
+  z-index: 51;
+  transform: translateY(100%);
+  transition: transform 0.3s ease-out;
+  padding-bottom: var(--safe-area-bottom);
+}
+
+.bottom-sheet.open {
+  transform: translateY(0);
+}
+
+/* Bottom sheet handle */
+.bottom-sheet-handle {
+  width: 40px;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.3);
+  border-radius: 2px;
+  margin: var(--space-sm) auto var(--space-md);
+}
+
+/* ============================================================================
+   TABLES - Responsive
+   ============================================================================ */
+
+/* Horizontal scroll wrapper for tables */
+.table-wrapper {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  margin: 0 calc(var(--space-md) * -1);
+  padding: 0 var(--space-md);
+}
+
+/* Card-based table on mobile */
+@media (max-width: 639px) {
+  .table-responsive thead {
+    display: none;
+  }
+  
+  .table-responsive tbody tr {
+    display: block;
+    padding: var(--space-md);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  }
+  
+  .table-responsive tbody td {
+    display: flex;
+    justify-content: space-between;
+    padding: var(--space-xs) 0;
+    border: none;
+  }
+  
+  .table-responsive tbody td::before {
+    content: attr(data-label);
+    font-weight: 500;
+    color: #a0a0a0;
+  }
+}
+
+/* ============================================================================
+   UTILITY CLASSES
+   ============================================================================ */
+
+/* Hide on mobile */
+@media (max-width: 639px) {
+  .hide-mobile { display: none !important; }
+}
+
+/* Hide on desktop */
+@media (min-width: 1024px) {
+  .hide-desktop { display: none !important; }
+}
+
+/* Mobile only padding */
+@media (max-width: 639px) {
+  .mobile-px { padding-left: var(--space-md); padding-right: var(--space-md); }
+  .mobile-py { padding-top: var(--space-md); padding-bottom: var(--space-md); }
+}
+
+/* Touch scroll optimization */
+.scroll-touch {
+  -webkit-overflow-scrolling: touch;
+  scroll-behavior: smooth;
+}
+
+/* Prevent text selection during swipe */
+.no-select {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* Hardware acceleration for animations */
+.gpu-accelerated {
+  transform: translateZ(0);
+  will-change: transform;
+}
+
+/* ============================================================================
+   DARK MODE OPTIMIZATIONS
+   ============================================================================ */
+
+/* Reduce brightness in dark mode for OLED screens */
+@media (prefers-color-scheme: dark) {
+  img {
+    filter: brightness(0.9);
+  }
+  
+  /* True black for OLED */
+  .oled-black {
+    background-color: #000;
+  }
+}
+
+/* ============================================================================
+   PRINT STYLES
+   ============================================================================ */
+
+@media print {
+  .mobile-header,
+  .bottom-nav,
+  .no-print {
+    display: none !important;
+  }
+  
+  .main-content {
+    padding: 0 !important;
+  }
+  
+  body {
+    background: white;
+    color: black;
+  }
+}
+
+/* ============================================================================
+   ANIMATIONS - Respect Reduced Motion
+   ============================================================================ */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

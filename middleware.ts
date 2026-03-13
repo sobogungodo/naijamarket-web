@@ -1,12 +1,13 @@
 // ============================================================================
 // middleware.ts 
 // NaijaMarket Intel - Route Protection Middleware + Single Session Validation
-// Version: 2.1.0 - Added public content routes to skip list
-// Date: 2026-02-23
+// Version: 2.2.0 - Added PWA routes (offline, push, sw.js, manifest)
+// Date: 2026-03-13
 // 
-// CHANGES FROM v2.0.0:
-// - Added /about, /privacy, /ndpr, /blog, /terms, /contact to skip list
-// - Fixes 404 → back button → forced login redirect bug
+// CHANGES FROM v2.1.0:
+// - Added /offline to PUBLIC_CONTENT_ROUTES
+// - Added /api/push/* to skip list for push notifications
+// - Added /sw.js and /manifest.json to static file checks
 // ============================================================================
 
 import { NextResponse } from "next/server";
@@ -49,13 +50,15 @@ const PUBLIC_CONTENT_ROUTES = [
   "/blog",
   "/terms",
   "/contact",
+  "/offline",      // PWA offline page
+  "/pricing",      // Pricing page
 ];
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // SKIP: Static files, Next.js internals, auth APIs, and public content
+  // SKIP: Static files, Next.js internals, auth APIs, PWA files, and public content
   // ═══════════════════════════════════════════════════════════════════════════
   if (
     pathname === "/" ||
@@ -66,6 +69,9 @@ export async function middleware(request: NextRequest) {
     pathname.startsWith("/api/public") ||
     pathname.startsWith("/api/inflation") ||
     pathname.startsWith("/api/mobile") ||
+    pathname.startsWith("/api/push") ||        // PWA push notification APIs
+    pathname === "/sw.js" ||                   // Service worker
+    pathname === "/manifest.json" ||           // PWA manifest
     pathname.includes(".") ||
     pathname.startsWith("/images") ||
     pathname.startsWith("/icons") ||

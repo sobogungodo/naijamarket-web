@@ -1,0 +1,77 @@
+// prisma/schema-additions.prisma
+// Add this model to your existing prisma/schema.prisma file
+
+// Push notification subscriptions
+model Push_Subscription {
+  id          String   @id @default(cuid())
+  user_id     String
+  endpoint    String   @db.VarChar(500)
+  p256dh_key  String   @db.VarChar(200)
+  auth_key    String   @db.VarChar(100)
+  is_active   Boolean  @default(true)
+  created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt
+
+  // Relations
+  user        Consumer @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  // Unique constraint on user + endpoint
+  @@unique([user_id, endpoint])
+  
+  // Index for querying active subscriptions
+  @@index([user_id, is_active])
+  @@index([is_active])
+  
+  @@map("push_subscriptions")
+}
+
+// Also add this relation to your existing Consumer model:
+// push_subscriptions Push_Subscription[]
+
+// ============================================================================
+// SQL Migration Script (for Azure SQL)
+// ============================================================================
+
+/*
+-- Run this in Azure SQL to create the push_subscriptions table
+
+CREATE TABLE dbo.push_subscriptions (
+    id NVARCHAR(100) NOT NULL PRIMARY KEY DEFAULT NEWID(),
+    user_id NVARCHAR(100) NOT NULL,
+    endpoint NVARCHAR(500) NOT NULL,
+    p256dh_key NVARCHAR(200) NOT NULL,
+    auth_key NVARCHAR(100) NOT NULL,
+    is_active BIT NOT NULL DEFAULT 1,
+    created_at DATETIME2 NOT NULL DEFAULT GETUTCDATE(),
+    updated_at DATETIME2 NOT NULL DEFAULT GETUTCDATE(),
+    
+    -- Foreign key to consumers table
+    CONSTRAINT FK_push_subscriptions_consumers 
+        FOREIGN KEY (user_id) 
+        REFERENCES dbo.consumers(id) 
+        ON DELETE CASCADE,
+    
+    -- Unique constraint
+    CONSTRAINT UQ_push_subscriptions_user_endpoint 
+        UNIQUE (user_id, endpoint)
+);
+
+-- Indexes
+CREATE INDEX IX_push_subscriptions_user_active 
+    ON dbo.push_subscriptions(user_id, is_active);
+
+CREATE INDEX IX_push_subscriptions_active 
+    ON dbo.push_subscriptions(is_active);
+
+-- Trigger for updated_at
+CREATE TRIGGER TR_push_subscriptions_updated
+ON dbo.push_subscriptions
+AFTER UPDATE
+AS
+BEGIN
+    UPDATE dbo.push_subscriptions
+    SET updated_at = GETUTCDATE()
+    FROM dbo.push_subscriptions ps
+    INNER JOIN inserted i ON ps.id = i.id
+END;
+*/

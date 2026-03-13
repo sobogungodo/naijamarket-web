@@ -1,0 +1,41 @@
+{
+  "name": "naijamarket-intel",
+  "version": "2.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "prisma generate && next build",
+    "start": "next start",
+    "lint": "next lint",
+    "postinstall": "prisma generate",
+    "generate-icons": "node scripts/generate-icons.js",
+    "generate-vapid": "node scripts/generate-vapid-keys.js",
+    "pwa-setup": "npm run generate-icons && npm run generate-vapid"
+  },
+  "dependencies": {
+    "next": "14.2.35",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "next-auth": "^4.24.0",
+    "@prisma/client": "^5.22.0",
+    "next-themes": "^0.2.1",
+    "lucide-react": "^0.383.0",
+    "web-push": "^3.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/react": "^18.2.0",
+    "@types/react-dom": "^18.2.0",
+    "typescript": "^5.0.0",
+    "prisma": "^5.22.0",
+    "sharp": "^0.33.0",
+    "tailwindcss": "^3.4.0",
+    "postcss": "^8.4.0",
+    "autoprefixer": "^10.4.0",
+    "eslint": "^8.0.0",
+    "eslint-config-next": "14.2.35"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

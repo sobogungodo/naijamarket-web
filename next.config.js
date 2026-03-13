@@ -33,7 +33,7 @@ const nextConfig = {
     formats: ['image/avif', 'image/webp'],
   },
 
-  // Headers for security
+  // Headers for security and PWA
   async headers() {
     return [
       {
@@ -42,11 +42,35 @@ const nextConfig = {
         headers: [
           {
             key: 'Cache-Control',
-            value: 'no-cache, no-store, must-revalidate',
+            value: 'public, max-age=0, must-revalidate',
           },
           {
             key: 'Service-Worker-Allowed',
             value: '/',
+          },
+        ],
+      },
+      {
+        // PWA Manifest - cache for 1 hour
+        source: '/manifest.json',
+        headers: [
+          {
+            key: 'Cache-Control',
+            value: 'public, max-age=3600',
+          },
+          {
+            key: 'Content-Type',
+            value: 'application/manifest+json',
+          },
+        ],
+      },
+      {
+        // PWA Icons - cache for 1 day
+        source: '/icons/:path*',
+        headers: [
+          {
+            key: 'Cache-Control',
+            value: 'public, max-age=86400, immutable',
           },
         ],
       },
@@ -96,7 +120,7 @@ const nextConfig = {
   // Environment variables validation
   env: {
     NEXT_PUBLIC_APP_NAME: 'NaijaMarket Intel',
-    NEXT_PUBLIC_APP_VERSION: '1.0.0',
+    NEXT_PUBLIC_APP_VERSION: '2.0.0',
   },
 
   // PWA support will be added via next-pwa
