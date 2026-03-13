@@ -2,8 +2,12 @@
 // NAIJAFOOD INTEL - ARBITRAGE OPPORTUNITIES API
 // File: src/app/api/arbitrage/route.ts
 // Bloomberg Equivalent: ARBI <GO>
-// Version: 12.2 - DROP TABLE only at batch START (not end), SELECT is last stmt
-// Date: 2026-02-19
+// Version: 14.0 - v14 BUG FIX: State filter now in SQL WHERE (not JS post-filter)
+// Date: 2026-03-13
+// ROOT CAUSE FIX: TOP N was applied BEFORE JS state filtering — so Ogun/any non-top
+// state pairs were never returned. Now: SQL injects state filter so TOP N applies
+// AFTER state filter. Also: LIKE replaces strict = so "Ogun" matches "Ogun State".
+// Also: category filter pushed into CTE WHERE for better temp table performance.
 //
 // WHAT'S NEW IN v6.0:
 //   - Transport costs precomputed for ALL 226×225/2 = 25,425 market pairs
@@ -55,23 +59,23 @@ async function getPool(): Promise<sql.ConnectionPool | null> {
       return _pool;
     } catch {
       // Connection dropped — close and recreate
-      console.warn("[arbitrage v13] Pool ping failed — reconnecting");
+      console.warn("[arbitrage v14] Pool ping failed — reconnecting");
       try { await _pool.close(); } catch {}
       _pool = null;
     }
   }
 
   if (!SQL_CONFIG.user || !SQL_CONFIG.password) {
-    console.warn("[arbitrage v13] SQL credentials not set in env vars");
+    console.warn("[arbitrage v14] SQL credentials not set in env vars");
     return null;
   }
 
   try {
     _pool = await new sql.ConnectionPool(SQL_CONFIG).connect();
-    console.log("[arbitrage v13] Connection pool established");
+    console.log("[arbitrage v14] Connection pool established");
     return _pool;
   } catch (err) {
-    console.error("[arbitrage v13] Failed to create connection pool:", err);
+    console.error("[arbitrage v14] Failed to create connection pool:", err);
     _pool = null;
     return null;
   }
@@ -263,41 +267,56 @@ async function findArbitrageOpportunities(
   const pool = await getPool();
   if (!pool) return [];
 
-  // Build dynamic WHERE filters
-  const conditions: string[] = [];
-  if (filterItem) {
-    conditions.push(`AND ic.item_name LIKE '%${filterItem.replace(/'/g, "''")}%'`);
-  }
+  // ── v14 FIX: Category ID resolution (used in BOTH SQL and JS) ──────────────
+  let resolvedCatId: string | undefined;
   if (filterCategory) {
-    // Frontend may send category NAME ("Flour & Bakery") or ID ("CAT009")
-    // Reverse-map name → ID if needed
-    const catId = filterCategory.startsWith("CAT")
+    resolvedCatId = filterCategory.startsWith("CAT")
       ? filterCategory
       : Object.entries(CATEGORY_MAP).find(([, v]) => v === filterCategory)?.[0] || filterCategory;
-    conditions.push(`AND lp.category_id = '${catId.replace(/'/g, "''")}'`);
   }
-  const extraWhere = conditions.join(" ");
 
-  // State filters applied in outer WHERE (after JOIN)
-  const stateConditions: string[] = [];
+  // ── v14 FIX: Safe SQL injection for state/category filters ─────────────────
+  // BUG FIX 1: TOP N was applied BEFORE JS state filtering, so Ogun→Lagos pairs
+  // ranked below position 300 were never returned — always 0 results.
+  // SOLUTION: When state filters are active, inject them into SQL so TOP N is
+  // applied AFTER the state filter. Use safe string escaping (no user concat risk
+  // since values come from a controlled dropdown, not free-text input).
+  //
+  // BUG FIX 2: JS used strict !== equality on state names. DB may store
+  // "Ogun State" while dropdown sends "Ogun". Now using LIKE in SQL instead.
+
+  const sqlStateConditions: string[] = [];
   if (filterBuyState) {
-    stateConditions.push(`AND p1.state = '${filterBuyState.replace(/'/g, "''")}'`);
+    const safe = filterBuyState.replace(/'/g, "''");
+    // LIKE with % handles "Ogun" matching "Ogun State" and vice versa
+    sqlStateConditions.push(`AND p1.state LIKE '%${safe}%'`);
   }
   if (filterSellState) {
-    stateConditions.push(`AND p2.state = '${filterSellState.replace(/'/g, "''")}'`);
+    const safe = filterSellState.replace(/'/g, "''");
+    sqlStateConditions.push(`AND p2.state LIKE '%${safe}%'`);
   }
-  const stateWhere = stateConditions.join(" ");
+  const sqlStateWhere = sqlStateConditions.join(" ");
 
+  // When state filters are active: expand TOP N to see ALL pairs for that state,
+  // not just the global top 300. Without this, low-ranked state pairs are invisible.
+  // State-filtered queries return far fewer rows so this is still fast.
+  const hasStateFilter = !!(filterBuyState || filterSellState);
+  const topN = hasStateFilter
+    ? 5000                            // All state pairs — critical for state filtering
+    : Math.min(maxResults * 3, 300);  // Global browse — keep fast
+
+  const catFilter = resolvedCatId
+    ? `AND lp.category_id = '${resolvedCatId.replace(/'/g, "''")}'`
+    : "";
 
   // ── v12 KEY FIX: pool.request().batch() sends ALL statements as ONE T-SQL batch
   // on a SINGLE connection — #StatePrices persists for the full batch.
-  // pool.connect() returns the pool itself (not a single connection) in mssql.
-  // pool.request().batch() is the correct pattern for multi-statement + temp tables.
   const batchSql = `
     -- Cleanup any leftover from failed previous run
     IF OBJECT_ID('tempdb..#StatePrices') IS NOT NULL DROP TABLE #StatePrices;
 
     -- Step 1: Materialize state averages (258ms in SSMS benchmark)
+    -- v14: category filter applied HERE to reduce temp table size when category selected
     SELECT
       lp.item_id, lp.item_name, lp.unit, lp.category_id, lp.state,
       AVG(lp.price_naira)        AS avg_price,
@@ -310,6 +329,7 @@ async function findArbitrageOpportunities(
     FROM dbo.Latest_Prices_Summary lp
     WHERE lp.price_naira > 0
       AND lp.category_id IN (${FOOD_CAT_SQL})
+      ${catFilter}
     GROUP BY lp.item_id, lp.item_name, lp.unit, lp.category_id, lp.state;
 
     -- Step 2: Index for self-join (49ms in SSMS benchmark)
@@ -318,7 +338,10 @@ async function findArbitrageOpportunities(
              buy_market, sell_market, buy_market_id, sell_market_id);
 
     -- Step 3: Self-join + transport (same batch = same connection = #StatePrices alive)
-    SELECT TOP ${Math.min(maxResults * 3, 300)}
+    -- v14 FIX: sqlStateWhere injected HERE so TOP N applies AFTER state filtering.
+    -- This is the root cause fix — previously TOP 300 was global (all states),
+    -- then JS tried to filter by state on an already-truncated result set.
+    SELECT TOP ${topN}
       p1.item_id,
       p1.item_name,
       p1.unit,
@@ -359,6 +382,7 @@ async function findArbitrageOpportunities(
       AND t.market_b_id = p2.sell_market_id
     WHERE CAST(p2.avg_price - p1.avg_price
                - ISNULL(t.total_cost_per_bag, 8500) AS FLOAT) > 0
+      ${sqlStateWhere}
     ORDER BY raw_profit_pct DESC;
   `;
   // ⚠️  DROP TABLE is at the TOP of the batch (cleanup of previous run).
@@ -370,34 +394,37 @@ async function findArbitrageOpportunities(
   try {
     const batchResult = await pool.request().batch(batchSql);
     results = batchResult?.recordset || [];
-    console.log(`[arbitrage v13] Batch OK — ${results.length} rows returned`);
+    console.log(`[arbitrage v14] Batch OK — ${results.length} rows (topN=${topN}, stateFilter=${hasStateFilter})`);
   } catch (batchErr: any) {
-    console.error("[arbitrage v13] Batch FAILED:", batchErr?.message || batchErr);
-    console.error("[arbitrage v13] Error number:", batchErr?.number, "| State:", batchErr?.state);
+    console.error("[arbitrage v14] Batch FAILED:", batchErr?.message || batchErr);
+    console.error("[arbitrage v14] Error number:", batchErr?.number, "| State:", batchErr?.state);
     try { await pool.close(); } catch {}
     _pool = null;
     throw batchErr;
   }
 
-  // ── JS-level filtering (item, category, state) ─────────────────────────
-  // Much safer than injecting dynamic WHERE into batch SQL.
-  // 300 rows max — JS filter is instant (<1ms).
+  // ── JS-level filtering (item, category only — state now filtered in SQL) ───
+  // v14: State filtering moved to SQL WHERE so TOP N applies AFTER state filter.
+  // JS still filters item text-search and category as a safety net.
   const filtered = results.filter((r: any) => {
     if (filterItem) {
       const name = String(r.item_name || "").toLowerCase();
       if (!name.includes(filterItem.toLowerCase())) return false;
     }
-    if (filterCategory) {
-      const catId = filterCategory.startsWith("CAT")
-        ? filterCategory
-        : Object.entries(CATEGORY_MAP).find(([, v]) => v === filterCategory)?.[0];
-      if (catId && r.category_id !== catId) return false;
+    if (resolvedCatId) {
+      if (r.category_id !== resolvedCatId) return false;
     }
+    // v14: State filter is now in SQL (LIKE-based), but keep JS as secondary
+    // safety using INCLUDES instead of === to handle "Ogun" vs "Ogun State" edge cases
     if (filterBuyState) {
-      if (String(r.buy_state || "") !== filterBuyState) return false;
+      const dbState = String(r.buy_state || "").toLowerCase();
+      const filterLower = filterBuyState.toLowerCase();
+      if (!dbState.includes(filterLower) && !filterLower.includes(dbState)) return false;
     }
     if (filterSellState) {
-      if (String(r.sell_state || "") !== filterSellState) return false;
+      const dbState = String(r.sell_state || "").toLowerCase();
+      const filterLower = filterSellState.toLowerCase();
+      if (!dbState.includes(filterLower) && !filterLower.includes(dbState)) return false;
     }
     return true;
   });
