@@ -47,6 +47,8 @@ const PUBLIC_CONTENT_ROUTES = [
   "/privacy",
   "/ndpr",
   "/blog",
+  "/food-news",
+  "/food-news",
   "/terms",
   "/contact",
 ];
@@ -196,3 +198,5 @@ export const config = {
     "/((?!_next/static|_next/image|favicon.ico|public|images|icons).*)",
   ],
 };
+
+
