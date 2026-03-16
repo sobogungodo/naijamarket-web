@@ -46,43 +46,60 @@ export function SessionTimeoutProvider({ children }: SessionTimeoutProviderProps
   const [lastActivity, setLastActivity] = useState(Date.now());
   
   const timerRef = useRef<NodeJS.Timeout | null>(null);
+  // Track whether user was EVER authenticated in this session.
+  // Prevents redirecting public-page visitors who were never logged in.
+  const wasAuthenticatedRef = useRef(false);
 
   // ============================================================================
-  // BACK-BUTTON PROTECTION (NEW)
+  // BACK-BUTTON PROTECTION
+  // FIX: Only redirect if user WAS authenticated (wasAuthenticatedRef).
+  //      Public page visitors are always "unauthenticated" — never redirect them.
   // ============================================================================
+
+  // Track when user becomes authenticated so we know they had a real session
   useEffect(() => {
-    // Check session when page becomes visible (user returns via back button or tab switch)
+    if (status === "authenticated") {
+      wasAuthenticatedRef.current = true;
+    }
+  }, [status]);
+
+  useEffect(() => {
     const handleVisibilityChange = async () => {
-      if (document.visibilityState === "visible" && status === "unauthenticated") {
-        // Session expired while away, redirect to login
+      // Only redirect if: tab becomes visible AND user was previously authenticated
+      // AND is now unauthenticated (session expired while away)
+      if (
+        document.visibilityState === "visible" &&
+        status === "unauthenticated" &&
+        wasAuthenticatedRef.current
+      ) {
         router.replace("/login?sessionExpired=true");
       }
     };
 
-    // Handle page restored from bfcache (back-forward cache)
     const handlePageShow = (event: PageTransitionEvent) => {
-      if (event.persisted) {
-        // Page was restored from cache, verify session
+      // Only verify session for users who had one
+      if (event.persisted && wasAuthenticatedRef.current) {
         checkSession();
       }
     };
 
-    // Verify session is still valid
     const checkSession = async () => {
+      // Skip entirely for users who were never authenticated
+      if (!wasAuthenticatedRef.current) return;
       try {
         const response = await fetch("/api/auth/session", {
           cache: "no-store",
           headers: { "Cache-Control": "no-cache" },
         });
         const data = await response.json();
-        
         if (!data || !data.user) {
-          // Session invalid, redirect to login
           window.location.href = "/login?sessionExpired=true";
         }
       } catch {
-        // On error, redirect to be safe
-        window.location.href = "/login?sessionExpired=true";
+        // Only redirect on error if we know user had a session
+        if (wasAuthenticatedRef.current) {
+          window.location.href = "/login?sessionExpired=true";
+        }
       }
     };
 
