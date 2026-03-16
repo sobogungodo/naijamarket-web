@@ -31,7 +31,7 @@ async function getArticle(slug: string): Promise<Article | null> {
   try {
     const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://naijamarket-web.vercel.app'
     const res = await fetch(`${baseUrl}/api/food-news/${slug}`, {
-      next: { revalidate: 3600 },
+      cache: 'no-store',
     })
     if (res.status === 404) return null
     if (!res.ok) throw new Error(`API error ${res.status}`)
@@ -43,7 +43,7 @@ async function getRecentArticles(excludeSlug: string): Promise<Article[]> {
   try {
     const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://naijamarket-web.vercel.app'
     const res = await fetch(`${baseUrl}/api/food-news?per_page=4`, {
-      next: { revalidate: 1800 },
+      cache: 'no-store',
     })
     if (!res.ok) return []
     const data = await res.json()

@@ -65,7 +65,7 @@ async function getArticles(page = 1, category = '', perPage = 12): Promise<Artic
       ...(category ? { category } : {}),
     })
     const res = await fetch(`${baseUrl}/api/food-news?${params}`, {
-      next: { revalidate: 1800 },
+      cache: 'no-store',
     })
     if (!res.ok) throw new Error(`API error ${res.status}`)
     return res.json()
@@ -263,3 +263,4 @@ export default async function FoodNewsPage({
     </main>
   )
 }
+
