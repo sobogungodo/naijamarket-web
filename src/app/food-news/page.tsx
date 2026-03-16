@@ -1,24 +1,22 @@
-// src/app/blog/food-news/page.tsx
-// FRS v2.2 Section 7.3 — /blog/food-news
-// Weekly food news index — latest 12 entries, category filter, pagination
-// Reads from dbo.News_Articles via /api/blog/food-news
-// Accessible to ALL subscription tiers
+// src/app/food-news/page.tsx
+// Route: /food-news  (top-level, same level as /blog)
+// Weekly food market intelligence index — category filter, pagination
+// ALL subscription tiers
 
 import { Metadata } from 'next'
 import Link from 'next/link'
 
 export const metadata: Metadata = {
-  title: 'Nigerian Food Market News | NaijaMarket Intel',
+  title: 'Nigerian Food Market Intelligence | NaijaMarket Intel',
   description:
-    'Weekly food market intelligence — price movements, supply chain updates, and government policy affecting Nigerian commodity markets.',
+    'Weekly food market intelligence from NBS, AFEX, WFP and leading Nigerian commodity desks — price movements, supply chain updates and policy changes.',
   openGraph: {
-    title: 'Nigerian Food Market News | NaijaMarket Intel',
+    title: 'Nigerian Food Market Intelligence | NaijaMarket Intel',
     description: 'Weekly commodity market intelligence for Nigeria.',
-    url: 'https://naijamarketintel.ng/blog/food-news',
+    url: 'https://naijamarketintel.ng/food-news',
   },
 }
 
-// Categories from FRS Section 7.2
 const CATEGORIES = [
   { value: '',               label: 'All News' },
   { value: 'PRICE_MOVEMENT', label: 'Price Movement' },
@@ -58,11 +56,7 @@ interface ArticlesResponse {
   total_pages: number
 }
 
-async function getArticles(
-  page = 1,
-  category = '',
-  perPage = 12
-): Promise<ArticlesResponse> {
+async function getArticles(page = 1, category = '', perPage = 12): Promise<ArticlesResponse> {
   try {
     const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://naijamarket-web.vercel.app'
     const params  = new URLSearchParams({
@@ -70,8 +64,8 @@ async function getArticles(
       per_page: String(perPage),
       ...(category ? { category } : {}),
     })
-    const res = await fetch(`${baseUrl}/api/blog/food-news?${params}`, {
-      next: { revalidate: 1800 }, // 30-min cache
+    const res = await fetch(`${baseUrl}/api/food-news?${params}`, {
+      next: { revalidate: 1800 },
     })
     if (!res.ok) throw new Error(`API error ${res.status}`)
     return res.json()
@@ -85,32 +79,26 @@ function formatDate(dateStr: string) {
     return new Date(dateStr).toLocaleDateString('en-NG', {
       year: 'numeric', month: 'long', day: 'numeric'
     })
-  } catch {
-    return dateStr
-  }
+  } catch { return dateStr }
 }
 
 function ArticleCard({ article }: { article: Article }) {
   return (
-    <Link href={`/blog/food-news/${article.slug}`} className="group block">
+    <Link href={`/food-news/${article.slug}`} className="group block">
       <article className="h-full bg-white dark:bg-[#141414] rounded-2xl border border-gray-100 dark:border-[#2a2a2a] p-6 hover:border-[#1A6B37] dark:hover:border-[#2d8a50] hover:shadow-lg transition-all duration-200">
 
-        {/* Category badge */}
         <span className={`inline-block text-xs font-semibold px-2.5 py-0.5 rounded-full mb-3 font-sans ${CATEGORY_STYLES[article.category] || 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400'}`}>
           {article.category.replace('_', ' ')}
         </span>
 
-        {/* Title */}
         <h2 className="text-base font-bold text-gray-900 dark:text-white mb-3 leading-snug group-hover:text-[#1A6B37] dark:group-hover:text-[#4ade80] transition-colors font-sans line-clamp-3">
           {article.title}
         </h2>
 
-        {/* Summary */}
         <p className="text-sm text-gray-500 dark:text-gray-400 mb-4 leading-relaxed font-sans line-clamp-3">
           {article.summary}
         </p>
 
-        {/* Commodities */}
         {article.affected_commodities && article.affected_commodities.length > 0 && (
           <div className="flex flex-wrap gap-1 mb-4">
             {article.affected_commodities.slice(0, 4).map(c => (
@@ -119,14 +107,13 @@ function ArticleCard({ article }: { article: Article }) {
               </span>
             ))}
             {article.affected_commodities.length > 4 && (
-              <span className="text-xs bg-gray-100 dark:bg-[#2a2a2a] text-gray-500 dark:text-gray-500 px-2 py-0.5 rounded-full font-sans">
+              <span className="text-xs bg-gray-100 dark:bg-[#2a2a2a] text-gray-500 px-2 py-0.5 rounded-full font-sans">
                 +{article.affected_commodities.length - 4} more
               </span>
             )}
           </div>
         )}
 
-        {/* Footer */}
         <div className="flex items-center justify-between pt-3 border-t border-gray-100 dark:border-[#2a2a2a]">
           <div className="flex items-center gap-2">
             <div className="w-1.5 h-1.5 bg-[#1A6B37] rounded-full" />
@@ -150,8 +137,7 @@ export default async function FoodNewsPage({
 }) {
   const page     = Math.max(1, parseInt(searchParams.page     || '1'))
   const category = searchParams.category || ''
-
-  const data = await getArticles(page, category)
+  const data     = await getArticles(page, category)
 
   return (
     <main className="min-h-screen bg-gray-50 dark:bg-[#0a0a0a]">
@@ -171,7 +157,7 @@ export default async function FoodNewsPage({
             </h1>
             <p className="text-gray-300 text-sm font-sans leading-relaxed">
               Weekly intelligence from NBS, AFEX, WFP, CBN and leading Nigerian
-              commodity desks — price movements, supply chain updates, and policy
+              commodity desks — price movements, supply chain updates and policy
               changes affecting your market.
             </p>
           </div>
@@ -185,7 +171,7 @@ export default async function FoodNewsPage({
           {CATEGORIES.map(cat => (
             <Link
               key={cat.value}
-              href={cat.value ? `/blog/food-news?category=${cat.value}` : '/blog/food-news'}
+              href={cat.value ? `/food-news?category=${cat.value}` : '/food-news'}
               className={`px-4 py-1.5 rounded-full text-sm font-semibold font-sans transition-all ${
                 category === cat.value
                   ? 'bg-[#1A6B37] text-white shadow-sm'
@@ -197,7 +183,6 @@ export default async function FoodNewsPage({
           ))}
         </div>
 
-        {/* ── RESULTS COUNT ────────────────────────────────────────────── */}
         {data.total > 0 && (
           <p className="text-sm text-gray-500 dark:text-gray-400 font-sans mb-6">
             {data.total} article{data.total !== 1 ? 's' : ''}
@@ -219,7 +204,7 @@ export default async function FoodNewsPage({
               No articles found{category ? ' in this category' : ''}.
             </p>
             {category && (
-              <Link href="/blog/food-news" className="mt-3 inline-block text-[#1A6B37] dark:text-[#4ade80] text-sm font-semibold font-sans hover:underline">
+              <Link href="/food-news" className="mt-3 inline-block text-[#1A6B37] dark:text-[#4ade80] text-sm font-semibold font-sans hover:underline">
                 View all categories →
               </Link>
             )}
@@ -231,20 +216,18 @@ export default async function FoodNewsPage({
           <div className="flex items-center justify-center gap-2">
             {page > 1 && (
               <Link
-                href={`/blog/food-news?page=${page - 1}${category ? `&category=${category}` : ''}`}
+                href={`/food-news?page=${page - 1}${category ? `&category=${category}` : ''}`}
                 className="px-4 py-2 bg-white dark:bg-[#141414] border border-gray-200 dark:border-[#2a2a2a] rounded-xl text-sm font-sans font-semibold text-gray-700 dark:text-gray-300 hover:border-[#1A6B37] transition-colors"
               >
                 ← Previous
               </Link>
             )}
-
             <span className="text-sm text-gray-500 dark:text-gray-400 font-sans px-3">
               Page {page} of {data.total_pages}
             </span>
-
             {page < data.total_pages && (
               <Link
-                href={`/blog/food-news?page=${page + 1}${category ? `&category=${category}` : ''}`}
+                href={`/food-news?page=${page + 1}${category ? `&category=${category}` : ''}`}
                 className="px-4 py-2 bg-white dark:bg-[#141414] border border-gray-200 dark:border-[#2a2a2a] rounded-xl text-sm font-sans font-semibold text-gray-700 dark:text-gray-300 hover:border-[#1A6B37] transition-colors"
               >
                 Next →
@@ -264,7 +247,7 @@ export default async function FoodNewsPage({
                 Get the raw article feed
               </h3>
               <p className="text-gray-400 text-sm font-sans mt-1">
-                Enterprise subscribers access the full news feed via API — all fields, all categories, real-time.
+                Enterprise subscribers access the full news feed via API — all fields, real-time.
               </p>
             </div>
             <Link
