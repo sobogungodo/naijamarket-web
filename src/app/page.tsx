@@ -704,6 +704,7 @@ function Footer() {
         ["Pricing", "#pricing"],
         ["Contact", "/contact"],
         ["Blog", "/blog"],
+        ["Food News", "/food-news"],
       ],
     },
     {
