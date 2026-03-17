@@ -1,230 +1,99 @@
-/**
- * ============================================================================
- * NAIJAMARKET INTEL - WHATSAPP COMPARE API
- * ============================================================================
- * Endpoint: GET /api/whatsapp/compare
- * Purpose: Compare prices for an item across different markets
- * Called by: Apps Script Consumer WebApp
- * 
- * Query Parameters:
- *   - item: Item name (required)
- *   - markets: Comma-separated market names (optional - if not specified, shows top markets)
- *   - state: Filter by state (optional)
- *   - limit: Max markets to compare (default 5, max 10)
- * 
- * Response:
- *   - success: boolean
- *   - data: array of market prices sorted by price
- *   - stats: cheapest, expensive, savings potential
- *   - formatted: WhatsApp-ready text message
- * ============================================================================
- */
+// src/app/api/whatsapp/compare/route.ts
+// GET /api/whatsapp/compare?item=rice&state=Lagos&limit=5
+// Compares prices across markets for same item
+// Used by VercelIntegration.gs → getVercelCompare_()
 
-import { NextRequest, NextResponse } from "next/server";
-import { PrismaClient } from "@prisma/client";
+import { NextRequest, NextResponse } from 'next/server'
+import { prisma } from '@/lib/db'
 
-const prisma = new PrismaClient();
+export const dynamic    = 'force-dynamic'
+export const revalidate = 0
 
-// Format price with Naira symbol
-function formatPrice(price: number | string): string {
-  const numPrice = typeof price === 'string' 
-    ? parseFloat(price.replace(/[₦,]/g, '')) 
-    : price;
-  return `₦${numPrice.toLocaleString('en-NG')}`;
-}
+export async function GET(req: NextRequest) {
+  const { searchParams } = new URL(req.url)
+  const item  = (searchParams.get('item')  || '').trim()
+  const state = (searchParams.get('state') || '').trim()
+  const limit = Math.min(10, Math.max(2, parseInt(searchParams.get('limit') || '5')))
 
-// Get medal emoji based on rank
-function getMedal(rank: number): string {
-  switch(rank) {
-    case 1: return '🥇';
-    case 2: return '🥈';
-    case 3: return '🥉';
-    default: return `${rank}.`;
+  if (!item) {
+    return NextResponse.json({ success: false, error: 'item required' }, { status: 400 })
   }
-}
 
-export async function GET(request: NextRequest) {
   try {
-    const { searchParams } = new URL(request.url);
-    const item = searchParams.get("item");
-    const marketsParam = searchParams.get("markets");
-    const state = searchParams.get("state");
-    const limit = Math.min(parseInt(searchParams.get("limit") || "5"), 10);
+    const safeItem  = item.replace(/'/g, "''")
+    const safeState = state.replace(/'/g, "''")
 
-    // Validate required parameters
-    if (!item) {
-      return NextResponse.json({
-        success: false,
-        error: "Missing 'item' parameter",
-        hint: "Example: /api/whatsapp/compare?item=rice&limit=5"
-      }, { status: 400 });
-    }
-
-    // Build WHERE clause
-    let whereClause = `WHERE validation_status = 'APPROVED' AND item_name LIKE @p1`;
-    const params: any[] = [`%${item}%`];
-    let paramIndex = 2;
-
-    // Filter by specific markets if provided
-    if (marketsParam) {
-      const markets = marketsParam.split(',').map(m => m.trim());
-      const marketConditions = markets.map((_, i) => `market_name LIKE @p${paramIndex + i}`);
-      whereClause += ` AND (${marketConditions.join(' OR ')})`;
-      markets.forEach(m => params.push(`%${m}%`));
-      paramIndex += markets.length;
-    }
-
-    // Filter by state if provided
-    if (state) {
-      whereClause += ` AND state LIKE @p${paramIndex}`;
-      params.push(`%${state}%`);
-      paramIndex++;
-    }
-
-    // Query: Get latest price per market (using subquery for most recent)
-    const marketPrices = await prisma.$queryRawUnsafe(`
-      WITH LatestPrices AS (
-        SELECT 
-          market_name,
-          state,
-          item_name,
-          price,
-          unit,
-          price_trend,
-          price_change_percent,
-          validated_at,
-          ROW_NUMBER() OVER (PARTITION BY market_name ORDER BY validated_at DESC) as rn
-        FROM Approved_Prices
-        ${whereClause}
-      )
+    const rows = await prisma.$queryRawUnsafe<any[]>(`
       SELECT TOP ${limit}
-        market_name,
-        state,
-        item_name,
-        price,
-        unit,
-        price_trend,
-        price_change_percent,
-        validated_at
-      FROM LatestPrices
-      WHERE rn = 1
-      ORDER BY 
-        CAST(REPLACE(REPLACE(price, '₦', ''), ',', '') AS DECIMAL(18,2)) ASC
-    `, ...params) as any[];
+        item_name, market_name, state,
+        CAST(price_naira AS FLOAT) AS price,
+        unit, price_date,
+        CAST(confidence_score AS FLOAT) AS confidence
+      FROM dbo.Latest_Prices_Summary
+      WHERE item_name LIKE '%${safeItem}%'
+        AND price_naira > 0
+        ${safeState ? `AND state LIKE '%${safeState}%'` : ''}
+      ORDER BY price_naira ASC
+    `)
 
-    // Handle no results
-    if (!marketPrices || marketPrices.length === 0) {
+    if (!rows || rows.length < 2) {
       return NextResponse.json({
-        success: false,
-        data: [],
-        formatted: `❌ No prices found for "${item}" to compare\n\n💡 Try:\n• Check item spelling\n• Use broader search: compare rice\n• Specify state: compare rice lagos`,
-        count: 0
-      });
+        success: false, count: rows?.length || 0,
+        formatted: `❌ Not enough markets found for *${item}*${state ? ` in ${state}` : ''}.`,
+        markets: []
+      })
     }
 
-    // Calculate statistics
-    const prices = marketPrices.map((p: any) => 
-      typeof p.price === 'string' ? parseFloat(p.price.replace(/[₦,]/g, '')) : p.price
-    );
-    
-    const cheapest = Math.min(...prices);
-    const expensive = Math.max(...prices);
-    const average = prices.reduce((a, b) => a + b, 0) / prices.length;
-    const savings = expensive - cheapest;
-    const savingsPercent = ((savings / expensive) * 100).toFixed(1);
+    const itemName = rows[0].item_name
+    const minPrice = Number(rows[0].price)
+    const maxPrice = Number(rows[rows.length - 1].price)
+    const spread   = maxPrice - minPrice
+    const spreadPct = ((spread / minPrice) * 100).toFixed(1)
 
-    // Find best and worst markets
-    const cheapestMarket = marketPrices[0];
-    const expensiveMarket = marketPrices[marketPrices.length - 1];
+    const lines: string[] = [
+      `🔍 *${itemName.toUpperCase()}* — Market Compare`,
+      state ? `📍 ${state}` : '📍 All States',
+      `━━━━━━━━━━━━━━━━━━━━━━`
+    ]
 
-    // Format for WhatsApp
-    const header = state 
-      ? `🏪 *MARKET COMPARISON: ${item.toUpperCase()}*\n📍 ${state} State\n${'━'.repeat(25)}\n`
-      : `🏪 *MARKET COMPARISON: ${item.toUpperCase()}*\n🇳🇬 Nationwide\n${'━'.repeat(25)}\n`;
+    rows.forEach((r, i) => {
+      const price = Number(r.price)
+      const badge = i === 0 ? '🟢 CHEAPEST' : i === rows.length - 1 ? '🔴 PRICIEST' : '⚪'
+      const diff  = i === 0 ? '' : ` (+₦${fmt(price - minPrice)})`
+      lines.push(
+        `${badge} *${r.market_name}*\n` +
+        `   ${r.state} — *₦${fmt(price)}* ${r.unit || ''}${diff}`
+      )
+    })
 
-    const rankingSection = marketPrices.map((p: any, idx: number) => {
-      const priceNum = typeof p.price === 'string' ? parseFloat(p.price.replace(/[₦,]/g, '')) : p.price;
-      const diffFromCheapest = priceNum - cheapest;
-      const diffText = diffFromCheapest > 0 ? ` (+${formatPrice(diffFromCheapest)})` : ' ✨ CHEAPEST';
-      
-      return [
-        `${getMedal(idx + 1)} *${p.market_name}*`,
-        `   📍 ${p.state}`,
-        `   💵 ${formatPrice(priceNum)}/${p.unit}${diffText}`
-      ].join('\n');
-    }).join('\n\n');
-
-    const statsSection = [
-      `\n${'━'.repeat(25)}`,
-      `📊 *PRICE ANALYSIS*`,
-      `├ Cheapest: ${formatPrice(cheapest)} @ ${cheapestMarket.market_name}`,
-      `├ Highest:  ${formatPrice(expensive)} @ ${expensiveMarket.market_name}`,
-      `├ Average:  ${formatPrice(average)}`,
-      `└ Spread:   ${formatPrice(savings)} (${savingsPercent}%)`
-    ].join('\n');
-
-    const savingsNote = savings > 0 
-      ? `\n\n💡 *SAVINGS TIP*\nBuy from ${cheapestMarket.market_name} to save ${formatPrice(savings)} per ${cheapestMarket.unit}!`
-      : '';
-
-    const footer = `\n${'━'.repeat(25)}\n🔍 Type "price ${item} ${cheapestMarket.market_name}" for more details`;
-
-    const formatted = header + rankingSection + statsSection + savingsNote + footer;
+    lines.push(`━━━━━━━━━━━━━━━━━━━━━━`)
+    lines.push(`💡 Spread: ₦${fmt(spread)} (${spreadPct}%) across ${rows.length} markets`)
+    if (Number(spreadPct) > 15) {
+      lines.push(`✅ Arbitrage opportunity detected!`)
+    }
 
     return NextResponse.json({
-      success: true,
-      data: marketPrices,
-      stats: {
-        cheapest: {
-          price: cheapest,
-          market: cheapestMarket.market_name,
-          state: cheapestMarket.state
-        },
-        expensive: {
-          price: expensive,
-          market: expensiveMarket.market_name,
-          state: expensiveMarket.state
-        },
-        average: Math.round(average),
-        savings: savings,
-        savings_percent: parseFloat(savingsPercent),
-        markets_compared: marketPrices.length
-      },
-      formatted: formatted,
-      count: marketPrices.length
-    });
+      success:   true,
+      count:     rows.length,
+      item:      itemName,
+      formatted: lines.join('\n'),
+      spread:    spread,
+      spread_pct: Number(spreadPct),
+      markets: rows.map(r => ({
+        market_name: r.market_name,
+        state:       r.state,
+        price:       Number(r.price),
+        unit:        r.unit,
+        price_date:  r.price_date,
+      }))
+    })
 
-  } catch (error) {
-    console.error("WhatsApp Compare API Error:", error);
-    
-    return NextResponse.json({
-      success: false,
-      error: "Database query failed",
-      formatted: "⚠️ Sorry, we couldn't compare prices right now. Please try again later.",
-      details: process.env.NODE_ENV === 'development' ? String(error) : undefined
-    }, { status: 500 });
-  } finally {
-    await prisma.$disconnect();
+  } catch (err) {
+    console.error('[/api/whatsapp/compare]', err)
+    return NextResponse.json({ success: false, error: String(err), useSheets: true }, { status: 500 })
   }
 }
 
-// POST support for Apps Script
-export async function POST(request: NextRequest) {
-  try {
-    const body = await request.json();
-    const url = new URL(request.url);
-    
-    if (body.item) url.searchParams.set('item', body.item);
-    if (body.markets) url.searchParams.set('markets', body.markets);
-    if (body.state) url.searchParams.set('state', body.state);
-    if (body.limit) url.searchParams.set('limit', String(body.limit));
-    
-    const newRequest = new NextRequest(url, { method: 'GET' });
-    return GET(newRequest);
-  } catch (error) {
-    return NextResponse.json({
-      success: false,
-      error: "Invalid request body"
-    }, { status: 400 });
-  }
+function fmt(n: number) {
+  return Math.round(n).toLocaleString('en-NG')
 }

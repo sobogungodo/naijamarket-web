@@ -1,291 +1,138 @@
-/**
- * ============================================================================
- * NAIJAMARKET INTEL - WHATSAPP TREND API
- * ============================================================================
- * Endpoint: GET /api/whatsapp/trend
- * Purpose: Get price history and trends for an item
- * Called by: Apps Script Consumer WebApp
- * 
- * Query Parameters:
- *   - item: Item name (required)
- *   - market: Market name (optional - if not specified, shows national average)
- *   - period: Time period - 7d, 30d, 90d, 1y (default: 30d)
- *   - state: State filter (optional)
- * 
- * Response:
- *   - success: boolean
- *   - data: array of historical prices
- *   - stats: min, max, avg, change
- *   - formatted: WhatsApp-ready text message
- * ============================================================================
- */
+// src/app/api/whatsapp/trend/route.ts
+// GET /api/whatsapp/trend?item=rice&market=mile+12&period=30d
+// Returns price history formatted for WhatsApp
+// Used by VercelIntegration.gs → getVercelTrend_()
 
-import { NextRequest, NextResponse } from "next/server";
-import { PrismaClient } from "@prisma/client";
+import { NextRequest, NextResponse } from 'next/server'
+import { prisma } from '@/lib/db'
 
-const prisma = new PrismaClient();
+export const dynamic    = 'force-dynamic'
+export const revalidate = 0
 
-// Period to days mapping
-const PERIOD_DAYS: Record<string, number> = {
-  '7d': 7,
-  '30d': 30,
-  '90d': 90,
-  '1y': 365,
-  'week': 7,
-  'month': 30,
-  'quarter': 90,
-  'year': 365
-};
+export async function GET(req: NextRequest) {
+  const { searchParams } = new URL(req.url)
+  const item   = (searchParams.get('item')   || '').trim()
+  const market = (searchParams.get('market') || '').trim()
+  const period = (searchParams.get('period') || '30d').trim()
 
-// Format price with Naira symbol
-function formatPrice(price: number | string): string {
-  const numPrice = typeof price === 'string' 
-    ? parseFloat(price.replace(/[₦,]/g, '')) 
-    : price;
-  return `₦${numPrice.toLocaleString('en-NG')}`;
-}
+  if (!item) {
+    return NextResponse.json({ success: false, error: 'item required' }, { status: 400 })
+  }
 
-// Calculate trend direction
-function getTrendIndicator(change: number): string {
-  if (change > 5) return '📈 Strongly Up';
-  if (change > 0) return '📈 Up';
-  if (change < -5) return '📉 Strongly Down';
-  if (change < 0) return '📉 Down';
-  return '➡️ Stable';
-}
+  // Parse period: 7d, 30d, 90d, 12m, 3m, 6m
+  const months = periodToMonths(period)
 
-// Generate simple ASCII chart
-function generateSparkline(prices: number[]): string {
-  if (prices.length < 2) return '';
-  
-  const min = Math.min(...prices);
-  const max = Math.max(...prices);
-  const range = max - min || 1;
-  
-  const blocks = ['▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
-  
-  return prices.map(p => {
-    const normalized = (p - min) / range;
-    const index = Math.min(Math.floor(normalized * 8), 7);
-    return blocks[index];
-  }).join('');
-}
-
-export async function GET(request: NextRequest) {
   try {
-    const { searchParams } = new URL(request.url);
-    const item = searchParams.get("item");
-    const market = searchParams.get("market");
-    const state = searchParams.get("state");
-    const periodParam = searchParams.get("period") || "30d";
-    
-    // Validate required parameters
-    if (!item) {
-      return NextResponse.json({
-        success: false,
-        error: "Missing 'item' parameter",
-        hint: "Example: /api/whatsapp/trend?item=rice&period=30d"
-      }, { status: 400 });
-    }
+    const safeItem   = item.replace(/'/g, "''")
+    const safeMarket = market.replace(/'/g, "''")
 
-    // Parse period
-    const days = PERIOD_DAYS[periodParam.toLowerCase()] || 30;
-    const startDate = new Date();
-    startDate.setDate(startDate.getDate() - days);
+    // Get historical monthly averages from Historical_Monthly_Summary
+    const histRows = await prisma.$queryRawUnsafe<any[]>(`
+      SELECT TOP ${months * 2}
+        yr, mth,
+        CAST(AVG(avg_price) AS FLOAT) AS avg_price,
+        CAST(MIN(avg_price) AS FLOAT) AS min_price,
+        CAST(MAX(avg_price) AS FLOAT) AS max_price,
+        COUNT(*)                       AS data_points
+      FROM dbo.Historical_Monthly_Summary
+      WHERE item_name LIKE '%${safeItem}%'
+        ${safeMarket ? `AND (market_name LIKE '%${safeMarket}%' OR state LIKE '%${safeMarket}%')` : ''}
+        AND avg_price > 0
+      GROUP BY yr, mth
+      ORDER BY yr DESC, mth DESC
+    `).catch(() => [])
 
-    // Build WHERE clause
-    let whereClause = `WHERE validation_status = 'APPROVED' AND item_name LIKE @p1 AND submission_date >= @p2`;
-    const params: string[] = [`%${item}%`, startDate.toISOString()];
-    let paramIndex = 3;
-
-    if (market) {
-      whereClause += ` AND market_name LIKE @p${paramIndex}`;
-      params.push(`%${market}%`);
-      paramIndex++;
-    }
-
-    if (state) {
-      whereClause += ` AND state LIKE @p${paramIndex}`;
-      params.push(`%${state}%`);
-      paramIndex++;
-    }
-
-    // Query historical prices
-    const historicalPrices = await prisma.$queryRawUnsafe(`
-      SELECT 
+    // Also get latest from Daily_Prices
+    const latestRows = await prisma.$queryRawUnsafe<any[]>(`
+      SELECT TOP 1
         item_name,
-        market_name,
-        state,
-        price,
-        unit,
-        submission_date,
-        price_trend
-      FROM Approved_Prices
-      ${whereClause}
-      ORDER BY submission_date ASC
-    `, ...params) as Array<{
-      item_name: string;
-      market_name: string;
-      state: string;
-      price: string;
-      unit: string;
-      submission_date: Date;
-      price_trend: string;
-    }>;
+        CAST(AVG(price_naira) AS FLOAT) AS current_price,
+        MAX(price_date) AS latest_date
+      FROM dbo.Daily_Prices
+      WHERE item_name LIKE '%${safeItem}%'
+        ${safeMarket ? `AND (market_name LIKE '%${safeMarket}%' OR state LIKE '%${safeMarket}%')` : ''}
+        AND price_naira > 0
+        AND price_date >= DATEADD(day, -7, CAST(GETDATE() AS DATE))
+      GROUP BY item_name
+    `).catch(() => [])
 
-    // Also check Price_History_NBS for more historical data
-    let nbsHistory: Array<{
-      item_name: string;
-      price: string | number;
-      price_date: Date;
-      state: string;
-      market_name: string;
-    }> = [];
-    
-    try {
-      nbsHistory = await prisma.$queryRawUnsafe(`
-        SELECT TOP 100
-          item_name,
-          price,
-          price_date,
-          state,
-          market_name
-        FROM Price_History_NBS
-        WHERE item_name LIKE @p1 
-          AND price_date >= @p2
-        ORDER BY price_date ASC
-      `, `%${item}%`, startDate.toISOString()) as typeof nbsHistory;
-    } catch (e) {
-      // Table might not exist yet or be empty - continue with Approved_Prices only
-      console.log("NBS history not available:", e);
-    }
-
-    // Combine and process data
-    const allPrices = [
-      ...historicalPrices.map((p) => ({
-        ...p,
-        priceNum: typeof p.price === 'string' ? parseFloat(p.price.replace(/[₦,]/g, '')) : Number(p.price),
-        date: new Date(p.submission_date),
-        source: 'crowdsourced' as const
-      })),
-      ...nbsHistory.map((p) => ({
-        ...p,
-        priceNum: typeof p.price === 'string' ? parseFloat(p.price.replace(/[₦,]/g, '')) : Number(p.price),
-        date: new Date(p.price_date),
-        source: 'nbs' as const
-      }))
-    ].sort((a, b) => a.date.getTime() - b.date.getTime());
-
-    // Handle no results
-    if (allPrices.length === 0) {
+    if ((!histRows || histRows.length === 0) && (!latestRows || latestRows.length === 0)) {
       return NextResponse.json({
-        success: false,
-        data: [],
-        formatted: `❌ No price history found for "${item}" in the last ${days} days\n\n💡 Try:\n• Different time period: trend ${item} 90d\n• Check spelling of item name`,
-        count: 0
-      });
+        success: false, count: 0,
+        formatted: `❌ No trend data for *${item}*${market ? ` at ${market}` : ''}.`,
+        history: []
+      })
     }
 
-    // Calculate statistics
-    const prices = allPrices.map(p => p.priceNum);
-    const minPrice = Math.min(...prices);
-    const maxPrice = Math.max(...prices);
-    const avgPrice = prices.reduce((a, b) => a + b, 0) / prices.length;
-    const firstPrice = prices[0] ?? 0;
-    const lastPrice = prices[prices.length - 1] ?? 0;
-    const changePercent = firstPrice > 0 ? ((lastPrice - firstPrice) / firstPrice * 100).toFixed(1) : '0';
-    const changeAmount = lastPrice - firstPrice;
+    const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+    const currentPrice = latestRows?.[0] ? Number(latestRows[0].current_price) : 0
+    const itemName     = latestRows?.[0]?.item_name || item
 
-    // Get unique markets for context
-    const uniqueMarkets = [...new Set(allPrices.map(p => p.market_name))];
-    const uniqueStates = [...new Set(allPrices.map(p => p.state))];
+    // Build trend table (last 6 months)
+    const recent = histRows.slice(0, 6).reverse()
+    const lines: string[] = [
+      `📈 *${itemName.toUpperCase()}* — Price Trend`,
+      `━━━━━━━━━━━━━━━━━━━━━━`
+    ]
 
-    // Generate sparkline
-    const sparkline = generateSparkline(prices.slice(-20)); // Last 20 data points
+    if (currentPrice > 0) {
+      lines.push(`*Current:* ₦${fmt(currentPrice)}`)
+      lines.push('')
+    }
 
-    // Format for WhatsApp
-    const header = market 
-      ? `📈 *PRICE TREND: ${item.toUpperCase()}*\n📍 ${market}\n⏱️ Last ${days} days\n${'━'.repeat(25)}\n`
-      : `📈 *PRICE TREND: ${item.toUpperCase()}*\n🇳🇬 National Average\n⏱️ Last ${days} days\n${'━'.repeat(25)}\n`;
+    if (recent.length > 0) {
+      lines.push('*Monthly Averages:*')
+      let prevPrice: number | null = null
+      recent.forEach(r => {
+        const price = Number(r.avg_price)
+        const label = `${MONTH_NAMES[(r.mth - 1)]} ${r.yr}`
+        const arrow = prevPrice === null ? '' : price > prevPrice * 1.02 ? ' ↗️' : price < prevPrice * 0.98 ? ' ↘️' : ' ➡️'
+        lines.push(`  ${label}: *₦${fmt(price)}*${arrow}`)
+        prevPrice = price
+      })
+    }
 
-    const statsSection = [
-      `\n📊 *STATISTICS*`,
-      `├ Current: ${formatPrice(lastPrice)}`,
-      `├ Average: ${formatPrice(avgPrice)}`,
-      `├ Lowest:  ${formatPrice(minPrice)}`,
-      `├ Highest: ${formatPrice(maxPrice)}`,
-      `└ Change:  ${changeAmount >= 0 ? '+' : ''}${formatPrice(changeAmount)} (${changeAmount >= 0 ? '+' : ''}${changePercent}%)`
-    ].join('\n');
+    // Calculate overall trend
+    if (recent.length >= 2) {
+      const oldest = Number(recent[0].avg_price)
+      const newest = Number(recent[recent.length - 1].avg_price)
+      const changePct = ((newest - oldest) / oldest * 100).toFixed(1)
+      const direction = Number(changePct) > 0 ? '📈 Rising' : Number(changePct) < 0 ? '📉 Falling' : '➡️ Stable'
+      lines.push('')
+      lines.push(`*${period} trend:* ${direction} (${changePct}%)`)
+    }
 
-    const trendSection = [
-      `\n📉 *TREND*`,
-      `${sparkline}`,
-      `${getTrendIndicator(parseFloat(changePercent))}`
-    ].join('\n');
-
-    const coverageSection = uniqueMarkets.length > 1 
-      ? `\n\n📍 *COVERAGE*\n${uniqueMarkets.length} markets across ${uniqueStates.length} state${uniqueStates.length > 1 ? 's' : ''}`
-      : '';
-
-    const dataSourceNote = nbsHistory.length > 0 
-      ? `\n\n📚 Data: ${historicalPrices.length} crowdsourced + ${nbsHistory.length} NBS records`
-      : `\n\n📚 Data: ${allPrices.length} price records`;
-
-    const footer = `\n${'━'.repeat(25)}\n💡 Type "compare ${item}" to see market differences`;
-
-    const formatted = header + statsSection + trendSection + coverageSection + dataSourceNote + footer;
+    lines.push(`━━━━━━━━━━━━━━━━━━━━━━`)
+    lines.push(`_${histRows.length} data points · NBS + Crowdsourced_`)
 
     return NextResponse.json({
-      success: true,
-      data: allPrices.slice(-50), // Return last 50 data points
-      stats: {
-        min: minPrice,
-        max: maxPrice,
-        avg: Math.round(avgPrice),
-        first: firstPrice,
-        last: lastPrice,
-        change_percent: parseFloat(changePercent),
-        change_amount: changeAmount,
-        data_points: allPrices.length,
-        period_days: days
-      },
-      formatted: formatted,
-      count: allPrices.length,
-      markets: uniqueMarkets,
-      states: uniqueStates
-    });
+      success:   true,
+      count:     histRows.length,
+      item:      itemName,
+      formatted: lines.join('\n'),
+      current_price: currentPrice,
+      history: recent.map(r => ({
+        year:      r.yr,
+        month:     r.mth,
+        avg_price: Number(r.avg_price),
+        min_price: Number(r.min_price),
+        max_price: Number(r.max_price),
+      }))
+    })
 
-  } catch (error) {
-    console.error("WhatsApp Trend API Error:", error);
-    
-    return NextResponse.json({
-      success: false,
-      error: "Database query failed",
-      formatted: "⚠️ Sorry, we couldn't fetch trend data right now. Please try again later.",
-      details: process.env.NODE_ENV === 'development' ? String(error) : undefined
-    }, { status: 500 });
-  } finally {
-    await prisma.$disconnect();
+  } catch (err) {
+    console.error('[/api/whatsapp/trend]', err)
+    return NextResponse.json({ success: false, error: String(err), useSheets: true }, { status: 500 })
   }
 }
 
-// POST support for Apps Script
-export async function POST(request: NextRequest) {
-  try {
-    const body = await request.json();
-    const url = new URL(request.url);
-    
-    if (body.item) url.searchParams.set('item', body.item);
-    if (body.market) url.searchParams.set('market', body.market);
-    if (body.state) url.searchParams.set('state', body.state);
-    if (body.period) url.searchParams.set('period', body.period);
-    
-    const newRequest = new NextRequest(url, { method: 'GET' });
-    return GET(newRequest);
-  } catch (error) {
-    return NextResponse.json({
-      success: false,
-      error: "Invalid request body"
-    }, { status: 400 });
-  }
+function periodToMonths(period: string): number {
+  const m = period.match(/^(\d+)(d|m)$/)
+  if (!m) return 3
+  const n = parseInt(m[1])
+  return m[2] === 'd' ? Math.ceil(n / 30) : n
+}
+
+function fmt(n: number) {
+  return Math.round(n).toLocaleString('en-NG')
 }
