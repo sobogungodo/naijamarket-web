@@ -66,7 +66,7 @@ async function getPool(): Promise<sql.ConnectionPool | null> {
   }
 
   if (!SQL_CONFIG.user || !SQL_CONFIG.password) {
-    console.warn("[arbitrage v14] SQL credentials not set in env vars");
+    console.warn("[arbitrage v15] SQL credentials not set in env vars");
     return null;
   }
 
@@ -75,7 +75,7 @@ async function getPool(): Promise<sql.ConnectionPool | null> {
     console.log("[arbitrage v15] Connection pool established");
     return _pool;
   } catch (err) {
-    console.error("[arbitrage v14] Failed to create connection pool:", err);
+    console.error("[arbitrage v15] Failed to create connection pool:", err);
     _pool = null;
     return null;
   }
@@ -436,15 +436,15 @@ async function findArbitrageOpportunities(
     results = batchResult?.recordset || [];
     console.log(`[arbitrage v15] Batch OK — ${results.length} rows (topN=${topN}, stateFilter=${hasStateFilter})`);
   } catch (batchErr: any) {
-    console.error("[arbitrage v14] Batch FAILED:", batchErr?.message || batchErr);
-    console.error("[arbitrage v14] Error number:", batchErr?.number, "| State:", batchErr?.state);
+    console.error("[arbitrage v15] Batch FAILED:", batchErr?.message || batchErr);
+    console.error("[arbitrage v15] Error number:", batchErr?.number, "| State:", batchErr?.state);
     try { await pool.close(); } catch {}
     _pool = null;
     throw batchErr;
   }
 
   // ── JS-level filtering (item, category only — state now filtered in SQL) ───
-  // v14: State filtering moved to SQL WHERE so TOP N applies AFTER state filter.
+  // v15: State filtering moved to SQL WHERE so TOP N applies AFTER state filter.
   // JS still filters item text-search and category as a safety net.
   const filtered = results.filter((r: any) => {
     if (filterItem) {
@@ -454,7 +454,7 @@ async function findArbitrageOpportunities(
     if (resolvedCatId) {
       if (r.category_id !== resolvedCatId) return false;
     }
-    // v14: State filter is now in SQL (LIKE-based), but keep JS as secondary
+    // v15: State filter is now in SQL (LIKE-based), but keep JS as secondary
     // safety using INCLUDES instead of === to handle "Ogun" vs "Ogun State" edge cases
     if (filterBuyState) {
       const dbState = String(r.buy_state || "").toLowerCase();
@@ -520,7 +520,15 @@ async function findArbitrageOpportunities(
         profitPercentage: profitPct,
         distance: Math.round(distance),
         confidence,
-        transportLabel: r.distance_band || "Unknown",
+        // v15 FIX: distance_band varchar col corrupts → to ? — build label from state names
+        transportLabel: (function() {
+          var band = String(r.distance_band || '');
+          // If band contains ? (corrupted arrow) or is empty, format from states
+          if (!band || band.includes('?') || band.length < 3) {
+            return String(r.buy_state || '') + ' to ' + String(r.sell_state || '');
+          }
+          return band;
+        })(),
       } as ArbitrageOpportunity;
     })
     .filter((opp): opp is ArbitrageOpportunity => opp !== null)
