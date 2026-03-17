@@ -2,7 +2,7 @@
 // NAIJAFOOD INTEL - ARBITRAGE OPPORTUNITIES API
 // File: src/app/api/arbitrage/route.ts
 // Bloomberg Equivalent: ARBI <GO>
-// Version: 14.0 - v14 BUG FIX: State filter now in SQL WHERE (not JS post-filter)
+// Version: 15.0 - v15: Transport_Fares state-level fallback (no more flat ₦8,500)
 // Date: 2026-03-13
 // ROOT CAUSE FIX: TOP N was applied BEFORE JS state filtering — so Ogun/any non-top
 // state pairs were never returned. Now: SQL injects state filter so TOP N applies
@@ -59,7 +59,7 @@ async function getPool(): Promise<sql.ConnectionPool | null> {
       return _pool;
     } catch {
       // Connection dropped — close and recreate
-      console.warn("[arbitrage v14] Pool ping failed — reconnecting");
+      console.warn("[arbitrage v15] Pool ping failed — reconnecting");
       try { await _pool.close(); } catch {}
       _pool = null;
     }
@@ -72,7 +72,7 @@ async function getPool(): Promise<sql.ConnectionPool | null> {
 
   try {
     _pool = await new sql.ConnectionPool(SQL_CONFIG).connect();
-    console.log("[arbitrage v14] Connection pool established");
+    console.log("[arbitrage v15] Connection pool established");
     return _pool;
   } catch (err) {
     console.error("[arbitrage v14] Failed to create connection pool:", err);
@@ -341,6 +341,7 @@ async function findArbitrageOpportunities(
     -- v14 FIX: sqlStateWhere injected HERE so TOP N applies AFTER state filtering.
     -- This is the root cause fix — previously TOP 300 was global (all states),
     -- then JS tried to filter by state on an already-truncated result set.
+    -- tf = Transport_Fares fallback by state (populated by transport_fare_scraper)
     SELECT TOP ${topN}
       p1.item_id,
       p1.item_name,
@@ -356,20 +357,47 @@ async function findArbitrageOpportunities(
       p2.state                                                      AS sell_state,
       CAST(p2.avg_price  AS FLOAT)                                  AS sell_price,
       p2.latest_date                                                AS sell_date,
-      ISNULL(CAST(t.road_distance_km   AS FLOAT), 500)             AS distance_km,
-      ISNULL(CAST(t.total_cost_per_bag AS FLOAT), 8500)            AS transport_cost,
-      ISNULL(t.distance_band, 'Inter-State')                       AS distance_band,
-      ISNULL(CAST(t.rate_per_km        AS FLOAT), 17.0)            AS rate_per_km,
-      ISNULL(CAST(t.road_quality_mult  AS FLOAT), 1.0)             AS road_quality_mult,
-      ISNULL(CAST(t.fuel_haulage_cost  AS FLOAT), 5950)            AS fuel_haulage_cost,
-      ISNULL(CAST(t.checkpoint_cost    AS FLOAT), 850)             AS checkpoint_cost_val,
-      ISNULL(CAST(t.fixed_cost         AS FLOAT), 1700)            AS fixed_cost_val,
+      -- Distance: market-level view first, then estimate from state fare, then 500km
+      COALESCE(
+        CAST(t.road_distance_km AS FLOAT),
+        CAST(tf.fare_per_tonne AS FLOAT) / 17.0,
+        500
+      )                                                             AS distance_km,
+      -- Transport cost: market-level → state-level (Transport_Fares) → last resort
+      COALESCE(
+        CAST(t.total_cost_per_bag AS FLOAT),
+        CAST(tf.fare_per_tonne AS FLOAT),
+        15000
+      )                                                             AS transport_cost,
+      -- Label: show real distance band or state pair
+      COALESCE(
+        t.distance_band,
+        CASE
+          WHEN tf.fare_per_tonne IS NOT NULL
+          THEN CONCAT(p1.state, ' → ', p2.state)
+          ELSE 'Inter-State (est.)'
+        END
+      )                                                             AS distance_band,
+      ISNULL(CAST(t.rate_per_km AS FLOAT), 17.0)                   AS rate_per_km,
+      ISNULL(CAST(t.road_quality_mult AS FLOAT), 1.0)              AS road_quality_mult,
+      ISNULL(CAST(t.fuel_haulage_cost AS FLOAT),
+        COALESCE(CAST(tf.fare_per_tonne AS FLOAT) * 0.70, 5950))   AS fuel_haulage_cost,
+      ISNULL(CAST(t.checkpoint_cost AS FLOAT), 850)                AS checkpoint_cost_val,
+      ISNULL(CAST(t.fixed_cost AS FLOAT), 1700)                    AS fixed_cost_val,
       CAST(p2.avg_price - p1.avg_price AS FLOAT)                   AS gross_profit,
       CAST(p2.avg_price - p1.avg_price
-           - ISNULL(t.total_cost_per_bag, 8500) AS FLOAT)          AS raw_net_profit,
+           - COALESCE(
+               CAST(t.total_cost_per_bag AS FLOAT),
+               CAST(tf.fare_per_tonne AS FLOAT),
+               15000
+             ) AS FLOAT)                                           AS raw_net_profit,
       ROUND(
         CAST(p2.avg_price - p1.avg_price
-             - ISNULL(t.total_cost_per_bag, 8500) AS FLOAT)
+             - COALESCE(
+                 CAST(t.total_cost_per_bag AS FLOAT),
+                 CAST(tf.fare_per_tonne AS FLOAT),
+                 15000
+               ) AS FLOAT)
         / CAST(p1.avg_price AS FLOAT) * 100, 1
       )                                                             AS raw_profit_pct
     FROM #StatePrices p1
@@ -377,11 +405,23 @@ async function findArbitrageOpportunities(
       ON  p1.item_id   = p2.item_id
       AND p1.state    != p2.state
       AND p2.avg_price > p1.avg_price
+    -- Level 1: market-pair exact match
     LEFT JOIN dbo.vw_Market_Transport t
       ON  t.market_a_id = p1.buy_market_id
       AND t.market_b_id = p2.sell_market_id
+    -- Level 2: state-pair fallback from Transport_Fares (NARTO + scraped rates)
+    LEFT JOIN dbo.Transport_Fares tf
+      ON  tf.origin_state      = p1.state
+      AND tf.destination_state = p2.state
+      AND tf.vehicle_class     = 'TRUCK_5T'
+      AND tf.is_current        = 1
+      AND t.market_a_id IS NULL  -- only use when Level 1 missed
     WHERE CAST(p2.avg_price - p1.avg_price
-               - ISNULL(t.total_cost_per_bag, 8500) AS FLOAT) > 0
+               - COALESCE(
+                   CAST(t.total_cost_per_bag AS FLOAT),
+                   CAST(tf.fare_per_tonne AS FLOAT),
+                   15000
+                 ) AS FLOAT) > 0
       ${sqlStateWhere}
     ORDER BY raw_profit_pct DESC;
   `;
@@ -394,7 +434,7 @@ async function findArbitrageOpportunities(
   try {
     const batchResult = await pool.request().batch(batchSql);
     results = batchResult?.recordset || [];
-    console.log(`[arbitrage v14] Batch OK — ${results.length} rows (topN=${topN}, stateFilter=${hasStateFilter})`);
+    console.log(`[arbitrage v15] Batch OK — ${results.length} rows (topN=${topN}, stateFilter=${hasStateFilter})`);
   } catch (batchErr: any) {
     console.error("[arbitrage v14] Batch FAILED:", batchErr?.message || batchErr);
     console.error("[arbitrage v14] Error number:", batchErr?.number, "| State:", batchErr?.state);
@@ -669,11 +709,32 @@ export async function POST(request: NextRequest) {
           : "Standard rate (1.0×)",
       };
     } else {
-      // Fallback: estimate if pair not found
+      // Fallback: try Transport_Fares by state, else use ₦15,000 estimate
+      const stateResult = await pool.request().query(`
+        SELECT TOP 1 CAST(fare_per_tonne AS FLOAT) AS fare,
+               CONCAT(origin_state,' → ',destination_state) AS label
+        FROM dbo.Transport_Fares
+        WHERE origin_state      = '${String(buyPrice.state || "").replace(/'/g, "''")}'
+          AND destination_state = '${String(sellPrice.state || "").replace(/'/g, "''")}'
+          AND vehicle_class     = 'TRUCK_5T'
+          AND is_current        = 1
+        ORDER BY fare_date DESC
+      `);
+      const stateRow = stateResult.recordset?.[0];
+      const stateFare = stateRow ? parseFloat(stateRow.fare) : 15000;
+      const stateLabel = stateRow ? stateRow.label : "Inter-State (est.)";
       transport = {
-        distance: 0, fuelCost: 5000, loadingCost: 3000, checkpointCost: 500,
-        totalCost: 8500, label: "Estimated", ratePerKm: 0,
-        weightMultiplier: 1.0, categoryNote: "Estimated (market pair not in precomputed table)",
+        distance: Math.round(stateFare / 17),
+        fuelCost: Math.round(stateFare * 0.70),
+        loadingCost: Math.round(stateFare * 0.20),
+        checkpointCost: Math.round(stateFare * 0.10),
+        totalCost: stateFare,
+        label: stateLabel,
+        ratePerKm: 17,
+        weightMultiplier: 1.0,
+        categoryNote: stateRow
+          ? "NARTO state-level rate (Transport_Fares)"
+          : "Estimated ₦15,000 (state pair not in Transport_Fares)",
       };
     }
 
