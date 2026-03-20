@@ -290,18 +290,12 @@ function mapRow(p: any, prefix: string): PriceRecord {
 // ============================================================================
 
 function buildOrderBy(sort: string): string {
-  // Priority column: generated items (SIM_TRACKED / SIM_BASELINE / REAL_ANCHORED)
-  // sort before NBS items so user sees our data first.
-  // data_source is on the underlying table so it is valid in OVER(ORDER BY ...)
-  // even though it is not in the SELECT list.
-  const nbs_last = `CASE WHEN data_source LIKE 'NBS%' THEN 1 ELSE 0 END ASC`;
-
   switch (sort) {
-    case "price":     return `ORDER BY ${nbs_last}, price_naira DESC`;
-    case "price_asc": return `ORDER BY ${nbs_last}, price_naira ASC`;
-    case "change":    return `ORDER BY ${nbs_last}, price_change_pct DESC`;
-    case "name":      return `ORDER BY ${nbs_last}, item_name ASC`;
-    default:          return `ORDER BY ${nbs_last}, price_date DESC, item_name ASC`;
+    case "price":     return "ORDER BY price_naira DESC";
+    case "price_asc": return "ORDER BY price_naira ASC";
+    case "change":    return "ORDER BY price_change_pct DESC";
+    case "name":      return "ORDER BY item_name ASC";
+    default:          return "ORDER BY price_date DESC, item_name ASC";
   }
 }
 
@@ -331,6 +325,8 @@ async function fetchFromSummaryTable(
     const conditions: string[] = [
       "price_naira > 0",
       `category_id IN (${FOOD_CAT_IDS.map(id => `'${id}'`).join(",")})`,
+      // Only show generated prices — NBS and scraped data are reference only
+      "data_source IN ('SIM_TRACKED', 'SIM_BASELINE', 'REAL_ANCHORED')",
     ];
 
     const req = pool.request();
@@ -431,6 +427,8 @@ async function fetchFromDailyPrices(
       "price_date >= DATEADD(day, -2, CAST(GETDATE() AS DATE))",
       "price_naira > 0",
       `category_id IN (${FOOD_CAT_IDS.map(id => `'${id}'`).join(",")})`,
+      // Only show generated prices — NBS and scraped data are reference only
+      "data_source IN ('SIM_TRACKED', 'SIM_BASELINE', 'REAL_ANCHORED')",
     ];
 
     const req = pool.request();
