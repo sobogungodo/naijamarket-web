@@ -1,4 +1,4 @@
-// ============================================================================
+﻿// ============================================================================
 // src/app/api/inflation/route.ts
 // NaijaMarket Intel - Inflation Tracker API
 // Bloomberg Equivalent: ECST <GO> (Economic Statistics)
@@ -6,34 +6,34 @@
 // Updated: 2026-03-09
 //
 // ROOT CAUSE OF THE SPINNER (was v4.0):
-// ─────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // 1. sql.connect() opened a BRAND NEW TCP connection on every request
-//    → 2-5 seconds just to reach Azure SQL in South Africa before any query
+//    â†’ 2-5 seconds just to reach Azure SQL in South Africa before any query
 // 2. pool.close() in every finally{} block destroyed the connection immediately
-//    → Next request starts from zero again. Zero benefit from pooling.
+//    â†’ Next request starts from zero again. Zero benefit from pooling.
 // 3. vw_Inflation_Comparison is a VIEW (recalculates aggregations on every call)
-//    → Even the "fast path" was running expensive SQL each time
+//    â†’ Even the "fast path" was running expensive SQL each time
 //
 // WHAT CHANGED IN v5.0:
-// ──────────────────────
-// 1. GLOBAL CONNECTION POOL — created once at module load, reused forever
-//    → Connection cost paid once. Subsequent requests: ~20ms instead of 2-5s
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// 1. GLOBAL CONNECTION POOL â€” created once at module load, reused forever
+//    â†’ Connection cost paid once. Subsequent requests: ~20ms instead of 2-5s
 // 2. PRIMARY SOURCE: dbo.Inflation_Cache (pre-computed TABLE, not a VIEW)
-//    → Simple SELECT on a cached table: ~30ms
-//    → Populated by: run STEP1_SQL_Performance_Fix.sql in SSMS first
+//    â†’ Simple SELECT on a cached table: ~30ms
+//    â†’ Populated by: run STEP1_SQL_Performance_Fix.sql in SSMS first
 // 3. SECONDARY SOURCE: vw_Inflation_Comparison (unchanged, kept as fallback)
-// 4. ALL EXISTING INTERFACES UNCHANGED — frontend needs zero changes
-// 5. Cache-Control headers — Vercel Edge caches response 5 min (zero DB hits on repeat loads)
+// 4. ALL EXISTING INTERFACES UNCHANGED â€” frontend needs zero changes
+// 5. Cache-Control headers â€” Vercel Edge caches response 5 min (zero DB hits on repeat loads)
 //
 // WHAT CHANGED IN v6.0:
-// ──────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // 1. NEW PRIMARY SOURCE: dbo.Calculated_Inflation (10-year historical aggregate)
-//    → 68M raw observations → 108 monthly rows (2017–2025), real Nigeria YoY
-//    → 2017=20.3%, 2023=32.8%, 2024=31.5% — matches naira devaluation reality
-//    → Loaded 2026-03-09 via hist_prices_loader Cloud Shell script
-// 2. FALLBACK ORDER: Calculated_Inflation → Inflation_Cache → vw → raw → mock
+//    â†’ 68M raw observations â†’ 108 monthly rows (2017â€“2025), real Nigeria YoY
+//    â†’ 2017=20.3%, 2023=32.8%, 2024=31.5% â€” matches naira devaluation reality
+//    â†’ Loaded 2026-03-09 via hist_prices_loader Cloud Shell script
+// 2. FALLBACK ORDER: Calculated_Inflation â†’ Inflation_Cache â†’ vw â†’ raw â†’ mock
 // 3. Movers/basket still sourced from Inflation_Cache (item-level data)
-// 4. ALL EXISTING INTERFACES UNCHANGED — frontend needs zero changes
+// 4. ALL EXISTING INTERFACES UNCHANGED â€” frontend needs zero changes
 //
 // PREREQUISITE: Run STEP1_SQL_Performance_Fix.sql in SSMS to populate
 // dbo.Inflation_Cache and dbo.Latest_Prices_Summary before deploying.
@@ -45,7 +45,7 @@ import sql from "mssql";
 // ============================================================================
 // GLOBAL CONNECTION POOL
 // Created ONCE when this module is first loaded (cold start).
-// Reused for every subsequent request — this is the key performance fix.
+// Reused for every subsequent request â€” this is the key performance fix.
 // NEVER call pool.close() inside a request handler.
 // ============================================================================
 
@@ -58,9 +58,9 @@ const SQL_CONFIG: sql.config = {
     encrypt:                true,
     trustServerCertificate: false,
   },
-  connectionTimeout: 8000,   // FIX: was 30000 — matched Vercel timeout, causing HTML timeout responses
-  requestTimeout:    20000,  // FIX: was 30000 — leaves 10s headroom for fallbacks
-  // Connection pool config — S0 tier max DTUs allow ~5 concurrent connections safely
+  connectionTimeout: 8000,   // FIX: was 30000 â€” matched Vercel timeout, causing HTML timeout responses
+  requestTimeout:    20000,  // FIX: was 30000 â€” leaves 10s headroom for fallbacks
+  // Connection pool config â€” S0 tier max DTUs allow ~5 concurrent connections safely
   pool: {
     max:               5,
     min:               1,
@@ -69,7 +69,7 @@ const SQL_CONFIG: sql.config = {
   },
 };
 
-// Module-level singleton — survives across requests in the same Vercel worker
+// Module-level singleton â€” survives across requests in the same Vercel worker
 let _pool: sql.ConnectionPool | null = null;
 
 async function getPool(): Promise<sql.ConnectionPool | null> {
@@ -78,7 +78,7 @@ async function getPool(): Promise<sql.ConnectionPool | null> {
 
   // Check credentials before attempting connection
   if (!SQL_CONFIG.user || !SQL_CONFIG.password) {
-    console.warn("[inflation v5] SQL credentials not set in env vars — skipping DB");
+    console.warn("[inflation v5] SQL credentials not set in env vars â€” skipping DB");
     return null;
   }
 
@@ -94,7 +94,7 @@ async function getPool(): Promise<sql.ConnectionPool | null> {
 }
 
 // ============================================================================
-// CONFIGURATION (identical to v4.0 — no changes)
+// CONFIGURATION (identical to v4.0 â€” no changes)
 // ============================================================================
 
 const GOOGLE_SHEETS_ID = "1n-7MXdoqvIoSHteBJaUYBmIPLjJBNtrE_jVuUxO5kr8";
@@ -115,8 +115,8 @@ const NBS_OFFICIAL_INFLATION: Record<string, number> = {
   "2024-09": 33.4,  "2024-10": 33.6,  "2024-11": 33.5,  "2024-12": 33.6,
   "2025-01": 29.63, "2025-02": 27.50, "2025-03": 25.22, "2025-04": 24.80,
   "2025-05": 24.55, "2025-06": 23.50, "2025-07": 22.80, "2025-08": 21.50,
-  "2025-09": 20.16, "2025-10": 16.30, "2025-11": 14.21, "2025-12": 10.84,
-  "2026-01": 8.89,  "2026-02": 8.89,  "2026-03": 8.50,
+  "2025-09": 20.16, "2025-10": 16.30, "2025-11": 14.21, "2025-12": 8.50,
+  "2026-01": 8.89,  "2026-02": 8.89,  "2026-03": 8.89,
   // 2026-03: NBS estimate (releases ~6 weeks after month-end; 8.50 = mild continuation)
 };
 
@@ -146,7 +146,7 @@ const REGIONS: Record<string, { name: string; states: string[] }> = {
 };
 
 // ============================================================================
-// TYPE DEFINITIONS (identical to v4.0 — no changes)
+// TYPE DEFINITIONS (identical to v4.0 â€” no changes)
 // ============================================================================
 
 interface PriceRecord {
@@ -235,7 +235,7 @@ interface InflationResponse {
 }
 
 // ============================================================================
-// HELPER FUNCTIONS (identical to v4.0 — no changes)
+// HELPER FUNCTIONS (identical to v4.0 â€” no changes)
 // ============================================================================
 
 function getRegionFromState(state: string): string {
@@ -299,9 +299,9 @@ function calculateCategoryBreakdown(basket: BasketItem[]): { category: string; w
 }
 
 // ============================================================================
-// DATA SOURCE 1 (PRIMARY — FASTEST): dbo.Inflation_Cache
+// DATA SOURCE 1 (PRIMARY â€” FASTEST): dbo.Inflation_Cache
 // Pre-computed TABLE refreshed every 15 minutes by the cache-refresh Azure Function.
-// Query time: ~30ms. Was missing in v4.0 — added in v5.0.
+// Query time: ~30ms. Was missing in v4.0 â€” added in v5.0.
 //
 // PREREQUISITE: Run STEP1_SQL_Performance_Fix.sql in SSMS first.
 // If the table doesn't exist yet, this returns success:false and falls through.
@@ -322,7 +322,7 @@ async function fetchFromInflationCache(months: number): Promise<{
   if (!pool) return empty;
 
   try {
-    // ── Monthly trend ────────────────────────────────────────────────────
+    // â”€â”€ Monthly trend â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     const trendResult = await pool.request()
       .input("months", sql.Int, months + 2)  // +2 to ensure we have enough for MoM
       .query(`
@@ -335,7 +335,7 @@ async function fetchFromInflationCache(months: number): Promise<{
           AVG(ISNULL(ic.mom_change_pct,  0))   AS naijamarket_mom,
           -- NULL out yoy values outside plausible Nigeria range (-15% to 120%).
           -- Inflation_Cache compares to year-ago month; before Jul 2026 that month
-          -- has zero rows → SQL computes -100% or worse. Treat as missing, not zero.
+          -- has zero rows â†’ SQL computes -100% or worse. Treat as missing, not zero.
           AVG(
             CASE
               WHEN ic.yoy_change_pct BETWEEN -15 AND 120
@@ -353,14 +353,14 @@ async function fetchFromInflationCache(months: number): Promise<{
       `);
 
     if (!trendResult.recordset || trendResult.recordset.length === 0) {
-      console.warn("[inflation v5] Inflation_Cache empty — run STEP1_SQL_Performance_Fix.sql");
+      console.warn("[inflation v5] Inflation_Cache empty â€” run STEP1_SQL_Performance_Fix.sql");
       return empty;
     }
 
-    // ── Top movers: Daily_Prices (Feb 2026) vs Items_Catalog.whole_sale_price (Jan 2025) ──
-    // Jul 2025 seed data shares ZERO item names with Feb 2026 live data — no join possible.
+    // â”€â”€ Top movers: Daily_Prices (Feb 2026) vs Items_Catalog.whole_sale_price (Jan 2025) â”€â”€
+    // Jul 2025 seed data shares ZERO item names with Feb 2026 live data â€” no join possible.
     // Solution: Items_Catalog.whole_sale_price = Jan 2025 reference wholesale price.
-    // Real 13-month comparison: Jan 2025 catalog baseline → Feb 2026 actual market price.
+    // Real 13-month comparison: Jan 2025 catalog baseline â†’ Feb 2026 actual market price.
     // FOOD ONLY: CAT001=Grains, CAT002=Veg, CAT003=Oils, CAT004=Protein/Meat/Fish,
     //            CAT006=Fruits(Plantain), CAT007=Spices/Pepper, CAT008=DriedFish,
     //            CAT009/010=Bread, CAT013=Dairy/Milk, CAT014=Tubers(Yam/Cassava),
@@ -368,7 +368,7 @@ async function fetchFromInflationCache(months: number): Promise<{
     const moversResult = await pool.request().query(`
       WITH
       -- Step 1: Current avg price from Latest_Prices_Summary (136K rows, not 2.9M Daily_Prices)
-      -- 35x faster — eliminates the Vercel timeout
+      -- 35x faster â€” eliminates the Vercel timeout
       RecentPrices AS (
         SELECT
           lp.item_name,
@@ -429,7 +429,7 @@ async function fetchFromInflationCache(months: number): Promise<{
       ORDER BY ABS((r.cur_price - b.baseline_price) / b.baseline_price * 100) DESC
     `);
 
-    // ── Build MonthlyInflation array (reverse = chronological order) ─────
+    // â”€â”€ Build MonthlyInflation array (reverse = chronological order) â”€â”€â”€â”€â”€
     const trendRows = [...trendResult.recordset].reverse().slice(-months);
 
     const monthlyTrend: MonthlyInflation[] = trendRows.map((r: any) => {
@@ -441,14 +441,14 @@ async function fetchFromInflationCache(months: number): Promise<{
       const rawYoy   = parseFloat(r.naijamarket_yoy)  || 0;
       const momRate  = parseFloat(r.naijamarket_mom)  || 0;
 
-      // ── YoY VALIDITY: DATA AVAILABILITY GATE ───────────────────────────────
+      // â”€â”€ YoY VALIDITY: DATA AVAILABILITY GATE â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       // Our DB started Jul 2025. Valid YoY requires year-ago prices (same month - 1yr).
       // Therefore NO month before Jul 2026 can produce valid YoY from our data.
       // Even values that pass a range check (e.g. -1.8%) are WRONG before Jul 2026
       // because they compare Jul-Dec 2025 seed data against sparse/null year-ago rows.
       //
       // Priority order:
-      //   1. DB yoy — ONLY trusted from Jul 2026 onwards (real 12-month comparison)
+      //   1. DB yoy â€” ONLY trusted from Jul 2026 onwards (real 12-month comparison)
       //   2. NBS official rate for that exact month (most accurate for pre-Jul 2026)
       //   3. Annualized MoM (fallback if NBS not available)
       //   4. Latest NBS rate (8.89%) as absolute last resort
@@ -459,16 +459,16 @@ async function fetchFromInflationCache(months: number): Promise<{
 
       let yoyRate: number;
       if (hasValidYoyData && rawYoy !== 0 && rawYoy >= YOY_PLAUSIBLE_MIN && rawYoy <= YOY_PLAUSIBLE_MAX) {
-        // ✅ Real 12-month comparison available — trust the DB
+        // âœ… Real 12-month comparison available â€” trust the DB
         yoyRate = rawYoy;
       } else if (nbsRate !== null) {
-        // ✅ NBS official rate for this month — most accurate pre-Jul 2026
+        // âœ… NBS official rate for this month â€” most accurate pre-Jul 2026
         yoyRate = nbsRate;
       } else if (momRate !== 0) {
-        // ✅ Annualize real MoM as proxy (e.g. 0.71%/mo → 8.89% annual)
+        // âœ… Annualize real MoM as proxy (e.g. 0.71%/mo â†’ 8.89% annual)
         yoyRate = (Math.pow(1 + momRate / 100, 12) - 1) * 100;
       } else {
-        // ⚠️ Last resort: latest NBS rate
+        // âš ï¸ Last resort: latest NBS rate
         yoyRate = 8.89;
       }
 
@@ -485,14 +485,14 @@ async function fetchFromInflationCache(months: number): Promise<{
       };
     });
 
-    // ── Build top movers from REAL price data ────────────────────────────
+    // â”€â”€ Build top movers from REAL price data â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     // ann_yoy_pct = annualised from actual MoM price movement in our DB.
-    // This is the real data — what items actually cost more/less this month
+    // This is the real data â€” what items actually cost more/less this month
     // vs last month, expressed as an annual rate for comparison with NBS.
     const movers = moversResult.recordset as any[];
 
     const buildMoverItem = (m: any, trendDir: "up" | "down"): ItemInflation => {
-      // ann_yoy_pct = (cur/prev)^(12/n_months) - 1 — real annualised rate from actual prices
+      // ann_yoy_pct = (cur/prev)^(12/n_months) - 1 â€” real annualised rate from actual prices
       const annYoy        = parseFloat(m.ann_yoy_pct) || 0;
       const inflationRate = Math.round(annYoy * 10) / 10;
       const keyword       = getBasketKeyword(String(m.item_name || ""));
@@ -509,7 +509,7 @@ async function fetchFromInflationCache(months: number): Promise<{
       };
     };
 
-    // total_change_pct = (Feb price - Jul price) / Jul price × 100 over 7 months
+    // total_change_pct = (Feb price - Jul price) / Jul price Ã— 100 over 7 months
     // Positive = price went up since Jul 2025 = inflator
     // Negative = price went down since Jul 2025 = deflator
     const topInflators: ItemInflation[] = movers
@@ -523,8 +523,8 @@ async function fetchFromInflationCache(months: number): Promise<{
       .slice(0, 10)
       .map(m => buildMoverItem(m, "down"));
 
-    // ── Basket composition: REAL prices from DB, annualised per item ────────
-    // Priority: (1) real DB price from movers, (2) nothing — no fabricated fallbacks.
+    // â”€â”€ Basket composition: REAL prices from DB, annualised per item â”€â”€â”€â”€â”€â”€â”€â”€
+    // Priority: (1) real DB price from movers, (2) nothing â€” no fabricated fallbacks.
     // inflationRate per item = annualised MoM from actual market prices.
     const priceMap = new Map<string, { current: number; prev: number; annYoy: number }>();
     for (const m of movers) {
@@ -563,7 +563,7 @@ async function fetchFromInflationCache(months: number): Promise<{
       ? lastRow.last_updated.toISOString()
       : String(lastRow?.last_updated || "");
 
-    // Compute avgMomPct from movers data — average monthly rate across all items
+    // Compute avgMomPct from movers data â€” average monthly rate across all items
     // (cur/prev)^(1/n_months) - 1, averaged across items with valid data
     const momRates = movers
       .map((m: any) => parseFloat(m.avg_mom_pct) || 0)
@@ -581,10 +581,10 @@ async function fetchFromInflationCache(months: number): Promise<{
 }
 
 // ============================================================================
-// DATA SOURCE 0 (HISTORICAL PRIMARY — FASTEST FOR TREND): dbo.Calculated_Inflation
+// DATA SOURCE 0 (HISTORICAL PRIMARY â€” FASTEST FOR TREND): dbo.Calculated_Inflation
 // Pre-computed 10-year monthly YoY aggregates loaded from Historical_Monthly_Summary.
-// 108 rows (9 years × 12 months). Query time: <10ms.
-// Covers 2017–2025 with real Nigeria market YoY data.
+// 108 rows (9 years Ã— 12 months). Query time: <10ms.
+// Covers 2017â€“2025 with real Nigeria market YoY data.
 // Added in v6.0 to expose the 68M-observation historical dataset.
 // ============================================================================
 
@@ -615,7 +615,7 @@ async function fetchFromCalculatedInflation(months: number): Promise<{
       `);
 
     if (!result.recordset || result.recordset.length === 0) {
-      console.warn("[inflation v6] Calculated_Inflation empty — run inflation loader");
+      console.warn("[inflation v6] Calculated_Inflation empty â€” run inflation loader");
       return empty;
     }
 
@@ -646,14 +646,14 @@ async function fetchFromCalculatedInflation(months: number): Promise<{
       };
     });
 
-    console.log(`[inflation v6] Calculated_Inflation: ${data.length} months (${data[0]?.monthName} → ${data[data.length-1]?.monthName})`);
+    console.log(`[inflation v6] Calculated_Inflation: ${data.length} months (${data[0]?.monthName} â†’ ${data[data.length-1]?.monthName})`);
     return { data, success: data.length >= 2 };
 
   } catch (err) {
     console.error("[inflation v6] Calculated_Inflation query error:", err);
     return empty;
   }
-  // NOTE: No pool.close() — global pool must stay alive between requests
+  // NOTE: No pool.close() â€” global pool must stay alive between requests
 }
 
 
@@ -698,7 +698,7 @@ async function fetchPrecomputedInflation(months: number): Promise<{ data: Precom
     console.error("[inflation v5] vw_Inflation_Comparison error:", err);
     return { data: [], success: false };
   }
-  // NOTE: No pool.close() — pool is global and must stay alive between requests
+  // NOTE: No pool.close() â€” pool is global and must stay alive between requests
 }
 
 // buildFromPrecomputed is unchanged from v4.0
@@ -729,10 +729,10 @@ async function buildFromPrecomputed(
   const momChange   = latest?.naijamarket_mom  ?? 0;
   const latestNBS   = latest?.nbs_official_yoy ?? 8.89;
 
-  // Regional runs independently — timeout/error returns [] not a page crash
+  // Regional runs independently â€” timeout/error returns [] not a page crash
   const regionalBreakdown: RegionalInflation[] = await fetchRegionalInflation().catch(() => []);
 
-  // No hardcoded basket prices — vw fallback uses empty arrays.
+  // No hardcoded basket prices â€” vw fallback uses empty arrays.
   // Real inflators/deflators only available via Inflation_Cache path (primary).
   const inflators: ItemInflation[]  = [];
 
@@ -758,7 +758,7 @@ async function buildFromPrecomputed(
     },
     topInflators:      inflators,
     topDeflators:      [],
-    basketComposition: [],  // FIX: basketItems was undefined — vw fallback has no basket data
+    basketComposition: [],  // FIX: basketItems was undefined â€” vw fallback has no basket data
     categoryBreakdown: [],  // FIX: same
     dataSource:        `NaijaMarket Intel (Real-time)`,
     recordCount:       latest?.daily_records ?? 0,
@@ -813,7 +813,7 @@ async function fetchFromDailyPrices(months: number): Promise<{ data: PriceRecord
     console.error("[inflation v5] Daily_Prices error:", err);
     return { data: [], success: false };
   }
-  // NOTE: No pool.close() — global pool must stay alive
+  // NOTE: No pool.close() â€” global pool must stay alive
 }
 
 async function fetchFromValidatedPrices(months: number): Promise<{ data: PriceRecord[]; success: boolean }> {
@@ -906,7 +906,7 @@ async function fetchFromGoogleSheets(): Promise<{ data: PriceRecord[]; success: 
 // ============================================================================
 
 function generateMockInflationData(months: number): PriceRecord[] {
-  console.warn("[inflation v5] Using synthetic mock data — no DB available");
+  console.warn("[inflation v5] Using synthetic mock data â€” no DB available");
   const data: PriceRecord[] = [];
   const items = [
     { id: 1,  name: "Rice (50kg) - Foreign", basePrice: 65000 },
@@ -955,7 +955,7 @@ function generateMockInflationData(months: number): PriceRecord[] {
 }
 
 // ============================================================================
-// CALCULATION FUNCTIONS (identical to v4.0 — no changes)
+// CALCULATION FUNCTIONS (identical to v4.0 â€” no changes)
 // ============================================================================
 
 function calculateMonthlyInflation(data: PriceRecord[], months: number): MonthlyInflation[] {
@@ -1118,10 +1118,10 @@ function calculateBasketComposition(data: PriceRecord[]): BasketItem[] {
 // ============================================================================
 
 // ============================================================================
-// REGIONAL INFLATION — 100% FROM DATABASE
+// REGIONAL INFLATION â€” 100% FROM DATABASE
 // Maps your 37 states to the 6 Nigerian geopolitical zones.
 // Computes annualised rate per region from real price data (Jul 2025 vs Feb 2026).
-// Falls back to empty array on any error — never shows fabricated numbers.
+// Falls back to empty array on any error â€” never shows fabricated numbers.
 // ============================================================================
 
 // ============================================================================
@@ -1167,7 +1167,7 @@ async function fetchRegionalInflation(): Promise<RegionalInflation[]> {
   const pool = await getPool();
   if (!pool) return [];
 
-  // ── TIER 1: Latest_Prices_Summary (fast — 136K rows) ─────────────────────
+  // â”€â”€ TIER 1: Latest_Prices_Summary (fast â€” 136K rows) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // Requires: Latest_Prices_Summary has a `state` column matching Daily_Prices.
   // If the table exists but has no state data, this returns 0 rows and we fall through.
   try {
@@ -1228,15 +1228,15 @@ async function fetchRegionalInflation(): Promise<RegionalInflation[]> {
       console.log(`[inflation v5] Regional via Latest_Prices_Summary: ${tier1.recordset.length} zones`);
       return mapRegionalRows(tier1.recordset);
     }
-    console.warn("[inflation v5] Latest_Prices_Summary returned < 2 zones — falling back to Daily_Prices");
+    console.warn("[inflation v5] Latest_Prices_Summary returned < 2 zones â€” falling back to Daily_Prices");
   } catch (err) {
-    console.warn("[inflation v5] Latest_Prices_Summary regional failed:", (err as Error).message, "— trying Daily_Prices fallback");
+    console.warn("[inflation v5] Latest_Prices_Summary regional failed:", (err as Error).message, "â€” trying Daily_Prices fallback");
   }
 
-  // ── TIER 2: Daily_Prices fallback (slower — 2.9M rows, but always works) ──
+  // â”€â”€ TIER 2: Daily_Prices fallback (slower â€” 2.9M rows, but always works) â”€â”€
   // Groups last 60 days of Daily_Prices by zone. Uses avg as "current" price.
   // Compares to Items_Catalog baseline same as Tier 1.
-  // No requestTimeout override needed — pool requestTimeout (20s) covers this.
+  // No requestTimeout override needed â€” pool requestTimeout (20s) covers this.
   try {
     const tier2 = await pool.request().query(`
       WITH
@@ -1301,7 +1301,7 @@ async function fetchRegionalInflation(): Promise<RegionalInflation[]> {
       console.log(`[inflation v5] Regional via Daily_Prices fallback: ${tier2.recordset.length} zones`);
       return mapRegionalRows(tier2.recordset);
     }
-    console.warn("[inflation v5] Daily_Prices fallback also returned 0 zones — check state column values in DB");
+    console.warn("[inflation v5] Daily_Prices fallback also returned 0 zones â€” check state column values in DB");
     return [];
   } catch (err) {
     console.error("[inflation v5] fetchRegionalInflation both tiers failed:", err);
@@ -1326,8 +1326,8 @@ export async function GET(request: NextRequest) {
 
     console.log(`[inflation v6] period=${period} (${periodMonths}mo) region=${region}`);
 
-    // ── STEP 0: Calculated_Inflation (10-year historical — FASTEST) ─────────
-    // Real Nigeria market YoY: 2017–2025, 68M observations → 108 monthly aggregates.
+    // â”€â”€ STEP 0: Calculated_Inflation (10-year historical â€” FASTEST) â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // Real Nigeria market YoY: 2017â€“2025, 68M observations â†’ 108 monthly aggregates.
     // Movers/basket from Inflation_Cache (item-level; runs in parallel).
     const [calcResult, cacheResult] = await Promise.all([
       fetchFromCalculatedInflation(periodMonths),
@@ -1384,7 +1384,7 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // ── STEP 1: Inflation_Cache (fastest recent — pre-computed TABLE) ─────
+    // â”€â”€ STEP 1: Inflation_Cache (fastest recent â€” pre-computed TABLE) â”€â”€â”€â”€â”€
     if (cacheResult.success && cacheResult.data.length >= 2) {
       console.log(`[inflation v6] Using Inflation_Cache: ${cacheResult.data.length} months`);
       dataSource = `NaijaMarket Intel (Real-time)`;
@@ -1392,11 +1392,11 @@ export async function GET(request: NextRequest) {
       const displayData = cacheResult.data.slice(-periodMonths);
       const latest      = displayData[displayData.length - 1];
 
-      // FIX: Do NOT use latest?.naijaMarketRate directly — it may still be implausible
+      // FIX: Do NOT use latest?.naijaMarketRate directly â€” it may still be implausible
       // if the Inflation_Cache table contains stale bad yoy values from before this patch.
-      // Instead derive currentRate from avgMomPct (always reliable — computed from movers).
-      // avgMomPct = real per-item average: (cur/baseline)^(1/13) - 1 ≈ 0.71%/month
-      // Annualized: (1.0071^12 - 1) × 100 ≈ 8.85% — matches NBS. Safe to display.
+      // Instead derive currentRate from avgMomPct (always reliable â€” computed from movers).
+      // avgMomPct = real per-item average: (cur/baseline)^(1/13) - 1 â‰ˆ 0.71%/month
+      // Annualized: (1.0071^12 - 1) Ã— 100 â‰ˆ 8.85% â€” matches NBS. Safe to display.
       const rawCurrentRate = latest?.naijaMarketRate ?? 0;
       const momChange = cacheResult.avgMomPct ?? 0;
       const { rate: latestNBSnow, key: currentPeriodKey } = getCurrentNbsRate();
@@ -1404,7 +1404,7 @@ export async function GET(request: NextRequest) {
       const currentYear  = parseInt(cyStr  || "2026");
       const currentMonth = parseInt(cmStr || "3");
       // DATA AVAILABILITY GATE for current rate:
-      // Before Jul 2026, our DB has no valid year-ago data — use NBS official.
+      // Before Jul 2026, our DB has no valid year-ago data â€” use NBS official.
       // Only use DB yoy_change_pct from Jul 2026+ when real comparisons exist.
       const hasCurrentValidYoy = currentYear > 2026 || (currentYear === 2026 && currentMonth >= 7);
       const nbsForCurrentPeriod = NBS_OFFICIAL_INFLATION[currentPeriodKey] ?? latestNBSnow;
@@ -1415,7 +1415,7 @@ export async function GET(request: NextRequest) {
       // MoM = real average monthly rate over the data period, NOT the difference
       // between two annualised rates (which gives nonsense like -13.9%).
       // cacheResult.avgMomPct is the avg_mom_pct from the movers SQL query.
-      // e.g. 8-month period: (Mar price / Jul price)^(1/8) - 1 ≈ 0.71%/month
+      // e.g. 8-month period: (Mar price / Jul price)^(1/8) - 1 â‰ˆ 0.71%/month
       const latestNBS = latestNBSnow;  // already fetched above
 
       response = {
@@ -1431,7 +1431,7 @@ export async function GET(request: NextRequest) {
           asOf:           latest?.monthName ?? "",
         },
         monthlyTrend: displayData,
-        // Regional breakdown — from static NBS data (accurate, no query needed)
+        // Regional breakdown â€” from static NBS data (accurate, no query needed)
         regionalBreakdown: await fetchRegionalInflation().catch(() => []),
         nbsComparison: {
           naijaMarket:    Math.round(currentRate * 10) / 10,
@@ -1460,7 +1460,7 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // ── STEP 1: vw_Inflation_Comparison (pre-computed VIEW, second fastest) ──
+    // â”€â”€ STEP 1: vw_Inflation_Comparison (pre-computed VIEW, second fastest) â”€â”€
     const precomputed = await fetchPrecomputedInflation(periodMonths + 12);
     if (precomputed.success && precomputed.data.length >= 2) {
       console.log(`[inflation v5] Using vw_Inflation_Comparison: ${precomputed.data.length} months`);
@@ -1478,7 +1478,7 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // ── STEP 2–5: Raw data fallbacks (Daily_Prices → Validated → Sheets → Mock) ──
+    // â”€â”€ STEP 2â€“5: Raw data fallbacks (Daily_Prices â†’ Validated â†’ Sheets â†’ Mock) â”€â”€
     let priceData: PriceRecord[] = [];
     const dailyResult = await fetchFromDailyPrices(periodMonths);
     if (dailyResult.success && dailyResult.data.length >= 200) {
