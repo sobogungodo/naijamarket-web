@@ -325,8 +325,8 @@ async function fetchFromSummaryTable(
     const conditions: string[] = [
       "price_naira > 0",
       `category_id IN (${FOOD_CAT_IDS.map(id => `'${id}'`).join(",")})`,
-      // Only show generated prices — NBS and scraped data are reference only
-      "data_source IN ('SIM_TRACKED', 'SIM_BASELINE', 'REAL_ANCHORED')",
+      // Exclude NBS reference items — item_id starts with 'NBS' for all NBS rows
+      "item_id NOT LIKE 'NBS%'",
     ];
 
     const req = pool.request();
@@ -427,8 +427,8 @@ async function fetchFromDailyPrices(
       "price_date >= DATEADD(day, -2, CAST(GETDATE() AS DATE))",
       "price_naira > 0",
       `category_id IN (${FOOD_CAT_IDS.map(id => `'${id}'`).join(",")})`,
-      // Only show generated prices — NBS and scraped data are reference only
-      "data_source IN ('SIM_TRACKED', 'SIM_BASELINE', 'REAL_ANCHORED')",
+      // Exclude NBS reference items — item_id starts with 'NBS' for all NBS rows
+      "item_id NOT LIKE 'NBS%'",
     ];
 
     const req = pool.request();
