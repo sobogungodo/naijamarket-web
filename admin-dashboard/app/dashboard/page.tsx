@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useSession } from 'next-auth/react';
 import { PageWrapper } from '@/components/dashboard/layout';
 import { StatCard, Badge, Button, Skeleton } from '@/components/ui';
@@ -8,7 +8,6 @@ import {
   AreaChartComponent, 
   PieChartComponent, 
   BarChartComponent,
-  ComposedChartComponent,
   CHART_COLORS,
 } from '@/components/charts';
 import { FraudAlertsList, ActivityFeed, StatusIndicator, QuickAction } from '@/components/dashboard/widgets';
@@ -28,11 +27,35 @@ import {
   UserPlus,
   Shield,
   Zap,
+  Bot,
+  CheckCircle2,
+  XCircle,
+  BarChart3,
+  Play,
 } from 'lucide-react';
 import type { FraudAlert, ActivityItem } from '@/types';
 
 // ============================================
-// MOCK DATA (Replace with API calls)
+// TYPES
+// ============================================
+
+interface SyntheticStats {
+  syntheticTraders:        number;
+  syntheticValidators:     number;
+  submissionsToday:        number;
+  submissionsApproved:     number;
+  submissionsRejected:     number;
+  votesToday:              number;
+  marketsWithActivity:     number;
+  totalMarkets:            number;
+  approvalRate:            number;
+  marketCoverage:          number;
+  avgVotesPerSubmission:   number;
+  lastRunAt:               string | null;
+}
+
+// ============================================
+// MOCK DATA (existing — unchanged)
 // ============================================
 
 const mockStats = {
@@ -135,6 +158,267 @@ const mockActivities: ActivityItem[] = [
 ];
 
 // ============================================
+// SYNTHETIC ENGINE SECTION COMPONENT
+// ============================================
+
+function SyntheticEngineSection() {
+  const [stats, setStats]         = useState<SyntheticStats | null>(null);
+  const [loading, setLoading]     = useState(true);
+  const [running, setRunning]     = useState(false);
+  const [runResult, setRunResult] = useState<string | null>(null);
+  const [error, setError]         = useState<string | null>(null);
+
+  const fetchStats = useCallback(async () => {
+    try {
+      setError(null);
+      const res = await fetch('/api/synthetic/stats', { cache: 'no-store' });
+      const json = await res.json();
+      if (json.success) {
+        setStats(json.data as SyntheticStats);
+      } else {
+        setError(json.error ?? 'Failed to load');
+      }
+    } catch (e) {
+      setError('Network error');
+      console.error('[SyntheticEngineSection]', e);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchStats();
+    // Auto-refresh every 5 minutes
+    const interval = setInterval(fetchStats, 5 * 60 * 1000);
+    return () => clearInterval(interval);
+  }, [fetchStats]);
+
+  const handleTestRun = async () => {
+    setRunning(true);
+    setRunResult(null);
+    try {
+      const res = await fetch('/api/synthetic/stats', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ market_id: 'MKT0001' }),
+      });
+      const json = await res.json();
+      setRunResult(json.success
+        ? '✓ Test run complete for MKT0001 (Mile 12)'
+        : `Error: ${json.error ?? 'Unknown'}`
+      );
+      // Refresh stats after run
+      await fetchStats();
+    } catch {
+      setRunResult('Error: Network failure');
+    } finally {
+      setRunning(false);
+    }
+  };
+
+  const engineRunToday = (stats?.submissionsToday ?? 0) > 0;
+
+  return (
+    <div className="dash-card">
+      {/* Header */}
+      <div className="flex items-center justify-between mb-5">
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 rounded-lg bg-purple-500/10 flex items-center justify-center">
+            <Bot className="w-4 h-4 text-purple-400" />
+          </div>
+          <div>
+            <h3 className="font-semibold text-dash-text">Synthetic Activity Engine</h3>
+            <p className="text-xs text-dash-muted">
+              Pre-launch simulation — keeps validation pipeline active before real traders join
+            </p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          {/* Engine status pill */}
+          <div className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium border ${
+            engineRunToday
+              ? 'bg-green-500/10 border-green-500/30 text-green-400'
+              : 'bg-yellow-500/10 border-yellow-500/30 text-yellow-400'
+          }`}>
+            <span className={`w-1.5 h-1.5 rounded-full ${engineRunToday ? 'bg-green-400 animate-pulse' : 'bg-yellow-400'}`} />
+            {engineRunToday ? 'ACTIVE TODAY' : 'NOT RUN TODAY'}
+          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={fetchStats}
+            disabled={loading}
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+          </Button>
+        </div>
+      </div>
+
+      {error ? (
+        <div className="p-4 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-sm">
+          {error} — Check that sp_Seed_Synthetic_Traders and sp_Seed_Synthetic_Validators have been run.
+        </div>
+      ) : (
+        <>
+          {/* Stats grid */}
+          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3 mb-5">
+
+            {/* Synthetic Traders */}
+            <div className="bg-[#0f1320] rounded-lg p-3 border border-gray-800/60">
+              <div className="flex items-center gap-2 mb-1">
+                <Users className="w-3.5 h-3.5 text-purple-400" />
+                <span className="text-xs text-dash-muted">Syn Traders</span>
+              </div>
+              {loading ? (
+                <Skeleton className="h-7 w-16" />
+              ) : (
+                <p className="text-xl font-bold font-mono text-dash-text">
+                  {stats?.syntheticTraders.toLocaleString() ?? '—'}
+                </p>
+              )}
+              <p className="text-xs text-dash-muted mt-0.5">4 per market</p>
+            </div>
+
+            {/* Synthetic Validators */}
+            <div className="bg-[#0f1320] rounded-lg p-3 border border-gray-800/60">
+              <div className="flex items-center gap-2 mb-1">
+                <Shield className="w-3.5 h-3.5 text-blue-400" />
+                <span className="text-xs text-dash-muted">Syn Validators</span>
+              </div>
+              {loading ? (
+                <Skeleton className="h-7 w-16" />
+              ) : (
+                <p className="text-xl font-bold font-mono text-dash-text">
+                  {stats?.syntheticValidators.toLocaleString() ?? '—'}
+                </p>
+              )}
+              <p className="text-xs text-dash-muted mt-0.5">10 per market</p>
+            </div>
+
+            {/* Submissions today */}
+            <div className="bg-[#0f1320] rounded-lg p-3 border border-gray-800/60">
+              <div className="flex items-center gap-2 mb-1">
+                <TrendingUp className="w-3.5 h-3.5 text-green-400" />
+                <span className="text-xs text-dash-muted">Submissions</span>
+              </div>
+              {loading ? (
+                <Skeleton className="h-7 w-16" />
+              ) : (
+                <p className="text-xl font-bold font-mono text-dash-text">
+                  {stats?.submissionsToday.toLocaleString() ?? '—'}
+                </p>
+              )}
+              <p className="text-xs text-dash-muted mt-0.5">today</p>
+            </div>
+
+            {/* Votes today */}
+            <div className="bg-[#0f1320] rounded-lg p-3 border border-gray-800/60">
+              <div className="flex items-center gap-2 mb-1">
+                <Activity className="w-3.5 h-3.5 text-yellow-400" />
+                <span className="text-xs text-dash-muted">Votes Cast</span>
+              </div>
+              {loading ? (
+                <Skeleton className="h-7 w-16" />
+              ) : (
+                <p className="text-xl font-bold font-mono text-dash-text">
+                  {stats?.votesToday.toLocaleString() ?? '—'}
+                </p>
+              )}
+              <p className="text-xs text-dash-muted mt-0.5">
+                avg {stats?.avgVotesPerSubmission ?? '—'}/sub
+              </p>
+            </div>
+
+            {/* Market coverage */}
+            <div className="bg-[#0f1320] rounded-lg p-3 border border-gray-800/60">
+              <div className="flex items-center gap-2 mb-1">
+                <MapPin className="w-3.5 h-3.5 text-naija-green-500" />
+                <span className="text-xs text-dash-muted">Markets Covered</span>
+              </div>
+              {loading ? (
+                <Skeleton className="h-7 w-16" />
+              ) : (
+                <p className="text-xl font-bold font-mono text-dash-text">
+                  {stats?.marketsWithActivity ?? '—'}
+                  <span className="text-sm text-dash-muted font-normal">/{stats?.totalMarkets ?? '—'}</span>
+                </p>
+              )}
+              <p className="text-xs text-dash-muted mt-0.5">{stats?.marketCoverage ?? 0}% coverage</p>
+            </div>
+
+            {/* Approval rate */}
+            <div className="bg-[#0f1320] rounded-lg p-3 border border-gray-800/60">
+              <div className="flex items-center gap-2 mb-1">
+                <BarChart3 className="w-3.5 h-3.5 text-naija-gold-400" />
+                <span className="text-xs text-dash-muted">Approval Rate</span>
+              </div>
+              {loading ? (
+                <Skeleton className="h-7 w-16" />
+              ) : (
+                <p className={`text-xl font-bold font-mono ${
+                  (stats?.approvalRate ?? 0) >= 85 ? 'text-green-400' : 'text-yellow-400'
+                }`}>
+                  {stats?.approvalRate ?? '—'}%
+                </p>
+              )}
+              <p className="text-xs text-dash-muted mt-0.5">
+                {stats?.submissionsApproved ?? 0}✓ {stats?.submissionsRejected ?? 0}✗
+              </p>
+            </div>
+          </div>
+
+          {/* Approved / Rejected bar */}
+          {!loading && (stats?.submissionsToday ?? 0) > 0 && (
+            <div className="mb-5">
+              <div className="flex items-center justify-between text-xs text-dash-muted mb-1.5">
+                <span>Today's consensus breakdown</span>
+                <span>{stats!.submissionsApproved} approved · {stats!.submissionsRejected} rejected</span>
+              </div>
+              <div className="h-2 bg-gray-800 rounded-full overflow-hidden flex">
+                <div
+                  className="h-full bg-green-500 transition-all duration-500"
+                  style={{ width: `${stats!.approvalRate}%` }}
+                />
+                <div
+                  className="h-full bg-red-500/60 transition-all duration-500"
+                  style={{ width: `${100 - stats!.approvalRate}%` }}
+                />
+              </div>
+            </div>
+          )}
+
+          {/* Footer row — last run info + test trigger */}
+          <div className="flex items-center justify-between pt-4 border-t border-gray-800/60">
+            <div className="text-xs text-dash-muted">
+              {stats?.lastRunAt
+                ? <>Last synthetic submission: <span className="text-dash-text">{stats.lastRunAt}</span></>
+                : 'No synthetic activity yet — seed SPs not run'
+              }
+            </div>
+            <div className="flex items-center gap-3">
+              {runResult && (
+                <span className={`text-xs ${runResult.startsWith('✓') ? 'text-green-400' : 'text-red-400'}`}>
+                  {runResult}
+                </span>
+              )}
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={handleTestRun}
+                disabled={running}
+              >
+                <Play className={`w-3.5 h-3.5 mr-1.5 ${running ? 'animate-pulse' : ''}`} />
+                {running ? 'Running...' : 'Test Run (MKT0001)'}
+              </Button>
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+// ============================================
 // DASHBOARD PAGE COMPONENT
 // ============================================
 
@@ -144,7 +428,6 @@ export default function DashboardPage() {
   const [lastUpdated, setLastUpdated] = useState(new Date());
 
   useEffect(() => {
-    // Simulate data loading
     const timer = setTimeout(() => setIsLoading(false), 1000);
     return () => clearTimeout(timer);
   }, []);
@@ -203,27 +486,25 @@ export default function DashboardPage() {
           />
           <StatCard
             title="Pending Payouts"
-            value={mockStats.totalPendingPayout}
-            subtitle={`${mockStats.pendingPayoutCount} users`}
+            value={formatNaira(mockStats.totalPendingPayout)}
+            subtitle={`${mockStats.pendingPayoutCount} transactions`}
             trend={mockStats.payoutsChange}
             trendLabel="vs last week"
             icon={Wallet}
             iconColor="text-naija-gold-400"
-            format="currency"
           />
           <StatCard
-            title="Approval Rate"
-            value={mockStats.approvalRate}
-            subtitle="last 7 days"
-            icon={Activity}
-            iconColor="text-status-success"
-            format="percentage"
+            title="Fraud Alerts"
+            value={3}
+            subtitle="2 under investigation"
+            icon={AlertTriangle}
+            iconColor="text-status-danger"
           />
         </div>
 
         {/* Charts Row */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Main trend chart */}
+          {/* Weekly Activity Trend */}
           <div className="lg:col-span-2 dash-card">
             <div className="flex items-center justify-between mb-4">
               <h3 className="font-semibold text-dash-text">Weekly Activity Trend</h3>
@@ -338,7 +619,6 @@ export default function DashboardPage() {
 
         {/* Third Row - Fraud Alerts & Activity Feed */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Fraud Alerts */}
           <FraudAlertsList
             alerts={mockFraudAlerts}
             title="Active Fraud Alerts"
@@ -347,14 +627,15 @@ export default function DashboardPage() {
             onAlertView={(alert) => console.log('View alert:', alert.id)}
             onAlertResolve={(alert) => console.log('Resolve alert:', alert.id)}
           />
-
-          {/* Activity Feed */}
           <ActivityFeed
             activities={mockActivities}
             title="Recent Activity"
             maxItems={7}
           />
         </div>
+
+        {/* ── SYNTHETIC ENGINE ─────────────────────────────────────────── */}
+        <SyntheticEngineSection />
 
         {/* Bottom Stats Row */}
         <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
@@ -419,11 +700,11 @@ export default function DashboardPage() {
           <div className="flex items-center justify-between">
             <h3 className="font-semibold text-dash-text">System Status</h3>
             <div className="flex items-center gap-6">
-              <StatusIndicator status="operational" label="API" showPulse />
-              <StatusIndicator status="operational" label="Database" showPulse />
-              <StatusIndicator status="operational" label="WhatsApp" showPulse />
-              <StatusIndicator status="operational" label="Payments" showPulse />
-              <StatusIndicator status="operational" label="Sync" showPulse />
+              <StatusIndicator status="operational" label="API"       showPulse />
+              <StatusIndicator status="operational" label="Database"  showPulse />
+              <StatusIndicator status="operational" label="WhatsApp"  showPulse />
+              <StatusIndicator status="operational" label="Payments"  showPulse />
+              <StatusIndicator status="operational" label="Sync"      showPulse />
             </div>
           </div>
         </div>
