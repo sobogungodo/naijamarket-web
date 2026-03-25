@@ -399,51 +399,10 @@ async function fetch2026Extension(
 
   if (monthsToFill.length === 0) return [];
 
-  // ── Try to get real NaijaMarket annualised rates from Inflation_Cache ──
-  // Annualised MoM per period: avg of (1 + mom_change_pct/100)^12 - 1 across ITEM rows.
-  // Only valid if Inflation_Cache has data for that period_label.
-  const cacheRateMap = new Map<string, number>(); // "YYYY-MM" → annualised rate %
-  try {
-    const pool = await getPool();
-    if (pool) {
-      const icResult = await pool.request().query(`
-        SELECT
-          ic.period_label,
-          AVG(
-            (POWER(
-              CAST(1.0 + ISNULL(
-                CASE WHEN ic.mom_change_pct BETWEEN -50 AND 50 THEN ic.mom_change_pct ELSE NULL END,
-                0) / 100.0 AS FLOAT),
-              12.0
-            ) - 1.0) * 100.0
-          ) AS annualized_mom_rate,
-          COUNT(*) AS item_count
-        FROM dbo.Inflation_Cache ic
-        JOIN dbo.Items_Catalog cat ON cat.item_name = ic.dimension_key
-          AND cat.category_id IN (
-            'CAT001','CAT002','CAT003','CAT004','CAT006','CAT007',
-            'CAT008','CAT009','CAT010','CAT013','CAT014','CAT015',
-            'CAT070','CAT103'
-          )
-          AND (cat.status = 'ACTIVE' OR cat.status IS NULL)
-        WHERE ic.cache_type = 'ITEM'
-          AND ic.period_label >= '2026-01'
-          AND ic.mom_change_pct IS NOT NULL
-        GROUP BY ic.period_label
-        HAVING COUNT(*) >= 10
-        ORDER BY ic.period_label ASC
-      `);
-      for (const row of icResult.recordset) {
-        const rate = parseFloat(row.annualized_mom_rate);
-        if (!isNaN(rate) && rate > -20 && rate < 150) {
-          cacheRateMap.set(String(row.period_label), Math.round(rate * 10) / 10);
-        }
-      }
-      console.log(`[inflation v7] 2026 IC rates: ${cacheRateMap.size} periods`, [...cacheRateMap.entries()]);
-    }
-  } catch (err) {
-    console.warn("[inflation v7] fetch2026Extension IC query failed:", (err as Error).message);
-  }
+  // ── Build extension MonthlyInflation rows ──
+  // NaijaMarket rate = NBS rate for all pre-Jul 2026 months.
+  // IC data not queried here — generated prices cannot support independent YoY claims.
+  const cacheRateMap = new Map<string, number>(); // Reserved for Jul 2026+ use
 
   // ── Build extension MonthlyInflation rows ──
   const extension: MonthlyInflation[] = [];
@@ -451,22 +410,13 @@ async function fetch2026Extension(
     const periodLabel = `${yr2}-${String(mth2).padStart(2, "0")}`;
     const nbsRate     = nbsMap.get(periodLabel) ?? null;
 
-    // NaijaMarket rate priority:
-    // Pre-Jul 2026: no valid YoY from our DB. Two options:
-    //   a) Pure IC annualised MoM — but our generated prices run ~3pp hot vs NBS
-    //   b) Pure NBS rate — accurate but ignores our real market data
-    // Solution: 40% IC + 60% NBS blend. Acknowledges our data is an estimate.
-    // From Jul 2026 onwards, real YoY takes over and blend is discarded.
-    const icRate  = cacheRateMap.get(periodLabel);
-    let naijaMarketRate: number;
-    if (icRate !== undefined && nbsRate !== null) {
-      // Blend: 40% our data, 60% NBS — closes the gap while keeping differentiation
-      naijaMarketRate = Math.round((icRate * 0.4 + nbsRate * 0.6) * 10) / 10;
-    } else if (icRate !== undefined) {
-      naijaMarketRate = icRate;
-    } else {
-      naijaMarketRate = nbsRate !== null ? nbsRate : NBS_FALLBACK_RATE;
-    }
+    // NaijaMarket rate for 2026 extension months:
+    // We have NO valid independent YoY until Jul 2026 (need 12 months of real
+    // trader submissions vs year-ago prices). Generated prices cannot support
+    // a credible claim different from NBS before that date.
+    // → Use NBS rate directly. Lines converge Dec 2025 → Jun 2026.
+    // From Jul 2026: real YoY from DB takes over automatically.
+    const naijaMarketRate = nbsRate !== null ? nbsRate : NBS_FALLBACK_RATE;
 
     extension.push({
       month:           periodLabel,
