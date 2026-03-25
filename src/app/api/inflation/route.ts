@@ -528,9 +528,7 @@ async function fetchFromInflationCache(
           'CAT008','CAT009','CAT010','CAT013','CAT014','CAT015',
           'CAT070','CAT103'
         )
-        AND item_name NOT LIKE '%(NBS%'
-        AND item_name NOT LIKE 'NBS%'
-      GROUP BY item_name, category_id
+        AND is_nbs_ref = 0
       HAVING COUNT(DISTINCT market_name) >= 2
       ORDER BY ABS(AVG(
         CASE WHEN month_avg > 0
@@ -1067,8 +1065,7 @@ async function fetchRegionalInflation(): Promise<RegionalInflation[]> {
         AND month_avg        > 0
         AND state             IS NOT NULL
         AND category_id IN (${FOOD_CATS})
-        AND item_name NOT LIKE '%(NBS%'
-        AND item_name NOT LIKE 'NBS%'
+        AND is_nbs_ref = 0
       GROUP BY ${ZONE_CASE_SQL}, item_name
       HAVING COUNT(DISTINCT market_name) >= 1
     ),
