@@ -490,84 +490,44 @@ async function fetchFromInflationCache(
         ORDER BY ic.period_label DESC
       `);
 
-    // ── Top movers — Latest_Prices_Summary vs Items_Catalog baseline ───────
-    // Inflation_Cache.prev_avg_price is last-period price (not year-ago),
-    // making (cur/prev)^12 produce thousands-of-percent nonsense.
-    // Same pattern as the working regional query: compare current market
-    // prices in Latest_Prices_Summary against Items_Catalog baseline prices.
-    // Food categories only. Clamp ratio 0.5–3.0x to block outliers.
+    // ── Top movers — Latest_Prices_Summary.month_change_pct ────────────────
+    // Confirmed populated: 168,970 rows. previous_price/price_change_pct = 0 rows.
+    // month_change_pct is the SP-computed monthly % change per item per market.
+    // Average across all markets per item, food categories only.
+    // No joins needed — LPS already has category_id for food filtering.
     const moversResult = await pool.request().query(`
-      WITH
-      FoodBaseline AS (
-        -- Use whole_sale_price ONLY — this is the direct bag/unit price.
-        -- Ave_Measurement_Price and average_unit_price are per-kg prices.
-        -- Mixing bag prices (LPS) with per-kg catalog prices gives 50x ratios
-        -- that get filtered out, producing zero movers. Exclude items with no
-        -- whole_sale_price rather than falling through to wrong unit.
-        SELECT
-          item_name,
-          category_id,
-          whole_sale_Price AS baseline_price
-        FROM dbo.Items_Catalog
-        WHERE (status = 'ACTIVE' OR status IS NULL)
-          AND whole_sale_Price > 0
-          AND category_id IN (
-            'CAT001','CAT002','CAT003','CAT004','CAT006','CAT007',
-            'CAT008','CAT009','CAT010','CAT013','CAT014','CAT015',
-            'CAT070','CAT103'
-          )
-      ),
-      CurrentPrices AS (
-        SELECT
-          lp.item_name,
-          AVG(lp.price_naira)            AS cur_price,
-          COUNT(DISTINCT lp.market_name) AS market_count
-        FROM dbo.Latest_Prices_Summary lp
-        WHERE lp.price_naira > 0
-          AND lp.category_id IN (
-            'CAT001','CAT002','CAT003','CAT004','CAT006','CAT007',
-            'CAT008','CAT009','CAT010','CAT013','CAT014','CAT015',
-            'CAT070','CAT103'
-          )
-        GROUP BY lp.item_name
-        HAVING COUNT(*) >= 3
-      ),
-      Movers AS (
-        SELECT
-          c.item_name,
-          f.category_id,
-          c.cur_price      AS avg_price,
-          f.baseline_price AS prev_avg_price,
-          -- Annualised rate over ~13 months (Jul 2025 baseline → now)
-          -- Clamp ratio 0.5–3.0x: blocks extreme unit-confusion outliers
-          (POWER(
-            CAST(
-              CASE
-                WHEN c.cur_price / NULLIF(f.baseline_price,0) BETWEEN 0.5 AND 3.0
-                THEN c.cur_price / NULLIF(f.baseline_price,0)
-                ELSE 1.0
-              END
-            AS FLOAT),
-            12.0 / 13.0
-          ) - 1.0) * 100.0 AS ann_yoy_pct,
-          (c.cur_price - f.baseline_price) / NULLIF(f.baseline_price,0) * 100
-            AS total_change_pct
-        FROM CurrentPrices c
-        JOIN FoodBaseline f ON f.item_name = c.item_name
-        WHERE f.baseline_price > 0
-          AND c.cur_price > 0
-          -- Sanity: price must be within 8x of baseline (unit-confusion guard)
-          AND c.cur_price / NULLIF(f.baseline_price,0) BETWEEN 0.2 AND 8.0
-      )
       SELECT TOP 30
         item_name,
-        avg_price,
-        prev_avg_price,
-        NULL AS avg_mom_pct,
-        ann_yoy_pct,
-        total_change_pct
-      FROM Movers
-      ORDER BY ABS(total_change_pct) DESC
+        AVG(price_naira)        AS avg_price,
+        AVG(month_avg)          AS prev_avg_price,
+        AVG(month_change_pct)   AS avg_mom_pct,
+        -- Annualise the monthly rate: (1 + mom/100)^12 - 1
+        -- Cap individual month_change_pct at ±50% before averaging (outlier guard)
+        (POWER(
+          CAST(1.0 + AVG(
+            CASE
+              WHEN month_change_pct BETWEEN -50 AND 50 THEN month_change_pct
+              ELSE 0
+            END
+          ) / 100.0 AS FLOAT),
+          12.0
+        ) - 1.0) * 100.0 AS ann_yoy_pct,
+        AVG(month_change_pct)   AS total_change_pct,
+        COUNT(DISTINCT market_name) AS market_count
+      FROM dbo.Latest_Prices_Summary
+      WHERE price_naira      > 0
+        AND month_change_pct IS NOT NULL
+        AND category_id IN (
+          'CAT001','CAT002','CAT003','CAT004','CAT006','CAT007',
+          'CAT008','CAT009','CAT010','CAT013','CAT014','CAT015',
+          'CAT070','CAT103'
+        )
+        -- Exclude NBS reference items (per-kg survey items, not market prices)
+        AND item_name NOT LIKE 'NBS%'
+      GROUP BY item_name
+      HAVING COUNT(DISTINCT market_name) >= 2
+         AND AVG(month_change_pct) IS NOT NULL
+      ORDER BY ABS(AVG(month_change_pct)) DESC
     `);
 
     // ── Build MonthlyInflation array ────────────────────────────────────────
@@ -1056,116 +1016,70 @@ async function fetchRegionalInflation(): Promise<RegionalInflation[]> {
 
   const regionQuery = `
     WITH
-    Baseline AS (
-      SELECT item_name,
-        COALESCE(NULLIF(whole_sale_price,0), NULLIF(Ave_Measurement_Price,0), NULLIF(average_unit_price,0)) AS baseline_price
-      FROM dbo.Items_Catalog
-      WHERE category_id IN (${FOOD_CATS})
-        AND COALESCE(NULLIF(whole_sale_price,0), NULLIF(Ave_Measurement_Price,0), NULLIF(average_unit_price,0)) IS NOT NULL
-    ),
-    RecentByZone AS (
-      SELECT ${ZONE_CASE_SQL} AS zone,
-        lp.item_name,
-        AVG(lp.price_naira) AS cur_price,
-        COUNT(DISTINCT lp.market_name) AS market_count
-      FROM dbo.Latest_Prices_Summary lp
-      WHERE lp.price_naira > 0 AND lp.state IS NOT NULL AND lp.category_id IN (${FOOD_CATS})
-      GROUP BY ${ZONE_CASE_SQL}, lp.item_name
-    ),
-    ItemRates AS (
-      SELECT r.zone, r.item_name, r.cur_price, b.baseline_price AS prev_price, r.market_count,
-        (POWER(CAST(r.cur_price / b.baseline_price AS FLOAT), 12.0/13) - 1) * 100 AS ann_yoy_pct,
-        (r.cur_price - b.baseline_price) / b.baseline_price * 100                 AS total_change_pct
-      FROM RecentByZone r JOIN Baseline b ON b.item_name = r.item_name
-      WHERE b.baseline_price > 0 AND r.cur_price > 0 AND r.zone IS NOT NULL
-        AND ABS((r.cur_price - b.baseline_price) / b.baseline_price) < 5
+    ZonedItems AS (
+      SELECT
+        ${ZONE_CASE_SQL} AS zone,
+        item_name,
+        AVG(price_naira)        AS cur_price,
+        AVG(month_change_pct)   AS avg_mom_pct,
+        -- Annualise monthly rate — same formula as movers
+        (POWER(
+          CAST(1.0 + AVG(
+            CASE
+              WHEN month_change_pct BETWEEN -50 AND 50 THEN month_change_pct
+              ELSE 0
+            END
+          ) / 100.0 AS FLOAT),
+          12.0
+        ) - 1.0) * 100.0        AS ann_yoy_pct,
+        COUNT(DISTINCT market_name) AS market_count
+      FROM dbo.Latest_Prices_Summary
+      WHERE price_naira      > 0
+        AND month_change_pct IS NOT NULL
+        AND state             IS NOT NULL
+        AND category_id IN (${FOOD_CATS})
+        AND item_name NOT LIKE 'NBS%'
+      GROUP BY ${ZONE_CASE_SQL}, item_name
+      HAVING COUNT(DISTINCT market_name) >= 1
     ),
     RegionSummary AS (
-      SELECT zone,
-        AVG(ann_yoy_pct) AS avg_ann_yoy,
-        AVG((POWER(CAST(cur_price/prev_price AS FLOAT), 1.0/13) - 1) * 100) AS avg_mom_pct,
+      SELECT
+        zone,
+        AVG(ann_yoy_pct)  AS avg_ann_yoy,
+        AVG(avg_mom_pct)  AS avg_mom_pct,
         SUM(market_count) AS total_markets
-      FROM ItemRates WHERE ann_yoy_pct BETWEEN -50 AND 200
+      FROM ZonedItems
+      WHERE zone IS NOT NULL
+        AND ann_yoy_pct BETWEEN -50 AND 200
       GROUP BY zone
     ),
     TopInflator AS (
       SELECT zone, item_name,
-        ROW_NUMBER() OVER (PARTITION BY zone ORDER BY total_change_pct DESC) AS rn
-      FROM ItemRates WHERE total_change_pct > 0
+        ROW_NUMBER() OVER (PARTITION BY zone ORDER BY ann_yoy_pct DESC) AS rn
+      FROM ZonedItems
+      WHERE ann_yoy_pct > 0 AND zone IS NOT NULL
     )
-    SELECT rs.zone,
-      ROUND(rs.avg_ann_yoy, 2) AS inflation_rate,
-      ROUND(rs.avg_mom_pct, 2) AS mom_rate,
-      rs.total_markets          AS market_count,
-      ti.item_name              AS top_inflator
+    SELECT
+      rs.zone,
+      ROUND(rs.avg_ann_yoy, 2)  AS inflation_rate,
+      ROUND(rs.avg_mom_pct, 2)  AS mom_rate,
+      rs.total_markets           AS market_count,
+      ti.item_name               AS top_inflator
     FROM RegionSummary rs
     LEFT JOIN TopInflator ti ON ti.zone = rs.zone AND ti.rn = 1
     ORDER BY rs.avg_ann_yoy DESC
   `;
 
   try {
-    const tier1 = await pool.request().query(regionQuery.replace("dbo.Latest_Prices_Summary lp", "dbo.Latest_Prices_Summary lp"));
-    if (tier1.recordset && tier1.recordset.length >= 2) {
-      console.log(`[inflation v7] Regional via Latest_Prices_Summary: ${tier1.recordset.length} zones`);
-      return mapRegionalRows(tier1.recordset);
+    const result = await pool.request().query(regionQuery);
+    if (result.recordset && result.recordset.length >= 1) {
+      console.log(`[inflation v7] Regional: ${result.recordset.length} zones`);
+      return mapRegionalRows(result.recordset);
     }
-  } catch (err) {
-    console.warn("[inflation v7] Latest_Prices_Summary regional failed:", (err as Error).message);
-  }
-
-  // Tier 2: Daily_Prices fallback
-  try {
-    const tier2 = await pool.request().query(`
-      WITH
-      Baseline AS (
-        SELECT item_name,
-          COALESCE(NULLIF(whole_sale_price,0), NULLIF(Ave_Measurement_Price,0), NULLIF(average_unit_price,0)) AS baseline_price
-        FROM dbo.Items_Catalog
-        WHERE category_id IN (${FOOD_CATS})
-          AND COALESCE(NULLIF(whole_sale_price,0), NULLIF(Ave_Measurement_Price,0), NULLIF(average_unit_price,0)) IS NOT NULL
-      ),
-      RecentCutoff AS (
-        SELECT DATEADD(day, -60, MAX(price_date)) AS cutoff FROM dbo.Daily_Prices WHERE price_naira > 0
-      ),
-      RecentByZone AS (
-        SELECT ${ZONE_CASE_SQL} AS zone, dp.item_name,
-          AVG(CAST(dp.price_naira AS FLOAT)) AS cur_price, COUNT(DISTINCT dp.market_id) AS market_count
-        FROM dbo.Daily_Prices dp WITH (NOLOCK)
-        CROSS JOIN RecentCutoff rc
-        WHERE dp.price_naira > 0 AND dp.state IS NOT NULL AND dp.price_date >= rc.cutoff
-          AND dp.category_id IN (${FOOD_CATS})
-        GROUP BY ${ZONE_CASE_SQL}, dp.item_name
-      ),
-      ItemRates AS (
-        SELECT r.zone, r.item_name, r.cur_price, b.baseline_price AS prev_price, r.market_count,
-          (POWER(CAST(r.cur_price / b.baseline_price AS FLOAT), 12.0/13) - 1) * 100 AS ann_yoy_pct,
-          (r.cur_price - b.baseline_price) / b.baseline_price * 100                 AS total_change_pct
-        FROM RecentByZone r JOIN Baseline b ON b.item_name = r.item_name
-        WHERE b.baseline_price > 0 AND r.cur_price > 0 AND r.zone IS NOT NULL
-          AND ABS((r.cur_price - b.baseline_price) / b.baseline_price) < 5
-      ),
-      RegionSummary AS (
-        SELECT zone, AVG(ann_yoy_pct) AS avg_ann_yoy,
-          AVG((POWER(CAST(cur_price/prev_price AS FLOAT), 1.0/13) - 1) * 100) AS avg_mom_pct,
-          SUM(market_count) AS total_markets
-        FROM ItemRates WHERE ann_yoy_pct BETWEEN -50 AND 200 GROUP BY zone
-      ),
-      TopInflator AS (
-        SELECT zone, item_name, ROW_NUMBER() OVER (PARTITION BY zone ORDER BY total_change_pct DESC) AS rn
-        FROM ItemRates WHERE total_change_pct > 0
-      )
-      SELECT rs.zone, ROUND(rs.avg_ann_yoy, 2) AS inflation_rate, ROUND(rs.avg_mom_pct, 2) AS mom_rate,
-        rs.total_markets AS market_count, ti.item_name AS top_inflator
-      FROM RegionSummary rs LEFT JOIN TopInflator ti ON ti.zone = rs.zone AND ti.rn = 1
-      ORDER BY rs.avg_ann_yoy DESC
-    `);
-    if (tier2.recordset && tier2.recordset.length >= 1) {
-      console.log(`[inflation v7] Regional via Daily_Prices fallback: ${tier2.recordset.length} zones`);
-      return mapRegionalRows(tier2.recordset);
-    }
+    console.warn("[inflation v7] Regional query returned 0 zones");
     return [];
   } catch (err) {
-    console.error("[inflation v7] fetchRegionalInflation both tiers failed:", err);
+    console.error("[inflation v7] fetchRegionalInflation failed:", err);
     return [];
   }
 }
