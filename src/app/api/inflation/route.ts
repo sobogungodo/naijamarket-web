@@ -490,27 +490,39 @@ async function fetchFromInflationCache(
         ORDER BY ic.period_label DESC
       `);
 
-    // ── Top movers — Latest_Prices_Summary.month_change_pct ────────────────
+    // ── Top movers — computed from price_naira vs month_avg ────────────────
+    // CONFIRMED BUG: month_change_pct stores absolute Naira difference, not %.
+    // e.g. Rice Ofada: month_change_pct=5424, but (54489-50785)/50785*100=7.3%
+    // Fix: compute real % directly from (price_naira - month_avg) / month_avg.
     const moversResult = await pool.request().query(`
       SELECT TOP 30
         item_name,
         category_id,
-        AVG(price_naira)      AS avg_price,
-        AVG(month_avg)        AS prev_avg_price,
-        -- Raw monthly change % — no annualisation.
-        -- month_change_pct encodes accumulated drift vs a baseline period,
-        -- not a clean 1-month window. Annualising it (×12) produces 150%+.
-        -- Display as-is: shows which items are rising/falling vs recent avg.
+        AVG(price_naira)  AS avg_price,
+        AVG(month_avg)    AS prev_avg_price,
+        -- Real MoM %: current price vs monthly average (capped at ±50%)
         AVG(
-          CASE WHEN month_change_pct BETWEEN -50 AND 50
-               THEN month_change_pct ELSE 0 END
-        )                     AS ann_yoy_pct,
-        AVG(month_change_pct) AS avg_mom_pct,
-        AVG(month_change_pct) AS total_change_pct,
+          CASE
+            WHEN month_avg > 0
+              AND ABS((price_naira - month_avg) / month_avg * 100) <= 50
+            THEN (price_naira - month_avg) / month_avg * 100
+            ELSE NULL
+          END
+        )                 AS ann_yoy_pct,
+        AVG(
+          CASE WHEN month_avg > 0
+            THEN (price_naira - month_avg) / month_avg * 100
+          END
+        )                 AS avg_mom_pct,
+        AVG(
+          CASE WHEN month_avg > 0
+            THEN (price_naira - month_avg) / month_avg * 100
+          END
+        )                 AS total_change_pct,
         COUNT(DISTINCT market_name) AS market_count
       FROM dbo.Latest_Prices_Summary
-      WHERE price_naira      > 0
-        AND month_change_pct IS NOT NULL
+      WHERE price_naira > 0
+        AND month_avg   > 0
         AND category_id IN (
           'CAT001','CAT002','CAT003','CAT004','CAT006','CAT007',
           'CAT008','CAT009','CAT010','CAT013','CAT014','CAT015',
@@ -520,7 +532,11 @@ async function fetchFromInflationCache(
         AND item_name NOT LIKE 'NBS%'
       GROUP BY item_name, category_id
       HAVING COUNT(DISTINCT market_name) >= 2
-      ORDER BY ABS(AVG(month_change_pct)) DESC
+      ORDER BY ABS(AVG(
+        CASE WHEN month_avg > 0
+          THEN (price_naira - month_avg) / month_avg * 100
+        END
+      )) DESC
     `);
 
     // ── Build MonthlyInflation array ────────────────────────────────────────
@@ -1029,19 +1045,26 @@ async function fetchRegionalInflation(): Promise<RegionalInflation[]> {
       SELECT
         ${ZONE_CASE_SQL} AS zone,
         item_name,
-        AVG(price_naira)        AS cur_price,
-        AVG(month_change_pct)   AS avg_mom_pct,
-        -- Raw monthly change % — no annualisation (see movers comment)
+        AVG(price_naira)  AS cur_price,
+        -- Real MoM %: (current price vs monthly average)
+        AVG(
+          CASE WHEN month_avg > 0
+            THEN (price_naira - month_avg) / month_avg * 100
+          END
+        )                 AS avg_mom_pct,
+        -- Capped version for zone summary (±50% outlier guard)
         AVG(
           CASE
-            WHEN month_change_pct BETWEEN -50 AND 50 THEN month_change_pct
-            ELSE 0
+            WHEN month_avg > 0
+              AND ABS((price_naira - month_avg) / month_avg * 100) <= 50
+            THEN (price_naira - month_avg) / month_avg * 100
+            ELSE NULL
           END
-        )                       AS ann_yoy_pct,
+        )                 AS ann_yoy_pct,
         COUNT(DISTINCT market_name) AS market_count
       FROM dbo.Latest_Prices_Summary
       WHERE price_naira      > 0
-        AND month_change_pct IS NOT NULL
+        AND month_avg        > 0
         AND state             IS NOT NULL
         AND category_id IN (${FOOD_CATS})
         AND item_name NOT LIKE '%(NBS%'
