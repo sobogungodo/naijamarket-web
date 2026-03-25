@@ -497,13 +497,15 @@ async function fetchFromInflationCache(
         category_id,
         AVG(price_naira)      AS avg_price,
         AVG(month_avg)        AS prev_avg_price,
-        AVG(month_change_pct) AS avg_mom_pct,
-        -- Simple annualisation: MoM × 12 (avoids compound amplification)
-        -- month_change_pct already accounts for SP's seasonal adjustments
+        -- Raw monthly change % — no annualisation.
+        -- month_change_pct encodes accumulated drift vs a baseline period,
+        -- not a clean 1-month window. Annualising it (×12) produces 150%+.
+        -- Display as-is: shows which items are rising/falling vs recent avg.
         AVG(
           CASE WHEN month_change_pct BETWEEN -50 AND 50
                THEN month_change_pct ELSE 0 END
-        ) * 12.0              AS ann_yoy_pct,
+        )                     AS ann_yoy_pct,
+        AVG(month_change_pct) AS avg_mom_pct,
         AVG(month_change_pct) AS total_change_pct,
         COUNT(DISTINCT market_name) AS market_count
       FROM dbo.Latest_Prices_Summary
@@ -514,7 +516,6 @@ async function fetchFromInflationCache(
           'CAT008','CAT009','CAT010','CAT013','CAT014','CAT015',
           'CAT070','CAT103'
         )
-        -- Exclude NBS per-kg survey reference items (not real market prices)
         AND item_name NOT LIKE '%(NBS%'
         AND item_name NOT LIKE 'NBS%'
       GROUP BY item_name, category_id
@@ -1030,16 +1031,13 @@ async function fetchRegionalInflation(): Promise<RegionalInflation[]> {
         item_name,
         AVG(price_naira)        AS cur_price,
         AVG(month_change_pct)   AS avg_mom_pct,
-        -- Annualise monthly rate — same formula as movers
-        (POWER(
-          CAST(1.0 + AVG(
-            CASE
-              WHEN month_change_pct BETWEEN -50 AND 50 THEN month_change_pct
-              ELSE 0
-            END
-          ) / 100.0 AS FLOAT),
-          12.0
-        ) - 1.0) * 100.0        AS ann_yoy_pct,
+        -- Raw monthly change % — no annualisation (see movers comment)
+        AVG(
+          CASE
+            WHEN month_change_pct BETWEEN -50 AND 50 THEN month_change_pct
+            ELSE 0
+          END
+        )                       AS ann_yoy_pct,
         COUNT(DISTINCT market_name) AS market_count
       FROM dbo.Latest_Prices_Summary
       WHERE price_naira      > 0
