@@ -490,15 +490,18 @@ async function fetchFromInflationCache(
         ORDER BY ic.period_label DESC
       `);
 
-    // ── Top movers — FOOD ONLY ──────────────────────────────────────────────
-    // JOIN to Items_Catalog to enforce food category filter.
-    // mom_change_pct capped at ±50% before annualising — prevents overflow
-    // from unit-confusion outliers (e.g. Rice Ofada 2541% MoM anomaly).
+    // ── Top movers — Latest_Prices_Summary vs Items_Catalog baseline ───────
+    // Inflation_Cache.prev_avg_price is last-period price (not year-ago),
+    // making (cur/prev)^12 produce thousands-of-percent nonsense.
+    // Same pattern as the working regional query: compare current market
+    // prices in Latest_Prices_Summary against Items_Catalog baseline prices.
+    // Food categories only. Clamp ratio 0.5–3.0x to block outliers.
     const moversResult = await pool.request().query(`
       WITH
-      FoodItems AS (
-        -- Food categories only — excludes Air Conditioners, Fabrics, etc.
-        SELECT item_name,
+      FoodBaseline AS (
+        SELECT
+          item_name,
+          category_id,
           COALESCE(
             NULLIF(whole_sale_price,  0),
             NULLIF(Ave_Measurement_Price, 0),
@@ -512,58 +515,57 @@ async function fetchFromInflationCache(
             'CAT070','CAT103'
           )
       ),
-      RecentPrices AS (
+      CurrentPrices AS (
         SELECT
-          ic.dimension_key AS item_name,
-          AVG(ic.avg_price)      AS avg_price,
-          AVG(ic.prev_avg_price) AS prev_avg_price,
-          -- Cap MoM at ±50% before averaging — blocks Rice Ofada 2541% anomaly
-          AVG(
-            CASE
-              WHEN ic.mom_change_pct BETWEEN -50 AND 50 THEN ic.mom_change_pct
-              ELSE NULL
-            END
-          ) AS avg_mom_pct,
-          DATEDIFF(month,
-            MIN(ic.period_start),
-            MAX(ISNULL(ic.period_end, GETDATE()))
-          ) + 1 AS n_months,
-          MAX(ic.last_updated) AS last_updated
-        FROM dbo.Inflation_Cache ic
-        -- Must be a known food item
-        JOIN FoodItems fi ON fi.item_name = ic.dimension_key
-        WHERE ic.cache_type    = 'ITEM'
-          AND ic.avg_price      > 0
-          AND ic.prev_avg_price > 0
-        GROUP BY ic.dimension_key
-        -- Require a baseline price — no baseline = non-food or unverified item
-        HAVING MAX(fi.baseline_price) > 0
+          lp.item_name,
+          AVG(lp.price_naira)            AS cur_price,
+          COUNT(DISTINCT lp.market_name) AS market_count
+        FROM dbo.Latest_Prices_Summary lp
+        WHERE lp.price_naira > 0
+          AND lp.category_id IN (
+            'CAT001','CAT002','CAT003','CAT004','CAT006','CAT007',
+            'CAT008','CAT009','CAT010','CAT013','CAT014','CAT015',
+            'CAT070','CAT103'
+          )
+        GROUP BY lp.item_name
+        HAVING COUNT(*) >= 3
+      ),
+      Movers AS (
+        SELECT
+          c.item_name,
+          f.category_id,
+          c.cur_price      AS avg_price,
+          f.baseline_price AS prev_avg_price,
+          -- Annualised rate over ~13 months (Jul 2025 baseline → now)
+          -- Clamp ratio 0.5–3.0x: blocks extreme unit-confusion outliers
+          (POWER(
+            CAST(
+              CASE
+                WHEN c.cur_price / NULLIF(f.baseline_price,0) BETWEEN 0.5 AND 3.0
+                THEN c.cur_price / NULLIF(f.baseline_price,0)
+                ELSE 1.0
+              END
+            AS FLOAT),
+            12.0 / 13.0
+          ) - 1.0) * 100.0 AS ann_yoy_pct,
+          (c.cur_price - f.baseline_price) / NULLIF(f.baseline_price,0) * 100
+            AS total_change_pct
+        FROM CurrentPrices c
+        JOIN FoodBaseline f ON f.item_name = c.item_name
+        WHERE f.baseline_price > 0
+          AND c.cur_price > 0
+          -- Sanity: price must be within 5x of baseline (no unit-confusion ghosts)
+          AND c.cur_price / NULLIF(f.baseline_price,0) BETWEEN 0.1 AND 10.0
       )
-      SELECT
-        r.item_name,
-        r.avg_price,
-        r.prev_avg_price,
-        r.avg_mom_pct,
-        -- Annualised YoY: (cur/prev)^(12/n_months) - 1
-        -- Additional clamp: ratio must be between 0.1 and 10 (i.e. -90% to +900%)
-        -- before power — prevents float overflow on bad data
-        (POWER(
-          CAST(
-            CASE
-              WHEN r.avg_price / NULLIF(r.prev_avg_price, 0) BETWEEN 0.1 AND 10
-              THEN r.avg_price / NULLIF(r.prev_avg_price, 0)
-              ELSE 1.0
-            END
-          AS FLOAT),
-          CAST(12.0 / NULLIF(NULLIF(r.n_months, 0), 0) AS FLOAT)
-        ) - 1.0) * 100.0 AS ann_yoy_pct,
-        (r.avg_price - r.prev_avg_price) / NULLIF(r.prev_avg_price, 0) * 100 AS total_change_pct
-      FROM RecentPrices r
-      JOIN FoodItems fi ON fi.item_name = r.item_name
-      WHERE r.avg_price > 0
-        AND fi.baseline_price > 0
-        AND ABS((r.avg_price - fi.baseline_price) / NULLIF(fi.baseline_price, 0)) < 5
-      ORDER BY ABS(r.avg_price - r.prev_avg_price) / NULLIF(r.prev_avg_price, 0) DESC
+      SELECT TOP 30
+        item_name,
+        avg_price,
+        prev_avg_price,
+        NULL AS avg_mom_pct,
+        ann_yoy_pct,
+        total_change_pct
+      FROM Movers
+      ORDER BY ABS(total_change_pct) DESC
     `);
 
     // ── Build MonthlyInflation array ────────────────────────────────────────
