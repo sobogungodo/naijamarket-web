@@ -499,16 +499,18 @@ async function fetchFromInflationCache(
     const moversResult = await pool.request().query(`
       WITH
       FoodBaseline AS (
+        -- Use whole_sale_price ONLY — this is the direct bag/unit price.
+        -- Ave_Measurement_Price and average_unit_price are per-kg prices.
+        -- Mixing bag prices (LPS) with per-kg catalog prices gives 50x ratios
+        -- that get filtered out, producing zero movers. Exclude items with no
+        -- whole_sale_price rather than falling through to wrong unit.
         SELECT
           item_name,
           category_id,
-          COALESCE(
-            NULLIF(whole_sale_price,  0),
-            NULLIF(Ave_Measurement_Price, 0),
-            NULLIF(average_unit_price, 0)
-          ) AS baseline_price
+          whole_sale_Price AS baseline_price
         FROM dbo.Items_Catalog
         WHERE (status = 'ACTIVE' OR status IS NULL)
+          AND whole_sale_Price > 0
           AND category_id IN (
             'CAT001','CAT002','CAT003','CAT004','CAT006','CAT007',
             'CAT008','CAT009','CAT010','CAT013','CAT014','CAT015',
@@ -554,8 +556,8 @@ async function fetchFromInflationCache(
         JOIN FoodBaseline f ON f.item_name = c.item_name
         WHERE f.baseline_price > 0
           AND c.cur_price > 0
-          -- Sanity: price must be within 5x of baseline (no unit-confusion ghosts)
-          AND c.cur_price / NULLIF(f.baseline_price,0) BETWEEN 0.1 AND 10.0
+          -- Sanity: price must be within 8x of baseline (unit-confusion guard)
+          AND c.cur_price / NULLIF(f.baseline_price,0) BETWEEN 0.2 AND 8.0
       )
       SELECT TOP 30
         item_name,
@@ -1027,7 +1029,7 @@ const ZONE_CASE_SQL = `
   CASE
     WHEN state IN ('Lagos','Oyo','Ogun','Osun','Ondo','Ekiti')                                   THEN 'SW'
     WHEN state IN ('Anambra','Enugu','Imo','Abia','Ebonyi')                                      THEN 'SE'
-    WHEN state IN ('FCT','FCT Abuja','Abuja','Benue','Kogi','Kwara','Nasarawa','Niger','Plateau') THEN 'NC'
+    WHEN state IN ('FCT','FCT Abuja','Abuja','Benue','Kogi','Kwara','Nasarawa','Nassarawa','Niger','Plateau') THEN 'NC'
     WHEN state IN ('Kano','Kaduna','Katsina','Kebbi','Sokoto','Zamfara','Jigawa')                 THEN 'NW'
     WHEN state IN ('Borno','Yobe','Adamawa','Bauchi','Gombe','Taraba')                            THEN 'NE'
     WHEN state IN ('Rivers','Delta','Bayelsa','Akwa Ibom','Cross River','Edo')                   THEN 'SS'
