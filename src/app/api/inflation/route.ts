@@ -491,28 +491,20 @@ async function fetchFromInflationCache(
       `);
 
     // ── Top movers — Latest_Prices_Summary.month_change_pct ────────────────
-    // Confirmed populated: 168,970 rows. previous_price/price_change_pct = 0 rows.
-    // month_change_pct is the SP-computed monthly % change per item per market.
-    // Average across all markets per item, food categories only.
-    // No joins needed — LPS already has category_id for food filtering.
     const moversResult = await pool.request().query(`
       SELECT TOP 30
         item_name,
-        AVG(price_naira)        AS avg_price,
-        AVG(month_avg)          AS prev_avg_price,
-        AVG(month_change_pct)   AS avg_mom_pct,
-        -- Annualise the monthly rate: (1 + mom/100)^12 - 1
-        -- Cap individual month_change_pct at ±50% before averaging (outlier guard)
-        (POWER(
-          CAST(1.0 + AVG(
-            CASE
-              WHEN month_change_pct BETWEEN -50 AND 50 THEN month_change_pct
-              ELSE 0
-            END
-          ) / 100.0 AS FLOAT),
-          12.0
-        ) - 1.0) * 100.0 AS ann_yoy_pct,
-        AVG(month_change_pct)   AS total_change_pct,
+        category_id,
+        AVG(price_naira)      AS avg_price,
+        AVG(month_avg)        AS prev_avg_price,
+        AVG(month_change_pct) AS avg_mom_pct,
+        -- Simple annualisation: MoM × 12 (avoids compound amplification)
+        -- month_change_pct already accounts for SP's seasonal adjustments
+        AVG(
+          CASE WHEN month_change_pct BETWEEN -50 AND 50
+               THEN month_change_pct ELSE 0 END
+        ) * 12.0              AS ann_yoy_pct,
+        AVG(month_change_pct) AS total_change_pct,
         COUNT(DISTINCT market_name) AS market_count
       FROM dbo.Latest_Prices_Summary
       WHERE price_naira      > 0
@@ -522,11 +514,11 @@ async function fetchFromInflationCache(
           'CAT008','CAT009','CAT010','CAT013','CAT014','CAT015',
           'CAT070','CAT103'
         )
-        -- Exclude NBS reference items (per-kg survey items, not market prices)
+        -- Exclude NBS per-kg survey reference items (not real market prices)
+        AND item_name NOT LIKE '%(NBS%'
         AND item_name NOT LIKE 'NBS%'
-      GROUP BY item_name
+      GROUP BY item_name, category_id
       HAVING COUNT(DISTINCT market_name) >= 2
-         AND AVG(month_change_pct) IS NOT NULL
       ORDER BY ABS(AVG(month_change_pct)) DESC
     `);
 
@@ -574,13 +566,29 @@ async function fetchFromInflationCache(
     // ── Build top movers ────────────────────────────────────────────────────
     const movers = moversResult.recordset as any[];
 
+    // Map category_id to human-readable name for items not in BASKET_WEIGHTS
+    const CAT_ID_NAMES: Record<string, string> = {
+      "CAT001": "Grains & Cereals", "CAT002": "Grains & Cereals",
+      "CAT003": "Tubers",           "CAT004": "Tubers",
+      "CAT006": "Vegetables",       "CAT007": "Vegetables",
+      "CAT008": "Oils & Fats",      "CAT009": "Oils & Fats",
+      "CAT010": "Protein",          "CAT013": "Protein",
+      "CAT014": "Fruits",           "CAT015": "Fruits",
+      "CAT070": "Grains & Cereals", "CAT103": "Protein",
+    };
+
     const buildMoverItem = (m: any, trendDir: "up" | "down"): ItemInflation => {
       const annYoy  = parseFloat(m.ann_yoy_pct)  || 0;
       const keyword = getBasketKeyword(String(m.item_name || ""));
       const weight  = keyword && BASKET_WEIGHTS[keyword] ? BASKET_WEIGHTS[keyword]!.weight : 0;
+      // Use basket category if matched, else category_id lookup, else "Other"
+      const catId   = String(m.category_id || "");
+      const category = keyword && BASKET_WEIGHTS[keyword]
+        ? BASKET_WEIGHTS[keyword]!.category
+        : (CAT_ID_NAMES[catId] ?? "Other");
       return {
         item:          String(m.item_name || ""),
-        category:      keyword && BASKET_WEIGHTS[keyword] ? BASKET_WEIGHTS[keyword]!.category : "Other",
+        category,
         currentPrice:  Math.round(parseFloat(m.avg_price)      || 0),
         previousPrice: Math.round(parseFloat(m.prev_avg_price) || 0),
         priceChange:   Math.round((parseFloat(m.avg_price) || 0) - (parseFloat(m.prev_avg_price) || 0)),
@@ -1038,6 +1046,7 @@ async function fetchRegionalInflation(): Promise<RegionalInflation[]> {
         AND month_change_pct IS NOT NULL
         AND state             IS NOT NULL
         AND category_id IN (${FOOD_CATS})
+        AND item_name NOT LIKE '%(NBS%'
         AND item_name NOT LIKE 'NBS%'
       GROUP BY ${ZONE_CASE_SQL}, item_name
       HAVING COUNT(DISTINCT market_name) >= 1
