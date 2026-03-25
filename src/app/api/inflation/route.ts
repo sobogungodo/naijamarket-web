@@ -408,22 +408,30 @@ async function fetch2026Extension(
     if (pool) {
       const icResult = await pool.request().query(`
         SELECT
-          period_label,
+          ic.period_label,
           AVG(
             (POWER(
-              CAST(1.0 + ISNULL(mom_change_pct, 0) / 100.0 AS FLOAT),
+              CAST(1.0 + ISNULL(
+                CASE WHEN ic.mom_change_pct BETWEEN -50 AND 50 THEN ic.mom_change_pct ELSE NULL END,
+                0) / 100.0 AS FLOAT),
               12.0
             ) - 1.0) * 100.0
           ) AS annualized_mom_rate,
           COUNT(*) AS item_count
-        FROM dbo.Inflation_Cache
-        WHERE cache_type = 'ITEM'
-          AND period_label >= '2026-01'
-          AND mom_change_pct IS NOT NULL
-          AND ABS(mom_change_pct) < 50
-        GROUP BY period_label
+        FROM dbo.Inflation_Cache ic
+        JOIN dbo.Items_Catalog cat ON cat.item_name = ic.dimension_key
+          AND cat.category_id IN (
+            'CAT001','CAT002','CAT003','CAT004','CAT006','CAT007',
+            'CAT008','CAT009','CAT010','CAT013','CAT014','CAT015',
+            'CAT070','CAT103'
+          )
+          AND (cat.status = 'ACTIVE' OR cat.status IS NULL)
+        WHERE ic.cache_type = 'ITEM'
+          AND ic.period_label >= '2026-01'
+          AND ic.mom_change_pct IS NOT NULL
+        GROUP BY ic.period_label
         HAVING COUNT(*) >= 10
-        ORDER BY period_label ASC
+        ORDER BY ic.period_label ASC
       `);
       for (const row of icResult.recordset) {
         const rate = parseFloat(row.annualized_mom_rate);
@@ -444,13 +452,21 @@ async function fetch2026Extension(
     const nbsRate     = nbsMap.get(periodLabel) ?? null;
 
     // NaijaMarket rate priority:
-    // 1. Real IC annualised MoM (if we have it for this period)
-    // 2. NBS rate (best proxy — no valid YoY until Jul 2026)
-    // 3. NBS_FALLBACK_RATE (if NBS map also missing this period)
-    const icRate          = cacheRateMap.get(periodLabel);
-    const naijaMarketRate = icRate !== undefined
-      ? icRate
-      : (nbsRate !== null ? nbsRate : NBS_FALLBACK_RATE);
+    // Pre-Jul 2026: no valid YoY from our DB. Two options:
+    //   a) Pure IC annualised MoM — but our generated prices run ~3pp hot vs NBS
+    //   b) Pure NBS rate — accurate but ignores our real market data
+    // Solution: 40% IC + 60% NBS blend. Acknowledges our data is an estimate.
+    // From Jul 2026 onwards, real YoY takes over and blend is discarded.
+    const icRate  = cacheRateMap.get(periodLabel);
+    let naijaMarketRate: number;
+    if (icRate !== undefined && nbsRate !== null) {
+      // Blend: 40% our data, 60% NBS — closes the gap while keeping differentiation
+      naijaMarketRate = Math.round((icRate * 0.4 + nbsRate * 0.6) * 10) / 10;
+    } else if (icRate !== undefined) {
+      naijaMarketRate = icRate;
+    } else {
+      naijaMarketRate = nbsRate !== null ? nbsRate : NBS_FALLBACK_RATE;
+    }
 
     extension.push({
       month:           periodLabel,
@@ -512,33 +528,26 @@ async function fetchFromInflationCache(
           )                                 AS naijamarket_yoy,
           MAX(ic.last_updated)              AS last_updated
         FROM dbo.Inflation_Cache ic
+        JOIN dbo.Items_Catalog cat ON cat.item_name = ic.dimension_key
+          AND cat.category_id IN (
+            'CAT001','CAT002','CAT003','CAT004','CAT006','CAT007',
+            'CAT008','CAT009','CAT010','CAT013','CAT014','CAT015',
+            'CAT070','CAT103'
+          )
+          AND (cat.status = 'ACTIVE' OR cat.status IS NULL)
         WHERE ic.cache_type = 'ITEM'
         GROUP BY ic.period_label, ic.period_start, ic.period_end
         ORDER BY ic.period_label DESC
       `);
 
-    // ── Top movers ─────────────────────────────────────────────────────────
+    // ── Top movers — FOOD ONLY ──────────────────────────────────────────────
+    // JOIN to Items_Catalog to enforce food category filter.
+    // mom_change_pct capped at ±50% before annualising — prevents overflow
+    // from unit-confusion outliers (e.g. Rice Ofada 2541% MoM anomaly).
     const moversResult = await pool.request().query(`
       WITH
-      RecentPrices AS (
-        SELECT
-          ic.dimension_key AS item_name,
-          AVG(ic.avg_price)      AS avg_price,
-          AVG(ic.prev_avg_price) AS prev_avg_price,
-          AVG(ic.mom_change_pct) AS avg_mom_pct,
-          -- Months between period_start and period_end
-          DATEDIFF(month,
-            MIN(ic.period_start),
-            MAX(ISNULL(ic.period_end, GETDATE()))
-          ) + 1                  AS n_months,
-          MAX(ic.last_updated)   AS last_updated
-        FROM dbo.Inflation_Cache ic
-        WHERE ic.cache_type = 'ITEM'
-          AND ic.avg_price      > 0
-          AND ic.prev_avg_price > 0
-        GROUP BY ic.dimension_key
-      ),
-      Baseline AS (
+      FoodItems AS (
+        -- Food categories only — excludes Air Conditioners, Fabrics, etc.
         SELECT item_name,
           COALESCE(
             NULLIF(whole_sale_price,  0),
@@ -547,6 +556,38 @@ async function fetchFromInflationCache(
           ) AS baseline_price
         FROM dbo.Items_Catalog
         WHERE (status = 'ACTIVE' OR status IS NULL)
+          AND category_id IN (
+            'CAT001','CAT002','CAT003','CAT004','CAT006','CAT007',
+            'CAT008','CAT009','CAT010','CAT013','CAT014','CAT015',
+            'CAT070','CAT103'
+          )
+      ),
+      RecentPrices AS (
+        SELECT
+          ic.dimension_key AS item_name,
+          AVG(ic.avg_price)      AS avg_price,
+          AVG(ic.prev_avg_price) AS prev_avg_price,
+          -- Cap MoM at ±50% before averaging — blocks Rice Ofada 2541% anomaly
+          AVG(
+            CASE
+              WHEN ic.mom_change_pct BETWEEN -50 AND 50 THEN ic.mom_change_pct
+              ELSE NULL
+            END
+          ) AS avg_mom_pct,
+          DATEDIFF(month,
+            MIN(ic.period_start),
+            MAX(ISNULL(ic.period_end, GETDATE()))
+          ) + 1 AS n_months,
+          MAX(ic.last_updated) AS last_updated
+        FROM dbo.Inflation_Cache ic
+        -- Must be a known food item
+        JOIN FoodItems fi ON fi.item_name = ic.dimension_key
+        WHERE ic.cache_type    = 'ITEM'
+          AND ic.avg_price      > 0
+          AND ic.prev_avg_price > 0
+        GROUP BY ic.dimension_key
+        -- Require a baseline price — no baseline = non-food or unverified item
+        HAVING MAX(fi.baseline_price) > 0
       )
       SELECT
         r.item_name,
@@ -554,18 +595,25 @@ async function fetchFromInflationCache(
         r.prev_avg_price,
         r.avg_mom_pct,
         -- Annualised YoY: (cur/prev)^(12/n_months) - 1
+        -- Additional clamp: ratio must be between 0.1 and 10 (i.e. -90% to +900%)
+        -- before power — prevents float overflow on bad data
         (POWER(
-          CAST(r.avg_price / NULLIF(r.prev_avg_price, 0) AS FLOAT),
-          CAST(12.0 / NULLIF(r.n_months, 0) AS FLOAT)
-        ) - 1.0) * 100.0   AS ann_yoy_pct,
-        -- Total change % for sorting
+          CAST(
+            CASE
+              WHEN r.avg_price / NULLIF(r.prev_avg_price, 0) BETWEEN 0.1 AND 10
+              THEN r.avg_price / NULLIF(r.prev_avg_price, 0)
+              ELSE 1.0
+            END
+          AS FLOAT),
+          CAST(12.0 / NULLIF(NULLIF(r.n_months, 0), 0) AS FLOAT)
+        ) - 1.0) * 100.0 AS ann_yoy_pct,
         (r.avg_price - r.prev_avg_price) / NULLIF(r.prev_avg_price, 0) * 100 AS total_change_pct
       FROM RecentPrices r
-      JOIN Baseline b ON b.item_name = r.item_name
-      WHERE b.baseline_price > 0
-        AND r.avg_price      > 0
-        AND ABS((r.avg_price - b.baseline_price) / NULLIF(b.baseline_price, 0)) < 5
-      ORDER BY ABS((r.avg_price - r.prev_avg_price) / NULLIF(r.prev_avg_price, 0) * 100) DESC
+      JOIN FoodItems fi ON fi.item_name = r.item_name
+      WHERE r.avg_price > 0
+        AND fi.baseline_price > 0
+        AND ABS((r.avg_price - fi.baseline_price) / NULLIF(fi.baseline_price, 0)) < 5
+      ORDER BY ABS(r.avg_price - r.prev_avg_price) / NULLIF(r.prev_avg_price, 0) DESC
     `);
 
     // ── Build MonthlyInflation array ────────────────────────────────────────
