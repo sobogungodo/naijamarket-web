@@ -253,7 +253,7 @@ function SnapshotPageInner() {
               </div>
             </div>
             <p className="text-gray-400 text-sm">
-              {currentPeriod?.fullLabel} overview • {snapshotData?.dataSource} • Updated {lastUpdate.toLocaleTimeString()}
+              {currentPeriod?.fullLabel} overview • Updated {lastUpdate.toLocaleTimeString()}
             </p>
           </div>
           
@@ -661,8 +661,7 @@ function SnapshotPageInner() {
       
       {/* Footer */}
       <div className="mt-6 text-center text-sm text-gray-500">
-        <p>Data Source: {snapshotData?.dataSource} • {(snapshotData?.recordCount ?? 0).toLocaleString()} records</p>
-        <p className="mt-1">
+        <p>
           Period: {currentPeriod?.fullLabel} • 
           Auto-refresh: {autoRefresh ? "Every 60 seconds" : "Disabled"}
         </p>
