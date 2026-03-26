@@ -434,7 +434,7 @@ function PricesPageContent() {
       <div className="bg-terminal-surface border border-terminal-border rounded-xl p-4">
         <div className="flex flex-wrap items-center gap-4">
           {/* Search */}
-          <div className="flex-1 min-w-[300px] flex items-center gap-2 bg-terminal-bg border border-terminal-border rounded-lg px-3 py-2">
+          <div className="w-52 flex items-center gap-2 bg-terminal-bg border border-terminal-border rounded-lg px-3 py-2">
             <Search className="w-4 h-4 text-gray-500" />
             <input
               type="text"
