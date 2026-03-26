@@ -500,7 +500,6 @@ async function fetchFromInflationCache(
         category_id,
         AVG(price_naira)  AS avg_price,
         AVG(month_avg)    AS prev_avg_price,
-        -- Real MoM %: current price vs monthly average (capped at ±50%)
         AVG(
           CASE
             WHEN month_avg > 0
@@ -521,14 +520,11 @@ async function fetchFromInflationCache(
         )                 AS total_change_pct,
         COUNT(DISTINCT market_name) AS market_count
       FROM dbo.Latest_Prices_Summary
-      WHERE price_naira > 0
-        AND month_avg   > 0
-        AND category_id IN (
-          'CAT001','CAT002','CAT003','CAT004','CAT006','CAT007',
-          'CAT008','CAT009','CAT010','CAT013','CAT014','CAT015',
-          'CAT070','CAT103'
-        )
-        AND is_nbs_ref = 0
+      WHERE price_naira  > 0
+        AND month_avg    > 0
+        AND is_nbs_ref   = 0
+        AND is_food      = 1
+      GROUP BY item_name, category_id
       HAVING COUNT(DISTINCT market_name) >= 2
       ORDER BY ABS(AVG(
         CASE WHEN month_avg > 0
@@ -1064,8 +1060,8 @@ async function fetchRegionalInflation(): Promise<RegionalInflation[]> {
       WHERE price_naira      > 0
         AND month_avg        > 0
         AND state             IS NOT NULL
-        AND category_id IN (${FOOD_CATS})
-        AND is_nbs_ref = 0
+        AND is_nbs_ref        = 0
+        AND is_food           = 1
       GROUP BY ${ZONE_CASE_SQL}, item_name
       HAVING COUNT(DISTINCT market_name) >= 1
     ),
