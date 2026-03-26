@@ -389,6 +389,7 @@ function PricesPageContent() {
 
   // Unit dropdown — built from current result set
   const availableUnits = Array.from(new Set(prices.map(p => p.unit).filter(Boolean))).sort();
+  console.log("[prices] availableUnits:", availableUnits, "sample unit:", prices[0]?.unit);
   const filteredPrices = unitFilter ? prices.filter(p => p.unit === unitFilter) : prices;
 
   const sourceInfo = getSourceDisplay(dataSource);
@@ -660,7 +661,7 @@ function PricesPageContent() {
           </select>
 
           {/* Unit filter dropdown */}
-          {availableUnits.length > 1 && (
+          {prices.length > 0 && availableUnits.length > 0 && (
             <select
               value={unitFilter}
               onChange={(e) => setUnitFilter(e.target.value)}
