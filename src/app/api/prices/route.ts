@@ -177,7 +177,8 @@ async function fetchFilterOptions(): Promise<FilterOptions> {
       WHERE price_naira > 0
         AND state IS NOT NULL
         AND market_name IS NOT NULL
-        AND category_id IN (${FOOD_CAT_IDS.map(id => `'${id}'`).join(",")})
+        AND is_food    = 1
+        AND is_nbs_ref = 0
     `);
 
     const rows = result.recordset as any[];
@@ -324,9 +325,9 @@ async function fetchFromSummaryTable(
     // and keep the query plan stable for different filter combinations.
     const conditions: string[] = [
       "price_naira > 0",
-      `category_id IN (${FOOD_CAT_IDS.map(id => `'${id}'`).join(",")})`,
-      // Exclude NBS reference items — item_id starts with 'NBS' for all NBS rows
-      "item_id NOT LIKE 'NBS%'",
+      "is_food = 1",
+
+      "is_nbs_ref = 0",
     ];
 
     const req = pool.request();
@@ -426,9 +427,8 @@ async function fetchFromDailyPrices(
     const conditions: string[] = [
       "price_date >= DATEADD(day, -2, CAST(GETDATE() AS DATE))",
       "price_naira > 0",
-      `category_id IN (${FOOD_CAT_IDS.map(id => `'${id}'`).join(",")})`,
-      // Exclude NBS reference items — item_id starts with 'NBS' for all NBS rows
-      "item_id NOT LIKE 'NBS%'",
+      "nbs_adjusted = 0",
+      `category_id IN (${FOOD_CAT_IDS.map((id: string) => `'${id}'`).join(",")})`,
     ];
 
     const req = pool.request();
