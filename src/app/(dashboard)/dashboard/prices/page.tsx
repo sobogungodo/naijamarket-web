@@ -434,7 +434,7 @@ function PricesPageContent() {
       <div className="bg-terminal-surface border border-terminal-border rounded-xl p-4">
         <div className="flex flex-wrap items-center gap-4">
           {/* Search */}
-          <div className="w-52 flex items-center gap-2 bg-terminal-bg border border-terminal-border rounded-lg px-3 py-2">
+          <div className="w-96 flex items-center gap-2 bg-terminal-bg border border-terminal-border rounded-lg px-3 py-2">
             <Search className="w-4 h-4 text-gray-500" />
             <input
               type="text"
@@ -649,19 +649,17 @@ function PricesPageContent() {
           <span className="text-sm text-gray-500">
             Showing <span className="text-naija-green font-medium">{filteredPrices.length}</span> prices
           </span>
-          <select
-            value={sortBy}
-            onChange={(e) => setSortBy(e.target.value)}
-            className="bg-terminal-bg border border-terminal-border rounded px-2 py-1 text-xs text-gray-400"
-          >
-            <option value="updated">Latest Update</option>
-            <option value="price">Price (High to Low)</option>
-            <option value="change">Change (%)</option>
-            <option value="name">Name (A-Z)</option>
-          </select>
-
-          {/* Unit filter dropdown */}
-          {prices.length > 0 && availableUnits.length > 0 && (
+          <div className="flex items-center gap-2">
+            <select
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value)}
+              className="bg-terminal-bg border border-terminal-border rounded px-2 py-1 text-xs text-gray-400"
+            >
+              <option value="updated">Latest Update</option>
+              <option value="price">Price (High to Low)</option>
+              <option value="change">Change (%)</option>
+              <option value="name">Name (A-Z)</option>
+            </select>
             <select
               value={unitFilter}
               onChange={(e) => setUnitFilter(e.target.value)}
@@ -674,7 +672,7 @@ function PricesPageContent() {
                 <option key={u} value={u}>{u}</option>
               ))}
             </select>
-          )}
+          </div>
         </div>
       </div>
 
