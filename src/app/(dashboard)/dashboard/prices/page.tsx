@@ -387,21 +387,9 @@ function PricesPageContent() {
   // RENDER
   // ============================================================================
 
-  // Extract unique units from current price data — sorted by frequency
-  const availableUnits = Array.from(
-    prices.reduce((acc, p) => {
-      if (p.unit) acc.set(p.unit, (acc.get(p.unit) || 0) + 1);
-      return acc;
-    }, new Map<string, number>())
-  )
-    .sort((a, b) => b[1] - a[1])
-    .map(([unit]) => unit)
-    .slice(0, 8); // max 8 unit pills
-
-  // Apply unit filter on top of server-side filtered prices
-  const filteredPrices = unitFilter
-    ? prices.filter(p => p.unit === unitFilter)
-    : prices;
+  // Unit dropdown — built from current result set
+  const availableUnits = Array.from(new Set(prices.map(p => p.unit).filter(Boolean))).sort();
+  const filteredPrices = unitFilter ? prices.filter(p => p.unit === unitFilter) : prices;
 
   const sourceInfo = getSourceDisplay(dataSource);
 
@@ -627,36 +615,6 @@ function PricesPageContent() {
             </button>
           </div>
 
-          {/* Unit Filter Pills */}
-          {availableUnits.length > 1 && (
-            <div className="flex items-center gap-1 border-l border-terminal-border pl-4 flex-wrap">
-              <span className="text-xs text-gray-500 mr-1">Unit:</span>
-              <button
-                onClick={() => setUnitFilter("")}
-                className={`px-2 py-1 text-xs rounded-full transition-colors border ${
-                  !unitFilter
-                    ? "border-naija-green bg-naija-green/10 text-naija-green"
-                    : "border-terminal-border text-gray-400 hover:text-white hover:border-gray-400"
-                }`}
-              >
-                All
-              </button>
-              {availableUnits.map(unit => (
-                <button
-                  key={unit}
-                  onClick={() => setUnitFilter(unitFilter === unit ? "" : unit)}
-                  className={`px-2 py-1 text-xs rounded-full transition-colors border ${
-                    unitFilter === unit
-                      ? "border-naija-green bg-naija-green/10 text-naija-green"
-                      : "border-terminal-border text-gray-400 hover:text-white hover:border-gray-400"
-                  }`}
-                >
-                  {unit}
-                </button>
-              ))}
-            </div>
-          )}
-
           {/* Active Filters */}
           {hasActiveFilters && (
             <div className="flex items-center gap-2">
@@ -689,7 +647,6 @@ function PricesPageContent() {
         <div className="mt-3 pt-3 border-t border-terminal-border flex items-center justify-between">
           <span className="text-sm text-gray-500">
             Showing <span className="text-naija-green font-medium">{filteredPrices.length}</span> prices
-            {unitFilter && <span className="text-gray-500 ml-1">· {unitFilter}</span>}
           </span>
           <select
             value={sortBy}
@@ -701,6 +658,22 @@ function PricesPageContent() {
             <option value="change">Change (%)</option>
             <option value="name">Name (A-Z)</option>
           </select>
+
+          {/* Unit filter dropdown */}
+          {availableUnits.length > 1 && (
+            <select
+              value={unitFilter}
+              onChange={(e) => setUnitFilter(e.target.value)}
+              className={`bg-terminal-bg border rounded px-2 py-1 text-xs ${
+                unitFilter ? "border-naija-green text-naija-green" : "border-terminal-border text-gray-400"
+              }`}
+            >
+              <option value="">All Units</option>
+              {availableUnits.map(u => (
+                <option key={u} value={u}>{u}</option>
+              ))}
+            </select>
+          )}
         </div>
       </div>
 
@@ -786,27 +759,9 @@ function PricesPageContent() {
                           <div className="font-medium text-sm text-white group-hover:text-naija-green transition-colors truncate" title={item.item_name}>
                             {item.item_name}
                           </div>
-                          <div className="flex items-center justify-center gap-1 mt-0.5">
-                            {item.unit && (
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setUnitFilter(unitFilter === item.unit ? "" : item.unit);
-                                }}
-                                className={`text-[10px] px-1.5 py-0.5 rounded border transition-colors ${
-                                  unitFilter === item.unit
-                                    ? "border-naija-green text-naija-green bg-naija-green/10"
-                                    : "border-terminal-border text-gray-500 hover:border-naija-green hover:text-naija-green"
-                                }`}
-                                title={`Filter by ${item.unit}`}
-                              >
-                                {item.unit}
-                              </button>
-                            )}
-                            {item.item_variant && (
-                              <div className="text-xs text-gray-500 truncate">{item.item_variant}</div>
-                            )}
-                          </div>
+                          {item.item_variant && (
+                            <div className="text-xs text-gray-500 truncate">{item.item_variant}</div>
+                          )}
                         </div>
                       </div>
                     </td>
