@@ -55,6 +55,7 @@ interface PriceItem {
   id: string;
   item_name: string;
   item_variant: string | null;
+  unit: string;
   category: string;
   market_name: string;
   state: string;
@@ -121,6 +122,7 @@ function PricesPageContent() {
   const [marketFilter, setMarketFilter] = useState(urlMarket);
   const [trendFilter, setTrendFilter] = useState("all");
   const [sortBy, setSortBy] = useState("updated");
+  const [unitFilter, setUnitFilter] = useState("");
 
   // Dropdown state
   const [showCategoryDropdown, setShowCategoryDropdown] = useState(false);
@@ -326,9 +328,10 @@ function PricesPageContent() {
     setStateFilter("");
     setMarketFilter("");
     setTrendFilter("all");
+    setUnitFilter("");
   };
 
-  const hasActiveFilters = searchQuery || categoryFilter || stateFilter || marketFilter || trendFilter !== "all";
+  const hasActiveFilters = searchQuery || categoryFilter || stateFilter || marketFilter || trendFilter !== "all" || unitFilter;
 
   // When a state is selected, only show markets from that state
   const availableMarkets = stateFilter && filterOptions.stateMarkets[stateFilter]
@@ -383,6 +386,22 @@ function PricesPageContent() {
   // ============================================================================
   // RENDER
   // ============================================================================
+
+  // Extract unique units from current price data — sorted by frequency
+  const availableUnits = Array.from(
+    prices.reduce((acc, p) => {
+      if (p.unit) acc.set(p.unit, (acc.get(p.unit) || 0) + 1);
+      return acc;
+    }, new Map<string, number>())
+  )
+    .sort((a, b) => b[1] - a[1])
+    .map(([unit]) => unit)
+    .slice(0, 8); // max 8 unit pills
+
+  // Apply unit filter on top of server-side filtered prices
+  const filteredPrices = unitFilter
+    ? prices.filter(p => p.unit === unitFilter)
+    : prices;
 
   const sourceInfo = getSourceDisplay(dataSource);
 
@@ -608,6 +627,36 @@ function PricesPageContent() {
             </button>
           </div>
 
+          {/* Unit Filter Pills */}
+          {availableUnits.length > 1 && (
+            <div className="flex items-center gap-1 border-l border-terminal-border pl-4 flex-wrap">
+              <span className="text-xs text-gray-500 mr-1">Unit:</span>
+              <button
+                onClick={() => setUnitFilter("")}
+                className={`px-2 py-1 text-xs rounded-full transition-colors border ${
+                  !unitFilter
+                    ? "border-naija-green bg-naija-green/10 text-naija-green"
+                    : "border-terminal-border text-gray-400 hover:text-white hover:border-gray-400"
+                }`}
+              >
+                All
+              </button>
+              {availableUnits.map(unit => (
+                <button
+                  key={unit}
+                  onClick={() => setUnitFilter(unitFilter === unit ? "" : unit)}
+                  className={`px-2 py-1 text-xs rounded-full transition-colors border ${
+                    unitFilter === unit
+                      ? "border-naija-green bg-naija-green/10 text-naija-green"
+                      : "border-terminal-border text-gray-400 hover:text-white hover:border-gray-400"
+                  }`}
+                >
+                  {unit}
+                </button>
+              ))}
+            </div>
+          )}
+
           {/* Active Filters */}
           {hasActiveFilters && (
             <div className="flex items-center gap-2">
@@ -639,7 +688,8 @@ function PricesPageContent() {
         {/* Results count */}
         <div className="mt-3 pt-3 border-t border-terminal-border flex items-center justify-between">
           <span className="text-sm text-gray-500">
-            Showing <span className="text-naija-green font-medium">{prices.length}</span> prices
+            Showing <span className="text-naija-green font-medium">{filteredPrices.length}</span> prices
+            {unitFilter && <span className="text-gray-500 ml-1">· {unitFilter}</span>}
           </span>
           <select
             value={sortBy}
@@ -710,7 +760,7 @@ function PricesPageContent() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-terminal-border/40">
-                {prices.map((item) => (
+                {filteredPrices.map((item) => (
                   <tr 
                     key={item.id} 
                     className="group cursor-pointer hover:bg-terminal-muted/40 transition-colors"
@@ -736,9 +786,27 @@ function PricesPageContent() {
                           <div className="font-medium text-sm text-white group-hover:text-naija-green transition-colors truncate" title={item.item_name}>
                             {item.item_name}
                           </div>
-                          {item.item_variant && (
-                            <div className="text-xs text-gray-500 truncate">{item.item_variant}</div>
-                          )}
+                          <div className="flex items-center justify-center gap-1 mt-0.5">
+                            {item.unit && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setUnitFilter(unitFilter === item.unit ? "" : item.unit);
+                                }}
+                                className={`text-[10px] px-1.5 py-0.5 rounded border transition-colors ${
+                                  unitFilter === item.unit
+                                    ? "border-naija-green text-naija-green bg-naija-green/10"
+                                    : "border-terminal-border text-gray-500 hover:border-naija-green hover:text-naija-green"
+                                }`}
+                                title={`Filter by ${item.unit}`}
+                              >
+                                {item.unit}
+                              </button>
+                            )}
+                            {item.item_variant && (
+                              <div className="text-xs text-gray-500 truncate">{item.item_variant}</div>
+                            )}
+                          </div>
                         </div>
                       </div>
                     </td>
@@ -852,7 +920,7 @@ function PricesPageContent() {
           </div>
 
           {/* Empty State */}
-          {prices.length === 0 && (
+          {filteredPrices.length === 0 && (
             <div className="flex flex-col items-center justify-center py-20">
               <Database className="w-12 h-12 text-gray-600 mb-4" />
               <p className="text-gray-400 mb-2">No prices found</p>
@@ -870,7 +938,7 @@ function PricesPageContent() {
           )}
 
           {/* Footer */}
-          {prices.length > 0 && (
+          {filteredPrices.length > 0 && (
             <div className="px-4 py-3 border-t border-terminal-border flex items-center justify-between">
               <span className="text-sm text-gray-500">
                 💡 Click any row to view price history chart
