@@ -240,6 +240,8 @@ async function fetchFromLatestPricesSummary(
         END AS compare_price
       FROM dbo.Latest_Prices_Summary lps
       WHERE lps.price_naira > 0
+        AND lps.is_nbs_ref  = 0
+        AND lps.is_food     = 1
       ORDER BY lps.market_name, lps.item_name
     `);
 
@@ -314,6 +316,11 @@ async function fetchFromDailyPricesFallback(periodDays: number): Promise<{ data:
           ROW_NUMBER() OVER (PARTITION BY item_name, market_name ORDER BY price_date DESC) AS rn
         FROM dbo.Daily_Prices
         WHERE price_naira > 0
+          AND nbs_adjusted = 0
+          AND category_id IN (
+            'CAT001','CAT002','CAT003','CAT004','CAT005','CAT006','CAT007',
+            'CAT008','CAT009','CAT010','CAT013','CAT014','CAT015','CAT070','CAT103'
+          )
           AND price_date >= CAST(DATEADD(day, -3, GETDATE()) AS DATE)
       )
       SELECT * FROM Latest WHERE rn = 1
