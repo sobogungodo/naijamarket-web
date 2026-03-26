@@ -1,414 +1,156 @@
 // src/app/api/nfpi/route.ts
-// NaijaMarket Intel - NFPI (NaijaFood Price Index) API
-// Tier-gated access to food price index data
-// Version: 1.3.0 - Updated mock data with NBS Jan 2026 post-rebase CPI (8.89% food YoY)
-// Date: 2026-02-17
+// NaijaMarket Food Price Index — website API
+// Source: dbo.NFPI_Monthly (2016-2025, 120 months)
+// Used by: /dashboard/inflation (comparison chart) + future /dashboard/nfpi page
 
-import { NextRequest, NextResponse } from "next/server";
-import sql from "mssql";
+import { NextRequest, NextResponse } from 'next/server'
+import { getServerSession } from 'next-auth'
+import { authOptions } from '@/lib/auth'
+import sql from 'mssql'
 
-// =============================================================================
-// DATABASE CONFIGURATION
-// =============================================================================
-const dbConfig: sql.config = {
-  server: process.env.DATABASE_SERVER || "naijafood.database.windows.net",
-  database: process.env.DATABASE_NAME || "naijafoodmarket",
-  user: process.env.DATABASE_USER || "",
-  password: process.env.DATABASE_PASSWORD || "",
-  options: {
-    encrypt: true,
-    trustServerCertificate: false,
-  },
-};
-
-// =============================================================================
-// TYPE DEFINITIONS
-// =============================================================================
-interface TierAccess {
-  headline: boolean;
-  topMovers: boolean;
-  regional: boolean;
-  categories: boolean;
-  trend: boolean;
-  basket: boolean;
-  export: boolean;
-  maxHistory: number;
+const sqlConfig: sql.config = {
+  user:     process.env.AZURE_SQL_USER!,
+  password: process.env.AZURE_SQL_PASSWORD!,
+  server:   process.env.AZURE_SQL_SERVER!,
+  database: process.env.AZURE_SQL_DATABASE!,
+  options:  { encrypt: true, trustServerCertificate: false },
+  pool:     { max: 5, min: 0, idleTimeoutMillis: 30000 },
 }
 
-interface NFPIRecord {
-  week_id: string;
-  week_start: string;
-  week_end: string;
-  national_index: number;
-  wow_change: number;
-  mom_change: number;
-  yoy_change: number;
-  grains_index: number;
-  proteins_index: number;
-  vegetables_index: number;
-  oils_index: number;
-  tubers_index: number;
-  nw_index: number;
-  ne_index: number;
-  nc_index: number;
-  sw_index: number;
-  se_index: number;
-  ss_index: number;
-  top_gainers: string;
-  top_losers: string;
-  insight: string;
-  basket_details: string | Record<string, unknown>;
+async function getPool(): Promise<sql.ConnectionPool> {
+  return sql.connect(sqlConfig)
 }
 
-interface TrendRecord {
-  week_id: string;
-  week_start?: string;
-  national_index: number;
-  grains_index?: number;
-  proteins_index?: number;
-  vegetables_index?: number;
-  oils_index?: number;
-}
-
-// =============================================================================
-// TIER ACCESS CONFIGURATION
-// =============================================================================
-const TIER_ACCESS: Record<string, TierAccess> = {
-  FREE: {
-    headline: true,
-    topMovers: true,
-    regional: false,
-    categories: false,
-    trend: false,
-    basket: false,
-    export: false,
-    maxHistory: 1
-  },
-  SILVER: {
-    headline: true,
-    topMovers: true,
-    regional: true,
-    categories: false,
-    trend: false,
-    basket: false,
-    export: false,
-    maxHistory: 2
-  },
-  GOLD: {
-    headline: true,
-    topMovers: true,
-    regional: true,
-    categories: true,
-    trend: true,
-    basket: false,
-    export: false,
-    maxHistory: 4
-  },
-  BUSINESS: {
-    headline: true,
-    topMovers: true,
-    regional: true,
-    categories: true,
-    trend: true,
-    basket: true,
-    export: false,
-    maxHistory: 12
-  },
-  CORPORATE: {
-    headline: true,
-    topMovers: true,
-    regional: true,
-    categories: true,
-    trend: true,
-    basket: true,
-    export: true,
-    maxHistory: 24
-  },
-  ENTERPRISE: {
-    headline: true,
-    topMovers: true,
-    regional: true,
-    categories: true,
-    trend: true,
-    basket: true,
-    export: true,
-    maxHistory: 48
-  }
-};
-
-// Default access for unknown tiers
-const DEFAULT_ACCESS: TierAccess = {
-  headline: true,
-  topMovers: true,
-  regional: false,
-  categories: false,
-  trend: false,
-  basket: false,
-  export: false,
-  maxHistory: 1
-};
-
-// =============================================================================
-// MOCK DATA (Used when database is unavailable)
-// =============================================================================
-// Mock data aligned with NBS Jan 2026 post-rebase CPI:
-// Food inflation: 8.89% YoY, -6.02% MoM | Headline: 15.10% YoY, -2.88% MoM
-// Base year: 2024 = 100 (NBS rebased from 2009 in mid-2025)
-const MOCK_NFPI_DATA: NFPIRecord = {
-  week_id: "2026-W07",
-  week_start: "2026-02-10",
-  week_end: "2026-02-16",
-  national_index: 108.9,   // ~8.89% above 2024 base of 100
-  wow_change: -0.4,        // slight weekly decline (post-harvest easing)
-  mom_change: -6.02,       // NBS Jan 2026 MoM food deflation
-  yoy_change: 8.89,        // NBS Jan 2026 YoY food inflation (rebased)
-  grains_index: 112.4,     // grains above average (rice/beans pressure)
-  proteins_index: 106.2,   // proteins moderate
-  vegetables_index: 115.8, // vegetables seasonal highs
-  oils_index: 105.3,       // oils relatively stable
-  tubers_index: 103.7,     // tubers post-harvest decline
-  nw_index: 106.5,         // NW: Kano 7.20%, Katsina 4.50%
-  ne_index: 112.8,         // NE: Adamawa 17.29% pulling up
-  nc_index: 114.2,         // NC: Kogi 19.84%, Benue 18.38% hotspots
-  sw_index: 107.5,         // SW: Lagos 7.50%, moderate
-  se_index: 103.2,         // SE: Ebonyi 1.69%, Abia 3.23% - lowest nationally
-  ss_index: 108.5,         // SS: Rivers 8.50%, Edo 9.50%
-  top_gainers: "Tomatoes (+4.2%), Pepper (+2.8%), Rice Local (+1.5%)",
-  top_losers: "Yam (-3.1%), Garri (-2.5%), Plantain (-1.8%)",
-  insight: "Food prices declining MoM (-6.02%) driven by post-harvest supply. SE states show near-zero inflation (Ebonyi 1.69%). NC remains hotspot with Kogi at 19.84% food inflation.",
-  basket_details: JSON.stringify({
-    rice_local: { price: 82000, weight: 0.18, index: 112.0 },
-    rice_foreign: { price: 95000, weight: 0.07, index: 110.5 },
-    garri: { price: 42000, weight: 0.12, index: 104.5 },
-    beans: { price: 70000, weight: 0.10, index: 111.0 },
-    fish_dried: { price: 8200, weight: 0.07, index: 106.8 },
-    beef: { price: 6200, weight: 0.05, index: 107.5 },
-    tomatoes: { price: 78000, weight: 0.08, index: 118.2 },
-    pepper: { price: 62000, weight: 0.05, index: 113.5 },
-    onions: { price: 50000, weight: 0.05, index: 108.7 },
-    palm_oil: { price: 50000, weight: 0.10, index: 105.3 },
-    groundnut_oil: { price: 65000, weight: 0.05, index: 104.8 },
-    yam: { price: 4000, weight: 0.08, index: 101.2 }
-  })
-};
-
-const MOCK_TREND_DATA: TrendRecord[] = [
-  { week_id: "2026-W04", national_index: 110.2, grains_index: 113.8, proteins_index: 107.5, vegetables_index: 118.4, oils_index: 106.1 },
-  { week_id: "2026-W05", national_index: 109.8, grains_index: 113.2, proteins_index: 107.0, vegetables_index: 117.5, oils_index: 105.8 },
-  { week_id: "2026-W06", national_index: 109.4, grains_index: 112.8, proteins_index: 106.5, vegetables_index: 116.5, oils_index: 105.5 },
-  { week_id: "2026-W07", national_index: 108.9, grains_index: 112.4, proteins_index: 106.2, vegetables_index: 115.8, oils_index: 105.3 },
-];
-
-// =============================================================================
-// GET - Fetch NFPI Data
-// =============================================================================
 export async function GET(request: NextRequest) {
+  const session = await getServerSession(authOptions)
+  if (!session?.user) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
+  const { searchParams } = new URL(request.url)
+  const view    = searchParams.get('view') || 'headline'   // headline | trend | basket | divergence
+  const months  = Math.min(parseInt(searchParams.get('months') || '24'), 120)
+  const tier    = (session.user as any).subscription_tier || 'FREE'
+
+  const silverTiers = new Set(['SILVER', 'GOLD', 'BUSINESS', 'CORPORATE', 'ENTERPRISE'])
+  const isSilver    = silverTiers.has(tier.toUpperCase())
+
   try {
-    const { searchParams } = new URL(request.url);
-    const tier = (searchParams.get("tier") || "FREE").toUpperCase();
-    const weeks = parseInt(searchParams.get("weeks") || "4");
-    const format = searchParams.get("format") || "json";
+    const pool = await getPool()
 
-    // Get tier access - use default if tier not found
-    const access: TierAccess = TIER_ACCESS[tier] || DEFAULT_ACCESS;
+    // ── Headline — current index + YoY + NBS + divergence ──
+    const headlineResult = await pool.request().query(`
+      SELECT TOP 1
+        period_label,
+        CAST(index_value        AS FLOAT) AS index_value,
+        CAST(prev_index_value   AS FLOAT) AS prev_index_value,
+        CAST(mom_change_pct     AS FLOAT) AS mom_change_pct,
+        CAST(yoy_change_pct     AS FLOAT) AS yoy_change_pct,
+        CAST(nbs_yoy_inflation  AS FLOAT) AS nbs_yoy_inflation,
+        CAST(divergence_pct     AS FLOAT) AS divergence_pct,
+        CAST(basket_value_naira AS FLOAT) AS basket_value_naira,
+        commodities_in_basket,
+        markets_covered,
+        computed_at
+      FROM dbo.NFPI_Monthly
+      ORDER BY yr DESC, mth DESC
+    `)
+    const headline = headlineResult.recordset[0] || null
 
-    // Initialize response object
-    const response: {
-      success: boolean;
-      tier: string;
-      access: TierAccess;
-      latest: {
-        week_id?: string;
-        week_start?: string;
-        week_end?: string;
-        national_index?: number;
-        wow_change?: number;
-        mom_change?: number;
-        yoy_change?: number;
-        top_gainers?: string;
-        top_losers?: string;
-        insight?: string;
-      };
-      categories?: {
-        grains: number;
-        proteins: number;
-        vegetables: number;
-        oils: number;
-        tubers: number;
-      };
-      regional?: {
-        nw: number;
-        ne: number;
-        nc: number;
-        sw: number;
-        se: number;
-        ss: number;
-      };
-      trend?: Array<{
-        week_id: string;
-        national_index: number;
-        grains?: number;
-        proteins?: number;
-        vegetables?: number;
-        oils?: number;
-      }>;
-      basket?: Record<string, unknown>;
-      locked_features?: string[];
-    } = {
-      success: true,
-      tier,
-      access,
-      latest: {},
-    };
+    if (view === 'headline') {
+      return NextResponse.json({ headline, tier })
+    }
 
-    // Try to fetch from database, fall back to mock data
-    let latestNFPI: NFPIRecord = MOCK_NFPI_DATA;
-    let trendData: TrendRecord[] = MOCK_TREND_DATA;
-    let pool: sql.ConnectionPool | null = null;
+    // ── Trend — time series for chart (SILVER+ gets full range, FREE gets 6mo) ──
+    if (view === 'trend') {
+      const limit = isSilver ? months : 6
+      const trendResult = await pool.request()
+        .input('limit', sql.Int, limit)
+        .query(`
+          SELECT TOP (@limit)
+            period_label,
+            yr, mth,
+            CAST(index_value        AS FLOAT) AS index_value,
+            CAST(mom_change_pct     AS FLOAT) AS mom_change_pct,
+            CAST(yoy_change_pct     AS FLOAT) AS yoy_change_pct,
+            CAST(nbs_yoy_inflation  AS FLOAT) AS nbs_yoy_inflation,
+            CAST(divergence_pct     AS FLOAT) AS divergence_pct,
+            CAST(basket_value_naira AS FLOAT) AS basket_value_naira
+          FROM dbo.NFPI_Monthly
+          ORDER BY yr DESC, mth DESC
+        `)
+      // Return in chronological order for charting
+      const trend = trendResult.recordset.reverse()
+      return NextResponse.json({ headline, trend, tier, months_returned: trend.length })
+    }
 
-    try {
-      pool = await sql.connect(dbConfig);
-      
-      // Fetch latest NFPI
-      const latestResult = await pool.request().query(`
-        SELECT TOP 1 * FROM NFPI_Weekly 
-        ORDER BY week_start DESC
-      `);
-      
-      if (latestResult.recordset.length > 0) {
-        latestNFPI = latestResult.recordset[0] as NFPIRecord;
+    // ── Divergence summary — NFPI vs NBS (SILVER+ only) ──
+    if (view === 'divergence') {
+      if (!isSilver) {
+        return NextResponse.json({ error: 'SILVER subscription required', tier }, { status: 403 })
       }
+      const divResult = await pool.request().query(`
+        SELECT
+          period_label,
+          CAST(yoy_change_pct     AS FLOAT) AS nfpi_yoy,
+          CAST(nbs_yoy_inflation  AS FLOAT) AS nbs_yoy,
+          CAST(divergence_pct     AS FLOAT) AS divergence_pct,
+          CASE
+            WHEN divergence_pct > 3  THEN 'HIGH'
+            WHEN divergence_pct > 1  THEN 'MODERATE'
+            WHEN divergence_pct < -3 THEN 'NBS_HIGH'
+            ELSE 'ALIGNED'
+          END AS signal
+        FROM dbo.NFPI_Monthly
+        WHERE nbs_yoy_inflation IS NOT NULL
+        ORDER BY yr DESC, mth DESC
+      `)
+      return NextResponse.json({
+        headline,
+        divergence: divResult.recordset,
+        peak_divergence: divResult.recordset.reduce((max: any, r: any) =>
+          (!max || r.divergence_pct > max.divergence_pct) ? r : max, null),
+        tier
+      })
+    }
 
-      // Fetch trend data if user has access
-      if (access.trend) {
-        const historyLimit = Math.min(weeks, access.maxHistory);
-        const trendResult = await pool.request()
-          .input("limit", sql.Int, historyLimit)
-          .query(`
-            SELECT TOP (@limit) 
-              week_id, week_start, national_index,
-              grains_index, proteins_index, vegetables_index, oils_index
-            FROM NFPI_Weekly 
-            ORDER BY week_start DESC
-          `);
-        
-        if (trendResult.recordset.length > 0) {
-          trendData = (trendResult.recordset as TrendRecord[]).reverse();
-        }
+    // ── Basket — commodity-level detail for current period (SILVER+ only) ──
+    if (view === 'basket') {
+      if (!isSilver) {
+        return NextResponse.json({ error: 'SILVER subscription required', tier }, { status: 403 })
       }
-    } catch (dbError) {
-      console.warn("Database unavailable, using mock data:", dbError);
-      // Continue with mock data
-    } finally {
-      if (pool) {
-        await pool.close();
-      }
+      const basketResult = await pool.request().query(`
+        SELECT
+          c.commodity_name,
+          c.commodity_code,
+          c.retail_unit,
+          AVG(h.avg_price) AS avg_price,
+          MIN(h.avg_price) AS min_price,
+          MAX(h.avg_price) AS max_price,
+          COUNT(DISTINCT h.market_id) AS market_count
+        FROM dbo.Historical_Monthly_Summary h
+        JOIN catalog.Commodities c ON h.commodity_id = c.commodity_id
+        WHERE c.is_nbs_tracked = 1
+          AND c.is_active = 1
+          AND h.price_year  = (SELECT MAX(price_year)  FROM dbo.Historical_Monthly_Summary)
+          AND h.price_month = (
+              SELECT MAX(price_month) FROM dbo.Historical_Monthly_Summary
+              WHERE price_year = (SELECT MAX(price_year) FROM dbo.Historical_Monthly_Summary)
+          )
+        GROUP BY c.commodity_name, c.commodity_code, c.retail_unit
+        ORDER BY avg_price DESC
+      `)
+      return NextResponse.json({
+        headline,
+        basket: basketResult.recordset,
+        tier
+      })
     }
 
-    // Headline data (FREE+) - always available
-    if (access.headline) {
-      response.latest.week_id = latestNFPI.week_id;
-      response.latest.week_start = latestNFPI.week_start;
-      response.latest.week_end = latestNFPI.week_end;
-      response.latest.national_index = latestNFPI.national_index;
-      response.latest.wow_change = latestNFPI.wow_change;
-      response.latest.mom_change = latestNFPI.mom_change;
-      response.latest.yoy_change = latestNFPI.yoy_change;
-    }
+    return NextResponse.json({ error: 'Invalid view parameter' }, { status: 400 })
 
-    // Top movers (FREE+)
-    if (access.topMovers) {
-      response.latest.top_gainers = latestNFPI.top_gainers;
-      response.latest.top_losers = latestNFPI.top_losers;
-      response.latest.insight = latestNFPI.insight;
-    }
-
-    // Category indices (GOLD+)
-    if (access.regional || access.categories) {
-      response.categories = {
-        grains: latestNFPI.grains_index || 100,
-        proteins: latestNFPI.proteins_index || 100,
-        vegetables: latestNFPI.vegetables_index || 100,
-        oils: latestNFPI.oils_index || 100,
-        tubers: latestNFPI.tubers_index || 100,
-      };
-    }
-
-    // Regional data (SILVER+)
-    if (access.regional) {
-      response.regional = {
-        nw: latestNFPI.nw_index || 100,
-        ne: latestNFPI.ne_index || 100,
-        nc: latestNFPI.nc_index || 100,
-        sw: latestNFPI.sw_index || 100,
-        se: latestNFPI.se_index || 100,
-        ss: latestNFPI.ss_index || 100,
-      };
-    }
-
-    // Trend data (GOLD+)
-    if (access.trend) {
-      response.trend = trendData.map(week => ({
-        week_id: week.week_id,
-        national_index: week.national_index,
-        grains: week.grains_index,
-        proteins: week.proteins_index,
-        vegetables: week.vegetables_index,
-        oils: week.oils_index,
-      }));
-    }
-
-    // Basket details (BUSINESS+)
-    if (access.basket && latestNFPI.basket_details) {
-      try {
-        response.basket = typeof latestNFPI.basket_details === 'string' 
-          ? JSON.parse(latestNFPI.basket_details)
-          : latestNFPI.basket_details;
-      } catch {
-        response.basket = {};
-      }
-    }
-
-    // Show locked features for upsell
-    const lockedFeatures: string[] = [];
-    if (!access.regional) lockedFeatures.push("regional");
-    if (!access.categories) lockedFeatures.push("categories");
-    if (!access.trend) lockedFeatures.push("trend");
-    if (!access.basket) lockedFeatures.push("basket");
-    if (!access.export) lockedFeatures.push("export");
-    
-    if (lockedFeatures.length > 0) {
-      response.locked_features = lockedFeatures;
-    }
-
-    // Handle CSV export format (CORPORATE+)
-    if (format === "csv" && access.export) {
-      const csvRows = [
-        "week_id,national_index,grains,proteins,vegetables,oils",
-        ...trendData.map(w => 
-          `${w.week_id},${w.national_index},${w.grains_index || ''},${w.proteins_index || ''},${w.vegetables_index || ''},${w.oils_index || ''}`
-        )
-      ];
-      
-      return new NextResponse(csvRows.join("\n"), {
-        headers: {
-          "Content-Type": "text/csv",
-          "Content-Disposition": `attachment; filename="nfpi-${latestNFPI.week_id}.csv"`,
-        },
-      });
-    }
-
-    return NextResponse.json(response);
-
-  } catch (error) {
-    console.error("NFPI API error:", error);
-    return NextResponse.json({
-      success: false,
-      error: error instanceof Error ? error.message : "Internal server error",
-      details: process.env.NODE_ENV === "development" ? String(error) : undefined
-    }, { status: 500 });
+  } catch (err: any) {
+    console.error('[/api/nfpi]', err?.message || err)
+    return NextResponse.json({ error: 'Database error', detail: err?.message }, { status: 500 })
   }
 }
-
-// Force dynamic rendering
-export const dynamic = "force-dynamic";
