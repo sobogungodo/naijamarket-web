@@ -19,19 +19,19 @@ import Link from "next/link";
 // ============================================================================
 
 const COUNTRY_CODES = [
-  { code: "+234", country: "Nigeria", flag: "🇳🇬" },
-  { code: "+233", country: "Ghana", flag: "🇬🇭" },
-  { code: "+254", country: "Kenya", flag: "🇰🇪" },
-  { code: "+27", country: "South Africa", flag: "🇿🇦" },
-  { code: "+1", country: "USA/Canada", flag: "🇺🇸" },
-  { code: "+44", country: "UK", flag: "🇬🇧" },
-  { code: "+353", country: "Ireland", flag: "🇮🇪" },
-  { code: "+49", country: "Germany", flag: "🇩🇪" },
-  { code: "+33", country: "France", flag: "🇫🇷" },
-  { code: "+31", country: "Netherlands", flag: "🇳🇱" },
-  { code: "+32", country: "Belgium", flag: "🇧🇪" },
-  { code: "+358", country: "Finland", flag: "🇫🇮" },
-  { code: "+971", country: "UAE", flag: "🇦🇪" },
+  { code: "+234", country: "Nigeria", flag: "­ƒç│­ƒç¼" },
+  { code: "+233", country: "Ghana", flag: "­ƒç¼­ƒç¡" },
+  { code: "+254", country: "Kenya", flag: "­ƒç░­ƒç¬" },
+  { code: "+27", country: "South Africa", flag: "­ƒç┐­ƒçª" },
+  { code: "+1", country: "USA/Canada", flag: "­ƒç║­ƒç©" },
+  { code: "+44", country: "UK", flag: "­ƒç¼­ƒçº" },
+  { code: "+353", country: "Ireland", flag: "­ƒç«­ƒç¬" },
+  { code: "+49", country: "Germany", flag: "­ƒç®­ƒç¬" },
+  { code: "+33", country: "France", flag: "­ƒç½­ƒçÀ" },
+  { code: "+31", country: "Netherlands", flag: "­ƒç│­ƒç▒" },
+  { code: "+32", country: "Belgium", flag: "­ƒçº­ƒç¬" },
+  { code: "+358", country: "Finland", flag: "­ƒç½­ƒç«" },
+  { code: "+971", country: "UAE", flag: "­ƒçª­ƒç¬" },
 ];
 
 // ============================================================================
@@ -92,7 +92,7 @@ function LoginForm() {
   const [phone, setPhone] = useState("");
   const [phoneOtp, setPhoneOtp] = useState("");
 
-  // Email login state — NOW TWO STEP (email → OTP)
+  // Email login state ÔÇö NOW TWO STEP (email ÔåÆ OTP)
   const [emailStep, setEmailStep] = useState<EmailStep>("email");
   const [email, setEmail] = useState("");
   const [emailOtp, setEmailOtp] = useState("");
@@ -159,24 +159,23 @@ function LoginForm() {
     setError("");
 
     try {
-      // Step 1: Verify OTP
-      const verifyRes = await fetch("/api/auth/verify-otp", {
+      // Step 1: Call login API — verifies OTP + creates session token
+      const loginRes = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phone, countryCode, otp: phoneOtp }),
+        body: JSON.stringify({ type: "phone", phone, countryCode, otp: phoneOtp }),
       });
 
-      const verifyData = await verifyRes.json();
-      if (!verifyRes.ok) throw new Error(verifyData.error || "Invalid OTP");
+      const loginData = await loginRes.json();
+      if (!loginRes.ok) throw new Error(loginData.error || "Login failed");
 
       // Clear stale session cookies
       document.cookie = "session_validated=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT";
 
-      // Step 2: Sign in with NextAuth
+      // Step 2: Sign in with NextAuth using session token
       const result = await signIn("phone-otp", {
-        phone,
-        countryCode,
-        otp: phoneOtp,
+        session_token: loginData.session_token,
+        consumer_id: loginData.consumer.id,
         redirect: false,
       });
 
@@ -427,7 +426,7 @@ function LoginForm() {
                   }}
                   className="w-full text-gray-400 hover:text-white text-sm py-2"
                 >
-                  ← Change phone number
+                  ÔåÉ Change phone number
                 </button>
               </form>
             )}
@@ -557,7 +556,7 @@ function LoginForm() {
                   }}
                   className="w-full text-gray-400 hover:text-white text-sm py-2"
                 >
-                  ← Change email
+                  ÔåÉ Change email
                 </button>
               </form>
             )}
@@ -628,7 +627,7 @@ export default function LoginPage() {
 
         {/* Footer */}
         <p className="text-center text-gray-600 text-xs mt-6 font-mono">
-          © 2026 NaijaMarket Intel • Giggababytes Oy
+          ┬® 2026 NaijaMarket Intel ÔÇó Giggababytes Oy
         </p>
       </div>
     </div>
