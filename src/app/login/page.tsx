@@ -19,19 +19,19 @@ import Link from "next/link";
 // ============================================================================
 
 const COUNTRY_CODES = [
-  { code: "+234", country: "Nigeria", flag: "­ƒç│­ƒç¼" },
-  { code: "+233", country: "Ghana", flag: "­ƒç¼­ƒç¡" },
-  { code: "+254", country: "Kenya", flag: "­ƒç░­ƒç¬" },
-  { code: "+27", country: "South Africa", flag: "­ƒç┐­ƒçª" },
-  { code: "+1", country: "USA/Canada", flag: "­ƒç║­ƒç©" },
-  { code: "+44", country: "UK", flag: "­ƒç¼­ƒçº" },
-  { code: "+353", country: "Ireland", flag: "­ƒç«­ƒç¬" },
-  { code: "+49", country: "Germany", flag: "­ƒç®­ƒç¬" },
-  { code: "+33", country: "France", flag: "­ƒç½­ƒçÀ" },
-  { code: "+31", country: "Netherlands", flag: "­ƒç│­ƒç▒" },
-  { code: "+32", country: "Belgium", flag: "­ƒçº­ƒç¬" },
-  { code: "+358", country: "Finland", flag: "­ƒç½­ƒç«" },
-  { code: "+971", country: "UAE", flag: "­ƒçª­ƒç¬" },
+  { code: "+234", country: "Nigeria", flag: "\uD83C\uDDF3\uD83C\uDDEC" },
+  { code: "+233", country: "Ghana", flag: "\uD83C\uDDEC\uD83C\uDDED" },
+  { code: "+254", country: "Kenya", flag: "\uD83C\uDDF0\uD83C\uDDEA" },
+  { code: "+27", country: "South Africa", flag: "\uD83C\uDDFF\uD83C\uDDE6" },
+  { code: "+1", country: "USA/Canada", flag: "\uD83C\uDDFA\uD83C\uDDF8" },
+  { code: "+44", country: "UK", flag: "\uD83C\uDDEC\uD83C\uDDE7" },
+  { code: "+353", country: "Ireland", flag: "\uD83C\uDDEE\uD83C\uDDEA" },
+  { code: "+49", country: "Germany", flag: "\uD83C\uDDE9\uD83C\uDDEA" },
+  { code: "+33", country: "France", flag: "\uD83C\uDDEB\uD83C\uDDF7" },
+  { code: "+31", country: "Netherlands", flag: "\uD83C\uDDF3\uD83C\uDDF1" },
+  { code: "+32", country: "Belgium", flag: "\uD83C\uDDE7\uD83C\uDDEA" },
+  { code: "+358", country: "Finland", flag: "\uD83C\uDDEB\uD83C\uDDEE" },
+  { code: "+971", country: "UAE", flag: "\uD83C\uDDE6\uD83C\uDDEA" },
 ];
 
 // ============================================================================
