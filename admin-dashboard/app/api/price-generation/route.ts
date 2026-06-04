@@ -27,7 +27,7 @@ export async function GET(request: NextRequest) {
         SUM(CASE WHEN data_source = 'SIM_BASELINE'   THEN 1 ELSE 0 END) AS sim_baseline,
         AVG(CAST(confidence_score AS FLOAT))          AS avg_confidence
       FROM dbo.Daily_Prices
-      WHERE price_date = CAST(GETUTCDATE() AS DATE)
+      WHERE price_date = (SELECT MAX(price_date) FROM dbo.Daily_Prices WHERE nbs_adjusted = 0)
         AND nbs_adjusted = 0
       GROUP BY time_slot, time_slot_name
       ORDER BY time_slot
@@ -46,7 +46,7 @@ export async function GET(request: NextRequest) {
         COUNT(DISTINCT market_id)  AS markets_covered,
         COUNT(DISTINCT item_id)    AS items_covered
       FROM dbo.Daily_Prices
-      WHERE price_date >= DATEADD(day, -${days}, CAST(GETUTCDATE() AS DATE))
+      WHERE price_date >= DATEADD(day, -${days}, (SELECT MAX(price_date) FROM dbo.Daily_Prices WHERE nbs_adjusted = 0))
         AND nbs_adjusted = 0
       GROUP BY price_date
       ORDER BY price_date DESC
@@ -58,13 +58,16 @@ export async function GET(request: NextRequest) {
         price_date,
         COUNT(DISTINCT time_slot) AS slots_present,
         3 - COUNT(DISTINCT time_slot) AS slots_missing,
-        STRING_AGG(time_slot, ', ') AS present_slots
-      FROM dbo.Daily_Prices
-      WHERE price_date >= DATEADD(day, -${days}, CAST(GETUTCDATE() AS DATE))
-        AND nbs_adjusted = 0
-      GROUP BY price_date
-      HAVING COUNT(DISTINCT time_slot) < 3
-      ORDER BY price_date DESC
+        (SELECT STRING_AGG(s2.time_slot, ', ')
+         FROM (SELECT DISTINCT d2.time_slot FROM dbo.Daily_Prices d2
+               WHERE d2.price_date = dp.price_date AND d2.nbs_adjusted = 0) s2
+        ) AS present_slots
+      FROM dbo.Daily_Prices dp
+      WHERE dp.price_date >= DATEADD(day, -${days}, (SELECT MAX(price_date) FROM dbo.Daily_Prices WHERE nbs_adjusted = 0))
+        AND dp.nbs_adjusted = 0
+      GROUP BY dp.price_date
+      HAVING COUNT(DISTINCT dp.time_slot) < 3
+      ORDER BY dp.price_date DESC
     `);
 
     // 4. Latest_Prices_Summary freshness
@@ -94,7 +97,7 @@ export async function GET(request: NextRequest) {
         SUM(CASE WHEN data_source = 'SIM_TRACKED'   THEN 1 ELSE 0 END) AS total_sim_tracked,
         SUM(CASE WHEN data_source = 'SIM_BASELINE'  THEN 1 ELSE 0 END) AS total_sim_baseline
       FROM dbo.Daily_Prices
-      WHERE price_date >= DATEADD(day, -${days}, CAST(GETUTCDATE() AS DATE))
+      WHERE price_date >= DATEADD(day, -${days}, (SELECT MAX(price_date) FROM dbo.Daily_Prices WHERE nbs_adjusted = 0))
         AND nbs_adjusted = 0
     `);
 
@@ -108,7 +111,7 @@ export async function GET(request: NextRequest) {
         SUM(CASE WHEN data_source = 'REAL_ANCHORED' THEN 1 ELSE 0 END) * 100.0
           / NULLIF(COUNT(*), 0)           AS real_anchored_pct
       FROM dbo.Daily_Prices
-      WHERE price_date >= DATEADD(day, -${days}, CAST(GETUTCDATE() AS DATE))
+      WHERE price_date >= DATEADD(day, -${days}, (SELECT MAX(price_date) FROM dbo.Daily_Prices WHERE nbs_adjusted = 0))
         AND nbs_adjusted = 0
       GROUP BY time_slot, time_slot_name
       ORDER BY time_slot
@@ -125,7 +128,7 @@ export async function GET(request: NextRequest) {
         SUM(CASE WHEN data_source = 'REAL_ANCHORED' THEN 1 ELSE 0 END) * 100.0
           / NULLIF(COUNT(*), 0)          AS real_pct
       FROM dbo.Daily_Prices
-      WHERE price_date >= DATEADD(day, -${days}, CAST(GETUTCDATE() AS DATE))
+      WHERE price_date >= DATEADD(day, -${days}, (SELECT MAX(price_date) FROM dbo.Daily_Prices WHERE nbs_adjusted = 0))
         AND nbs_adjusted = 0
       GROUP BY market_name, state
       ORDER BY active_days DESC, avg_confidence DESC
