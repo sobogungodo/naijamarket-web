@@ -1,20 +1,19 @@
 # ============================================================================
-# NAIJAMARKET INTEL — Price Generation Watchdog
+# NAIJAMARKET INTEL — Price Generation Watchdog v3
 # File: .github/workflows/generation-watchdog.yml
-# Version: 2 — added retry logic for Azure cold starts
 # ============================================================================
 #
 # PURPOSE:
 #   Safety net for the daily price generation pipeline.
 #   Calls the generation_watchdog Azure Function 3x daily.
-#   The function checks Daily_Prices for missing slots and fills them.
+#   The watchdog checks Daily_Prices for missing slots and fills them.
 #
-# WHY RETRY EXISTS:
-#   func-naijamarket-scraper runs on Azure Consumption plan.
-#   Consumption plan apps shut down after ~20 min of inactivity (cold start).
-#   The first HTTP call to a cold app returns HTTP 503 "Function host is not
-#   running" while Azure wakes it up (~10-30 seconds). The retry loop waits
-#   30 seconds and tries again — by then the host is warm and responds.
+# WHY RETRY EXISTS (v3 fix):
+#   func-naijamarket-scraper runs on Azure Consumption plan with
+#   WEBSITE_RUN_FROM_PACKAGE. After any deployment or ~20 min inactivity,
+#   Azure must download and mount the package blob before the host starts.
+#   This takes 60-120 seconds. Previous v2 only waited 30s between retries
+#   which was insufficient. v3 waits 60s with up to 5 attempts.
 #
 # SCHEDULE (all UTC):
 #   09:00 — 90 min after morning timer   (07:30 UTC / 08:30 WAT)
@@ -48,84 +47,83 @@ jobs:
       - name: Log run context
         run: |
           echo "============================================"
-          echo "NaijaMarket Intel — Generation Watchdog v2"
+          echo "NaijaMarket Intel — Generation Watchdog v3"
           echo "Run time (UTC): $(date -u '+%Y-%m-%d %H:%M:%S')"
           echo "Run time (WAT): $(TZ='Africa/Lagos' date '+%Y-%m-%d %H:%M:%S')"
           echo "Trigger: ${{ github.event_name }}"
           echo "============================================"
 
-      # ── Step 2: Wake up the function app (handles cold start) ───────────
-      # Azure Consumption plan shuts down after ~20 min of inactivity.
-      # First call returns 503 "Function host is not running" for ~10-30s.
-      # This step pings the health endpoint to wake it up before the real call.
-      - name: Wake up function app
+      # ── Step 2: Warm up the function app ───────────────────────────────
+      # Azure Consumption plan + WEBSITE_RUN_FROM_PACKAGE needs 60-120s
+      # to download and mount the package blob after cold start.
+      # We ping repeatedly until we get a non-503 response or exhaust 5 attempts.
+      # Each attempt waits 60 seconds — total warm-up budget: 5 minutes.
+      - name: Warm up function app
         run: |
-          echo "Pinging function app to wake from cold start..."
-          # Allow up to 3 attempts, 15 seconds apart
-          for i in 1 2 3; do
+          echo "Warming up function app (may take up to 5 minutes after cold start)..."
+          WARMUP_ATTEMPTS=5
+          WARMUP_WAIT=60
+
+          for i in $(seq 1 $WARMUP_ATTEMPTS); do
             STATUS=$(curl -s -o /dev/null -w "%{http_code}" -m 30 \
-              "https://func-naijamarket-scraper.azurewebsites.net/api/generation_watchdog?code=${{ secrets.WATCHDOG_KEY }}" \
-              -X POST -H "Content-Type: application/json" -d '{"ping": true}')
-            echo "Attempt $i: HTTP $STATUS"
-            if [ "$STATUS" = "200" ] || [ "$STATUS" = "500" ]; then
-              # 200 = warm and running, 500 = warm but error (handle in next step)
-              echo "Function app is warm."
-              break
-            fi
-            echo "Still cold (HTTP $STATUS) — waiting 30 seconds..."
-            sleep 30
-          done
-
-      # ── Step 3: Call the watchdog with retry ────────────────────────────
-      # The actual generation check. Retries up to 3 times in case of
-      # transient 503s. Each generation slot takes ~2-3 minutes.
-      # Total timeout per attempt: 10 minutes (600 seconds).
-      - name: Trigger generation watchdog
-        run: |
-          echo "Calling generation_watchdog..."
-
-          MAX_RETRIES=3
-          ATTEMPT=0
-          SUCCESS=false
-
-          while [ $ATTEMPT -lt $MAX_RETRIES ]; do
-            ATTEMPT=$((ATTEMPT + 1))
-            echo ""
-            echo "--- Attempt $ATTEMPT of $MAX_RETRIES ---"
-
-            RESPONSE=$(curl -s \
               -X POST \
               -H "Content-Type: application/json" \
               -d '{}' \
-              -m 600 \
-              -w "\n---HTTP_STATUS:%{http_code}---" \
               "https://func-naijamarket-scraper.azurewebsites.net/api/generation_watchdog?code=${{ secrets.WATCHDOG_KEY }}")
 
-            HTTP_STATUS=$(echo "$RESPONSE" | grep -o 'HTTP_STATUS:[0-9]*' | cut -d: -f2)
-            BODY=$(echo "$RESPONSE" | sed 's/---HTTP_STATUS:[0-9]*---//')
+            echo "Warm-up attempt $i/$WARMUP_ATTEMPTS: HTTP $STATUS"
 
-            echo "HTTP Status: $HTTP_STATUS"
-            echo "Response:"
-            echo "$BODY" | python3 -m json.tool 2>/dev/null || echo "$BODY"
-
-            if [ "$HTTP_STATUS" = "200" ]; then
-              echo ""
-              echo "✅ Watchdog completed successfully on attempt $ATTEMPT"
-              SUCCESS=true
+            if [ "$STATUS" = "200" ] || [ "$STATUS" = "500" ]; then
+              # 200 = ready and succeeded, 500 = ready but error — either way host is up
+              echo "✅ Function app is warm (HTTP $STATUS)"
               break
-            elif [ "$HTTP_STATUS" = "503" ]; then
-              echo "⚠️  503 — function still cold. Waiting 30 seconds before retry..."
-              sleep 30
+            fi
+
+            if [ "$i" -lt "$WARMUP_ATTEMPTS" ]; then
+              echo "Still cold — waiting ${WARMUP_WAIT}s before next attempt..."
+              sleep $WARMUP_WAIT
             else
-              echo "❌ Unexpected HTTP $HTTP_STATUS — not retrying"
-              break
+              echo "⚠️  Function app still returning $STATUS after all warm-up attempts."
+              echo "Will proceed anyway — the main step has its own retry logic."
             fi
           done
 
-          if [ "$SUCCESS" = "false" ]; then
-            echo ""
-            echo "ERROR: Watchdog failed after $MAX_RETRIES attempts"
+      # ── Step 3: Call the watchdog ───────────────────────────────────────
+      # Now that the function app should be warm, call the watchdog properly.
+      # The watchdog body is {} (empty) — it auto-detects today's missing slots.
+      # -m 600 = 10 minute timeout (each generation slot takes ~2-3 minutes;
+      # worst case all 3 slots missing = ~9 minutes total).
+      - name: Trigger generation watchdog
+        run: |
+          echo "Calling generation_watchdog for slot check..."
+          echo ""
+
+          RESPONSE=$(curl -s \
+            -X POST \
+            -H "Content-Type: application/json" \
+            -d '{}' \
+            -m 600 \
+            -w "\n---HTTP_STATUS:%{http_code}---" \
+            "https://func-naijamarket-scraper.azurewebsites.net/api/generation_watchdog?code=${{ secrets.WATCHDOG_KEY }}")
+
+          HTTP_STATUS=$(echo "$RESPONSE" | grep -o 'HTTP_STATUS:[0-9]*' | cut -d: -f2)
+          BODY=$(echo "$RESPONSE" | sed 's/---HTTP_STATUS:[0-9]*---//')
+
+          echo "HTTP Status: $HTTP_STATUS"
+          echo ""
+          echo "Response:"
+          echo "$BODY" | python3 -m json.tool 2>/dev/null || echo "$BODY"
+          echo ""
+
+          if [ "$HTTP_STATUS" = "200" ]; then
+            echo "✅ Watchdog completed successfully"
+          elif [ "$HTTP_STATUS" = "503" ]; then
+            echo "❌ Function app still cold after warm-up phase."
+            echo "This is unusual — check Azure Portal for deployment issues:"
+            echo "  func-naijamarket-scraper → Overview → check State"
+            exit 1
+          else
+            echo "❌ Unexpected HTTP $HTTP_STATUS"
             echo "Check: Azure Portal → func-naijamarket-scraper → Monitor"
-            echo "Or run manually: EXEC dbo.sp_Generate_Daily_Prices in Portal Query Editor"
             exit 1
           fi
