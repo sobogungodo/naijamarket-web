@@ -109,7 +109,7 @@ async function checkDatabaseStats(): Promise<{
 
 async function checkConsumerSite(): Promise<ServiceCheck> {
   const { elapsed, error } = await checkWithTimeout(async () => {
-    const res = await fetch('https://naijamarketintel.ng', {
+    const res = await fetch('https://naijamarketintel.com', {
       method: 'HEAD',
       signal: AbortSignal.timeout(8000),
     });
@@ -121,7 +121,7 @@ async function checkConsumerSite(): Promise<ServiceCheck> {
       name: 'Consumer Website',
       status: 'down',
       responseTime: elapsed,
-      message: `naijamarketintel.ng unreachable: ${error}`,
+      message: `naijamarketintel.com unreachable: ${error}`,
       lastChecked: new Date().toISOString(),
     };
   }
@@ -130,7 +130,7 @@ async function checkConsumerSite(): Promise<ServiceCheck> {
     name: 'Consumer Website',
     status: elapsed < 3000 ? 'operational' : 'degraded',
     responseTime: elapsed,
-    message: 'naijamarketintel.ng responding',
+    message: 'naijamarketintel.com responding',
     lastChecked: new Date().toISOString(),
   };
 }
