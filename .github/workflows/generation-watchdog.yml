@@ -1,99 +1,91 @@
 # ============================================================================
-# NAIJAMARKET INTEL — Price Generation Watchdog v4
+# NAIJAMARKET INTEL — Price Generation Watchdog v5
 # File: .github/workflows/generation-watchdog.yml
 # ============================================================================
 #
-# PURPOSE:
-#   Two jobs in one workflow:
+# ARCHITECTURE:
+#   Single job with three steps:
+#   1. Keepalive ping — wakes the function app
+#   2. Wait 90 seconds — gives Azure time to fully initialise the host
+#   3. Watchdog call — hits a warm host, checks/fills missing slots
 #
-#   JOB 1 — keepalive (runs every 15 minutes, all day)
-#   Pings the function app to prevent cold starts. Azure Consumption plan
-#   shuts down after ~20 minutes of inactivity. A 15-minute ping keeps it
-#   permanently warm at zero cost. This job never triggers generation —
-#   it only hits a lightweight endpoint to keep the host process alive.
+# WHY SINGLE JOB (v5 change from v4):
+#   v4 used two separate jobs (keepalive + watchdog). GitHub runs jobs in
+#   parallel by default. `needs: keepalive` makes watchdog wait for keepalive
+#   to finish, but doesn't add any delay — watchdog fires the instant
+#   keepalive completes, before Azure has fully started the function host.
+#   Single job with an explicit sleep guarantees the 90s warm-up window.
 #
-#   JOB 2 — watchdog (runs 3x daily at 09:00, 12:00, 15:00 UTC)
-#   Calls generation_watchdog to check and fill any missing Daily_Prices
-#   slots. Because the keepalive job runs every 15 minutes, by the time
-#   the watchdog fires the app is already warm — no cold start delays.
+# COLD START TIMELINE (Azure Consumption + WEBSITE_RUN_FROM_PACKAGE):
+#   T+0s:   First ping hits Azure — 503 returned, host starts waking
+#   T+5s:   Azure downloads package blob from storage
+#   T+30s:  Package mounted, Python interpreter loading
+#   T+60s:  Functions registering, timers binding
+#   T+90s:  Host fully ready — HTTP requests return 200
+#   Waiting 90s after first ping guarantees we hit a warm host.
 #
-# WHY KEEPALIVE WORKS:
-#   Azure Consumption plan has a 20-minute idle timeout. If any HTTP request
-#   hits the function app within those 20 minutes, the timer resets.
-#   GitHub Actions free tier allows up to 2,000 minutes/month.
-#   15-minute pings = 4/hr × 24hr × 30 days = 2,880 runs/month.
-#   Each keepalive run takes ~5 seconds = 240 minutes/month total.
-#   Still within the 2,000 minute free tier.
+# SCHEDULE (UTC):
+#   */15 * * * *    — every 15 min (prevents idle timeout, keeps app warm)
+#   0 9,12,15 * * * — 3x daily watchdog (fills missed generation slots)
 #
-# SCHEDULE SUMMARY:
-#   */15 * * * *  — keepalive ping every 15 minutes (prevents cold start)
-#   0 9,12,15 * * * — watchdog check at 09:00, 12:00, 15:00 UTC
-#
-# SECRETS REQUIRED:
-#   WATCHDOG_KEY — Azure Function host key for generation_watchdog
+# SECRETS: WATCHDOG_KEY — generation_watchdog Azure Function host key
 # ============================================================================
 
 name: Price Generation Watchdog
 
 on:
   schedule:
-    # ── Keepalive: every 15 minutes to prevent cold starts ─────────────────
-    # GitHub Actions minimum cron interval is 5 minutes.
-    # We use 15 minutes — well within the 20-minute Azure idle timeout.
-    - cron: '*/15 * * * *'
-
-    # ── Watchdog: 3x daily to catch missed generation slots ────────────────
-    - cron: '0 9 * * *'    # 09:00 UTC — 90 min after morning timer
-    - cron: '0 12 * * *'   # 12:00 UTC — 90 min after midday timer
-    - cron: '0 15 * * *'   # 15:00 UTC — 90 min after afternoon timer
-
-  workflow_dispatch:         # manual trigger from GitHub Actions UI
+    - cron: '*/15 * * * *'   # keepalive every 15 min
+    - cron: '0 9 * * *'      # watchdog 09:00 UTC
+    - cron: '0 12 * * *'     # watchdog 12:00 UTC
+    - cron: '0 15 * * *'     # watchdog 15:00 UTC
+  workflow_dispatch:
 
 jobs:
-  # ── JOB 1: Keep-alive ping ──────────────────────────────────────────────
-  # Runs on every schedule trigger (including the */15 ones).
-  # Lightweight — just pings the endpoint to reset the idle timer.
-  keepalive:
-    runs-on: ubuntu-latest
-    name: Keep function app warm
-    steps:
-      - name: Ping function app
-        run: |
-          STATUS=$(curl -s -o /dev/null -w "%{http_code}" -m 15 \
-            -X POST \
-            -H "Content-Type: application/json" \
-            -d '{"ping": true}' \
-            "https://func-naijamarket-scraper.azurewebsites.net/api/generation_watchdog?code=${{ secrets.WATCHDOG_KEY }}")
-          echo "$(date -u '+%H:%M:%S UTC') — keepalive ping: HTTP $STATUS"
-          # Don't fail on 503 — cold start during keepalive is fine,
-          # the ping itself warms it up for the next call
-          exit 0
-
-  # ── JOB 2: Generation watchdog ──────────────────────────────────────────
-  # Only meaningful at 09:00, 12:00, 15:00 UTC.
-  # At */15 times, the watchdog will find all slots present and exit fast.
-  # At 09:00/12:00/15:00, it checks for missing slots and fills them.
   watchdog:
     runs-on: ubuntu-latest
-    name: Check and fill missing generation slots
-    # Run after keepalive to ensure app is warm
-    needs: keepalive
+    name: Keep warm and check generation slots
+
     steps:
+      # ── Step 1: Log context ─────────────────────────────────────────────
       - name: Log run context
         run: |
-          echo "NaijaMarket Intel — Generation Watchdog v4"
-          echo "Time (UTC): $(date -u '+%Y-%m-%d %H:%M:%S')"
-          echo "Time (WAT): $(TZ='Africa/Lagos' date '+%Y-%m-%d %H:%M:%S')"
-          echo "Trigger: ${{ github.event_name }}"
+          echo "NaijaMarket Intel — Generation Watchdog v5"
+          echo "UTC: $(date -u '+%Y-%m-%d %H:%M:%S')"
+          echo "WAT: $(TZ='Africa/Lagos' date '+%Y-%m-%d %H:%M:%S')"
 
-      - name: Trigger generation watchdog
+      # ── Step 2: Ping to wake the function app ───────────────────────────
+      # Sends a ping request. Azure starts waking the host on first contact.
+      # We don't care about the response here — 503 is expected and fine.
+      # The important thing is the wake signal is sent.
+      - name: Ping function app (wake signal)
         run: |
-          # App should be warm from keepalive job above.
-          # -m 600 = 10 min timeout for generation (worst case ~9 min for 3 slots)
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" -m 15 \
+            -X POST -H "Content-Type: application/json" -d '{"ping":true}' \
+            "https://func-naijamarket-scraper.azurewebsites.net/api/generation_watchdog?code=${{ secrets.WATCHDOG_KEY }}")
+          echo "Wake ping: HTTP $STATUS (503 = cold start waking, any other = already warm)"
+
+      # ── Step 3: Wait for host to fully initialise ───────────────────────
+      # Azure Consumption + WEBSITE_RUN_FROM_PACKAGE needs ~60-90 seconds
+      # to download the package blob, mount it, and start the Python host.
+      # We wait 90 seconds to guarantee the host is ready before the real call.
+      # On warm runs (app was already active), this wait is wasted but harmless.
+      - name: Wait for host initialisation
+        run: |
+          echo "Waiting 90 seconds for function host to initialise..."
+          sleep 90
+          echo "Wait complete — proceeding to watchdog call"
+
+      # ── Step 4: Call the watchdog ───────────────────────────────────────
+      # By now the host is warm. The watchdog checks Daily_Prices for
+      # today's missing slots and runs sp_Generate_Daily_Prices for each.
+      # On */15 runs: all slots exist → returns immediately with "nothing to do"
+      # On 09:00/12:00/15:00 runs: fills any missed slots → runs ~2-3 min/slot
+      - name: Check and fill missing generation slots
+        run: |
+          echo "Calling generation_watchdog..."
           RESPONSE=$(curl -s \
-            -X POST \
-            -H "Content-Type: application/json" \
-            -d '{}' \
+            -X POST -H "Content-Type: application/json" -d '{}' \
             -m 600 \
             -w "\n---HTTP_STATUS:%{http_code}---" \
             "https://func-naijamarket-scraper.azurewebsites.net/api/generation_watchdog?code=${{ secrets.WATCHDOG_KEY }}")
@@ -105,7 +97,7 @@ jobs:
           echo "$BODY" | python3 -m json.tool 2>/dev/null || echo "$BODY"
 
           if [ "$HTTP_STATUS" = "200" ]; then
-            echo "✅ Watchdog completed successfully"
+            echo "✅ Success"
           else
             echo "❌ HTTP $HTTP_STATUS — check Azure Portal → func-naijamarket-scraper"
             exit 1
