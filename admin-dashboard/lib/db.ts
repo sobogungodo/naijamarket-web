@@ -7,10 +7,10 @@ import sql, { IRecordSet } from 'mssql';
 // ============================================
 
 const config: sql.config = {
-  user: process.env.AZURE_SQL_USER || '',
-  password: process.env.AZURE_SQL_PASSWORD || '',
-  server: process.env.AZURE_SQL_SERVER || 'naijafood.database.windows.net',
-  database: process.env.AZURE_SQL_DATABASE || 'naijafoodmarket-live', // FIXED: was 'NaijaMarketIntel' (deleted)
+  user: process.env.SQL_USER || process.env.SQL_USERNAME || process.env.AZURE_SQL_USER || '',
+  password: process.env.SQL_PASSWORD || process.env.AZURE_SQL_PASSWORD || '',
+  server: process.env.SQL_SERVER || process.env.AZURE_SQL_SERVER || 'naijafood.database.windows.net',
+  database: process.env.SQL_DATABASE || process.env.AZURE_SQL_DATABASE || 'naijafoodmarket-live',
   options: {
     encrypt: true,
     trustServerCertificate: false,
