@@ -23,6 +23,11 @@ import {
   Code2,
   Megaphone,
   ClipboardList,
+  Cpu,
+  LineChart,
+  Globe as GlobeIcon,
+  TrendingUp as TrendingUpIcon,
+  GitBranch,
 } from 'lucide-react';
 import { signOut, useSession } from 'next-auth/react';
 import { Avatar } from '@/components/ui';
@@ -77,6 +82,31 @@ const navItems = [
     title: 'Audit Log',
     href: '/dashboard/audit',
     icon: ClipboardList,
+  },
+  {
+    title: 'Price Generation',
+    href: '/dashboard/price-generation',
+    icon: Cpu,
+  },
+  {
+    title: 'Price Intelligence',
+    href: '/dashboard/price-intelligence',
+    icon: LineChart,
+  },
+  {
+    title: 'Market Performance',
+    href: '/dashboard/market-performance',
+    icon: GlobeIcon,
+  },
+  {
+    title: 'NFPI & Inflation',
+    href: '/dashboard/nfpi',
+    icon: TrendingUpIcon,
+  },
+  {
+    title: 'Data Pipeline',
+    href: '/dashboard/pipeline',
+    icon: GitBranch,
   },
 ];
 
