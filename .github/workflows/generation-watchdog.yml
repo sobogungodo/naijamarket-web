@@ -1,160 +1,131 @@
 # ============================================================================
 # NAIJAMARKET INTEL — Price Generation Watchdog
 # File: .github/workflows/generation-watchdog.yml
+# Version: 2 — added retry logic for Azure cold starts
 # ============================================================================
 #
 # PURPOSE:
-#   This workflow is a safety net for the daily price generation pipeline.
-#   It calls the `generation_watchdog` Azure Function 3 times per day.
-#   The watchdog function checks if today's price slots exist in Daily_Prices
-#   and runs any missing slots via sp_Generate_Daily_Prices.
+#   Safety net for the daily price generation pipeline.
+#   Calls the generation_watchdog Azure Function 3x daily.
+#   The function checks Daily_Prices for missing slots and fills them.
 #
-# WHY THIS EXISTS:
-#   The primary trigger for price generation is three Azure Function timer
-#   triggers inside func-naijamarket-scraper:
-#     - generate_morning_prices   → fires at 07:30 UTC (08:30 WAT)
-#     - generate_midday_prices    → fires at 10:30 UTC (11:30 WAT)
-#     - generate_afternoon_prices → fires at 13:30 UTC (14:30 WAT)
+# WHY RETRY EXISTS:
+#   func-naijamarket-scraper runs on Azure Consumption plan.
+#   Consumption plan apps shut down after ~20 min of inactivity (cold start).
+#   The first HTTP call to a cold app returns HTTP 503 "Function host is not
+#   running" while Azure wakes it up (~10-30 seconds). The retry loop waits
+#   30 seconds and tries again — by then the host is warm and responds.
 #
-#   However, Azure Function timer triggers on the Consumption plan have a
-#   known reliability issue: they use "timer status blobs" stored in Azure
-#   Blob Storage to track when they last fired. If the Cloud Shell session
-#   resets, the function app restarts, or the blob becomes stale, the timers
-#   stop firing silently — no error, no alert, just missing data.
+# SCHEDULE (all UTC):
+#   09:00 — 90 min after morning timer   (07:30 UTC / 08:30 WAT)
+#   12:00 — 90 min after midday timer    (10:30 UTC / 11:30 WAT)
+#   15:00 — 90 min after afternoon timer (13:30 UTC / 14:30 WAT)
 #
-#   This happened in April 2026 (56-day outage) and June 4 2026. The
-#   generation_watchdog HTTP function was built specifically to survive
-#   this failure mode — it doesn't rely on timer blobs, it just checks
-#   the DB and fills any gaps when called.
-#
-# HOW IT WORKS:
-#   1. GitHub Actions fires this workflow at 09:00, 12:00, and 15:00 UTC daily
-#   2. Each run sends a POST request to the generation_watchdog Azure Function
-#   3. The watchdog queries Daily_Prices to see which slots exist for today
-#   4. Any missing slots are generated via sp_Generate_Daily_Prices
-#   5. After generation, usp_Refresh_LatestPrices is called automatically
-#   6. The result (slots run, duration, errors) is returned in the response
-#
-# TIMING LOGIC (why 09:00/12:00/15:00 UTC):
-#   The Azure timers fire at 07:30/10:30/13:30 UTC. This watchdog fires
-#   90 minutes later. That gives the timer 90 minutes to succeed on its own.
-#   If it did → the watchdog finds all slots present and does nothing (fast).
-#   If it failed → the watchdog catches the gap and fills it.
-#   90 minutes is enough buffer: each slot generates ~171,935 rows in ~2-3 min.
-#
-# COST:
-#   GitHub Actions: FREE on public repos, FREE on private repos up to
-#   2,000 minutes/month. This workflow uses ~1 minute per run × 3 runs/day
-#   × 30 days = 90 minutes/month. Well within free tier.
-#
-#   Azure Function (generation_watchdog): HTTP-triggered, Consumption plan.
-#   Billed per execution + per GB-second. Each run costs < $0.001.
-#
-# SECURITY:
-#   The Azure Function key (WATCHDOG_KEY) is stored as a GitHub Actions
-#   secret — encrypted, never visible in logs. Anyone with the URL but
-#   without the key gets HTTP 401. Never put the raw key in this file.
+# SECRETS REQUIRED:
+#   WATCHDOG_KEY — Azure Function host key for generation_watchdog
+#   Add at: Repository → Settings → Secrets → Actions → New secret
 #
 # MANUAL TRIGGER:
-#   You can run this workflow manually from GitHub UI at any time:
-#   Repository → Actions → Price Generation Watchdog → Run workflow
-#   Useful for: filling gaps after a known outage, testing, backfill.
-#
-# MONITORING:
-#   - GitHub Actions tab shows every run with pass/fail status
-#   - Failed runs send an email to the repo owner automatically
-#   - The curl response body shows exactly which slots were run/skipped
-#
+#   Actions tab → Price Generation Watchdog → Run workflow button
 # ============================================================================
 
 name: Price Generation Watchdog
 
-# ── TRIGGERS ────────────────────────────────────────────────────────────────
 on:
   schedule:
-    # Fires at 09:00 UTC — 90 min after morning timer (07:30 UTC / 08:30 WAT)
-    # Catches any missed morning slot
-    - cron: '0 9 * * *'
+    - cron: '0 9 * * *'    # 09:00 UTC — catches missed morning slot
+    - cron: '0 12 * * *'   # 12:00 UTC — catches missed midday slot
+    - cron: '0 15 * * *'   # 15:00 UTC — catches missed afternoon slot
+  workflow_dispatch:         # manual trigger from GitHub Actions UI
 
-    # Fires at 12:00 UTC — 90 min after midday timer (10:30 UTC / 11:30 WAT)
-    # Catches any missed midday slot
-    - cron: '0 12 * * *'
-
-    # Fires at 15:00 UTC — 90 min after afternoon timer (13:30 UTC / 14:30 WAT)
-    # Catches any missed afternoon slot
-    - cron: '0 15 * * *'
-
-  # Allows manual trigger from GitHub UI (Actions tab → Run workflow button)
-  # Use this for emergency gap fills or testing
-  workflow_dispatch:
-
-# ── JOB DEFINITION ──────────────────────────────────────────────────────────
 jobs:
   trigger-watchdog:
-    # Use GitHub's free Ubuntu runner — no self-hosted infrastructure needed
     runs-on: ubuntu-latest
-
-    # Job display name in GitHub Actions UI
     name: Check and fill missing generation slots
 
     steps:
-      # ── STEP 1: Log what time this is running ──────────────────────────
+      # ── Step 1: Log run context ─────────────────────────────────────────
       - name: Log run context
         run: |
           echo "============================================"
-          echo "NaijaMarket Intel — Generation Watchdog"
+          echo "NaijaMarket Intel — Generation Watchdog v2"
           echo "Run time (UTC): $(date -u '+%Y-%m-%d %H:%M:%S')"
           echo "Run time (WAT): $(TZ='Africa/Lagos' date '+%Y-%m-%d %H:%M:%S')"
           echo "Trigger: ${{ github.event_name }}"
           echo "============================================"
-          echo ""
-          echo "This run will POST to generation_watchdog Azure Function."
-          echo "The function will:"
-          echo "  1. Query Daily_Prices for today's existing slots"
-          echo "  2. Run any missing slots via sp_Generate_Daily_Prices"
-          echo "  3. Call usp_Refresh_LatestPrices if any slots were generated"
-          echo "  4. Return a JSON summary of what was done"
 
-      # ── STEP 2: Call the Azure Function watchdog ───────────────────────
+      # ── Step 2: Wake up the function app (handles cold start) ───────────
+      # Azure Consumption plan shuts down after ~20 min of inactivity.
+      # First call returns 503 "Function host is not running" for ~10-30s.
+      # This step pings the health endpoint to wake it up before the real call.
+      - name: Wake up function app
+        run: |
+          echo "Pinging function app to wake from cold start..."
+          # Allow up to 3 attempts, 15 seconds apart
+          for i in 1 2 3; do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" -m 30 \
+              "https://func-naijamarket-scraper.azurewebsites.net/api/generation_watchdog?code=${{ secrets.WATCHDOG_KEY }}" \
+              -X POST -H "Content-Type: application/json" -d '{"ping": true}')
+            echo "Attempt $i: HTTP $STATUS"
+            if [ "$STATUS" = "200" ] || [ "$STATUS" = "500" ]; then
+              # 200 = warm and running, 500 = warm but error (handle in next step)
+              echo "Function app is warm."
+              break
+            fi
+            echo "Still cold (HTTP $STATUS) — waiting 30 seconds..."
+            sleep 30
+          done
+
+      # ── Step 3: Call the watchdog with retry ────────────────────────────
+      # The actual generation check. Retries up to 3 times in case of
+      # transient 503s. Each generation slot takes ~2-3 minutes.
+      # Total timeout per attempt: 10 minutes (600 seconds).
       - name: Trigger generation watchdog
         run: |
           echo "Calling generation_watchdog..."
-          echo ""
 
-          # POST to the Azure Function HTTP endpoint
-          # The function key authenticates the request (stored as GitHub secret)
-          # -s = silent mode (no progress bar)
-          # -w = append HTTP status code at the end
-          # -m 600 = timeout after 10 minutes (generation takes ~2-3 min per slot)
-          # If all 3 slots need generating: ~9 min total — stay under 10 min limit
-          RESPONSE=$(curl -s \
-            -X POST \
-            -H "Content-Type: application/json" \
-            -d '{}' \
-            -m 600 \
-            -w "\n---HTTP_STATUS:%{http_code}---" \
-            "https://func-naijamarket-scraper.azurewebsites.net/api/generation_watchdog?code=${{ secrets.WATCHDOG_KEY }}")
+          MAX_RETRIES=3
+          ATTEMPT=0
+          SUCCESS=false
 
-          # Extract HTTP status code from response
-          HTTP_STATUS=$(echo "$RESPONSE" | grep -o 'HTTP_STATUS:[0-9]*' | cut -d: -f2)
-          BODY=$(echo "$RESPONSE" | sed 's/---HTTP_STATUS:[0-9]*---//')
+          while [ $ATTEMPT -lt $MAX_RETRIES ]; do
+            ATTEMPT=$((ATTEMPT + 1))
+            echo ""
+            echo "--- Attempt $ATTEMPT of $MAX_RETRIES ---"
 
-          echo "HTTP Status: $HTTP_STATUS"
-          echo ""
-          echo "Response:"
-          # Pretty-print JSON if possible, otherwise raw output
-          echo "$BODY" | python3 -m json.tool 2>/dev/null || echo "$BODY"
-          echo ""
+            RESPONSE=$(curl -s \
+              -X POST \
+              -H "Content-Type: application/json" \
+              -d '{}' \
+              -m 600 \
+              -w "\n---HTTP_STATUS:%{http_code}---" \
+              "https://func-naijamarket-scraper.azurewebsites.net/api/generation_watchdog?code=${{ secrets.WATCHDOG_KEY }}")
 
-          # Fail the GitHub Action step if HTTP status is not 200
-          # This triggers a failure email to the repo owner
-          if [ "$HTTP_STATUS" != "200" ]; then
-            echo "ERROR: Watchdog returned HTTP $HTTP_STATUS"
-            echo "This means generation failed or the function is unreachable."
-            echo "Check Azure Portal → func-naijamarket-scraper → Monitor"
+            HTTP_STATUS=$(echo "$RESPONSE" | grep -o 'HTTP_STATUS:[0-9]*' | cut -d: -f2)
+            BODY=$(echo "$RESPONSE" | sed 's/---HTTP_STATUS:[0-9]*---//')
+
+            echo "HTTP Status: $HTTP_STATUS"
+            echo "Response:"
+            echo "$BODY" | python3 -m json.tool 2>/dev/null || echo "$BODY"
+
+            if [ "$HTTP_STATUS" = "200" ]; then
+              echo ""
+              echo "✅ Watchdog completed successfully on attempt $ATTEMPT"
+              SUCCESS=true
+              break
+            elif [ "$HTTP_STATUS" = "503" ]; then
+              echo "⚠️  503 — function still cold. Waiting 30 seconds before retry..."
+              sleep 30
+            else
+              echo "❌ Unexpected HTTP $HTTP_STATUS — not retrying"
+              break
+            fi
+          done
+
+          if [ "$SUCCESS" = "false" ]; then
+            echo ""
+            echo "ERROR: Watchdog failed after $MAX_RETRIES attempts"
+            echo "Check: Azure Portal → func-naijamarket-scraper → Monitor"
+            echo "Or run manually: EXEC dbo.sp_Generate_Daily_Prices in Portal Query Editor"
             exit 1
           fi
-
-          echo "============================================"
-          echo "Watchdog completed successfully"
-          echo "============================================"
