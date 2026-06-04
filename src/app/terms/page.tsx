@@ -1,4 +1,4 @@
-import PublicPageShell from "@/components/PublicPageShell";
+﻿import PublicPageShell from "@/components/PublicPageShell";
 
 export const metadata = { title: "Terms of Service | NaijaMarket Intel" };
 
@@ -29,7 +29,7 @@ export default function TermsPage() {
       <ul>
         <li>You must provide accurate and complete registration information</li>
         <li>You are responsible for maintaining the confidentiality of your account</li>
-        <li>One account per person — account sharing is prohibited</li>
+        <li>One account per person â€” account sharing is prohibited</li>
         <li>You must be at least 18 years old to use the Platform</li>
         <li>We reserve the right to suspend or terminate accounts that violate these terms</li>
       </ul>
@@ -45,8 +45,8 @@ export default function TermsPage() {
           <li>Accept that fraudulent submissions will result in reputation penalties and potential account termination</li>
         </ul>
         <p>
-          <strong>Rewards:</strong> Approved submissions earn ₦20 in airtime credits.
-          Minimum payout balance is ₦500. Payouts are processed weekly on Fridays.
+          <strong>Rewards:</strong> Approved submissions earn â‚¦20 in airtime credits.
+          Minimum payout balance is â‚¦500. Payouts are processed weekly on Fridays.
         </p>
       </div>
 
@@ -60,7 +60,7 @@ export default function TermsPage() {
           <li>Accept that inaccurate validations affect your accuracy score</li>
         </ul>
         <p>
-          <strong>Rewards:</strong> Majority-consensus validations earn ₦50 in airtime
+          <strong>Rewards:</strong> Majority-consensus validations earn â‚¦50 in airtime
           credits. Validators below 60% accuracy may be suspended.
         </p>
       </div>
@@ -70,7 +70,7 @@ export default function TermsPage() {
         <li>FREE tier users receive limited queries per day at no cost</li>
         <li>Paid subscriptions (SILVER, GOLD, BUSINESS, CORPORATE, ENTERPRISE) are billed monthly</li>
         <li>Subscriptions auto-renew unless cancelled before the renewal date</li>
-        <li>Refunds are not provided for partial months — you retain access until the period ends</li>
+        <li>Refunds are not provided for partial months â€” you retain access until the period ends</li>
         <li>Enterprise subscriptions require a separate service agreement</li>
       </ul>
 
@@ -117,3 +117,4 @@ export default function TermsPage() {
     </PublicPageShell>
   );
 }
+
