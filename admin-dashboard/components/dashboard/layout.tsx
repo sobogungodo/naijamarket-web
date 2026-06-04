@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import React from 'react';
 import Link from 'next/link';
@@ -22,6 +22,7 @@ import {
   Package,
   Code2,
   Megaphone,
+  ClipboardList,
 } from 'lucide-react';
 import { signOut, useSession } from 'next-auth/react';
 import { Avatar } from '@/components/ui';
@@ -71,6 +72,11 @@ const navItems = [
     title: 'System Health',
     href: '/dashboard/health',
     icon: Activity,
+  },
+  {
+    title: 'Audit Log',
+    href: '/dashboard/audit',
+    icon: ClipboardList,
   },
 ];
 
