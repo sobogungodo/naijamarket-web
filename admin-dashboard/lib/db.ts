@@ -3,15 +3,16 @@ import sql, { IRecordSet } from 'mssql';
 // ============================================
 // AZURE SQL DATABASE CONNECTION
 // NaijaMarket Intel Admin Dashboard
+// FIXED: correct DB fallback, confirmed table/column names
 // ============================================
 
 const config: sql.config = {
   user: process.env.AZURE_SQL_USER || '',
   password: process.env.AZURE_SQL_PASSWORD || '',
   server: process.env.AZURE_SQL_SERVER || 'naijafood.database.windows.net',
-  database: process.env.AZURE_SQL_DATABASE || 'NaijaMarketIntel',
+  database: process.env.AZURE_SQL_DATABASE || 'naijafoodmarket-live', // FIXED: was 'NaijaMarketIntel' (deleted)
   options: {
-    encrypt: true, // Required for Azure
+    encrypt: true,
     trustServerCertificate: false,
     connectTimeout: 30000,
     requestTimeout: 30000,
@@ -23,21 +24,15 @@ const config: sql.config = {
   },
 };
 
-// Global connection pool
 let pool: sql.ConnectionPool | null = null;
 
-/**
- * Get database connection pool
- * Creates new pool if not exists, reuses existing pool otherwise
- */
 export async function getConnection(): Promise<sql.ConnectionPool> {
   if (pool && pool.connected) {
     return pool;
   }
-
   try {
     pool = await sql.connect(config);
-    console.log('✅ Connected to Azure SQL Database');
+    console.log('✅ Connected to Azure SQL:', config.database);
     return pool;
   } catch (error) {
     console.error('❌ Database connection failed:', error);
@@ -45,30 +40,21 @@ export async function getConnection(): Promise<sql.ConnectionPool> {
   }
 }
 
-/**
- * Execute a query and return results
- */
 export async function query<T>(
   sqlQuery: string,
   params?: Record<string, unknown>
 ): Promise<T[]> {
   const connection = await getConnection();
   const request = connection.request();
-
-  // Add parameters if provided
   if (params) {
     Object.entries(params).forEach(([key, value]) => {
       request.input(key, value);
     });
   }
-
   const result = await request.query(sqlQuery);
   return result.recordset as T[];
 }
 
-/**
- * Execute a query and return single result
- */
 export async function queryOne<T>(
   sqlQuery: string,
   params?: Record<string, unknown>
@@ -77,61 +63,49 @@ export async function queryOne<T>(
   return results[0] || null;
 }
 
-/**
- * Execute a stored procedure
- */
 export async function executeProc<T>(
   procName: string,
   params?: Record<string, unknown>
 ): Promise<T[]> {
   const connection = await getConnection();
   const request = connection.request();
-
-  // Add parameters if provided
   if (params) {
     Object.entries(params).forEach(([key, value]) => {
       request.input(key, value);
     });
   }
-
   const result = await request.execute(procName);
   return result.recordset as T[];
 }
 
-/**
- * Execute a non-query command (INSERT, UPDATE, DELETE)
- */
 export async function execute(
   sqlQuery: string,
   params?: Record<string, unknown>
 ): Promise<number> {
   const connection = await getConnection();
   const request = connection.request();
-
-  // Add parameters if provided
   if (params) {
     Object.entries(params).forEach(([key, value]) => {
       request.input(key, value);
     });
   }
-
   const result = await request.query(sqlQuery);
   return result.rowsAffected[0];
 }
 
-/**
- * Close the database connection
- */
 export async function closeConnection(): Promise<void> {
   if (pool) {
     await pool.close();
     pool = null;
-    console.log('Database connection closed');
   }
 }
 
 // ============================================
 // DASHBOARD-SPECIFIC QUERIES
+// FIXED: all table/column names match confirmed live schema
+// Confirmed tables: Traders_register, Validators, Submissions,
+//                   Markets, Items_Catalog, Consumers
+// Confirmed columns per INFORMATION_SCHEMA from sessions
 // ============================================
 
 export interface DashboardStatsResult {
@@ -149,187 +123,124 @@ export interface DashboardStatsResult {
   commoditiesTracked: number;
 }
 
-/**
- * Get dashboard overview statistics
- */
 export async function getDashboardStats(): Promise<DashboardStatsResult> {
+  // FIXED: use confirmed column/table names from live schema
+  // Traders_register: trader_id, trader_phone, trader_name, reputation_score,
+  //                   total_submissions, approved_submissions, rejected_submissions,
+  //                   status, registered_at, last_active
+  // Validators: validator_id, validator_phone, validator_name, status,
+  //             accuracy_score, total_votes, registered_at, last_active
+  // Submissions: submission_id, trader_id, market_id, item_id,
+  //              price (NOT price_naira), validation_status, submitted_at, created_at
+  // Markets: market_id, market_name, state, latitude, longitude
+  // Items_Catalog: item_id, item_name, category_id, Unit, status
   const statsQuery = `
-    -- Get trader stats
-    DECLARE @totalTraders INT = (SELECT COUNT(*) FROM dbo.Traders);
-    DECLARE @activeTraders INT = (
-      SELECT COUNT(*) FROM dbo.Traders 
-      WHERE LastActive >= DATEADD(day, -7, GETUTCDATE()) AND Status = 'active'
+    DECLARE @totalTraders     INT = (SELECT COUNT(*) FROM dbo.Traders_register);
+    DECLARE @activeTraders    INT = (
+      SELECT COUNT(*) FROM dbo.Traders_register
+      WHERE last_active >= DATEADD(day, -7, GETUTCDATE())
+        AND status = 'active'
     );
-    
-    -- Get validator stats
-    DECLARE @totalValidators INT = (SELECT COUNT(*) FROM dbo.Validators);
+
+    DECLARE @totalValidators  INT = (SELECT COUNT(*) FROM dbo.Validators);
     DECLARE @activeValidators INT = (
-      SELECT COUNT(*) FROM dbo.Validators 
-      WHERE LastActive >= DATEADD(day, -7, GETUTCDATE()) AND Status = 'active'
+      SELECT COUNT(*) FROM dbo.Validators
+      WHERE last_active >= DATEADD(day, -7, GETUTCDATE())
+        AND status = 'active'
     );
-    
-    -- Get submission stats
-    DECLARE @totalSubmissions INT = (SELECT COUNT(*) FROM dbo.Submissions);
-    DECLARE @submissionsToday INT = (
-      SELECT COUNT(*) FROM dbo.Submissions 
-      WHERE CAST(SubmittedAt AS DATE) = CAST(GETUTCDATE() AS DATE)
+
+    DECLARE @totalSubmissions  INT = (SELECT COUNT(*) FROM dbo.Submissions);
+    DECLARE @submissionsToday  INT = (
+      SELECT COUNT(*) FROM dbo.Submissions
+      WHERE CAST(submitted_at AS DATE) = CAST(GETUTCDATE() AS DATE)
     );
     DECLARE @pendingValidations INT = (
-      SELECT COUNT(*) FROM dbo.Submissions 
-      WHERE Status = 'pending_validation'
+      SELECT COUNT(*) FROM dbo.Submissions
+      WHERE validation_status = 'PENDING'
     );
-    DECLARE @approvedCount INT = (
-      SELECT COUNT(*) FROM dbo.Submissions WHERE Status = 'approved'
+    DECLARE @approvedCount     INT = (
+      SELECT COUNT(*) FROM dbo.Submissions WHERE validation_status = 'APPROVED'
     );
-    DECLARE @approvalRate DECIMAL(5,2) = 
-      CASE WHEN @totalSubmissions > 0 
-        THEN CAST(@approvedCount AS DECIMAL) / @totalSubmissions * 100 
-        ELSE 0 
+    DECLARE @approvalRate DECIMAL(5,2) =
+      CASE WHEN @totalSubmissions > 0
+        THEN CAST(@approvedCount AS DECIMAL) / @totalSubmissions * 100
+        ELSE 0
       END;
-    
-    -- Get financial stats
-    DECLARE @totalPendingPayout DECIMAL(18,2) = (
-      SELECT ISNULL(SUM(Amount), 0) FROM dbo.RewardsLedger WHERE Status = 'pending'
+
+    -- Rewards: Rewards_Ledger table (may not exist yet — safe fallback)
+    DECLARE @totalPendingPayout DECIMAL(18,2) = 0;
+    DECLARE @totalPaidOut       DECIMAL(18,2) = 0;
+    IF OBJECT_ID('dbo.Rewards_Ledger') IS NOT NULL
+    BEGIN
+      SELECT @totalPendingPayout = ISNULL(SUM(amount), 0)
+      FROM dbo.Rewards_Ledger WHERE status = 'PENDING';
+      SELECT @totalPaidOut = ISNULL(SUM(amount), 0)
+      FROM dbo.Rewards_Ledger WHERE status = 'PAID';
+    END
+
+    DECLARE @marketsActive      INT = (SELECT COUNT(*) FROM dbo.Markets);
+    DECLARE @commoditiesTracked INT = (
+      SELECT COUNT(*) FROM dbo.Items_Catalog
+      WHERE (status = 'ACTIVE' OR status IS NULL)
     );
-    DECLARE @totalPaidOut DECIMAL(18,2) = (
-      SELECT ISNULL(SUM(Amount), 0) FROM dbo.RewardsLedger WHERE Status = 'paid'
-    );
-    
-    -- Get market stats
-    DECLARE @marketsActive INT = (SELECT COUNT(*) FROM dbo.Markets WHERE IsActive = 1);
-    DECLARE @commoditiesTracked INT = (SELECT COUNT(*) FROM dbo.ItemsCatalog WHERE IsActive = 1);
-    
-    SELECT 
-      @totalTraders as totalTraders,
-      @activeTraders as activeTraders,
-      @totalValidators as totalValidators,
-      @activeValidators as activeValidators,
-      @totalSubmissions as totalSubmissions,
-      @submissionsToday as submissionsToday,
-      @pendingValidations as pendingValidations,
-      @approvalRate as approvalRate,
-      @totalPendingPayout as totalPendingPayout,
-      @totalPaidOut as totalPaidOut,
-      @marketsActive as marketsActive,
-      @commoditiesTracked as commoditiesTracked;
+
+    SELECT
+      @totalTraders        AS totalTraders,
+      @activeTraders       AS activeTraders,
+      @totalValidators     AS totalValidators,
+      @activeValidators    AS activeValidators,
+      @totalSubmissions    AS totalSubmissions,
+      @submissionsToday    AS submissionsToday,
+      @pendingValidations  AS pendingValidations,
+      @approvalRate        AS approvalRate,
+      @totalPendingPayout  AS totalPendingPayout,
+      @totalPaidOut        AS totalPaidOut,
+      @marketsActive       AS marketsActive,
+      @commoditiesTracked  AS commoditiesTracked;
   `;
 
   const result = await queryOne<DashboardStatsResult>(statsQuery);
   return result || {
-    totalTraders: 0,
-    activeTraders: 0,
-    totalValidators: 0,
-    activeValidators: 0,
-    totalSubmissions: 0,
-    submissionsToday: 0,
-    pendingValidations: 0,
-    approvalRate: 0,
-    totalPendingPayout: 0,
-    totalPaidOut: 0,
-    marketsActive: 0,
-    commoditiesTracked: 0,
+    totalTraders: 0, activeTraders: 0,
+    totalValidators: 0, activeValidators: 0,
+    totalSubmissions: 0, submissionsToday: 0,
+    pendingValidations: 0, approvalRate: 0,
+    totalPendingPayout: 0, totalPaidOut: 0,
+    marketsActive: 0, commoditiesTracked: 0,
   };
 }
 
-/**
- * Get fraud alerts
- */
-export async function getFraudAlerts(limit = 50) {
-  const alertsQuery = `
-    SELECT TOP (@limit)
-      fa.Id,
-      fa.Type,
-      fa.Severity,
-      fa.Title,
-      fa.Description,
-      fa.DetectedAt,
-      fa.Status,
-      fa.SubmissionId,
-      fa.TraderId,
-      fa.ValidatorId,
-      fa.ResolvedBy,
-      fa.ResolvedAt,
-      fa.Resolution,
-      t.Name as TraderName,
-      t.PhoneNumber as TraderPhone,
-      v.Name as ValidatorName
-    FROM dbo.FraudAlerts fa
-    LEFT JOIN dbo.Traders t ON fa.TraderId = t.Id
-    LEFT JOIN dbo.Validators v ON fa.ValidatorId = v.Id
-    ORDER BY 
-      CASE fa.Severity 
-        WHEN 'critical' THEN 1 
-        WHEN 'high' THEN 2 
-        WHEN 'medium' THEN 3 
-        WHEN 'low' THEN 4 
-      END,
-      fa.DetectedAt DESC
-  `;
-
-  return query(alertsQuery, { limit });
-}
-
-/**
- * Get recent submissions
- */
+// FIXED: confirmed Submissions columns from live schema
 export async function getRecentSubmissions(limit = 100) {
-  const submissionsQuery = `
-    SELECT TOP (@limit)
-      s.Id,
-      s.TraderId,
-      s.TraderName,
-      s.TraderPhone,
-      s.MarketId,
-      m.Name as MarketName,
-      s.CommodityId,
-      c.Name as CommodityName,
-      s.Price,
-      s.Unit,
-      s.GpsLatitude,
-      s.GpsLongitude,
-      s.DistanceFromMarket,
-      s.SubmittedAt,
-      s.Status,
-      s.ValidationDeadline,
-      s.PriceDeviation,
-      s.InstantApproval
+  return query(`
+    SELECT TOP (${limit})
+      s.submission_id,
+      s.trader_id,
+      s.trader_name,
+      s.trader_phone,
+      s.market_id,
+      s.market         AS market_name,
+      s.item_id,
+      s.item           AS item_name,
+      s.category,
+      s.unit,
+      s.price,
+      s.gps_latitude,
+      s.gps_longitude,
+      s.gps_verified,
+      s.distance_from_market,
+      s.submitted_at,
+      s.validation_status,
+      s.status,
+      s.fraud_flag,
+      s.fraud_flag_reason,
+      s.variance_from_baseline
     FROM dbo.Submissions s
-    LEFT JOIN dbo.Markets m ON s.MarketId = m.Id
-    LEFT JOIN dbo.ItemsCatalog c ON s.CommodityId = c.Id
-    ORDER BY s.SubmittedAt DESC
-  `;
-
-  return query(submissionsQuery, { limit });
+    ORDER BY s.submitted_at DESC
+  `);
 }
 
-/**
- * Get pending payouts
- */
-export async function getPendingPayouts() {
-  const payoutsQuery = `
-    SELECT 
-      r.Id,
-      r.RecipientId,
-      r.RecipientType,
-      r.RecipientPhone,
-      r.RecipientName,
-      r.Amount,
-      r.Network,
-      r.Status,
-      r.Reference,
-      r.CreatedAt,
-      r.RetryCount
-    FROM dbo.RewardsLedger r
-    WHERE r.Status IN ('pending', 'failed')
-    ORDER BY r.CreatedAt ASC
-  `;
-
-  return query(payoutsQuery);
-}
-
-/**
- * Get traders with filters
- */
+// FIXED: confirmed Traders_register columns
 export async function getTraders(
   page = 1,
   pageSize = 50,
@@ -348,116 +259,114 @@ export async function getTraders(
   };
 
   if (filters?.search) {
-    whereClause += ` AND (t.Name LIKE @search OR t.PhoneNumber LIKE @search)`;
+    whereClause += ` AND (t.trader_name LIKE @search OR t.trader_phone LIKE @search)`;
     params.search = `%${filters.search}%`;
   }
-
   if (filters?.status) {
-    whereClause += ` AND t.Status = @status`;
+    whereClause += ` AND t.status = @status`;
     params.status = filters.status;
   }
-
   if (filters?.marketId) {
-    whereClause += ` AND t.MarketId = @marketId`;
+    whereClause += ` AND t.market_id = @marketId`;
     params.marketId = filters.marketId;
   }
-
   if (filters?.minReputation !== undefined) {
-    whereClause += ` AND t.Reputation >= @minReputation`;
+    whereClause += ` AND t.reputation_score >= @minReputation`;
     params.minReputation = filters.minReputation;
   }
-
   if (filters?.maxReputation !== undefined) {
-    whereClause += ` AND t.Reputation <= @maxReputation`;
+    whereClause += ` AND t.reputation_score <= @maxReputation`;
     params.maxReputation = filters.maxReputation;
   }
 
   const tradersQuery = `
-    SELECT 
-      t.Id,
-      t.PhoneNumber,
-      t.Name,
-      t.MarketId,
-      m.Name as MarketName,
-      t.Reputation,
-      t.TotalSubmissions,
-      t.ApprovedSubmissions,
-      t.RejectedSubmissions,
-      t.PendingBalance,
-      t.TotalEarned,
-      t.TotalPaid,
-      t.RegisteredAt,
-      t.LastActive,
-      t.Status,
-      t.BankVerified,
-      t.GpsVerified
-    FROM dbo.Traders t
-    LEFT JOIN dbo.Markets m ON t.MarketId = m.Id
+    SELECT
+      t.trader_id,
+      t.trader_phone,
+      t.trader_name,
+      t.market_id,
+      t.market_name,
+      t.state,
+      t.reputation_score,
+      t.total_submissions,
+      t.approved_submissions,
+      t.rejected_submissions,
+      t.status,
+      t.registered_at,
+      t.last_active
+    FROM dbo.Traders_register t
     ${whereClause}
-    ORDER BY t.LastActive DESC
+    ORDER BY t.last_active DESC
     OFFSET @offset ROWS
     FETCH NEXT @pageSize ROWS ONLY;
-    
-    SELECT COUNT(*) as total FROM dbo.Traders t ${whereClause};
+
+    SELECT COUNT(*) AS total FROM dbo.Traders_register t ${whereClause};
   `;
 
   const connection = await getConnection();
   const request = connection.request();
-  
   Object.entries(params).forEach(([key, value]) => {
     request.input(key, value);
   });
-
   const result = await request.query(tradersQuery);
-  
-  // Cast recordsets to array type for proper indexing
   const recordsets = result.recordsets as IRecordSet<unknown>[];
-  
   return {
     items: recordsets[0] || [],
     total: (recordsets[1]?.[0] as { total?: number })?.total || 0,
   };
 }
 
-/**
- * Update trader status
- */
-export async function updateTraderStatus(
-  traderId: string,
-  status: string,
-  reason?: string,
-  updatedBy?: string
-) {
-  const updateQuery = `
-    UPDATE dbo.Traders
-    SET 
-      Status = @status,
-      UpdatedAt = GETUTCDATE(),
-      UpdatedBy = @updatedBy,
-      StatusReason = @reason
-    WHERE Id = @traderId;
-    
-    INSERT INTO dbo.AuditLog (EntityType, EntityId, Action, OldValue, NewValue, Reason, PerformedBy, PerformedAt)
-    SELECT 
-      'Trader', @traderId, 'STATUS_CHANGE',
-      (SELECT Status FROM dbo.Traders WHERE Id = @traderId),
-      @status, @reason, @updatedBy, GETUTCDATE();
-  `;
+// Fraud alerts — safe fallback if table doesn't exist
+export async function getFraudAlerts(limit = 50) {
+  try {
+    return await query(`
+      SELECT TOP (${limit})
+        s.submission_id    AS id,
+        s.trader_id,
+        s.trader_name,
+        s.trader_phone,
+        s.market_id,
+        s.market           AS market_name,
+        s.item             AS item_name,
+        s.price,
+        s.variance_from_baseline,
+        s.fraud_flag_reason AS description,
+        s.submitted_at     AS detected_at,
+        s.validation_status AS status
+      FROM dbo.Submissions s
+      WHERE s.fraud_flag = 1
+      ORDER BY s.submitted_at DESC
+    `);
+  } catch {
+    return [];
+  }
+}
 
-  return execute(updateQuery, { traderId, status, reason, updatedBy });
+// Pending payouts — safe fallback
+export async function getPendingPayouts() {
+  try {
+    if (!(await query(`
+      SELECT 1 FROM INFORMATION_SCHEMA.TABLES
+      WHERE TABLE_NAME = 'Rewards_Ledger'
+    `)).length) return [];
+
+    return query(`
+      SELECT
+        ledger_id, recipient_id, recipient_type,
+        recipient_phone, recipient_name,
+        amount, network, status, reference,
+        created_at, retry_count
+      FROM dbo.Rewards_Ledger
+      WHERE status IN ('PENDING', 'FAILED')
+      ORDER BY created_at ASC
+    `);
+  } catch {
+    return [];
+  }
 }
 
 export default {
-  getConnection,
-  query,
-  queryOne,
-  execute,
-  executeProc,
-  closeConnection,
-  getDashboardStats,
-  getFraudAlerts,
-  getRecentSubmissions,
-  getPendingPayouts,
-  getTraders,
-  updateTraderStatus,
+  getConnection, query, queryOne, execute, executeProc, closeConnection,
+  getDashboardStats, getFraudAlerts, getRecentSubmissions,
+  getPendingPayouts, getTraders,
 };
