@@ -10,6 +10,16 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
 
+    // Normalise phone to full international format before forwarding.
+    // Login form sends phone="9131095009" + countryCode="+234" separately.
+    // otp_send needs the full number e.g. "2349131095009" to reach Meta API.
+    const rawPhone   = String(body.phone   || "").replace(/\D/g, "");
+    const rawCountry = String(body.countryCode || "234").replace(/\D/g, "");
+    const fullPhone  = rawPhone.startsWith(rawCountry)
+      ? rawPhone
+      : rawCountry + rawPhone;
+    const forwardBody = { ...body, phone: fullPhone };
+
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
     };
@@ -18,7 +28,7 @@ export async function POST(request: NextRequest) {
     const resp = await fetch(`${FUNC_BASE}/otp_send`, {
       method: "POST",
       headers,
-      body: JSON.stringify(body),
+      body: JSON.stringify(forwardBody),
     });
 
     const rawText = await resp.text();
