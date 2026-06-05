@@ -335,22 +335,44 @@ export async function GET(request: NextRequest) {
       liveServices.reduce((s, svc) => s + svc.responseTime, 0) / Math.max(liveServices.length, 1)
     );
 
-    // Recent errors from Submissions fraud flags as proxy (Error_Log may not exist)
+    // Recent errors: generation failures + fraud flags combined
     let recentErrors: any[] = [];
     try {
-      recentErrors = await query<any>(`
+      // Generation/system alerts from Monitor_Alert_Log
+      const genErrors = await query<any>(`
         SELECT TOP 5
-          submission_id  AS error_id,
+          CAST(log_id AS NVARCHAR) AS error_id,
+          'Price Generation'       AS error_source,
+          CONCAT('Missing slot: ', slot_name,
+                 ' (', row_count, ' rows generated)')  AS error_message,
+          CASE WHEN row_count = 0 THEN 'error' ELSE 'warning' END AS severity,
+          alerted_at AS created_at,
+          NULL       AS resolved_at,
+          'open'     AS status
+        FROM dbo.Monitor_Alert_Log
+        WHERE alert_type = 'MISSING_SLOT'
+        ORDER BY alerted_at DESC
+      `).catch(() => [] as any[]);
+
+      // Fraud flags from Submissions
+      const fraudErrors = await query<any>(`
+        SELECT TOP 5
+          submission_id     AS error_id,
           'Fraud Detection' AS error_source,
-          fraud_flag_reason AS error_message,
-          'warning' AS severity,
-          submitted_at  AS created_at,
-          NULL          AS resolved_at,
+          COALESCE(fraud_flag_reason, 'Fraud flag raised') AS error_message,
+          'warning'         AS severity,
+          submitted_at      AS created_at,
+          NULL              AS resolved_at,
           validation_status AS status
         FROM dbo.Submissions
         WHERE fraud_flag = 1
         ORDER BY submitted_at DESC
-      `);
+      `).catch(() => [] as any[]);
+
+      // Merge, sort by date, take top 8
+      recentErrors = [...genErrors, ...fraudErrors]
+        .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+        .slice(0, 8);
     } catch { /* ignore */ }
 
     return NextResponse.json({
