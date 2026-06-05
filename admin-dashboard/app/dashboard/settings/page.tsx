@@ -608,17 +608,25 @@ function InviteMemberModal({ isOpen, onClose, onInvite }: InviteMemberModalProps
 
   const handleInvite = async () => {
     setIsSending(true);
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    
-    onInvite({
-      name,
-      email,
-      role,
-      status: 'active',
-    });
-    
-    setIsSending(false);
-    setInviteSent(true);
+    try {
+      const resp = await fetch('/api/invite', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, email, role }),
+      });
+      const data = await resp.json();
+      if (!resp.ok) {
+        alert(data.error || 'Failed to send invitation. Please try again.');
+        setIsSending(false);
+        return;
+      }
+      onInvite({ name, email, role, status: 'active' });
+      setInviteSent(true);
+    } catch {
+      alert('Network error. Please check your connection and try again.');
+    } finally {
+      setIsSending(false);
+    }
   };
 
   const handleClose = () => {
