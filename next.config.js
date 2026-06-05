@@ -1,6 +1,8 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  compress: true,
+  poweredByHeader: false,
   
   // === ADD THESE TWO SECTIONS TO FIX BUILD ===
   typescript: {
@@ -13,7 +15,7 @@ const nextConfig = {
   
   // Enable experimental features for better performance
   experimental: {
-    optimizePackageImports: ['lucide-react', 'recharts', '@radix-ui/react-icons'],
+    optimizePackageImports: ['lucide-react', 'recharts', '@radix-ui/react-icons', 'leaflet', 'react-leaflet', 'date-fns'],
   },
 
   // Image optimization
