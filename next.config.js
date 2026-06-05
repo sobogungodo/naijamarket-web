@@ -15,7 +15,7 @@ const nextConfig = {
   
   // Enable experimental features for better performance
   experimental: {
-    optimizePackageImports: ['lucide-react', 'recharts', '@radix-ui/react-icons', 'leaflet', 'react-leaflet', 'date-fns'],
+    optimizePackageImports: ['lucide-react', 'recharts', '@radix-ui/react-icons', 'leaflet', 'date-fns'],
   },
 
   // Image optimization
