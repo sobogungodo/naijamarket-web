@@ -50,6 +50,13 @@ const ADMIN_USERS: AdminUserRecord[] = [
     name: 'Danjuma Audu',
     role: 'admin',
   },
+  {
+    id: '6',
+    email: 'ahmedbabalola.lasisi@gmail.com',
+    password: 'NaijaIntel#2026',
+    name: 'Ahmed Lasisi',
+    role: 'admin',
+  },
 ];
 
 // ============================================
