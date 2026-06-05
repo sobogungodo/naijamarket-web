@@ -15,6 +15,7 @@ import AuthShell from "@/components/AuthShell";
 import { SingleSessionProvider } from "@/components/SingleSessionProvider";
 import SessionExpiredModal from "@/components/SessionExpiredModal";
 import { Toaster } from "sonner";
+import WhatsAppCTA from "@/components/WhatsAppCTA";
 import "@/styles/globals.css";
 
 const inter = Inter({ subsets: ["latin"] });
@@ -196,6 +197,7 @@ export default function RootLayout({
             />
           </ThemeProvider>
         </Providers>
+        <WhatsAppCTA />
       </body>
     </html>
   );

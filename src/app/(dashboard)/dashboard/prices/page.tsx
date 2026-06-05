@@ -27,6 +27,8 @@ import {
   AlertCircle
 } from "lucide-react";
 import PriceHistoryModal from "@/components/PriceHistoryModal";
+import { FreshnessIndicator } from "@/components/FreshnessIndicator";
+import { PriceDisclaimer } from "@/components/PriceDisclaimer";
 
 // ============================================================================
 // HELPERS
@@ -847,6 +849,7 @@ function PricesPageContent() {
                     <td className="px-2 py-3 text-center">
                       <div className="text-xs text-gray-400">{formatUpdateTime(item.updated_at)}</div>
                       <div className="text-xs text-gray-600">{item.source.replace(/_/g, " ")}</div>
+                      <FreshnessIndicator date={item.updated_at} compact className="mt-1" />
                     </td>
 
                     {/* Actions */}
@@ -904,6 +907,9 @@ function PricesPageContent() {
           )}
         </div>
       )}
+
+      {/* Data accuracy disclaimer [1v] */}
+      {!loading && !error && filteredPrices.length > 0 && <PriceDisclaimer className="mt-1" />}
 
       {/* Price History Modal */}
       {selectedPrice && (
