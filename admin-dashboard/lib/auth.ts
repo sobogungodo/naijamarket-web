@@ -48,7 +48,7 @@ const ADMIN_USERS: AdminUserRecord[] = [
     email: 'danjumaaudu@yahoo.com',
     password: 'NaijaIntel#2026',
     name: 'Danjuma Audu',
-    role: 'analyst',
+    role: 'admin',
   },
 ];
 
