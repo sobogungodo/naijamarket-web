@@ -59,7 +59,7 @@ const authOptions: NextAuthOptions = {
           phone:        consumer.phone,
           email:        consumer.email,
           name:         consumer.name,
-          tier:         consumer.tier,
+          tier:         consumer.tier || (consumer as any).subscription_tier,
           status:       consumer.status,
           sessionToken: credentials.session_token,
           authMethod:   "phone",
@@ -94,7 +94,7 @@ const authOptions: NextAuthOptions = {
           phone:        consumer.phone,
           email:        consumer.email,
           name:         consumer.name,
-          tier:         consumer.tier,
+          tier:         consumer.tier || (consumer as any).subscription_tier,
           status:       consumer.status,
           sessionToken: credentials.session_token,
           authMethod:   "email-otp",
@@ -130,7 +130,7 @@ const authOptions: NextAuthOptions = {
             token.sessionToken as string
           );
           if (consumer) {
-            token.tier   = consumer.tier;
+            token.tier   = consumer.tier || (consumer as any).subscription_tier;
             token.status = consumer.status;
             token.name   = consumer.name || token.name;
             token.email  = consumer.email || token.email;
