@@ -243,15 +243,67 @@ function checkVTPass(): ServiceCheck {
   };
 }
 
+
+// ── Price Generation Health Check ─────────────────────────────────────────────
+async function checkPriceGeneration(): Promise<ServiceCheck> {
+  const start = Date.now();
+  try {
+    const rows = await query<{ time_slot_name: string; row_count: number }>(`
+      SELECT time_slot_name, COUNT(*) AS row_count
+      FROM dbo.Daily_Prices
+      WHERE price_date = CAST(GETDATE() AS DATE)
+        AND nbs_adjusted = 0
+      GROUP BY time_slot_name
+    `);
+
+    const now    = new Date();
+    const utcMin = now.getUTCHours() * 60 + now.getUTCMinutes();
+
+    // Slots become "expected" 30 min after generation time (grace window)
+    const expected: string[] = [];
+    if (utcMin >= 8 * 60)  expected.push('MORNING');    // after 08:00 UTC
+    if (utcMin >= 11 * 60) expected.push('MIDDAY');     // after 11:00 UTC
+    if (utcMin >= 14 * 60) expected.push('AFTERNOON');  // after 14:00 UTC
+
+    const counts: Record<string, number> = {};
+    let total = 0;
+    for (const r of rows) { counts[r.time_slot_name] = r.row_count; total += r.row_count; }
+
+    const MIN_ROWS = 50_000;
+    const missing  = expected.filter(s => (counts[s] ?? 0) < MIN_ROWS);
+    const elapsed  = Date.now() - start;
+
+    if (expected.length === 0) {
+      return { name: 'Price Generation', status: 'operational', responseTime: elapsed,
+               message: 'No slots due yet today', lastChecked: new Date().toISOString() };
+    }
+    if (missing.length === 0) {
+      const detail = expected.map(s => `${s}: ${(counts[s]??0).toLocaleString()}`).join(' · ');
+      return { name: 'Price Generation', status: 'operational', responseTime: elapsed,
+               message: `${expected.length}/${expected.length} slots OK · ${total.toLocaleString()} rows · ${detail}`,
+               lastChecked: new Date().toISOString() };
+    }
+    const status = missing.length === expected.length ? 'down' : 'degraded';
+    return { name: 'Price Generation', status, responseTime: elapsed,
+             message: `⚠️ Missing: ${missing.join(', ')} · ${total.toLocaleString()} rows generated`,
+             lastChecked: new Date().toISOString() };
+  } catch (error: any) {
+    return { name: 'Price Generation', status: 'down', responseTime: Date.now() - start,
+             message: `DB error: ${String(error.message ?? error).slice(0, 80)}`,
+             lastChecked: new Date().toISOString() };
+  }
+}
+
 export async function GET(request: NextRequest) {
   const startTime = Date.now();
 
   try {
-    const [azureSql, consumerSite, brevo, whatsapp] = await Promise.all([
+    const [azureSql, consumerSite, brevo, whatsapp, priceGen] = await Promise.all([
       checkAzureSQL(),
       checkConsumerSite(),
       checkBrevoEmail(),
       checkWhatsApp(),
+      checkPriceGeneration(),
     ]);
 
     const adminApi = checkAdminAPI();
@@ -267,6 +319,7 @@ export async function GET(request: NextRequest) {
       brevo,
       whatsapp,
       checkVTPass(),
+      priceGen,
     ];
 
     const liveServices = services.filter(s => s.status !== 'placeholder');
