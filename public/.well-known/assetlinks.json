@@ -1,0 +1,8 @@
+[{
+      "relation": ["delegate_permission/common.handle_all_urls"],
+      "target": {
+        "namespace": "android_app",
+        "package_name": "com.naijamarketintel.www.twa",
+        "sha256_cert_fingerprints": ["91:42:7C:FC:BA:99:1B:AE:E1:31:1C:30:B7:79:68:F4:8D:32:17:11:60:88:B3:B4:F8:E0:E8:28:28:28:37:B9"]
+      }
+    }]
