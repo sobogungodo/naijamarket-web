@@ -7,6 +7,7 @@ import { query } from '@/lib/db';
 // FIXED: Consumer site URL → naijamarketintel.ng
 // ============================================
 
+export const dynamic = 'force-dynamic'
 interface ServiceCheck {
   name: string;
   status: 'operational' | 'degraded' | 'down' | 'placeholder';
