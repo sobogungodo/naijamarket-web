@@ -39,6 +39,26 @@ function formatPhoneNumber(phone: string, countryCode?: string): string {
   return cleaned;
 }
 
+
+async function sendBrevoWelcome(email: string, phone: string) {
+  const apiKey = process.env.BREVO_API_KEY
+  if (!apiKey) return
+  try {
+    await fetch('https://api.brevo.com/v3/smtp/email', {
+      method: 'POST',
+      headers: { 'api-key': apiKey, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        sender: { name: 'NaijaMarketIntel', email: 'noreply@naijamarketintel.ng' },
+        to: [{ email }],
+        subject: 'Welcome to NaijaMarketIntel',
+        htmlContent: '<div style="font-family:sans-serif;background:#0a0a0a;color:#f5f5f5;padding:40px;max-width:600px;margin:0 auto"><div style="border-bottom:2px solid #00a651;padding-bottom:16px;margin-bottom:32px"><span style="color:#00a651;font-weight:700;font-size:20px">NaijaMarketIntel</span></div><h1 style="color:#fff;font-size:24px">Welcome aboard!</h1><p style="color:#aaa;line-height:1.7">Your FREE account is ready. You now have access to real-time commodity prices from 282+ markets across Nigeria.</p><div style="background:#111;border:1px solid #222;border-radius:8px;padding:20px;margin:24px 0"><p style="color:#00a651;font-weight:600;margin:0 0 10px">Get started:</p><p style="color:#ccc;font-size:14px;margin:0;line-height:2">1. Search any commodity on your dashboard<br>2. Set a price alert<br>3. Explore arbitrage opportunities</p></div><a href="https://naijamarketintel.ng/dashboard" style="display:inline-block;background:#00a651;color:#fff;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:600">Go to Dashboard</a><p style="color:#444;font-size:12px;margin-top:40px;border-top:1px solid #1a1a1a;padding-top:16px">NaijaMarketIntel · Giggababytes Oy · Lahti, Finland</p></div>',
+      }),
+    })
+  } catch (err) {
+    console.error('[register] Brevo failed:', err)
+  }
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
@@ -191,6 +211,9 @@ export async function POST(request: NextRequest) {
     });
 
     console.log("✅ OTP records cleaned up");
+
+    // Brevo welcome — non-blocking
+    sendBrevoWelcome(formattedEmail, formattedPhone).catch(() => {})
 
     return NextResponse.json({
       success: true,
