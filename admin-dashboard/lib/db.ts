@@ -15,7 +15,7 @@ const config: sql.config = {
     encrypt: true,
     trustServerCertificate: false,
     connectTimeout: 30000,
-    requestTimeout: 30000,
+    requestTimeout: 60000,
   },
   pool: {
     max: 10,
