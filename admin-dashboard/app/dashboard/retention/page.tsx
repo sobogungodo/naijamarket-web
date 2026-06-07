@@ -53,7 +53,8 @@ export default function RetentionPage() {
   if (loading) return <div style={s}><p style={{ color:'#555',marginTop:40,textAlign:'center' }}>Loading retention data...</p></div>
   if (error||!data) return <div style={s}><p style={{ color:'#ef4444' }}>{error||'No data'}</p></div>
 
-  const { trader:t, consumer:c } = data
+  const t = data.trader   || { total:0,new7d:0,new30d:0,active7d:0,subs24h:0,subs7d:0,subs30d:0,subsAll:0,d1Rate:0,d7Rate:0,cohortSize:0 }
+  const c = data.consumer || { total:0,active7d:0,queries7d:0,d1Rate:0,cohortSize:0 }
 
   return (
     <div style={s}>
