@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, CSSProperties } from 'react'
 
 interface Data {
   trader:      { total:number;new7d:number;new30d:number;active7d:number;subs24h:number;subs7d:number;subs30d:number;subsAll:number;d1Rate:number;d7Rate:number;cohortSize:number }
@@ -45,7 +45,7 @@ export default function RetentionPage() {
       .catch(() => { setError('Failed to load'); setLoad(false) })
   }, [])
 
-  const s: React.CSSProperties = {
+  const s: CSSProperties = {
     fontFamily:'sans-serif',background:'#0a0a0a',
     minHeight:'100vh',padding:32,color:'#fff'
   }

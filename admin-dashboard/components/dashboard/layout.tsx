@@ -108,6 +108,11 @@ const navItems = [
     href: '/dashboard/pipeline',
     icon: GitBranch,
   },
+  {
+    title: 'Retention',
+    href: '/dashboard/retention',
+    icon: TrendingUp,
+  },
 ];
 
 const revenueItems = [
