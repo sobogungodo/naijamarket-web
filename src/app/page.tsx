@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, FormEvent } from "react";
 import Link from "next/link";
 import EmailSignup from "@/components/EmailSignup";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import WaitlistSection from '@/components/WaitlistSection'
 
 // ============================================================================
 // NaijaMarket Intel — Landing Page v2.0
@@ -561,7 +562,9 @@ function HowItWorksSection() {
 function PricingSection() {
   const { ref, visible } = useInView();
   return (
-    <section id="pricing" className="nm-section" ref={ref}>
+    <WaitlistSection />
+
+      <section id="pricing" className="nm-section" ref={ref}>
       <div className="nm-section-inner">
         <div className="nm-section-header">
           <span className="nm-section-tag">Pricing</span>
