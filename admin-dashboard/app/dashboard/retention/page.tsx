@@ -40,9 +40,9 @@ export default function RetentionPage() {
 
   useEffect(() => {
     fetch('/api/retention')
-      .then(r => r.json())
+      .then(r => { if (!r.ok) throw new Error('API error'); return r.json() })
       .then(d => { setData(d); setLoad(false) })
-      .catch(() => { setError('Failed to load'); setLoad(false) })
+      .catch(() => { setError('Failed to load data. Check API logs.'); setLoad(false) })
   }, [])
 
   const s: CSSProperties = {
