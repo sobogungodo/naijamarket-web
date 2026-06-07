@@ -564,7 +564,7 @@ function PricingSection() {
   return (
     <WaitlistSection />
 
-      <section id="pricing" className="nm-section" ref={ref}>
+        <section id="pricing" className="nm-section" ref={ref}>
       <div className="nm-section-inner">
         <div className="nm-section-header">
           <span className="nm-section-tag">Pricing</span>
