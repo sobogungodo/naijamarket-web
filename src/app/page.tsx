@@ -562,8 +562,6 @@ function HowItWorksSection() {
 function PricingSection() {
   const { ref, visible } = useInView();
   return (
-    <WaitlistSection />
-
         <section id="pricing" className="nm-section" ref={ref}>
       <div className="nm-section-inner">
         <div className="nm-section-header">
@@ -768,7 +766,8 @@ export default function LandingPage() {
         <Hero />
         <FeaturesSection />
         <HowItWorksSection />
-        <PricingSection />
+        <WaitlistSection />
+      <PricingSection />
         <TestimonialsSection />
         <CTASection />
         <Footer />
