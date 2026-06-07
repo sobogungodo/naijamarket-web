@@ -84,7 +84,7 @@ export default function RetentionPage() {
         <Kpi label="Active (7d)"   value={t.active7d} sub="submitted prices" color="#a78bfa" />
         <Kpi label="Subs (24h)"    value={t.subs24h}  sub="today"            color="#f59e0b" />
         <Kpi label="Subs (7d)"     value={t.subs7d}   sub="this week"        color="#f59e0b" />
-        <Kpi label="Subs (all)"    value={t.subsAll}  sub="all time"         color="#555" />
+        <Kpi label="Subs (all)"    value={t.subs90d}  sub="all time"         color="#555" />
       </div>
 
       <div style={{ background:'#111',border:'1px solid #1e1e1e',borderRadius:12,padding:24,marginBottom:32 }}>
