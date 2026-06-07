@@ -68,6 +68,7 @@ export async function middleware(request: NextRequest) {
     pathname.startsWith("/api/inflation") ||
     pathname.startsWith("/api/subscribe-email") ||
     pathname.startsWith("/api/unsubscribe") ||
+    pathname.startsWith("/api/waitlist") ||
     pathname.includes(".") ||
     pathname.startsWith("/images") ||
     pathname.startsWith("/icons") ||
@@ -194,8 +195,8 @@ export async function middleware(request: NextRequest) {
 
 export const config = {
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|public|images|icons).*)",,
-    '/api/waitlist'],
+    "/((?!_next/static|_next/image|favicon.ico|public|images|icons).*)"]
+,
 };
 
 
