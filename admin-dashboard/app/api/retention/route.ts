@@ -5,30 +5,36 @@ export const dynamic = 'force-dynamic'
 
 export async function GET() {
   try {
-    const traderStats = await query<any>(`
-      SELECT
-        COUNT(*)                                                                    AS total_approved,
-        SUM(CASE WHEN approved_at >= DATEADD(DAY,-7, GETUTCDATE()) THEN 1 ELSE 0 END) AS new_7d,
-        SUM(CASE WHEN approved_at >= DATEADD(DAY,-30,GETUTCDATE()) THEN 1 ELSE 0 END) AS new_30d
+    // ── Trader totals ─────────────────────────────────────────────
+    const traderTotals = await query<any>(`
+      SELECT COUNT(*) AS total_approved
       FROM dbo.Traders_register
-      WHERE registration_status = 'APPROVED' AND is_suspended = 0
+      WHERE registration_status = 'APPROVED'
+        AND is_suspended = 0
     `)
 
-    const traderActive = await query<any>(`
+    // ── Submission activity ───────────────────────────────────────
+    const subActivity = await query<any>(`
       SELECT
-        COUNT(DISTINCT trader_phone)                                                     AS active_7d,
-        SUM(CASE WHEN submitted_at >= DATEADD(DAY,-1, GETUTCDATE()) THEN 1 ELSE 0 END)  AS subs_24h,
-        SUM(CASE WHEN submitted_at >= DATEADD(DAY,-7, GETUTCDATE()) THEN 1 ELSE 0 END)  AS subs_7d,
-        SUM(CASE WHEN submitted_at >= DATEADD(DAY,-30,GETUTCDATE()) THEN 1 ELSE 0 END)  AS subs_30d,
-        COUNT(*)                                                                          AS subs_all
+        COUNT(DISTINCT trader_phone) AS active_7d,
+        SUM(CASE WHEN submitted_at >= DATEADD(DAY,-1, GETUTCDATE()) THEN 1 ELSE 0 END) AS subs_24h,
+        SUM(CASE WHEN submitted_at >= DATEADD(DAY,-7, GETUTCDATE()) THEN 1 ELSE 0 END) AS subs_7d,
+        SUM(CASE WHEN submitted_at >= DATEADD(DAY,-30,GETUTCDATE()) THEN 1 ELSE 0 END) AS subs_30d
       FROM dbo.Submissions
       WHERE trader_id NOT LIKE 'SYN-%'
-        AND submitted_at >= DATEADD(DAY,-7,GETUTCDATE())
     `)
 
+    const subTotal = await query<any>(`
+      SELECT COUNT(*) AS subs_all
+      FROM dbo.Submissions
+      WHERE trader_id NOT LIKE 'SYN-%'
+    `)
+
+    // ── D1/D7 cohort retention ────────────────────────────────────
     const traderCohort = await query<any>(`
       WITH first_day AS (
-          SELECT trader_phone, CAST(MIN(submitted_at) AS DATE) AS day0
+          SELECT trader_phone,
+                 CAST(MIN(submitted_at) AS DATE) AS day0
           FROM   dbo.Submissions
           WHERE  trader_id NOT LIKE 'SYN-%'
           GROUP BY trader_phone
@@ -52,13 +58,15 @@ export async function GET() {
       WHERE fd.day0 <= DATEADD(DAY,-7,CAST(GETUTCDATE() AS DATE))
     `)
 
-    const consumerStats = await query<any>(`
+    // ── Consumer totals ───────────────────────────────────────────
+    const consumerTotals = await query<any>(`
       SELECT COUNT(*) AS total
       FROM dbo.Consumers
       WHERE account_status = 'ACTIVE'
     `)
 
-    const consumerActive = await query<any>(`
+    // ── Consumer session activity ─────────────────────────────────
+    const consumerActivity = await query<any>(`
       SELECT
         COUNT(DISTINCT phone_number) AS active_7d,
         COUNT(*)                     AS queries_7d
@@ -66,9 +74,11 @@ export async function GET() {
       WHERE last_updated >= DATEADD(DAY,-7,GETUTCDATE())
     `)
 
+    // ── Consumer D1 retention ─────────────────────────────────────
     const consumerCohort = await query<any>(`
       WITH first_q AS (
-          SELECT phone_number, MIN(last_updated) AS first_query
+          SELECT phone_number,
+                 MIN(last_updated) AS first_query
           FROM   dbo.Consumer_Query_Sessions
           GROUP BY phone_number
       )
@@ -84,6 +94,7 @@ export async function GET() {
       WHERE fq.first_query <= DATEADD(DAY,-2,GETUTCDATE())
     `)
 
+    // ── Feedback ──────────────────────────────────────────────────
     let feedback30d = 0
     try {
       const fb = await query<any>(
@@ -91,27 +102,46 @@ export async function GET() {
          WHERE created_at >= DATEADD(DAY,-30,GETUTCDATE())`
       )
       feedback30d = Number(fb[0]?.total || 0)
-    } catch { /* table may not be visible in admin yet */ }
+    } catch { /* table not yet visible in admin */ }
 
-    const ts = traderStats[0]   || {}
-    const ta = traderActive[0]  || {}
-    const tc = traderCohort[0]  || {}
-    const cs = consumerStats[0] || {}
-    const ca = consumerActive[0]|| {}
-    const cc = consumerCohort[0]|| {}
+    const tt  = traderTotals[0]   || {}
+    const sa  = subActivity[0]    || {}
+    const st  = subTotal[0]       || {}
+    const tc  = traderCohort[0]   || {}
+    const ct  = consumerTotals[0] || {}
+    const ca  = consumerActivity[0] || {}
+    const cc  = consumerCohort[0] || {}
 
     const d1Rate  = tc.cohort_size > 0 ? Math.round((tc.d1_retained / tc.cohort_size) * 100) : 0
     const d7Rate  = tc.cohort_size > 0 ? Math.round((tc.d7_retained / tc.cohort_size) * 100) : 0
     const cd1Rate = cc.cohort_size > 0 ? Math.round((cc.d1_retained / cc.cohort_size) * 100) : 0
 
     return NextResponse.json({
-      trader:      { total:Number(ts.total_approved||0), new7d:Number(ts.new_7d||0), new30d:Number(ts.new_30d||0), active7d:Number(ta.active_7d||0), subs24h:Number(ta.subs_24h||0), subs7d:Number(ta.subs_7d||0), subs30d:Number(ta.subs_30d||0), subsAll:Number(ta.subs_all||0), d1Rate, d7Rate, cohortSize:Number(tc.cohort_size||0) },
-      consumer:    { total:Number(cs.total||0), active7d:Number(ca.active_7d||0), queries7d:Number(ca.queries_7d||0), d1Rate:cd1Rate, cohortSize:Number(cc.cohort_size||0) },
+      trader: {
+        total:      Number(tt.total_approved || 0),
+        new7d:      0,
+        new30d:     0,
+        active7d:   Number(sa.active_7d || 0),
+        subs24h:    Number(sa.subs_24h  || 0),
+        subs7d:     Number(sa.subs_7d   || 0),
+        subs30d:    Number(sa.subs_30d  || 0),
+        subsAll:    Number(st.subs_all  || 0),
+        d1Rate,
+        d7Rate,
+        cohortSize: Number(tc.cohort_size || 0),
+      },
+      consumer: {
+        total:      Number(ct.total     || 0),
+        active7d:   Number(ca.active_7d || 0),
+        queries7d:  Number(ca.queries_7d || 0),
+        d1Rate:     cd1Rate,
+        cohortSize: Number(cc.cohort_size || 0),
+      },
       feedback30d,
       generatedAt: new Date().toISOString(),
     })
   } catch (err) {
     console.error('[retention]', err)
-    return NextResponse.json({ error: 'Failed' }, { status: 500 })
+    return NextResponse.json({ error: String(err) }, { status: 500 })
   }
 }
