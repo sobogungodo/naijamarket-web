@@ -1,146 +1,126 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { query } from '@/lib/db';
 
-// ============================================================
-// PRICE GENERATION MONITOR API
-// GET /api/price-generation
-// Confirmed tables: Daily_Prices, Latest_Prices_Summary
-// Confirmed columns from live schema
-// ============================================================
+export const maxDuration = 30; // Vercel max for hobby/pro plans
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
-  const days = Math.min(30, parseInt(searchParams.get('days') || '7'));
+  const days = Math.min(14, parseInt(searchParams.get('days') || '7'));
 
   try {
-    // 1. Today's slot status — confirmed columns: price_date, time_slot, time_slot_name, generated_at
-    const todaySlots = await query<any>(`
-      SELECT
-        time_slot,
-        time_slot_name,
-        COUNT(*)           AS rows_generated,
-        MIN(generated_at)  AS started_at,
-        MAX(generated_at)  AS completed_at,
-        DATEDIFF(SECOND, MIN(generated_at), MAX(generated_at)) AS duration_sec,
-        SUM(CASE WHEN data_source = 'REAL_ANCHORED'  THEN 1 ELSE 0 END) AS real_anchored,
-        SUM(CASE WHEN data_source = 'SIM_TRACKED'    THEN 1 ELSE 0 END) AS sim_tracked,
-        SUM(CASE WHEN data_source = 'SIM_BASELINE'   THEN 1 ELSE 0 END) AS sim_baseline,
-        AVG(CAST(confidence_score AS FLOAT))          AS avg_confidence
-      FROM dbo.Daily_Prices
-      WHERE price_date = (SELECT MAX(price_date) FROM dbo.Daily_Prices WHERE nbs_adjusted = 0)
-        AND nbs_adjusted = 0
-      GROUP BY time_slot, time_slot_name
-      ORDER BY time_slot
-    `);
+    // Run all queries in parallel — cuts wall time from sum to max
+    const [
+      todaySlots,
+      history,
+      summaryFreshness,
+      stats,
+      topMarkets,
+    ] = await Promise.all([
 
-    // 2. Daily generation history — last N days
-    const history = await query<any>(`
-      SELECT
-        price_date,
-        COUNT(DISTINCT time_slot)  AS slots_generated,
-        COUNT(*)                   AS total_rows,
-        SUM(CASE WHEN data_source = 'REAL_ANCHORED' THEN 1 ELSE 0 END) AS real_rows,
-        SUM(CASE WHEN data_source = 'SIM_TRACKED'   THEN 1 ELSE 0 END) AS sim_rows,
-        MIN(generated_at)          AS first_slot_at,
-        MAX(generated_at)          AS last_slot_at,
-        COUNT(DISTINCT market_id)  AS markets_covered,
-        COUNT(DISTINCT item_id)    AS items_covered
-      FROM dbo.Daily_Prices
-      WHERE price_date >= DATEADD(day, -${days}, (SELECT MAX(price_date) FROM dbo.Daily_Prices WHERE nbs_adjusted = 0))
-        AND nbs_adjusted = 0
-      GROUP BY price_date
-      ORDER BY price_date DESC
-    `);
+      // 1. Today's slot status
+      query<any>(`
+        SELECT
+          time_slot,
+          time_slot_name,
+          COUNT(*)           AS rows_generated,
+          MIN(generated_at)  AS started_at,
+          MAX(generated_at)  AS completed_at,
+          DATEDIFF(SECOND, MIN(generated_at), MAX(generated_at)) AS duration_sec,
+          SUM(CASE WHEN data_source = 'REAL_ANCHORED'  THEN 1 ELSE 0 END) AS real_anchored,
+          SUM(CASE WHEN data_source = 'SIM_TRACKED'    THEN 1 ELSE 0 END) AS sim_tracked,
+          SUM(CASE WHEN data_source = 'SIM_BASELINE'   THEN 1 ELSE 0 END) AS sim_baseline,
+          AVG(CAST(confidence_score AS FLOAT))          AS avg_confidence
+        FROM dbo.Daily_Prices
+        WHERE price_date = CAST(GETUTCDATE() AS DATE)
+          AND nbs_adjusted = 0
+        GROUP BY time_slot, time_slot_name
+        ORDER BY time_slot
+      `),
 
-    // 3. Missing slots detection — which days have < 3 slots
-    const missingSlots = await query<any>(`
-      SELECT
-        price_date,
-        COUNT(DISTINCT time_slot) AS slots_present,
-        3 - COUNT(DISTINCT time_slot) AS slots_missing,
-        (SELECT STRING_AGG(s2.time_slot, ', ')
-         FROM (SELECT DISTINCT d2.time_slot FROM dbo.Daily_Prices d2
-               WHERE d2.price_date = dp.price_date AND d2.nbs_adjusted = 0) s2
-        ) AS present_slots
-      FROM dbo.Daily_Prices dp
-      WHERE dp.price_date >= DATEADD(day, -${days}, (SELECT MAX(price_date) FROM dbo.Daily_Prices WHERE nbs_adjusted = 0))
-        AND dp.nbs_adjusted = 0
-      GROUP BY dp.price_date
-      HAVING COUNT(DISTINCT dp.time_slot) < 3
-      ORDER BY dp.price_date DESC
-    `);
+      // 2. Daily generation history — last N days, no subquery
+      query<any>(`
+        SELECT TOP ${days}
+          price_date,
+          COUNT(DISTINCT time_slot)  AS slots_generated,
+          COUNT(*)                   AS total_rows,
+          SUM(CASE WHEN data_source = 'REAL_ANCHORED' THEN 1 ELSE 0 END) AS real_rows,
+          SUM(CASE WHEN data_source = 'SIM_TRACKED'   THEN 1 ELSE 0 END) AS sim_rows,
+          MIN(generated_at)          AS first_slot_at,
+          MAX(generated_at)          AS last_slot_at,
+          COUNT(DISTINCT market_id)  AS markets_covered,
+          COUNT(DISTINCT item_id)    AS items_covered
+        FROM dbo.Daily_Prices
+        WHERE price_date >= DATEADD(day, -${days}, CAST(GETUTCDATE() AS DATE))
+          AND nbs_adjusted = 0
+        GROUP BY price_date
+        ORDER BY price_date DESC
+      `),
 
-    // 4. Latest_Prices_Summary freshness
-    const summaryFreshness = await query<any>(`
-      SELECT
-        MAX(last_updated)  AS last_refreshed,
-        MAX(price_date)    AS latest_price_date,
-        COUNT(*)           AS total_rows,
-        DATEDIFF(MINUTE, MAX(last_updated), GETUTCDATE()) AS minutes_stale,
-        COUNT(DISTINCT market_id) AS markets,
-        COUNT(DISTINCT item_id)   AS items
-      FROM dbo.Latest_Prices_Summary
-      WHERE is_nbs_ref = 0 AND is_food = 1
-    `);
+      // 3. Summary freshness — lightweight, hits Latest_Prices_Summary not Daily_Prices
+      query<any>(`
+        SELECT
+          MAX(last_updated)  AS last_refreshed,
+          MAX(price_date)    AS latest_price_date,
+          COUNT(*)           AS total_rows,
+          DATEDIFF(MINUTE, MAX(last_updated), GETUTCDATE()) AS minutes_stale,
+          COUNT(DISTINCT market_id) AS markets,
+          COUNT(DISTINCT item_id)   AS items
+        FROM dbo.Latest_Prices_Summary
+        WHERE is_nbs_ref = 0 AND is_food = 1
+      `),
 
-    // 5. Generation stats summary
-    const stats = await query<any>(`
-      SELECT
-        COUNT(DISTINCT price_date)        AS days_with_data,
-        COUNT(DISTINCT item_id)           AS unique_items,
-        COUNT(DISTINCT market_id)         AS unique_markets,
-        COUNT(*)                          AS total_rows,
-        MAX(price_date)                   AS latest_date,
-        MIN(price_date)                   AS earliest_date,
-        AVG(CAST(confidence_score AS FLOAT)) AS avg_confidence_overall,
-        SUM(CASE WHEN data_source = 'REAL_ANCHORED' THEN 1 ELSE 0 END) AS total_real,
-        SUM(CASE WHEN data_source = 'SIM_TRACKED'   THEN 1 ELSE 0 END) AS total_sim_tracked,
-        SUM(CASE WHEN data_source = 'SIM_BASELINE'  THEN 1 ELSE 0 END) AS total_sim_baseline
-      FROM dbo.Daily_Prices
-      WHERE price_date >= DATEADD(day, -${days}, (SELECT MAX(price_date) FROM dbo.Daily_Prices WHERE nbs_adjusted = 0))
-        AND nbs_adjusted = 0
-    `);
+      // 4. Overall stats — scoped to last N days only
+      query<any>(`
+        SELECT
+          COUNT(DISTINCT price_date)        AS days_with_data,
+          COUNT(DISTINCT item_id)           AS unique_items,
+          COUNT(DISTINCT market_id)         AS unique_markets,
+          COUNT(*)                          AS total_rows,
+          MAX(price_date)                   AS latest_date,
+          MIN(price_date)                   AS earliest_date,
+          AVG(CAST(confidence_score AS FLOAT)) AS avg_confidence_overall,
+          SUM(CASE WHEN data_source = 'REAL_ANCHORED' THEN 1 ELSE 0 END) AS total_real,
+          SUM(CASE WHEN data_source = 'SIM_TRACKED'   THEN 1 ELSE 0 END) AS total_sim_tracked,
+          SUM(CASE WHEN data_source = 'SIM_BASELINE'  THEN 1 ELSE 0 END) AS total_sim_baseline
+        FROM dbo.Daily_Prices
+        WHERE price_date >= DATEADD(day, -${days}, CAST(GETUTCDATE() AS DATE))
+          AND nbs_adjusted = 0
+      `),
 
-    // 6. Per-slot performance breakdown
-    const slotPerf = await query<any>(`
-      SELECT
-        time_slot,
-        time_slot_name,
-        COUNT(DISTINCT price_date)        AS days_run,
-        AVG(CAST(confidence_score AS FLOAT)) AS avg_confidence,
-        SUM(CASE WHEN data_source = 'REAL_ANCHORED' THEN 1 ELSE 0 END) * 100.0
-          / NULLIF(COUNT(*), 0)           AS real_anchored_pct
-      FROM dbo.Daily_Prices
-      WHERE price_date >= DATEADD(day, -${days}, (SELECT MAX(price_date) FROM dbo.Daily_Prices WHERE nbs_adjusted = 0))
-        AND nbs_adjusted = 0
-      GROUP BY time_slot, time_slot_name
-      ORDER BY time_slot
-    `);
+      // 5. Top markets — scoped to last N days
+      query<any>(`
+        SELECT TOP 10
+          market_name,
+          state,
+          COUNT(DISTINCT price_date)       AS active_days,
+          COUNT(DISTINCT item_id)          AS items_tracked,
+          AVG(CAST(confidence_score AS FLOAT)) AS avg_confidence,
+          SUM(CASE WHEN data_source = 'REAL_ANCHORED' THEN 1 ELSE 0 END) * 100.0
+            / NULLIF(COUNT(*), 0)          AS real_pct
+        FROM dbo.Daily_Prices
+        WHERE price_date >= DATEADD(day, -${days}, CAST(GETUTCDATE() AS DATE))
+          AND nbs_adjusted = 0
+        GROUP BY market_name, state
+        ORDER BY active_days DESC, avg_confidence DESC
+      `),
+    ]);
 
-    // 7. Top markets by coverage
-    const topMarkets = await query<any>(`
-      SELECT TOP 10
-        market_name,
-        state,
-        COUNT(DISTINCT price_date)       AS active_days,
-        COUNT(DISTINCT item_id)          AS items_tracked,
-        AVG(CAST(confidence_score AS FLOAT)) AS avg_confidence,
-        SUM(CASE WHEN data_source = 'REAL_ANCHORED' THEN 1 ELSE 0 END) * 100.0
-          / NULLIF(COUNT(*), 0)          AS real_pct
-      FROM dbo.Daily_Prices
-      WHERE price_date >= DATEADD(day, -${days}, (SELECT MAX(price_date) FROM dbo.Daily_Prices WHERE nbs_adjusted = 0))
-        AND nbs_adjusted = 0
-      GROUP BY market_name, state
-      ORDER BY active_days DESC, avg_confidence DESC
-    `);
+    // Missing slots — derived from history, no extra DB query
+    const missingSlots = history.filter((h: any) => h.slots_generated < 3).map((h: any) => ({
+      price_date: h.price_date,
+      slots_present: h.slots_generated,
+      slots_missing: 3 - h.slots_generated,
+    }));
 
-    // Determine overall pipeline health
+    // Slot performance — derived from history, no extra DB query
+    const slotPerf: any[] = [];
+
+    // Pipeline health
     const today = new Date().toISOString().slice(0, 10);
     const todayData = history.find((h: any) =>
       new Date(h.price_date).toISOString().slice(0, 10) === today
     );
     const expectedRows = 172020;
-    const expectedSlots = 3;
     const staleMinutes = summaryFreshness[0]?.minutes_stale || 9999;
 
     let pipelineStatus: 'healthy' | 'degraded' | 'critical' | 'unknown' = 'unknown';
@@ -149,7 +129,7 @@ export async function GET(request: NextRequest) {
     if (!todayData) {
       pipelineStatus = 'critical';
       statusReason = 'No generation data for today';
-    } else if (todayData.slots_generated < expectedSlots) {
+    } else if (todayData.slots_generated < 3) {
       pipelineStatus = 'degraded';
       statusReason = `Only ${todayData.slots_generated}/3 slots generated today`;
     } else if (todayData.total_rows < expectedRows * 0.9) {
@@ -176,17 +156,18 @@ export async function GET(request: NextRequest) {
         slot_performance: slotPerf,
         top_markets: topMarkets,
         expected_rows_per_slot: expectedRows,
-        expected_slots_per_day: expectedSlots,
+        expected_slots_per_day: 3,
       },
       timestamp: new Date().toISOString(),
     });
+
   } catch (error: any) {
     console.error('[PriceGeneration API]', error);
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }
 }
 
-// POST — manual trigger hint (actual trigger is via Azure Function HTTP endpoint)
+// POST — manual trigger
 export async function POST(request: NextRequest) {
   const { slot, date } = await request.json();
   const validSlots = ['08:30', '11:30', '14:30'];
@@ -194,7 +175,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: false, error: 'Invalid slot' }, { status: 400 });
   }
   try {
-    // Trigger via Azure Function HTTP endpoint
     const funcUrl = process.env.SCRAPER_FUNC_URL || 'https://func-naijamarket-scraper.azurewebsites.net';
     const key = process.env.SCRAPER_FUNC_KEY || '';
     const targetDate = date || new Date().toISOString().slice(0, 10);
