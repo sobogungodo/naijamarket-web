@@ -76,9 +76,8 @@ export async function GET() {
         .catch(() => [{ n: 0 }]),
     ])
 
-    const tc = cohort[0] || {}
-    const cc = cc_row => cc_row || {}
-    const ccr = cc(cc[0])
+    const tc  = cohort[0] || {}
+    const ccr = cc[0]    || {}
 
     const d1Rate  = tc.cohort_size > 0 ? Math.round((tc.d1_retained / tc.cohort_size) * 100) : 0
     const d7Rate  = tc.cohort_size > 0 ? Math.round((tc.d7_retained / tc.cohort_size) * 100) : 0
