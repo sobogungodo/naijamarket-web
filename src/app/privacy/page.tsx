@@ -19,7 +19,7 @@ export default function PrivacyPage() {
       <h2>1. Introduction</h2>
       <p>
         NaijaMarket Intel (&quot;we&quot;, &quot;us&quot;, or &quot;our&quot;), operated by
-        Giggababytes Oy (Business ID: 3419597-7), is committed to protecting
+        Giggababytes Oy (Business ID: 3419597-7) and its Nigerian subsidiary Gigabytes Soft Limited (RC No. 1886806), is committed to protecting
         the privacy and personal data of our users. This Privacy Policy explains
         how we collect, use, disclose, and safeguard your information when you
         use our platform.
@@ -268,11 +268,26 @@ export default function PrivacyPage() {
         reflects the most recent revision.
       </p>
 
-      <h2>12. Contact &amp; Data Controller</h2>
-      <p>
-        <strong>Data Controller:</strong> Giggababytes Oy<br />
+      <h2>12. Contact &amp; Data Controllers</h2>
+      <div className="pp-card">
+        <p><strong>EU / International Data Controller</strong><br />
+        Giggababytes Oy<br />
+        Business ID: 3419597-7<br />
         Jyrkankatu 1C 24, 15500 Lahti, Finland<br />
-        Email:{" "}
+        Responsible for: platform technology, data infrastructure, GDPR compliance
+        </p>
+      </div>
+      <div className="pp-card" style={{ marginTop: "1rem" }}>
+        <p><strong>Nigerian Data Controller</strong><br />
+        Gigabytes Soft Limited<br />
+        RC No. 1886806 | TIN: 24121379-0001<br />
+        Incorporated under CAMA 2020, 27 January 2022<br />
+        Responsible for: Nigerian market operations, trader/validator relationships,
+        Paystack payments, NDPA 2023 compliance
+        </p>
+      </div>
+      <p style={{ marginTop: "1rem" }}>
+        Privacy enquiries:{" "}
         <a href="mailto:privacy@naijamarketintel.ng" className="pp-link">
           privacy@naijamarketintel.ng
         </a><br />

@@ -17,11 +17,35 @@ export default function TermsPage() {
 
       <h2>1. Acceptance of Terms</h2>
       <p>
-        By accessing or using NaijaMarket Intel (&quot;the Platform&quot;), operated by
-        Giggababytes Oy (&quot;the Company&quot;), a company registered in Finland
-        (Business ID: 3419597-7), you agree to be bound by these Terms of
-        Service. If you do not agree, do not use the Platform.
+        By accessing or using NaijaMarket Intel (&quot;the Platform&quot;), you agree to
+        be bound by these Terms of Service. If you do not agree, do not use the
+        Platform.
       </p>
+      <div className="pp-card">
+        <p>
+          The Platform is operated by two related entities:
+        </p>
+        <ul>
+          <li>
+            <strong>Giggababytes Oy</strong> — Finnish parent company, Business ID:
+            3419597-7, Jyrkankatu 1C 24, 15500 Lahti, Finland. Responsible for
+            platform technology, data infrastructure, and EU/GDPR compliance.
+          </li>
+          <li>
+            <strong>Gigabytes Soft Limited</strong> — Nigerian subsidiary, RC No.
+            1886806, TIN: 24121379-0001, incorporated under the Companies and
+            Allied Matters Act (CAMA) 2020 on 27 January 2022. Responsible for
+            Nigerian market operations, trader/validator relationships, Paystack
+            payment processing, and NDPA compliance.
+          </li>
+        </ul>
+        <p>
+          Both entities are collectively referred to as &quot;the Company&quot; in these
+          Terms. Where Nigerian law applies, Gigabytes Soft Limited is the
+          contracting entity. Where Finnish/EU law applies, Giggababytes Oy is
+          the contracting entity.
+        </p>
+      </div>
 
       <h2>2. Service Description</h2>
       <p>
@@ -208,12 +232,18 @@ export default function TermsPage() {
 
       <h2>12. Governing Law &amp; Dispute Resolution</h2>
       <p>
-        These Terms are governed by the laws of Finland. Disputes shall first be
-        referred to good-faith negotiation. If unresolved within 30 days, disputes
-        shall be submitted to arbitration under the Rules of the Finland Chamber of
-        Commerce Arbitration Institute in Helsinki. Nigerian consumer protection
-        rights under the Federal Competition and Consumer Protection Act (FCCPA)
-        are not waived by this clause.
+        For Nigerian users transacting with Gigabytes Soft Limited (RC No. 1886806),
+        these Terms are governed by the laws of the Federal Republic of Nigeria.
+        Disputes shall first be referred to good-faith negotiation. If unresolved
+        within 30 days, disputes may be submitted to the Lagos Multi-Door Courthouse
+        or arbitration under the Arbitration and Mediation Act 2023.
+      </p>
+      <p>
+        For international or EU matters involving Giggababytes Oy, Finnish law
+        governs and disputes shall be submitted to arbitration under the Rules of
+        the Finland Chamber of Commerce Arbitration Institute in Helsinki. Nigerian
+        consumer protection rights under the Federal Competition and Consumer
+        Protection Act (FCCPA) are not waived by this clause.
       </p>
 
       <h2>13. Changes to Terms</h2>
