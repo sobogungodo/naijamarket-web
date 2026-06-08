@@ -1,63 +1,54 @@
-﻿export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server';
 import { query } from '@/lib/db';
 
-export const maxDuration = 30; // Vercel max for hobby/pro plans
+export const dynamic = 'force-dynamic';
+export const maxDuration = 30;
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const days = Math.min(14, parseInt(searchParams.get('days') || '7'));
 
   try {
-    // Run all queries in parallel â€” cuts wall time from sum to max
-    const [
-      todaySlots,
-      history,
-      summaryFreshness,
-      stats,
-      topMarkets,
-    ] = await Promise.all([
+    // 1. Read last N days from cache — sub-millisecond, no scan
+    const history = await query<any>(`
+      SELECT TOP ${days}
+        price_date,
+        slots_generated,
+        total_rows,
+        real_rows,
+        sim_rows,
+        markets_covered,
+        items_covered,
+        avg_confidence,
+        first_slot_at,
+        last_slot_at,
+        slot_detail,
+        top_markets,
+        refreshed_at
+      FROM dbo.Generation_Stats_Cache
+      ORDER BY price_date DESC
+    `);
 
-      // 1. Today's slot status
-      query<any>(`
-        SELECT
-          time_slot,
-          time_slot_name,
-          COUNT(*)           AS rows_generated,
-          MIN(generated_at)  AS started_at,
-          MAX(generated_at)  AS completed_at,
-          DATEDIFF(SECOND, MIN(generated_at), MAX(generated_at)) AS duration_sec,
-          SUM(CASE WHEN data_source = 'REAL_ANCHORED'  THEN 1 ELSE 0 END) AS real_anchored,
-          SUM(CASE WHEN data_source = 'SIM_TRACKED'    THEN 1 ELSE 0 END) AS sim_tracked,
-          SUM(CASE WHEN data_source = 'SIM_BASELINE'   THEN 1 ELSE 0 END) AS sim_baseline,
-          AVG(CAST(confidence_score AS FLOAT))          AS avg_confidence
-        FROM dbo.Daily_Prices
-        WHERE price_date = CAST(GETUTCDATE() AS DATE)
-          AND nbs_adjusted = 0
-        GROUP BY time_slot, time_slot_name
-        ORDER BY time_slot
-      `),
+    // 2. Today's slot detail from cache
+    const today = new Date().toISOString().slice(0, 10);
+    const todayCache = history.find((h: any) =>
+      new Date(h.price_date).toISOString().slice(0, 10) === today
+    );
 
-      // 2. Daily generation history â€” last N days, no subquery
-      query<any>(`
-        SELECT TOP ${days}
-          price_date,
-          COUNT(DISTINCT time_slot)  AS slots_generated,
-          COUNT(*)                   AS total_rows,
-          SUM(CASE WHEN data_source = 'REAL_ANCHORED' THEN 1 ELSE 0 END) AS real_rows,
-          SUM(CASE WHEN data_source = 'SIM_TRACKED'   THEN 1 ELSE 0 END) AS sim_rows,
-          MIN(generated_at)          AS first_slot_at,
-          MAX(generated_at)          AS last_slot_at,
-          COUNT(DISTINCT market_id)  AS markets_covered,
-          COUNT(DISTINCT item_id)    AS items_covered
-        FROM dbo.Daily_Prices
-        WHERE price_date >= DATEADD(day, -${days}, CAST(GETUTCDATE() AS DATE))
-          AND nbs_adjusted = 0
-        GROUP BY price_date
-        ORDER BY price_date DESC
-      `),
+    let todaySlots: any[] = [];
+    if (todayCache?.slot_detail) {
+      try { todaySlots = JSON.parse(todayCache.slot_detail); } catch { todaySlots = []; }
+    }
 
-      // 3. Summary freshness â€” lightweight, hits Latest_Prices_Summary not Daily_Prices
+    let topMarkets: any[] = [];
+    if (todayCache?.top_markets) {
+      try { topMarkets = JSON.parse(todayCache.top_markets); } catch { topMarkets = []; }
+    } else if (history.length > 0 && history[0]?.top_markets) {
+      try { topMarkets = JSON.parse(history[0].top_markets); } catch { topMarkets = []; }
+    }
+
+    // 3. Summary freshness — lightweight, not Daily_Prices
+    const [summaryFreshness] = await Promise.all([
       query<any>(`
         SELECT
           MAX(last_updated)  AS last_refreshed,
@@ -69,65 +60,45 @@ export async function GET(request: NextRequest) {
         FROM dbo.Latest_Prices_Summary
         WHERE is_nbs_ref = 0 AND is_food = 1
       `),
-
-      // 4. Overall stats â€” scoped to last N days only
-      query<any>(`
-        SELECT
-          COUNT(DISTINCT price_date)        AS days_with_data,
-          COUNT(DISTINCT item_id)           AS unique_items,
-          COUNT(DISTINCT market_id)         AS unique_markets,
-          COUNT(*)                          AS total_rows,
-          MAX(price_date)                   AS latest_date,
-          MIN(price_date)                   AS earliest_date,
-          AVG(CAST(confidence_score AS FLOAT)) AS avg_confidence_overall,
-          SUM(CASE WHEN data_source = 'REAL_ANCHORED' THEN 1 ELSE 0 END) AS total_real,
-          SUM(CASE WHEN data_source = 'SIM_TRACKED'   THEN 1 ELSE 0 END) AS total_sim_tracked,
-          SUM(CASE WHEN data_source = 'SIM_BASELINE'  THEN 1 ELSE 0 END) AS total_sim_baseline
-        FROM dbo.Daily_Prices
-        WHERE price_date >= DATEADD(day, -${days}, CAST(GETUTCDATE() AS DATE))
-          AND nbs_adjusted = 0
-      `),
-
-      // 5. Top markets â€” scoped to last N days
-      query<any>(`
-        SELECT TOP 10
-          market_name,
-          state,
-          COUNT(DISTINCT price_date)       AS active_days,
-          COUNT(DISTINCT item_id)          AS items_tracked,
-          AVG(CAST(confidence_score AS FLOAT)) AS avg_confidence,
-          SUM(CASE WHEN data_source = 'REAL_ANCHORED' THEN 1 ELSE 0 END) * 100.0
-            / NULLIF(COUNT(*), 0)          AS real_pct
-        FROM dbo.Daily_Prices
-        WHERE price_date >= DATEADD(day, -${days}, CAST(GETUTCDATE() AS DATE))
-          AND nbs_adjusted = 0
-        GROUP BY market_name, state
-        ORDER BY active_days DESC, avg_confidence DESC
-      `),
     ]);
 
-    // Missing slots â€” derived from history, no extra DB query
-    const missingSlots = history.filter((h: any) => h.slots_generated < 3).map((h: any) => ({
-      price_date: h.price_date,
-      slots_present: h.slots_generated,
-      slots_missing: 3 - h.slots_generated,
-    }));
+    // 4. Missing slots — derived from cache
+    const missingSlots = history
+      .filter((h: any) => h.slots_generated < 3)
+      .map((h: any) => ({
+        price_date: h.price_date,
+        slots_present: h.slots_generated,
+        slots_missing: 3 - h.slots_generated,
+      }));
 
-    // Slot performance â€” derived from history, no extra DB query
-    const slotPerf: any[] = [];
-
-    // Pipeline health
-    const today = new Date().toISOString().slice(0, 10);
-    const todayData = history.find((h: any) =>
-      new Date(h.price_date).toISOString().slice(0, 10) === today
+    // 5. Aggregate stats from cache
+    const statsFromCache = history.reduce(
+      (acc: any, h: any) => ({
+        days_with_data: acc.days_with_data + (h.total_rows > 0 ? 1 : 0),
+        total_rows: acc.total_rows + (h.total_rows || 0),
+        total_real: acc.total_real + (h.real_rows || 0),
+        total_sim_tracked: acc.total_sim_tracked + (h.sim_rows || 0),
+        unique_markets: Math.max(acc.unique_markets, h.markets_covered || 0),
+        unique_items: Math.max(acc.unique_items, h.items_covered || 0),
+        latest_date: !acc.latest_date || h.price_date > acc.latest_date ? h.price_date : acc.latest_date,
+        earliest_date: !acc.earliest_date || h.price_date < acc.earliest_date ? h.price_date : acc.earliest_date,
+        avg_confidence_overall: acc.avg_confidence_overall + (parseFloat(h.avg_confidence) || 0),
+      }),
+      { days_with_data: 0, total_rows: 0, total_real: 0, total_sim_tracked: 0, total_sim_baseline: 0, unique_markets: 0, unique_items: 0, latest_date: null, earliest_date: null, avg_confidence_overall: 0 }
     );
+    if (statsFromCache.days_with_data > 0) {
+      statsFromCache.avg_confidence_overall = statsFromCache.avg_confidence_overall / statsFromCache.days_with_data;
+    }
+
+    // 6. Pipeline health
     const expectedRows = 172020;
     const staleMinutes = summaryFreshness[0]?.minutes_stale || 9999;
+    const todayData = todayCache;
 
     let pipelineStatus: 'healthy' | 'degraded' | 'critical' | 'unknown' = 'unknown';
     let statusReason = '';
 
-    if (!todayData) {
+    if (!todayData || todayData.total_rows === 0) {
       pipelineStatus = 'critical';
       statusReason = 'No generation data for today';
     } else if (todayData.slots_generated < 3) {
@@ -144,20 +115,34 @@ export async function GET(request: NextRequest) {
       statusReason = 'All slots generated, summary fresh';
     }
 
+    // Format history for frontend compatibility
+    const formattedHistory = history.map((h: any) => ({
+      price_date: h.price_date,
+      slots_generated: h.slots_generated,
+      total_rows: h.total_rows,
+      real_rows: h.real_rows,
+      sim_rows: h.sim_rows,
+      first_slot_at: h.first_slot_at,
+      last_slot_at: h.last_slot_at,
+      markets_covered: h.markets_covered,
+      items_covered: h.items_covered,
+    }));
+
     return NextResponse.json({
       success: true,
       data: {
         pipeline_status: pipelineStatus,
         status_reason: statusReason,
         today_slots: todaySlots,
-        history,
+        history: formattedHistory,
         missing_slots: missingSlots,
         summary_freshness: summaryFreshness[0] || {},
-        stats: stats[0] || {},
-        slot_performance: slotPerf,
+        stats: statsFromCache,
+        slot_performance: [],
         top_markets: topMarkets,
         expected_rows_per_slot: expectedRows,
         expected_slots_per_day: 3,
+        cache_refreshed_at: todayCache?.refreshed_at || null,
       },
       timestamp: new Date().toISOString(),
     });
@@ -168,7 +153,7 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// POST â€” manual trigger
+// POST — manual trigger
 export async function POST(request: NextRequest) {
   const { slot, date } = await request.json();
   const validSlots = ['08:30', '11:30', '14:30'];
@@ -200,4 +185,3 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }
 }
-
