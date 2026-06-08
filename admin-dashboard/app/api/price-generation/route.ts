@@ -1,3 +1,4 @@
+﻿export const dynamic = 'force-dynamic'
 import { NextRequest, NextResponse } from 'next/server';
 import { query } from '@/lib/db';
 
@@ -8,7 +9,7 @@ export async function GET(request: NextRequest) {
   const days = Math.min(14, parseInt(searchParams.get('days') || '7'));
 
   try {
-    // Run all queries in parallel — cuts wall time from sum to max
+    // Run all queries in parallel â€” cuts wall time from sum to max
     const [
       todaySlots,
       history,
@@ -37,7 +38,7 @@ export async function GET(request: NextRequest) {
         ORDER BY time_slot
       `),
 
-      // 2. Daily generation history — last N days, no subquery
+      // 2. Daily generation history â€” last N days, no subquery
       query<any>(`
         SELECT TOP ${days}
           price_date,
@@ -56,7 +57,7 @@ export async function GET(request: NextRequest) {
         ORDER BY price_date DESC
       `),
 
-      // 3. Summary freshness — lightweight, hits Latest_Prices_Summary not Daily_Prices
+      // 3. Summary freshness â€” lightweight, hits Latest_Prices_Summary not Daily_Prices
       query<any>(`
         SELECT
           MAX(last_updated)  AS last_refreshed,
@@ -69,7 +70,7 @@ export async function GET(request: NextRequest) {
         WHERE is_nbs_ref = 0 AND is_food = 1
       `),
 
-      // 4. Overall stats — scoped to last N days only
+      // 4. Overall stats â€” scoped to last N days only
       query<any>(`
         SELECT
           COUNT(DISTINCT price_date)        AS days_with_data,
@@ -87,7 +88,7 @@ export async function GET(request: NextRequest) {
           AND nbs_adjusted = 0
       `),
 
-      // 5. Top markets — scoped to last N days
+      // 5. Top markets â€” scoped to last N days
       query<any>(`
         SELECT TOP 10
           market_name,
@@ -105,14 +106,14 @@ export async function GET(request: NextRequest) {
       `),
     ]);
 
-    // Missing slots — derived from history, no extra DB query
+    // Missing slots â€” derived from history, no extra DB query
     const missingSlots = history.filter((h: any) => h.slots_generated < 3).map((h: any) => ({
       price_date: h.price_date,
       slots_present: h.slots_generated,
       slots_missing: 3 - h.slots_generated,
     }));
 
-    // Slot performance — derived from history, no extra DB query
+    // Slot performance â€” derived from history, no extra DB query
     const slotPerf: any[] = [];
 
     // Pipeline health
@@ -167,7 +168,7 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// POST — manual trigger
+// POST â€” manual trigger
 export async function POST(request: NextRequest) {
   const { slot, date } = await request.json();
   const validSlots = ['08:30', '11:30', '14:30'];
@@ -199,3 +200,4 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }
 }
+
