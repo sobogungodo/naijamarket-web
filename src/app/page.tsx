@@ -105,17 +105,47 @@ const FEATURES = [
 const TIERS = [
   {
     nm: "FREE", pr: "₦0", pd: "", tg: null, ac: "#64FFDA", hl: false,
-    ft: ["5 price queries/day", "3 markets", "Daily updates", "WhatsApp access", "Basic search"],
+    ft: ["5 queries/week", "1 market", "WhatsApp access", "Basic price search", "1 free guest query"],
     ct: "Start Free", hr: "/register",
   },
   {
-    nm: "GOLD", pr: "₦7,500", pd: "/mo", tg: "MOST POPULAR", ac: "#FFD740", hl: true,
-    ft: ["Unlimited queries", "All 224 markets", "Unlimited price alerts", "Arbitrage scanner", "Heatmaps & trends", "Historical data", "CSV & PDF export", "Priority support"],
+    nm: "SILVER", pr: "₦500", pd: "/week", tg: null, ac: "#90CAF9", hl: false,
+    ft: ["10 queries/day", "3 markets", "Price alerts", "Price trends", "WhatsApp + Web"],
+    ct: "Go Silver", hr: "/register?plan=silver",
+  },
+  {
+    nm: "GOLD", pr: "₦2,000", pd: "/mo", tg: "MOST POPULAR", ac: "#FFD740", hl: true,
+    ft: ["25 queries/day", "3 markets", "Price forecast", "Market snapshot", "Historical data", "Priority support"],
     ct: "Go Gold", hr: "/register?plan=gold",
   },
   {
-    nm: "ENTERPRISE", pr: "₦150K", pd: "/mo", tg: null, ac: "#00E5FF", hl: false,
-    ft: ["API access", "Custom dashboards", "Power BI integration", "Multi-user seats", "Dedicated account mgr", "SLA guarantee", "White-label reports", "Bulk data export"],
+    nm: "BUSINESS", pr: "₦15,000", pd: "/mo", tg: null, ac: "#FF8A65", hl: false,
+    ft: ["100 queries/day", "5 markets", "Bulk buyer tool", "CSV & PDF export", "Full analytics", "Priority support"],
+    ct: "Go Business", hr: "/register?plan=business",
+  },
+  {
+    nm: "CORPORATE", pr: "₦500,000", pd: "/mo", tg: null, ac: "#CE93D8", hl: false,
+    ft: ["Unlimited queries", "All 282 markets", "API access", "Dedicated account mgr", "Analytics dashboard", "SLA 99.5%"],
+    ct: "Contact Sales", hr: "mailto:sales@naijamarketintel.ng",
+  },
+  {
+    nm: "ENTERPRISE", pr: "₦1.5M", pd: "/mo", tg: null, ac: "#00E5FF", hl: false,
+    ft: ["Unlimited API calls", "All 282 markets", "White-label", "Custom SLA", "Dedicated engineer", "Power BI integration"],
+    ct: "Contact Sales", hr: "mailto:sales@naijamarketintel.ng",
+  },
+  {
+    nm: "API STARTER", pr: "₦500,000", pd: "/mo", tg: null, ac: "#80CBC4", hl: false,
+    ft: ["10,000 API calls/day", "All markets", "JSON & CSV", "Full documentation", "Analytics access"],
+    ct: "Contact Sales", hr: "mailto:sales@naijamarketintel.ng",
+  },
+  {
+    nm: "API BUSINESS", pr: "₦1,000,000", pd: "/mo", tg: null, ac: "#81D4FA", hl: false,
+    ft: ["50,000 API calls/day", "All markets", "Dedicated support", "SLA 99.5%", "Custom endpoints"],
+    ct: "Contact Sales", hr: "mailto:sales@naijamarketintel.ng",
+  },
+  {
+    nm: "API ENTERPRISE", pr: "₦1,500,000", pd: "/mo", tg: "FOR INSTITUTIONS", ac: "#F48FB1", hl: false,
+    ft: ["Unlimited API calls", "All markets", "White-label API", "Custom SLA", "Dedicated engineer", "Government & banking"],
     ct: "Contact Sales", hr: "mailto:sales@naijamarketintel.ng",
   },
 ];
