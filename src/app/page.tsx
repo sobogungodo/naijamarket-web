@@ -7,7 +7,7 @@ import { ThemeToggle } from "@/components/ThemeToggle";
 import WaitlistSection from '@/components/WaitlistSection'
 
 // ============================================================================
-// NaijaMarket Intel — Landing Page v2.0
+// NaijaMarket Intel — Landing Page v2.1 — optimised June 2026
 // "The Bloomberg of Nigerian Commodities"
 // Mobile-first · WhatsApp demo · Live price checker · 3-tier pricing
 // Deploy to: src/app/page.tsx
@@ -94,7 +94,7 @@ const DEMO_PRICES: Record<string, PriceResult> = {
 };
 
 const FEATURES = [
-  { icon: "📡", title: "Real-Time Prices", desc: "Live GPS-verified prices from 224 markets. Updated 3× daily by on-ground traders.", accent: "#00C853" },
+  { icon: "📡", title: "Real-Time Prices", desc: "Live GPS-verified prices from 282 markets across 36 states + FCT. Updated 3× daily by on-ground traders.", accent: "#00C853" },
   { icon: "📊", title: "Bloomberg-Grade Analytics", desc: "Inflation tracking, heatmaps, arbitrage scanner, and market screeners at startup prices.", accent: "#FFB300" },
   { icon: "🛡️", title: "Fraud-Proof Verification", desc: "GPS validation, community consensus, and ML anomaly detection. 95%+ confidence.", accent: "#00B0FF" },
   { icon: "🔔", title: "Smart Price Alerts", desc: "Set thresholds. Get WhatsApp notifications when prices cross your targets.", accent: "#FF5252" },
@@ -114,7 +114,7 @@ const TIERS = [
     ct: "Go Silver", hr: "/register?plan=silver",
   },
   {
-    nm: "GOLD", pr: "₦2,000", pd: "/mo", tg: "MOST POPULAR", ac: "#FFD740", hl: true,
+    nm: "GOLD", pr: "₦2,000", pd: "/mo", tg: "BEST VALUE", ac: "#FFD740", hl: true,
     ft: ["25 queries/day", "3 markets", "Price forecast", "Market snapshot", "Historical data", "Priority support"],
     ct: "Go Gold", hr: "/register?plan=gold",
   },
@@ -182,7 +182,14 @@ function useInView(threshold = 0.15) {
 
 /* ═══════════════ Ticker ═══════════════ */
 function Ticker() {
-  const doubled = [...TICKER, ...TICKER];
+  const [ticks, setTicks] = useState(TICKER);
+  useEffect(() => {
+    fetch("/api/prices/ticker")
+      .then(r => r.json())
+      .then(d => { if (Array.isArray(d) && d.length > 0) setTicks([...d, ...d]); })
+      .catch(() => {}); // Silently fall back to static data
+  }, []);
+  const doubled = ticks.length === TICKER.length ? [...ticks, ...ticks] : ticks;
   return (
     <div className="nm-tk">
       <div className="nm-tk-track">
@@ -245,9 +252,9 @@ function Nav() {
         <div className="nm-trust-bar-inner">
           {[
             { dot: "green", text: "GPS-Verified Data" },
-            { dot: "green", text: "5,000+ Active Traders" },
-            { dot: "blue",  text: "Aligned with NBS at 8.9%" },
-            { dot: "green", text: "37 States Covered" },
+            { dot: "green", text: "Soft Launch — Mile 12 & Onitsha" },
+            { dot: "blue",  text: "Aligned with NBS CPI" },
+            { dot: "green", text: "36 States + FCT Covered" },
             { dot: "amber", text: "Updated 3× Daily" },
           ].map((item, i) => (
             <span key={i} className="nm-trust-bar-item">
@@ -415,7 +422,7 @@ Reply ALERT RICE 80000 to get notified`;
         )}
       </div>
       <a
-        href="https://wa.me/14155238886?text=RICE%20LAGOS"
+        href="https://wa.me/2349131095009?text=RICE%20LAGOS"
         target="_blank"
         rel="noopener noreferrer"
         className="nm-wa-try"
@@ -464,7 +471,7 @@ function Hero() {
         <div className="nm-hero-copy">
           <div className="nm-hero-badge">
             <span className="nm-pulse-dot" />
-            <span>LIVE — 224 Markets Tracking</span>
+            <span>LIVE — 282 Markets · 36 States + FCT</span>
           </div>
 
           <h1 className="nm-hero-title">
@@ -473,26 +480,29 @@ function Hero() {
           </h1>
 
           <p className="nm-hero-subtitle">
-            Real-time, GPS-verified commodity prices from every major market in
-            Nigeria. Stop losing money to price manipulation and information
-            asymmetry.
+            Tomatoes at Mile 12 today: <strong style={{color:"#00C853"}}>₦42,500</strong>. Bodija: <strong style={{color:"#00C853"}}>₦38,200</strong>. That&apos;s ₦4,300 arbitrage per basket — before you leave the house.
+            GPS-verified prices from 282 markets. Updated 3× daily.
           </p>
 
           <div className="nm-hero-ctas">
-            <Link href="/register" className="nm-btn-green nm-btn-lg">
-              Start Free — No Card Required{" "}
-              <span className="nm-arrow">→</span>
-            </Link>
-            <Link href="/dashboard/prices" className="nm-btn-outline nm-btn-lg">
-              Explore Live Prices
+            <a
+              href="https://wa.me/2349131095009?text=Hi%20NaijaMarket"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="nm-btn-green nm-btn-lg"
+            >
+              💬 Check Prices on WhatsApp <span className="nm-arrow">→</span>
+            </a>
+            <Link href="/register" className="nm-btn-outline nm-btn-lg">
+              Start Free on Web
             </Link>
           </div>
 
           <div className="nm-hero-stats">
             {[
-              { v: "224", l: "Markets" },
+              { v: "282", l: "Markets" },
               { v: "610+", l: "Commodities" },
-              { v: "37", l: "States" },
+              { v: "36+FCT", l: "States" },
               { v: "3×", l: "Daily" },
             ].map((stat, i) => (
               <div key={i} className="nm-stat">
@@ -526,8 +536,8 @@ function FeaturesSection() {
             <span className="nm-g">Actually Saves You Money</span>
           </h2>
           <p className="nm-section-desc">
-            Nigerian businesses lose ₦150K–₦10M monthly to price manipulation.
-            We built the tools to end that.
+            Nigerian food traders lose an estimated 15–30% of margin to price information asymmetry.
+            We built the intelligence layer to close that gap.
           </p>
         </div>
         <div className={`nm-features-grid${visible ? " nm-visible" : ""}`}>
@@ -650,6 +660,9 @@ function TestimonialsSection() {
           <h2 className="nm-section-title">
             Trusted by <span className="nm-g">Nigerian Traders</span>
           </h2>
+          <p className="nm-section-desc" style={{fontSize:"11px", marginTop:"8px"}}>
+            Illustrative quotes based on typical user outcomes. Real testimonials coming at launch.
+          </p>
         </div>
         <div className={`nm-testimonials${visible ? " nm-visible" : ""}`}>
           {TESTIMONIALS.map((t, i) => (
@@ -695,7 +708,7 @@ function CTASection() {
             Get Started Free →
           </Link>
           <a
-            href="https://wa.me/14155238886?text=Hi%20NaijaMarket"
+            href="https://wa.me/2349131095009?text=Hi%20NaijaMarket"
             target="_blank"
             rel="noopener noreferrer"
             className="nm-btn-outline nm-btn-lg"
