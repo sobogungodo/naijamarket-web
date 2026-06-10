@@ -1,10 +1,10 @@
 "use client";
 
 // ============================================================================
-// src/app/(dashboard)/dashboard/settings/page.tsx
+// src/app/(dashboard)/dashboard/settings/settings-page.tsx
 // NaijaMarket Intel - User Settings Page
-// Version: 1.1.0 - Fixed all TypeScript errors
-// Date: 2026-01-25
+// Version: 1.2.0 - Added daily digest toggle (B) + referral code card (F)
+// Date: 2026-06-10
 // ============================================================================
 
 import { useState, useEffect, useCallback } from "react";
@@ -54,6 +54,8 @@ import {
   Loader2,
   Camera,
   Edit3,
+  Copy,
+  Users,
 } from "lucide-react";
 import TwoFactorAuth from "@/components/TwoFactorAuth";
 
@@ -84,6 +86,7 @@ interface UserSettings {
     priceDropAlerts: boolean;
     priceRiseAlerts: boolean;
     weeklyDigest: boolean;
+    dailyDigest: boolean;
     monthlyReport: boolean;
     marketNews: boolean;
     systemUpdates: boolean;
@@ -181,6 +184,7 @@ function getDefaultSettings(): UserSettings {
       priceDropAlerts: true,
       priceRiseAlerts: true,
       weeklyDigest: true,
+      dailyDigest: false,
       monthlyReport: false,
       marketNews: false,
       systemUpdates: true,
@@ -290,6 +294,14 @@ export default function SettingsPage() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteConfirmText, setDeleteConfirmText] = useState("");
 
+  // Referral code state
+  const [referralCode, setReferralCode] = useState<string | null>(null);
+  const [referralLoading, setReferralLoading] = useState(false);
+  const [copiedReferral, setCopiedReferral] = useState(false);
+
+  // Daily digest state (immediate save, independent of main Save button)
+  const [digestSaving, setDigestSaving] = useState(false);
+
   // Get user tier - handle multiple possible field names
   interface SessionUserWithTier {
     name?: string | null;
@@ -297,6 +309,7 @@ export default function SettingsPage() {
     image?: string | null;
     tier?: string;
     subscriptionTier?: string;
+    phone?: string;
   }
   
   const userTier = (
@@ -305,12 +318,18 @@ export default function SettingsPage() {
     "FREE"
   ).toString().toUpperCase();
 
-  // Optional: redirect unauthenticated users or show defaults
-  // useEffect(() => {
-  //   if (status === "unauthenticated") {
-  //     router.push("/login");
-  //   }
-  // }, [status, router]);
+  const userPhone = (session?.user as SessionUserWithTier)?.phone || "";
+
+  // Fetch referral code when on profile section
+  useEffect(() => {
+    if (activeSection !== "profile" || referralCode !== null || status !== "authenticated" || !userPhone) return;
+    setReferralLoading(true);
+    fetch(`/api/account/referral?phone=${encodeURIComponent(userPhone)}`)
+      .then((r) => r.json())
+      .then((d) => { if (d.code) setReferralCode(d.code); })
+      .catch(() => {})
+      .finally(() => setReferralLoading(false));
+  }, [activeSection, referralCode, status, userPhone]);
 
   // Fetch settings
   const fetchSettings = useCallback(async () => {
@@ -320,14 +339,17 @@ export default function SettingsPage() {
       const result = await response.json();
       
       if (result.success && result.data) {
-        setSettings(result.data);
+        // Ensure dailyDigest exists (back-compat with older API responses)
+        const data = result.data as UserSettings;
+        if (data.notifications && data.notifications.dailyDigest === undefined) {
+          data.notifications.dailyDigest = false;
+        }
+        setSettings(data);
       } else {
-        // Use default settings if API fails
         setSettings(getDefaultSettings());
       }
     } catch (error) {
       console.error("Failed to fetch settings:", error);
-      // Use default settings on error
       setSettings(getDefaultSettings());
       setMessage({ type: "error", text: "Using default settings - API unavailable" });
     } finally {
@@ -335,16 +357,27 @@ export default function SettingsPage() {
     }
   }, []);
 
+  // Fetch digest status and merge into settings
+  const fetchDigestStatus = useCallback(async () => {
+    if (!userPhone) return;
+    try {
+      const r = await fetch(`/api/account/digest?phone=${encodeURIComponent(userPhone)}`);
+      const d = await r.json();
+      setSettings((prev) => {
+        if (!prev) return prev;
+        return { ...prev, notifications: { ...prev.notifications, dailyDigest: d.enabled ?? false } };
+      });
+    } catch { /* non-blocking */ }
+  }, [userPhone]);
+
   useEffect(() => {
     if (status === "authenticated") {
-      fetchSettings();
+      fetchSettings().then(() => fetchDigestStatus());
     } else if (status === "unauthenticated") {
-      // Still show settings page with defaults for demo
-      const defaults = getDefaultSettings();
-      setSettings(defaults);
+      setSettings(getDefaultSettings());
       setLoading(false);
     }
-  }, [status, fetchSettings]);
+  }, [status, fetchSettings, fetchDigestStatus]);
 
   // Update settings with session data when available
   useEffect(() => {
@@ -405,14 +438,13 @@ export default function SettingsPage() {
     }
   };
 
-  // Handle setting change - using generic approach
+  // Handle setting change
   const updateSetting = (
     section: keyof UserSettings,
     key: string,
     value: string | number | boolean
   ) => {
     if (!settings) return;
-    
     setSettings({
       ...settings,
       [section]: {
@@ -421,6 +453,37 @@ export default function SettingsPage() {
       },
     });
     setHasChanges(true);
+  };
+
+  // Daily digest toggle — immediate PATCH, does not require main Save button
+  const handleDigestToggle = async (enabled: boolean) => {
+    if (!userPhone || digestSaving) return;
+    setDigestSaving(true);
+    // Optimistic UI update
+    setSettings((prev) => {
+      if (!prev) return prev;
+      return { ...prev, notifications: { ...prev.notifications, dailyDigest: enabled } };
+    });
+    try {
+      const r = await fetch("/api/account/digest", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ phone: userPhone, enabled }),
+      });
+      const d = await r.json();
+      if (!d.success) throw new Error("Save failed");
+      setMessage({ type: "success", text: `Daily digest ${enabled ? "enabled" : "disabled"}` });
+      setTimeout(() => setMessage(null), 2500);
+    } catch {
+      // Revert on failure
+      setSettings((prev) => {
+        if (!prev) return prev;
+        return { ...prev, notifications: { ...prev.notifications, dailyDigest: !enabled } };
+      });
+      setMessage({ type: "error", text: "Failed to update digest preference" });
+    } finally {
+      setDigestSaving(false);
+    }
   };
 
   // Change password
@@ -761,6 +824,54 @@ export default function SettingsPage() {
                     </div>
                   </div>
                 </div>
+
+                {/* ── Referral Code Card (F) ── */}
+                <div className="mt-8 pt-6 border-t border-gray-800">
+                  <h3 className="font-semibold mb-1 flex items-center gap-2">
+                    <Users className="w-4 h-4 text-emerald-400" />
+                    Your Referral Code
+                  </h3>
+                  <p className="text-sm text-gray-500 mb-4">
+                    Share your code — earn rewards when friends subscribe.
+                  </p>
+                  {referralLoading ? (
+                    <div className="flex items-center gap-2 text-gray-500">
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span className="text-sm">Loading...</span>
+                    </div>
+                  ) : referralCode ? (
+                    <div className="flex items-center gap-3 flex-wrap">
+                      <div className="px-5 py-3 bg-[#252525] border border-gray-700 rounded-lg font-mono text-emerald-400 text-xl tracking-widest select-all">
+                        {referralCode}
+                      </div>
+                      <button
+                        onClick={() => {
+                          navigator.clipboard.writeText(referralCode);
+                          setCopiedReferral(true);
+                          setTimeout(() => setCopiedReferral(false), 2000);
+                        }}
+                        className="p-3 bg-gray-800 hover:bg-gray-700 rounded-lg text-gray-400 hover:text-white transition-colors"
+                        title="Copy code"
+                      >
+                        {copiedReferral
+                          ? <Check className="w-4 h-4 text-emerald-400" />
+                          : <Copy className="w-4 h-4" />
+                        }
+                      </button>
+                      <a
+                        href={`https://wa.me/?text=Use my NaijaMarket Intel referral code ${referralCode} to get market prices from 282 Nigerian markets: https://www.naijamarketintel.com`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="p-3 bg-emerald-900/40 hover:bg-emerald-900/60 rounded-lg text-emerald-400 transition-colors"
+                        title="Share via WhatsApp"
+                      >
+                        <MessageSquare className="w-4 h-4" />
+                      </a>
+                    </div>
+                  ) : (
+                    <p className="text-sm text-gray-600">Sign in to view your referral code.</p>
+                  )}
+                </div>
               </div>
             )}
 
@@ -916,6 +1027,14 @@ export default function SettingsPage() {
                         icon={<TrendingUp className="w-5 h-5 text-red-400" />}
                         checked={settings.notifications.priceRiseAlerts}
                         onChange={(v) => updateSetting("notifications", "priceRiseAlerts", v)}
+                      />
+                      <ToggleSwitch
+                        label="Daily Market Digest"
+                        description="Morning price summary at 08:30 WAT via WhatsApp — saves immediately"
+                        icon={<BellRing className="w-5 h-5" />}
+                        checked={settings.notifications.dailyDigest}
+                        onChange={handleDigestToggle}
+                        disabled={digestSaving}
                       />
                       <ToggleSwitch
                         label="Weekly Digest"
@@ -1159,10 +1278,10 @@ export default function SettingsPage() {
                           onChange={(e) => updateSetting("preferences", "currency", e.target.value)}
                           className="w-full pl-10 pr-4 py-3 bg-[#252525] border border-gray-700 rounded-lg focus:outline-none focus:border-emerald-500"
                         >
-                          <option value="NGN">Nigerian Naira (₦)</option>
+                          <option value="NGN">Nigerian Naira (&#8358;)</option>
                           <option value="USD">US Dollar ($)</option>
-                          <option value="EUR">Euro (€)</option>
-                          <option value="GBP">British Pound (£)</option>
+                          <option value="EUR">Euro (&#8364;)</option>
+                          <option value="GBP">British Pound (&#163;)</option>
                         </select>
                       </div>
                     </div>
