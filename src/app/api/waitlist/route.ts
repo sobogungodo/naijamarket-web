@@ -1,7 +1,8 @@
 // src/app/api/waitlist/route.ts
 import { NextRequest, NextResponse } from 'next/server'
-import { prisma } from '@/lib/prisma'
-import { Prisma } from '@prisma/client'
+export const dynamic = 'force-dynamic'
+const F = 'https://func-naijamarket-api.azurewebsites.net/api'
+const K = process.env.NAIJAMARKET_API_KEY ?? ''
 
 function normalizeNigerianPhone(raw: string): string | null {
   const cleaned = raw.replace(/[\s\-().]/g, '')
@@ -28,50 +29,33 @@ async function sendBrevoConfirmation(email: string, name: string | null, phone: 
 }
 
 export async function POST(req: NextRequest) {
-  try {
-    const body = await req.json()
-    const { phone, name, email, interest, market_area } = body as {
-      phone: string; name?: string; email?: string
-      interest?: 'CONSUMER' | 'TRADER'; market_area?: string
-    }
-    if (!phone) return NextResponse.json({ error: 'Phone number is required' }, { status: 400 })
-    const normalized = normalizeNigerianPhone(phone.trim())
-    if (!normalized) return NextResponse.json({ error: 'Enter a valid Nigerian phone number (e.g. 08012345678)' }, { status: 400 })
-
-    const existing = await prisma.$queryRaw<{ waitlist_id: string }[]>(
-      Prisma.sql`SELECT waitlist_id FROM dbo.Waitlist WHERE phone_number = ${normalized}`
-    )
-    if (existing.length > 0) {
-      return NextResponse.json({ success: true, duplicate: true, message: "You're already on the waitlist! We'll reach out on WhatsApp at launch." })
-    }
-
-    const id = `WL-${Date.now()}-${Math.random().toString(36).slice(2, 7).toUpperCase()}`
-    const ip = req.headers.get('x-forwarded-for')?.split(',')[0] || req.headers.get('x-real-ip') || null
-
-    await prisma.$executeRaw(Prisma.sql`
-      INSERT INTO dbo.Waitlist (waitlist_id, phone_number, name, email, interest, market_area, source, ip_address, created_at)
-      VALUES (${id}, ${normalized}, ${name || null}, ${email || null}, ${interest || 'CONSUMER'}, ${market_area || null}, 'landing_page', ${ip}, GETUTCDATE())
-    `)
-
-    if (email?.includes('@')) {
-      sendBrevoConfirmation(email, name || null, normalized).catch(console.error)
-      prisma.$executeRaw(Prisma.sql`UPDATE dbo.Waitlist SET email_sent=1, email_sent_at=GETUTCDATE() WHERE waitlist_id=${id}`).catch(() => {})
-    }
-
-    return NextResponse.json({ success: true, message: "You're on the list! We'll text you on WhatsApp when we launch." })
-  } catch (err) {
-    console.error('[waitlist] POST error:', err)
-    return NextResponse.json({ error: 'Something went wrong. Please try again.' }, { status: 500 })
+  const body = await req.json()
+  const { phone, name, email, interest, market_area } = body as {
+    phone: string; name?: string; email?: string
+    interest?: 'CONSUMER' | 'TRADER'; market_area?: string
   }
+  if (!phone) return NextResponse.json({ error: 'Phone number is required' }, { status: 400 })
+  const normalized = normalizeNigerianPhone(phone.trim())
+  if (!normalized) return NextResponse.json({ error: 'Enter a valid Nigerian phone number (e.g. 08012345678)' }, { status: 400 })
+
+  const id = `WL-${Date.now()}-${Math.random().toString(36).slice(2, 7).toUpperCase()}`
+  const ip = req.headers.get('x-forwarded-for')?.split(',')[0] || null
+
+  const r = await fetch(`${F}/waitlist_handler?code=${K}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ phone: normalized, name: name || null, email: email || null, interest: interest || 'CONSUMER', market_area: market_area || null, ip, id }),
+  })
+  const data = await r.json()
+
+  if (data.success && !data.duplicate && email?.includes('@')) {
+    sendBrevoConfirmation(email, name || null, normalized).catch(console.error)
+  }
+
+  return NextResponse.json(data, { status: r.status })
 }
 
 export async function GET() {
-  try {
-    const rows = await prisma.$queryRaw<{ total: number; traders: number; consumers: number; lagos: number; anambra: number }[]>(
-      Prisma.sql`SELECT COUNT(*) AS total, SUM(CASE WHEN interest='TRADER' THEN 1 ELSE 0 END) AS traders, SUM(CASE WHEN interest='CONSUMER' THEN 1 ELSE 0 END) AS consumers, SUM(CASE WHEN market_area='Lagos' THEN 1 ELSE 0 END) AS lagos, SUM(CASE WHEN market_area='Anambra (Onitsha)' THEN 1 ELSE 0 END) AS anambra FROM dbo.Waitlist`
-    )
-    return NextResponse.json(rows[0] || {})
-  } catch {
-    return NextResponse.json({ error: 'Failed' }, { status: 500 })
-  }
+  const r = await fetch(`${F}/waitlist_handler?code=${K}`)
+  return NextResponse.json(await r.json(), { status: r.status })
 }

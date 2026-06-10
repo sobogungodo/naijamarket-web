@@ -1,37 +1,17 @@
 // src/app/api/account/digest/route.ts
 import { NextRequest, NextResponse } from 'next/server'
-import { prisma } from '@/lib/prisma'
-import { Prisma } from '@prisma/client'
-
 export const dynamic = 'force-dynamic'
-
+const F = 'https://func-naijamarket-api.azurewebsites.net/api'
+const K = process.env.NAIJAMARKET_API_KEY ?? ''
 export async function GET(req: NextRequest) {
-  const phone = req.nextUrl.searchParams.get('phone')
-  if (!phone) return NextResponse.json({ enabled: false })
-  try {
-    const rows = await prisma.$queryRaw<{ preferences: string | null }[]>(
-      Prisma.sql`SELECT preferences FROM dbo.Consumers WHERE phone = ${phone} OR phone_number = ${phone}`
-    )
-    if (!rows.length) return NextResponse.json({ enabled: false })
-    const prefs = rows[0].preferences ? JSON.parse(rows[0].preferences) : {}
-    return NextResponse.json({ enabled: prefs.daily_digest === true || prefs.daily_digest === 1 })
-  } catch {
-    return NextResponse.json({ enabled: false })
-  }
+  const phone = req.nextUrl.searchParams.get('phone') ?? ''
+  const r = await fetch(`${F}/account_data?type=digest&phone=${encodeURIComponent(phone)}&code=${K}`)
+  return NextResponse.json(await r.json(), { status: r.status })
 }
-
 export async function PATCH(req: NextRequest) {
-  try {
-    const { phone, enabled } = await req.json()
-    if (!phone) return NextResponse.json({ error: 'Phone required' }, { status: 400 })
-    await prisma.$executeRaw(
-      Prisma.sql`UPDATE dbo.Consumers
-        SET preferences = JSON_MODIFY(COALESCE(preferences, '{}'), '$.daily_digest', CAST(${enabled ? 1 : 0} AS BIT))
-        WHERE phone = ${phone} OR phone_number = ${phone}`
-    )
-    return NextResponse.json({ success: true, enabled })
-  } catch (err) {
-    console.error('[digest] PATCH error:', err)
-    return NextResponse.json({ error: 'Failed to update preference' }, { status: 500 })
-  }
+  const body = await req.json()
+  const r = await fetch(`${F}/account_data?type=digest_patch&code=${K}`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+  })
+  return NextResponse.json(await r.json(), { status: r.status })
 }
