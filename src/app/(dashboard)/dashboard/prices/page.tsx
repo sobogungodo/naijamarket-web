@@ -1,7 +1,7 @@
 // ============================================================================
 // src/app/(dashboard)/dashboard/prices/page.tsx
 // NaijaMarket Intel - Live Prices Page
-// Version: 6.3.0 - Fixed price number formatting (en-NG locale), +0% change fix
+// Version: 6.4.0 - Added NBS benchmark comparison (E — web sync pass)
 // ============================================================================
 
 "use client";
@@ -35,7 +35,6 @@ import { PriceDisclaimer } from "@/components/PriceDisclaimer";
 // ============================================================================
 
 // Force en-US locale so numbers always render as 80,000.00 not 80 000,00
-// (Vercel servers may use a non-English system locale)
 const fmt = new Intl.NumberFormat('en-US', {
   minimumFractionDigits: 0,
   maximumFractionDigits: 0,
@@ -109,6 +108,9 @@ function PricesPageContent() {
   const [error, setError] = useState<string | null>(null);
   const [dataSource, setDataSource] = useState<string>("loading");
 
+  // NBS reference prices: item_name → national NBS avg price
+  const [nbsRefs, setNbsRefs] = useState<Record<string, number>>({});
+
   // Filter options from database
   const [filterOptions, setFilterOptions] = useState<FilterOptions>({
     categories: [],
@@ -117,7 +119,7 @@ function PricesPageContent() {
     stateMarkets: {},
   });
 
-  // Filter state — pre-filled from URL if navigating from Screener/Watchlist
+  // Filter state
   const [searchQuery, setSearchQuery] = useState(urlItem);
   const [categoryFilter, setCategoryFilter] = useState(urlCategory);
   const [stateFilter, setStateFilter] = useState(urlState);
@@ -173,7 +175,6 @@ function PricesPageContent() {
         setPrices(result.data || []);
         setDataSource(result.source || "unknown");
         
-        // Update filter options from API
         if (result.filters) {
           setFilterOptions({
             categories: result.filters.categories || [],
@@ -194,15 +195,22 @@ function PricesPageContent() {
     }
   }, [searchQuery, categoryFilter, stateFilter, marketFilter, trendFilter, sortBy]);
 
-  // Track whether this is the initial mount
   const isInitialMount = useRef(true);
 
-  // Initial load — no debounce, fires immediately
+  // Initial load
   useEffect(() => {
     fetchPrices(false);
   }, []);
 
-  // Sync URL params when navigating from other pages (Screener, Watchlist, etc.)
+  // Fetch NBS reference prices once on mount (cached 30 min server-side)
+  useEffect(() => {
+    fetch('/api/prices/nbs-refs')
+      .then(r => r.json())
+      .then(d => { if (d.refs) setNbsRefs(d.refs); })
+      .catch(() => {/* non-blocking — NBS column simply won't show */});
+  }, []);
+
+  // Sync URL params when navigating from other pages
   useEffect(() => {
     if (urlItem) setSearchQuery(urlItem);
     if (urlCategory) setCategoryFilter(urlCategory);
@@ -210,8 +218,7 @@ function PricesPageContent() {
     if (urlMarket) setMarketFilter(urlMarket);
   }, [urlItem, urlCategory, urlState, urlMarket]);
 
-  // Re-fetch when filters change — 600ms debounce (was 300ms)
-  // Skips the very first render to avoid double-fetching on mount.
+  // Re-fetch when filters change — 600ms debounce
   useEffect(() => {
     if (isInitialMount.current) {
       isInitialMount.current = false;
@@ -219,36 +226,30 @@ function PricesPageContent() {
     }
     const debounce = setTimeout(() => {
       fetchPrices(false);
-    }, 600);  // 600ms: enough time for user to finish typing, short enough to feel responsive
+    }, 600);
     return () => clearTimeout(debounce);
   }, [searchQuery, categoryFilter, stateFilter, marketFilter, trendFilter, sortBy]);
 
-  // Auto-refresh every hour between 6AM-10PM WAT (UTC+1)
-  // Prices update 3× daily; hourly refresh ensures users see fresh data
+  // Auto-refresh every hour between 6AM-10PM WAT
   useEffect(() => {
     const checkAndRefresh = () => {
       const now = new Date();
-      // WAT = UTC+1. Get current hour in WAT.
       const watHour = (now.getUTCHours() + 1) % 24;
       if (watHour >= 6 && watHour <= 22) {
         fetchPrices(true);
       }
     };
-
-    // Refresh every 60 minutes
     const interval = setInterval(checkAndRefresh, 60 * 60 * 1000);
     return () => clearInterval(interval);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ============================================================================
-  // CLOSE DROPDOWNS ON OUTSIDE CLICK - FIXED VERSION
+  // CLOSE DROPDOWNS ON OUTSIDE CLICK
   // ============================================================================
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       const target = event.target as Node;
-      
-      // Only close if click is outside all dropdown containers
       if (categoryRef.current && !categoryRef.current.contains(target)) {
         setShowCategoryDropdown(false);
       }
@@ -259,7 +260,6 @@ function PricesPageContent() {
         setShowMarketDropdown(false);
       }
     };
-
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
@@ -277,34 +277,20 @@ function PricesPageContent() {
   // HANDLERS
   // ============================================================================
 
-  const handleRefresh = () => {
-    fetchPrices(true);
-  };
+  const handleRefresh = () => { fetchPrices(true); };
 
   const handleExport = () => {
     if (prices.length === 0) return;
-    
     const headers = ["Item", "Variant", "Category", "Market", "State", "Price (₦)", "Change (%)", "Wk Low", "Wk High", "Confidence", "Source", "Updated"];
     const rows = prices.map(p => [
-      p.item_name,
-      p.item_variant || "",
-      p.category,
-      p.market_name,
-      p.state,
-      p.price_naira,
-      p.change_percent,
-      p.low_24h,
-      p.high_24h,
-      p.confidence + "%",
-      p.source,
-      p.updated_at,
+      p.item_name, p.item_variant || "", p.category, p.market_name, p.state,
+      p.price_naira, p.change_percent, p.low_24h, p.high_24h,
+      p.confidence + "%", p.source, p.updated_at,
     ]);
-
     const csvContent = [
       headers.join(","),
       ...rows.map(row => row.map(cell => `"${cell}"`).join(","))
     ].join("\n");
-
     const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
     const link = document.createElement("a");
     link.href = URL.createObjectURL(blob);
@@ -335,45 +321,30 @@ function PricesPageContent() {
 
   const hasActiveFilters = searchQuery || categoryFilter || stateFilter || marketFilter || trendFilter !== "all" || unitFilter;
 
-  // When a state is selected, only show markets from that state
   const availableMarkets = stateFilter && filterOptions.stateMarkets[stateFilter]
     ? filterOptions.stateMarkets[stateFilter]
     : filterOptions.markets;
 
-  // Format update timestamp — shows actual time (not "X hrs ago")
-  // Data updates 3× daily so "16 hr ago" looks stale; "Today 6:00 AM" is clearer
   const formatUpdateTime = (dateStr: string): string => {
     try {
       const date = new Date(dateStr);
       if (isNaN(date.getTime())) return dateStr;
-
       const now = new Date();
       const isToday = date.toDateString() === now.toDateString();
       const yesterday = new Date(now);
       yesterday.setDate(yesterday.getDate() - 1);
       const isYesterday = date.toDateString() === yesterday.toDateString();
-
       const timeStr = date.toLocaleTimeString("en-NG", {
-        hour: "numeric",
-        minute: "2-digit",
-        hour12: true,
-        timeZone: "Africa/Lagos",
+        hour: "numeric", minute: "2-digit", hour12: true, timeZone: "Africa/Lagos",
       });
-
       if (isToday) return `Today ${timeStr}`;
       if (isYesterday) return `Yesterday ${timeStr}`;
-
       return date.toLocaleDateString("en-NG", {
-        month: "short",
-        day: "numeric",
-        timeZone: "Africa/Lagos",
+        month: "short", day: "numeric", timeZone: "Africa/Lagos",
       }) + ` ${timeStr}`;
-    } catch {
-      return dateStr;
-    }
+    } catch { return dateStr; }
   };
 
-  // Get source display
   const getSourceDisplay = (source: string): { text: string; color: string } => {
     if (source === "database") return { text: "Azure SQL", color: "text-blue-400" };
     if (source.includes("Daily")) return { text: "Daily Prices", color: "text-emerald-400" };
@@ -389,11 +360,9 @@ function PricesPageContent() {
   // RENDER
   // ============================================================================
 
-  // Unit dropdown — built from current result set
   const availableUnits = Array.from(new Set(prices.map(p => p.unit).filter(Boolean))).sort();
   console.log("[prices] availableUnits:", availableUnits, "sample unit:", prices[0]?.unit);
   const filteredPrices = unitFilter ? prices.filter(p => p.unit === unitFilter) : prices;
-
   const sourceInfo = getSourceDisplay(dataSource);
 
   return (
@@ -452,19 +421,11 @@ function PricesPageContent() {
             )}
           </div>
 
-          {/* Category Filter - FIXED */}
+          {/* Category Filter */}
           <div className="relative" ref={categoryRef}>
             <button 
-              onClick={() => {
-                setShowCategoryDropdown(!showCategoryDropdown);
-                setShowStateDropdown(false);
-                setShowMarketDropdown(false);
-              }}
-              className={`flex items-center gap-2 px-3 py-2 bg-terminal-bg border rounded-lg text-sm transition-colors ${
-                categoryFilter 
-                  ? "border-naija-green text-naija-green" 
-                  : "border-terminal-border text-gray-400 hover:text-white"
-              }`}
+              onClick={() => { setShowCategoryDropdown(!showCategoryDropdown); setShowStateDropdown(false); setShowMarketDropdown(false); }}
+              className={`flex items-center gap-2 px-3 py-2 bg-terminal-bg border rounded-lg text-sm transition-colors ${categoryFilter ? "border-naija-green text-naija-green" : "border-terminal-border text-gray-400 hover:text-white"}`}
             >
               <Filter className="w-4 h-4" />
               {categoryFilter || "Category"}
@@ -472,207 +433,94 @@ function PricesPageContent() {
             </button>
             {showCategoryDropdown && (
               <div className="absolute top-full mt-1 w-56 max-h-64 overflow-y-auto bg-terminal-surface border border-terminal-border rounded-lg shadow-xl z-50">
-                <button
-                  onClick={() => { setCategoryFilter(""); setShowCategoryDropdown(false); }}
-                  className="w-full px-3 py-2 text-left text-sm text-gray-400 hover:bg-terminal-muted hover:text-white border-b border-terminal-border"
-                >
-                  All Categories
-                </button>
+                <button onClick={() => { setCategoryFilter(""); setShowCategoryDropdown(false); }} className="w-full px-3 py-2 text-left text-sm text-gray-400 hover:bg-terminal-muted hover:text-white border-b border-terminal-border">All Categories</button>
                 {filterOptions.categories.length > 0 ? (
                   filterOptions.categories.map(cat => (
-                    <button
-                      key={cat}
-                      onClick={() => { setCategoryFilter(cat); setShowCategoryDropdown(false); }}
-                      className={`w-full px-3 py-2 text-left text-sm hover:bg-terminal-muted hover:text-white ${
-                        categoryFilter === cat ? "text-naija-green bg-naija-green/10" : "text-gray-300"
-                      }`}
-                    >
-                      {cat}
-                    </button>
+                    <button key={cat} onClick={() => { setCategoryFilter(cat); setShowCategoryDropdown(false); }} className={`w-full px-3 py-2 text-left text-sm hover:bg-terminal-muted hover:text-white ${categoryFilter === cat ? "text-naija-green bg-naija-green/10" : "text-gray-300"}`}>{cat}</button>
                   ))
-                ) : (
-                  <div className="px-3 py-2 text-sm text-gray-500">Loading categories...</div>
-                )}
+                ) : <div className="px-3 py-2 text-sm text-gray-500">Loading categories...</div>}
               </div>
             )}
           </div>
 
-          {/* State Filter - FIXED */}
+          {/* State Filter */}
           <div className="relative" ref={stateRef}>
             <button 
-              onClick={() => {
-                setShowStateDropdown(!showStateDropdown);
-                setShowCategoryDropdown(false);
-                setShowMarketDropdown(false);
-              }}
-              className={`flex items-center gap-2 px-3 py-2 bg-terminal-bg border rounded-lg text-sm transition-colors ${
-                stateFilter 
-                  ? "border-naija-green text-naija-green" 
-                  : "border-terminal-border text-gray-400 hover:text-white"
-              }`}
+              onClick={() => { setShowStateDropdown(!showStateDropdown); setShowCategoryDropdown(false); setShowMarketDropdown(false); }}
+              className={`flex items-center gap-2 px-3 py-2 bg-terminal-bg border rounded-lg text-sm transition-colors ${stateFilter ? "border-naija-green text-naija-green" : "border-terminal-border text-gray-400 hover:text-white"}`}
             >
               {stateFilter || "State"}
               <ChevronDown className={`w-4 h-4 transition-transform ${showStateDropdown ? "rotate-180" : ""}`} />
             </button>
             {showStateDropdown && (
               <div className="absolute top-full mt-1 w-48 max-h-64 overflow-y-auto bg-terminal-surface border border-terminal-border rounded-lg shadow-xl z-50">
-                <button
-                  onClick={() => { setStateFilter(""); setShowStateDropdown(false); }}
-                  className="w-full px-3 py-2 text-left text-sm text-gray-400 hover:bg-terminal-muted hover:text-white border-b border-terminal-border"
-                >
-                  All States
-                </button>
+                <button onClick={() => { setStateFilter(""); setShowStateDropdown(false); }} className="w-full px-3 py-2 text-left text-sm text-gray-400 hover:bg-terminal-muted hover:text-white border-b border-terminal-border">All States</button>
                 {filterOptions.states.length > 0 ? (
                   filterOptions.states.map(s => (
-                    <button
-                      key={s}
-                      onClick={() => { setStateFilter(s); setShowStateDropdown(false); }}
-                      className={`w-full px-3 py-2 text-left text-sm hover:bg-terminal-muted hover:text-white ${
-                        stateFilter === s ? "text-naija-green bg-naija-green/10" : "text-gray-300"
-                      }`}
-                    >
-                      {s}
-                    </button>
+                    <button key={s} onClick={() => { setStateFilter(s); setShowStateDropdown(false); }} className={`w-full px-3 py-2 text-left text-sm hover:bg-terminal-muted hover:text-white ${stateFilter === s ? "text-naija-green bg-naija-green/10" : "text-gray-300"}`}>{s}</button>
                   ))
-                ) : (
-                  <div className="px-3 py-2 text-sm text-gray-500">Loading states...</div>
-                )}
+                ) : <div className="px-3 py-2 text-sm text-gray-500">Loading states...</div>}
               </div>
             )}
           </div>
 
-          {/* Market Filter - FIXED */}
+          {/* Market Filter */}
           <div className="relative" ref={marketRef}>
             <button 
-              onClick={() => {
-                setShowMarketDropdown(!showMarketDropdown);
-                setShowCategoryDropdown(false);
-                setShowStateDropdown(false);
-              }}
-              className={`flex items-center gap-2 px-3 py-2 bg-terminal-bg border rounded-lg text-sm transition-colors ${
-                marketFilter 
-                  ? "border-naija-green text-naija-green" 
-                  : "border-terminal-border text-gray-400 hover:text-white"
-              }`}
+              onClick={() => { setShowMarketDropdown(!showMarketDropdown); setShowCategoryDropdown(false); setShowStateDropdown(false); }}
+              className={`flex items-center gap-2 px-3 py-2 bg-terminal-bg border rounded-lg text-sm transition-colors ${marketFilter ? "border-naija-green text-naija-green" : "border-terminal-border text-gray-400 hover:text-white"}`}
             >
               {marketFilter || "Market"}
               <ChevronDown className={`w-4 h-4 transition-transform ${showMarketDropdown ? "rotate-180" : ""}`} />
             </button>
             {showMarketDropdown && (
               <div className="absolute top-full mt-1 w-64 max-h-64 overflow-y-auto bg-terminal-surface border border-terminal-border rounded-lg shadow-xl z-50">
-                <button
-                  onClick={() => { setMarketFilter(""); setShowMarketDropdown(false); }}
-                  className="w-full px-3 py-2 text-left text-sm text-gray-400 hover:bg-terminal-muted hover:text-white border-b border-terminal-border"
-                >
-                  {stateFilter ? `All ${stateFilter} Markets` : "All Markets"}
-                </button>
+                <button onClick={() => { setMarketFilter(""); setShowMarketDropdown(false); }} className="w-full px-3 py-2 text-left text-sm text-gray-400 hover:bg-terminal-muted hover:text-white border-b border-terminal-border">{stateFilter ? `All ${stateFilter} Markets` : "All Markets"}</button>
                 {availableMarkets.length > 0 ? (
                   availableMarkets.map(m => (
-                    <button
-                      key={m}
-                      onClick={() => { setMarketFilter(m); setShowMarketDropdown(false); }}
-                      className={`w-full px-3 py-2 text-left text-sm hover:bg-terminal-muted hover:text-white truncate ${
-                        marketFilter === m ? "text-naija-green bg-naija-green/10" : "text-gray-300"
-                      }`}
-                      title={m}
-                    >
-                      {m}
-                    </button>
+                    <button key={m} onClick={() => { setMarketFilter(m); setShowMarketDropdown(false); }} className={`w-full px-3 py-2 text-left text-sm hover:bg-terminal-muted hover:text-white truncate ${marketFilter === m ? "text-naija-green bg-naija-green/10" : "text-gray-300"}`} title={m}>{m}</button>
                   ))
-                ) : (
-                  <div className="px-3 py-2 text-sm text-gray-500">
-                    {stateFilter ? `No markets found in ${stateFilter}` : "Loading markets..."}
-                  </div>
-                )}
+                ) : <div className="px-3 py-2 text-sm text-gray-500">{stateFilter ? `No markets found in ${stateFilter}` : "Loading markets..."}</div>}
               </div>
             )}
           </div>
 
           {/* Price Trend Filter */}
           <div className="flex items-center gap-1 border-l border-terminal-border pl-4">
-            <button 
-              onClick={() => setTrendFilter("all")}
-              className={`px-2 py-1 text-xs rounded transition-colors ${
-                trendFilter === "all" ? "bg-terminal-muted text-white" : "text-gray-400 hover:text-white"
-              }`}
-            >
-              All
-            </button>
-            <button 
-              onClick={() => setTrendFilter("up")}
-              className={`px-2 py-1 text-xs rounded transition-colors flex items-center gap-1 ${
-                trendFilter === "up" ? "bg-price-up/20 text-price-up" : "text-price-up hover:bg-price-up/10"
-              }`}
-            >
-              <TrendingUp className="w-3 h-3" />
-              Up
-            </button>
-            <button 
-              onClick={() => setTrendFilter("down")}
-              className={`px-2 py-1 text-xs rounded transition-colors flex items-center gap-1 ${
-                trendFilter === "down" ? "bg-price-down/20 text-price-down" : "text-price-down hover:bg-price-down/10"
-              }`}
-            >
-              <TrendingDown className="w-3 h-3" />
-              Down
-            </button>
+            <button onClick={() => setTrendFilter("all")} className={`px-2 py-1 text-xs rounded transition-colors ${trendFilter === "all" ? "bg-terminal-muted text-white" : "text-gray-400 hover:text-white"}`}>All</button>
+            <button onClick={() => setTrendFilter("up")} className={`px-2 py-1 text-xs rounded transition-colors flex items-center gap-1 ${trendFilter === "up" ? "bg-price-up/20 text-price-up" : "text-price-up hover:bg-price-up/10"}`}><TrendingUp className="w-3 h-3" />Up</button>
+            <button onClick={() => setTrendFilter("down")} className={`px-2 py-1 text-xs rounded transition-colors flex items-center gap-1 ${trendFilter === "down" ? "bg-price-down/20 text-price-down" : "text-price-down hover:bg-price-down/10"}`}><TrendingDown className="w-3 h-3" />Down</button>
           </div>
 
-          {/* Active Filters */}
+          {/* Active Filter Tags */}
           {hasActiveFilters && (
             <div className="flex items-center gap-2">
-              {categoryFilter && (
-                <span className="px-2 py-1 bg-naija-green/20 text-naija-green text-xs rounded flex items-center gap-1">
-                  {categoryFilter}
-                  <button onClick={() => setCategoryFilter("")} className="hover:text-white">×</button>
-                </span>
-              )}
-              {stateFilter && (
-                <span className="px-2 py-1 bg-naija-green/20 text-naija-green text-xs rounded flex items-center gap-1">
-                  {stateFilter}
-                  <button onClick={() => setStateFilter("")} className="hover:text-white">×</button>
-                </span>
-              )}
-              {marketFilter && (
-                <span className="px-2 py-1 bg-naija-green/20 text-naija-green text-xs rounded flex items-center gap-1">
-                  {marketFilter}
-                  <button onClick={() => setMarketFilter("")} className="hover:text-white">×</button>
-                </span>
-              )}
-              <button onClick={clearFilters} className="text-xs text-gray-500 hover:text-white">
-                Clear all
-              </button>
+              {categoryFilter && <span className="px-2 py-1 bg-naija-green/20 text-naija-green text-xs rounded flex items-center gap-1">{categoryFilter}<button onClick={() => setCategoryFilter("")} className="hover:text-white">×</button></span>}
+              {stateFilter && <span className="px-2 py-1 bg-naija-green/20 text-naija-green text-xs rounded flex items-center gap-1">{stateFilter}<button onClick={() => setStateFilter("")} className="hover:text-white">×</button></span>}
+              {marketFilter && <span className="px-2 py-1 bg-naija-green/20 text-naija-green text-xs rounded flex items-center gap-1">{marketFilter}<button onClick={() => setMarketFilter("")} className="hover:text-white">×</button></span>}
+              <button onClick={clearFilters} className="text-xs text-gray-500 hover:text-white">Clear all</button>
             </div>
           )}
         </div>
 
-        {/* Results count */}
+        {/* Results count + sort */}
         <div className="mt-3 pt-3 border-t border-terminal-border flex items-center justify-between">
           <span className="text-sm text-gray-500">
             Showing <span className="text-naija-green font-medium">{filteredPrices.length}</span> prices
+            {Object.keys(nbsRefs).length > 0 && (
+              <span className="ml-2 text-xs text-cyan-600" title="NBS benchmark comparison active">· NBS benchmarks loaded</span>
+            )}
           </span>
           <div className="flex items-center gap-2">
-            <select
-              value={sortBy}
-              onChange={(e) => setSortBy(e.target.value)}
-              className="bg-terminal-bg border border-terminal-border rounded px-2 py-1 text-xs text-gray-400"
-            >
+            <select value={sortBy} onChange={(e) => setSortBy(e.target.value)} className="bg-terminal-bg border border-terminal-border rounded px-2 py-1 text-xs text-gray-400">
               <option value="updated">Latest Update</option>
               <option value="price">Price (High to Low)</option>
               <option value="change">Change (%)</option>
               <option value="name">Name (A-Z)</option>
             </select>
-            <select
-              value={unitFilter}
-              onChange={(e) => setUnitFilter(e.target.value)}
-              className={`bg-terminal-bg border rounded px-2 py-1 text-xs ${
-                unitFilter ? "border-naija-green text-naija-green" : "border-terminal-border text-gray-400"
-              }`}
-            >
+            <select value={unitFilter} onChange={(e) => setUnitFilter(e.target.value)} className={`bg-terminal-bg border rounded px-2 py-1 text-xs ${unitFilter ? "border-naija-green text-naija-green" : "border-terminal-border text-gray-400"}`}>
               <option value="">All Units</option>
-              {availableUnits.map(u => (
-                <option key={u} value={u}>{u}</option>
-              ))}
+              {availableUnits.map(u => <option key={u} value={u}>{u}</option>)}
             </select>
           </div>
         </div>
@@ -691,12 +539,7 @@ function PricesPageContent() {
         <div className="flex flex-col items-center justify-center py-20 bg-terminal-surface border border-terminal-border rounded-xl">
           <AlertCircle className="w-10 h-10 text-price-down mb-4" />
           <p className="text-gray-400 mb-4">{error}</p>
-          <button
-            onClick={() => fetchPrices(false)}
-            className="px-4 py-2 bg-naija-green/20 text-naija-green rounded-lg hover:bg-naija-green/30"
-          >
-            Try Again
-          </button>
+          <button onClick={() => fetchPrices(false)} className="px-4 py-2 bg-naija-green/20 text-naija-green rounded-lg hover:bg-naija-green/30">Try Again</button>
         </div>
       )}
 
@@ -706,17 +549,17 @@ function PricesPageContent() {
           <div className="overflow-x-auto">
             <table className="w-full" style={{ tableLayout: "fixed" }}>
               <colgroup>
-                <col style={{ width: "32px" }} />        {/* Star */}
-                <col style={{ width: "17%" }} />          {/* Item */}
-                <col style={{ width: "11%" }} />          {/* Category */}
-                <col style={{ width: "14%" }} />          {/* Market */}
-                <col style={{ width: "7%" }} />           {/* State */}
-                <col style={{ width: "12%" }} />          {/* Price */}
-                <col style={{ width: "11%" }} />          {/* Change */}
-                <col style={{ width: "11%" }} />          {/* Wk Range */}
-                <col style={{ width: "12%" }} />          {/* Confidence */}
-                <col style={{ width: "10%" }} />          {/* Updated */}
-                <col style={{ width: "48px" }} />         {/* Actions */}
+                <col style={{ width: "32px" }} />
+                <col style={{ width: "17%" }} />
+                <col style={{ width: "11%" }} />
+                <col style={{ width: "14%" }} />
+                <col style={{ width: "7%" }} />
+                <col style={{ width: "12%" }} />
+                <col style={{ width: "11%" }} />
+                <col style={{ width: "11%" }} />
+                <col style={{ width: "12%" }} />
+                <col style={{ width: "10%" }} />
+                <col style={{ width: "48px" }} />
               </colgroup>
               <thead>
                 <tr className="border-b border-terminal-border bg-terminal-bg/50">
@@ -734,144 +577,123 @@ function PricesPageContent() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-terminal-border/40">
-                {filteredPrices.map((item) => (
-                  <tr 
-                    key={item.id} 
-                    className="group cursor-pointer hover:bg-terminal-muted/40 transition-colors"
-                    onClick={() => handleRowClick(item)}
-                  >
-                    {/* Star */}
-                    <td className="py-3 text-center">
-                      <button 
-                        className="opacity-0 group-hover:opacity-100 text-gray-500 hover:text-naija-gold transition-all"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <Star className="w-4 h-4 mx-auto" />
-                      </button>
-                    </td>
+                {filteredPrices.map((item) => {
+                  // NBS benchmark for this item (if available)
+                  const nbsPrice = nbsRefs[item.item_name] ?? null;
+                  const nbsDiff = nbsPrice != null
+                    ? ((item.price_naira - nbsPrice) / nbsPrice) * 100
+                    : null;
 
-                    {/* Item Name */}
-                    <td className="px-3 py-3">
-                      <div className="flex items-center justify-center gap-2 min-w-0">
-                        <div className="shrink-0 p-1.5 bg-emerald-500/10 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity">
-                          <BarChart3 className="w-3.5 h-3.5 text-emerald-400" />
-                        </div>
-                        <div className="min-w-0 text-center">
-                          <div className="font-medium text-sm text-white group-hover:text-naija-green transition-colors truncate" title={item.item_name}>
-                            {item.item_name}
+                  return (
+                    <tr 
+                      key={item.id} 
+                      className="group cursor-pointer hover:bg-terminal-muted/40 transition-colors"
+                      onClick={() => handleRowClick(item)}
+                    >
+                      {/* Star */}
+                      <td className="py-3 text-center">
+                        <button className="opacity-0 group-hover:opacity-100 text-gray-500 hover:text-naija-gold transition-all" onClick={(e) => e.stopPropagation()}>
+                          <Star className="w-4 h-4 mx-auto" />
+                        </button>
+                      </td>
+
+                      {/* Item Name */}
+                      <td className="px-3 py-3">
+                        <div className="flex items-center justify-center gap-2 min-w-0">
+                          <div className="shrink-0 p-1.5 bg-emerald-500/10 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity">
+                            <BarChart3 className="w-3.5 h-3.5 text-emerald-400" />
                           </div>
-                          {item.item_variant && (
-                            <div className="text-xs text-gray-500 truncate">{item.item_variant}</div>
-                          )}
+                          <div className="min-w-0 text-center">
+                            <div className="font-medium text-sm text-white group-hover:text-naija-green transition-colors truncate" title={item.item_name}>{item.item_name}</div>
+                            {item.item_variant && <div className="text-xs text-gray-500 truncate">{item.item_variant}</div>}
+                          </div>
                         </div>
-                      </div>
-                    </td>
+                      </td>
 
-                    {/* Category */}
-                    <td className="px-2 py-3 text-center">
-                      <span className="inline-block px-2.5 py-1 bg-terminal-muted text-gray-400 text-xs rounded-md" title={item.category}>
-                        {item.category}
-                      </span>
-                    </td>
+                      {/* Category */}
+                      <td className="px-2 py-3 text-center">
+                        <span className="inline-block px-2.5 py-1 bg-terminal-muted text-gray-400 text-xs rounded-md" title={item.category}>{item.category}</span>
+                      </td>
 
-                    {/* Market */}
-                    <td className="px-3 py-3 text-center">
-                      <span className="text-sm text-gray-400 block truncate" title={item.market_name}>
-                        {item.market_name}
-                      </span>
-                    </td>
+                      {/* Market */}
+                      <td className="px-3 py-3 text-center">
+                        <span className="text-sm text-gray-400 block truncate" title={item.market_name}>{item.market_name}</span>
+                      </td>
 
-                    {/* State */}
-                    <td className="py-3 text-center">
-                      <span className="text-xs text-gray-500">{item.state}</span>
-                    </td>
+                      {/* State */}
+                      <td className="py-3 text-center">
+                        <span className="text-xs text-gray-500">{item.state}</span>
+                      </td>
 
-                    {/* Price */}
-                    <td className="px-3 py-3 text-center">
-                      <span className="font-mono text-white text-base font-semibold">
-                        {formatNaira(item.price_naira)}
-                      </span>
-                    </td>
-
-                    {/* Change */}
-                    <td className="px-2 py-3 text-center">
-                      <div className={`flex items-center justify-center gap-1 text-sm ${
-                        item.change_percent > 0 ? "text-price-up" : 
-                        item.change_percent < 0 ? "text-price-down" : "text-gray-500"
-                      }`}>
-                        {item.change_percent > 0 ? <TrendingUp className="w-3 h-3 shrink-0" /> : 
-                         item.change_percent < 0 ? <TrendingDown className="w-3 h-3 shrink-0" /> : 
-                         <Minus className="w-3 h-3 shrink-0" />}
-                        <span className="font-mono">{item.change_percent >= 0 ? "+" : ""}{item.change_percent.toFixed(2)}%</span>
-                      </div>
-                      <div className="text-xs text-gray-500 mt-0.5 font-mono">
-                        {item.change_amount >= 0 ? "+" : ""}₦{formatNairaInt(Math.abs(item.change_amount))}
-                      </div>
-                    </td>
-
-                    {/* Wk Range - bright if real data, muted if estimated */}
-                    <td className="px-2 py-3 text-center">
-                      <div className="font-mono text-xs leading-relaxed">
-                        <span className={item.has_real_range ? "text-gray-300" : "text-gray-600"}>
-                          {formatNairaInt(item.low_24h)}
+                      {/* Price + NBS comparison (E — web sync pass) */}
+                      <td className="px-3 py-3 text-center">
+                        <span className="font-mono text-white text-base font-semibold">
+                          {formatNaira(item.price_naira)}
                         </span>
-                        <span className="text-gray-700 mx-1">–</span>
-                        <span className={item.has_real_range ? "text-gray-300" : "text-gray-600"}>
-                          {formatNairaInt(item.high_24h)}
-                        </span>
-                        {!item.has_real_range && (
-                          <div className="text-gray-700 text-[9px] mt-0.5">est.</div>
-                        )}
-                      </div>
-                    </td>
-
-                    {/* Confidence */}
-                    <td className="px-3 py-3">
-                      <div className="flex items-center justify-center gap-2">
-                        <div className="w-16 h-2 bg-terminal-muted rounded-full overflow-hidden">
-                          <div 
-                            className={`h-full rounded-full transition-all ${
-                              item.confidence >= 85 ? "bg-price-up" : 
-                              item.confidence >= 70 ? "bg-naija-gold" : 
-                              item.confidence >= 50 ? "bg-orange-500" : "bg-price-down"
+                        {nbsDiff != null && (
+                          <div
+                            className={`text-xs font-mono mt-0.5 ${
+                              nbsDiff > 5 ? "text-red-400" :
+                              nbsDiff < -5 ? "text-emerald-400" :
+                              "text-gray-600"
                             }`}
-                            style={{ width: `${item.confidence}%` }}
-                          />
+                            title={`NBS national benchmark: ₦${formatNairaInt(nbsPrice!)}`}
+                          >
+                            NBS ₦{formatNairaInt(nbsPrice!)}{" "}
+                            {nbsDiff > 0 ? `↑${nbsDiff.toFixed(0)}%` : nbsDiff < 0 ? `↓${Math.abs(nbsDiff).toFixed(0)}%` : "—"}
+                          </div>
+                        )}
+                      </td>
+
+                      {/* Change */}
+                      <td className="px-2 py-3 text-center">
+                        <div className={`flex items-center justify-center gap-1 text-sm ${item.change_percent > 0 ? "text-price-up" : item.change_percent < 0 ? "text-price-down" : "text-gray-500"}`}>
+                          {item.change_percent > 0 ? <TrendingUp className="w-3 h-3 shrink-0" /> : item.change_percent < 0 ? <TrendingDown className="w-3 h-3 shrink-0" /> : <Minus className="w-3 h-3 shrink-0" />}
+                          <span className="font-mono">{item.change_percent >= 0 ? "+" : ""}{item.change_percent.toFixed(2)}%</span>
                         </div>
-                        <span className="text-xs text-gray-500 tabular-nums">{item.confidence}%</span>
-                      </div>
-                      <div className="text-xs text-gray-600 mt-0.5 text-center">
-                        {item.validators} validators
-                      </div>
-                    </td>
+                        <div className="text-xs text-gray-500 mt-0.5 font-mono">
+                          {item.change_amount >= 0 ? "+" : ""}₦{formatNairaInt(Math.abs(item.change_amount))}
+                        </div>
+                      </td>
 
-                    {/* Updated */}
-                    <td className="px-2 py-3 text-center">
-                      <div className="text-xs text-gray-400">{formatUpdateTime(item.updated_at)}</div>
-                      <div className="text-xs text-gray-600">{item.source.replace(/_/g, " ")}</div>
-                      <FreshnessIndicator date={item.updated_at} compact className="mt-1" />
-                    </td>
+                      {/* Wk Range */}
+                      <td className="px-2 py-3 text-center">
+                        <div className="font-mono text-xs leading-relaxed">
+                          <span className={item.has_real_range ? "text-gray-300" : "text-gray-600"}>{formatNairaInt(item.low_24h)}</span>
+                          <span className="text-gray-700 mx-1">–</span>
+                          <span className={item.has_real_range ? "text-gray-300" : "text-gray-600"}>{formatNairaInt(item.high_24h)}</span>
+                          {!item.has_real_range && <div className="text-gray-700 text-[9px] mt-0.5">est.</div>}
+                        </div>
+                      </td>
 
-                    {/* Actions */}
-                    <td className="py-3 text-center">
-                      <div className="flex items-center justify-center gap-1 opacity-0 group-hover:opacity-100 transition-all">
-                        <button 
-                          className="p-1 text-gray-500 hover:text-naija-green transition-colors" 
-                          title="Set Alert"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          <Bell className="w-3.5 h-3.5" />
-                        </button>
-                        <button 
-                          className="p-1 text-gray-500 hover:text-white transition-colors"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          <MoreHorizontal className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                      {/* Confidence */}
+                      <td className="px-3 py-3">
+                        <div className="flex items-center justify-center gap-2">
+                          <div className="w-16 h-2 bg-terminal-muted rounded-full overflow-hidden">
+                            <div className={`h-full rounded-full transition-all ${item.confidence >= 85 ? "bg-price-up" : item.confidence >= 70 ? "bg-naija-gold" : item.confidence >= 50 ? "bg-orange-500" : "bg-price-down"}`} style={{ width: `${item.confidence}%` }} />
+                          </div>
+                          <span className="text-xs text-gray-500 tabular-nums">{item.confidence}%</span>
+                        </div>
+                        <div className="text-xs text-gray-600 mt-0.5 text-center">{item.validators} validators</div>
+                      </td>
+
+                      {/* Updated */}
+                      <td className="px-2 py-3 text-center">
+                        <div className="text-xs text-gray-400">{formatUpdateTime(item.updated_at)}</div>
+                        <div className="text-xs text-gray-600">{item.source.replace(/_/g, " ")}</div>
+                        <FreshnessIndicator date={item.updated_at} compact className="mt-1" />
+                      </td>
+
+                      {/* Actions */}
+                      <td className="py-3 text-center">
+                        <div className="flex items-center justify-center gap-1 opacity-0 group-hover:opacity-100 transition-all">
+                          <button className="p-1 text-gray-500 hover:text-naija-green transition-colors" title="Set Alert" onClick={(e) => e.stopPropagation()}><Bell className="w-3.5 h-3.5" /></button>
+                          <button className="p-1 text-gray-500 hover:text-white transition-colors" onClick={(e) => e.stopPropagation()}><MoreHorizontal className="w-3.5 h-3.5" /></button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -881,16 +703,8 @@ function PricesPageContent() {
             <div className="flex flex-col items-center justify-center py-20">
               <Database className="w-12 h-12 text-gray-600 mb-4" />
               <p className="text-gray-400 mb-2">No prices found</p>
-              <p className="text-sm text-gray-500 mb-4">
-                {hasActiveFilters 
-                  ? "Try adjusting your filters or search query" 
-                  : "No price data available in the database"}
-              </p>
-              {hasActiveFilters && (
-                <button onClick={clearFilters} className="text-naija-green hover:text-white">
-                  Clear filters
-                </button>
-              )}
+              <p className="text-sm text-gray-500 mb-4">{hasActiveFilters ? "Try adjusting your filters or search query" : "No price data available in the database"}</p>
+              {hasActiveFilters && <button onClick={clearFilters} className="text-naija-green hover:text-white">Clear filters</button>}
             </div>
           )}
 
@@ -898,17 +712,15 @@ function PricesPageContent() {
           {filteredPrices.length > 0 && (
             <div className="px-4 py-3 border-t border-terminal-border flex items-center justify-between">
               <span className="text-sm text-gray-500">
-                💡 Click any row to view price history chart
+                💡 Click any row to view price history · NBS: national benchmark comparison
               </span>
-              <span className="text-xs text-gray-600">
-                Bloomberg: HP &lt;GO&gt;
-              </span>
+              <span className="text-xs text-gray-600">Bloomberg: HP &lt;GO&gt;</span>
             </div>
           )}
         </div>
       )}
 
-      {/* Data accuracy disclaimer [1v] */}
+      {/* Data accuracy disclaimer */}
       {!loading && !error && filteredPrices.length > 0 && <PriceDisclaimer className="mt-1" />}
 
       {/* Price History Modal */}

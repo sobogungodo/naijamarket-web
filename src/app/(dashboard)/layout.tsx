@@ -33,6 +33,7 @@ import {
   Coins,
   Lock,
   ChevronUp,
+  History,
 } from "lucide-react";
 import { ThemeToggle } from "@/components/ThemeToggle";
 
@@ -279,6 +280,7 @@ export default function DashboardLayout({
               Tools
             </div>
             <NavLink href="/dashboard/tokens" icon={Coins} label="Token Wallet" currentPath={pathname} userTier={userTier} />
+            <NavLink href="/dashboard/history" icon={History} label="Query History" currentPath={pathname} userTier={userTier} />
             <NavLink href="/dashboard/export" icon={Download} label="Export Data" currentPath={pathname} userTier={userTier} minTier="GOLD" onLocked={setUpgradeToast} />
           </div>
         </nav>
@@ -410,8 +412,8 @@ interface NavLinkProps {
   label: string;
   currentPath: string | null;
   userTier: string;
-  minTier?: string;          // minimum tier required (undefined = available to all)
-  onLocked?: (tier: string) => void; // callback when locked item is clicked
+  minTier?: string;
+  onLocked?: (tier: string) => void;
 }
 
 function NavLink({ href, icon: Icon, label, currentPath, userTier, minTier, onLocked }: NavLinkProps) {
@@ -420,7 +422,6 @@ function NavLink({ href, icon: Icon, label, currentPath, userTier, minTier, onLo
 
   const isLocked = minTier ? !hasTierAccess(userTier, minTier) : false;
 
-  // If locked, show grayed-out link that triggers upgrade toast
   if (isLocked) {
     return (
       <button
@@ -440,7 +441,6 @@ function NavLink({ href, icon: Icon, label, currentPath, userTier, minTier, onLo
     );
   }
 
-  // Unlocked — normal link
   return (
     <Link
       href={href}
