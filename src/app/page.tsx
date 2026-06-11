@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState, useEffect, useRef, FormEvent } from "react";
 import Link from "next/link";
@@ -7,9 +7,9 @@ import { ThemeToggle } from "@/components/ThemeToggle";
 import WaitlistSection from '@/components/WaitlistSection'
 
 // ============================================================================
-// NaijaMarket Intel — Landing Page v2.1 — optimised June 2026
+// NaijaMarket Intel â€” Landing Page v2.1 â€” optimised June 2026
 // "The Bloomberg of Nigerian Commodities"
-// Mobile-first · WhatsApp demo · Live price checker · 3-tier pricing
+// Mobile-first Â· WhatsApp demo Â· Live price checker Â· 3-tier pricing
 // Deploy to: src/app/page.tsx
 // ============================================================================
 
@@ -18,18 +18,18 @@ import WaitlistSection from '@/components/WaitlistSection'
 // ---------------------------------------------------------------------------
 
 const TICKER = [
-  { s: "RICE.NGN", p: "₦82,450", c: "+0.34%", u: true },
-  { s: "BEANS.NGN", p: "₦61,920", c: "+0.12%", u: true },
-  { s: "GARRI.NGN", p: "₦24,300", c: "-0.45%", u: false },
-  { s: "PALM.NGN", p: "₦48,100", c: "+0.28%", u: true },
-  { s: "YAM.NGN", p: "₦2,850", c: "-0.18%", u: false },
-  { s: "TOMATO.NGN", p: "₦42,500", c: "+1.26%", u: true },
-  { s: "ONION.NGN", p: "₦35,200", c: "-0.52%", u: false },
-  { s: "PEPPER.NGN", p: "₦30,800", c: "+0.67%", u: true },
-  { s: "FISH.NGN", p: "₦11,650", c: "+0.19%", u: true },
-  { s: "PLANTAIN.NGN", p: "₦4,250", c: "+0.84%", u: true },
-  { s: "GNUT.NGN", p: "₦55,300", c: "+0.41%", u: true },
-  { s: "EGGS.NGN", p: "₦3,180", c: "-0.31%", u: false },
+  { s: "RICE.NGN", p: "â‚¦82,450", c: "+0.34%", u: true },
+  { s: "BEANS.NGN", p: "â‚¦61,920", c: "+0.12%", u: true },
+  { s: "GARRI.NGN", p: "â‚¦24,300", c: "-0.45%", u: false },
+  { s: "PALM.NGN", p: "â‚¦48,100", c: "+0.28%", u: true },
+  { s: "YAM.NGN", p: "â‚¦2,850", c: "-0.18%", u: false },
+  { s: "TOMATO.NGN", p: "â‚¦42,500", c: "+1.26%", u: true },
+  { s: "ONION.NGN", p: "â‚¦35,200", c: "-0.52%", u: false },
+  { s: "PEPPER.NGN", p: "â‚¦30,800", c: "+0.67%", u: true },
+  { s: "FISH.NGN", p: "â‚¦11,650", c: "+0.19%", u: true },
+  { s: "PLANTAIN.NGN", p: "â‚¦4,250", c: "+0.84%", u: true },
+  { s: "GNUT.NGN", p: "â‚¦55,300", c: "+0.41%", u: true },
+  { s: "EGGS.NGN", p: "â‚¦3,180", c: "-0.31%", u: false },
 ];
 
 interface PriceRow {
@@ -49,111 +49,111 @@ const DEMO_PRICES: Record<string, PriceResult> = {
   rice: {
     item: "Rice (50kg) - Foreign",
     rows: [
-      { mk: "Mile 12 Market", st: "Lagos", pr: "₦82,450", ch: "+0.34%", up: true },
-      { mk: "Kano Main Market", st: "Kano", pr: "₦79,800", ch: "+0.18%", up: true },
-      { mk: "Onitsha Main Market", st: "Anambra", pr: "₦84,200", ch: "-0.22%", up: false },
-      { mk: "Wuse Market", st: "FCT", pr: "₦83,100", ch: "+0.41%", up: true },
+      { mk: "Mile 12 Market", st: "Lagos", pr: "â‚¦82,450", ch: "+0.34%", up: true },
+      { mk: "Kano Main Market", st: "Kano", pr: "â‚¦79,800", ch: "+0.18%", up: true },
+      { mk: "Onitsha Main Market", st: "Anambra", pr: "â‚¦84,200", ch: "-0.22%", up: false },
+      { mk: "Wuse Market", st: "FCT", pr: "â‚¦83,100", ch: "+0.41%", up: true },
     ],
   },
   beans: {
     item: "Beans - Brown (per kg)",
     rows: [
-      { mk: "Mile 12 Market", st: "Lagos", pr: "₦61,920", ch: "+0.12%", up: true },
-      { mk: "Bodija Market", st: "Oyo", pr: "₦58,400", ch: "-0.35%", up: false },
-      { mk: "Kano Main Market", st: "Kano", pr: "₦55,300", ch: "+0.28%", up: true },
-      { mk: "Jos Main Market", st: "Plateau", pr: "₦57,800", ch: "+0.15%", up: true },
+      { mk: "Mile 12 Market", st: "Lagos", pr: "â‚¦61,920", ch: "+0.12%", up: true },
+      { mk: "Bodija Market", st: "Oyo", pr: "â‚¦58,400", ch: "-0.35%", up: false },
+      { mk: "Kano Main Market", st: "Kano", pr: "â‚¦55,300", ch: "+0.28%", up: true },
+      { mk: "Jos Main Market", st: "Plateau", pr: "â‚¦57,800", ch: "+0.15%", up: true },
     ],
   },
   garri: {
     item: "Garri - White (50kg)",
     rows: [
-      { mk: "Mile 12 Market", st: "Lagos", pr: "₦24,300", ch: "-0.45%", up: false },
-      { mk: "Onitsha Main Market", st: "Anambra", pr: "₦22,100", ch: "-0.62%", up: false },
-      { mk: "Wuse Market", st: "FCT", pr: "₦25,600", ch: "+0.18%", up: true },
-      { mk: "Kano Main Market", st: "Kano", pr: "₦26,800", ch: "+0.32%", up: true },
+      { mk: "Mile 12 Market", st: "Lagos", pr: "â‚¦24,300", ch: "-0.45%", up: false },
+      { mk: "Onitsha Main Market", st: "Anambra", pr: "â‚¦22,100", ch: "-0.62%", up: false },
+      { mk: "Wuse Market", st: "FCT", pr: "â‚¦25,600", ch: "+0.18%", up: true },
+      { mk: "Kano Main Market", st: "Kano", pr: "â‚¦26,800", ch: "+0.32%", up: true },
     ],
   },
   tomatoes: {
     item: "Tomatoes (Big Basket)",
     rows: [
-      { mk: "Mile 12 Market", st: "Lagos", pr: "₦42,500", ch: "+1.26%", up: true },
-      { mk: "Bodija Market", st: "Oyo", pr: "₦38,200", ch: "+0.85%", up: true },
-      { mk: "Jos Main Market", st: "Plateau", pr: "₦35,400", ch: "-0.42%", up: false },
-      { mk: "Wuse Market", st: "FCT", pr: "₦44,100", ch: "+1.08%", up: true },
+      { mk: "Mile 12 Market", st: "Lagos", pr: "â‚¦42,500", ch: "+1.26%", up: true },
+      { mk: "Bodija Market", st: "Oyo", pr: "â‚¦38,200", ch: "+0.85%", up: true },
+      { mk: "Jos Main Market", st: "Plateau", pr: "â‚¦35,400", ch: "-0.42%", up: false },
+      { mk: "Wuse Market", st: "FCT", pr: "â‚¦44,100", ch: "+1.08%", up: true },
     ],
   },
   "palm oil": {
     item: "Palm Oil (25 Litres)",
     rows: [
-      { mk: "Mile 12 Market", st: "Lagos", pr: "₦48,100", ch: "+0.28%", up: true },
-      { mk: "Onitsha Main Market", st: "Anambra", pr: "₦45,600", ch: "-0.15%", up: false },
-      { mk: "Kano Main Market", st: "Kano", pr: "₦51,200", ch: "+0.44%", up: true },
-      { mk: "Wuse Market", st: "FCT", pr: "₦49,300", ch: "+0.19%", up: true },
+      { mk: "Mile 12 Market", st: "Lagos", pr: "â‚¦48,100", ch: "+0.28%", up: true },
+      { mk: "Onitsha Main Market", st: "Anambra", pr: "â‚¦45,600", ch: "-0.15%", up: false },
+      { mk: "Kano Main Market", st: "Kano", pr: "â‚¦51,200", ch: "+0.44%", up: true },
+      { mk: "Wuse Market", st: "FCT", pr: "â‚¦49,300", ch: "+0.19%", up: true },
     ],
   },
 };
 
 const FEATURES = [
-  { icon: "📡", title: "Real-Time Prices", desc: "Live GPS-verified prices from 282 markets across 36 states + FCT. Updated 3× daily by on-ground traders.", accent: "#00C853" },
-  { icon: "📊", title: "Bloomberg-Grade Analytics", desc: "Inflation tracking, heatmaps, arbitrage scanner, and market screeners at startup prices.", accent: "#FFB300" },
-  { icon: "🛡️", title: "Fraud-Proof Verification", desc: "GPS validation, community consensus, and ML anomaly detection. 95%+ confidence.", accent: "#00B0FF" },
-  { icon: "🔔", title: "Smart Price Alerts", desc: "Set thresholds. Get WhatsApp notifications when prices cross your targets.", accent: "#FF5252" },
-  { icon: "📈", title: "Inflation Tracker", desc: "NaijaMarket Food Price Index vs NBS. Real inflation, not months later.", accent: "#E040FB" },
-  { icon: "🌍", title: "Regional Comparison", desc: "Compare prices across states. Spot arbitrage opportunities before competitors.", accent: "#26A69A" },
+  { icon: "ðŸ“¡", title: "Real-Time Prices", desc: "Live GPS-verified prices from 282 markets across 36 states + FCT. Updated 3Ã— daily by on-ground traders.", accent: "#00C853" },
+  { icon: "ðŸ“Š", title: "Bloomberg-Grade Analytics", desc: "Inflation tracking, heatmaps, arbitrage scanner, and market screeners at startup prices.", accent: "#FFB300" },
+  { icon: "ðŸ›¡ï¸", title: "Fraud-Proof Verification", desc: "GPS validation, community consensus, and ML anomaly detection. 95%+ confidence.", accent: "#00B0FF" },
+  { icon: "ðŸ””", title: "Smart Price Alerts", desc: "Set thresholds. Get WhatsApp notifications when prices cross your targets.", accent: "#FF5252" },
+  { icon: "ðŸ“ˆ", title: "Inflation Tracker", desc: "NaijaMarket Food Price Index vs NBS. Real inflation, not months later.", accent: "#E040FB" },
+  { icon: "ðŸŒ", title: "Regional Comparison", desc: "Compare prices across states. Spot arbitrage opportunities before competitors.", accent: "#26A69A" },
 ];
 
 const TIERS = [
   {
-    nm: "FREE", pr: "₦0", pd: "", tg: null, ac: "#64FFDA", hl: false,
+    nm: "FREE", pr: "â‚¦0", pd: "", tg: null, ac: "#64FFDA", hl: false,
     ft: ["5 queries/week", "1 market", "WhatsApp access", "Basic price search", "1 free guest query"],
     ct: "Start Free", hr: "/register",
   },
   {
-    nm: "SILVER", pr: "₦500", pd: "/week", tg: null, ac: "#90CAF9", hl: false,
+    nm: "SILVER", pr: "â‚¦500", pd: "/week", tg: null, ac: "#90CAF9", hl: false,
     ft: ["10 queries/day", "3 markets", "Price alerts", "Price trends", "WhatsApp + Web"],
     ct: "Go Silver", hr: "/register?plan=silver",
   },
   {
-    nm: "GOLD", pr: "₦2,000", pd: "/mo", tg: "BEST VALUE", ac: "#FFD740", hl: true,
+    nm: "GOLD", pr: "â‚¦2,000", pd: "/mo", tg: "BEST VALUE", ac: "#FFD740", hl: true,
     ft: ["25 queries/day", "3 markets", "Price forecast", "Market snapshot", "Historical data", "Priority support"],
     ct: "Go Gold", hr: "/register?plan=gold",
   },
   {
-    nm: "BUSINESS", pr: "₦15,000", pd: "/mo", tg: null, ac: "#FF8A65", hl: false,
+    nm: "BUSINESS", pr: "â‚¦15,000", pd: "/mo", tg: null, ac: "#FF8A65", hl: false,
     ft: ["100 queries/day", "5 markets", "Bulk buyer tool", "CSV & PDF export", "Full analytics", "Priority support"],
     ct: "Go Business", hr: "/register?plan=business",
   },
   {
-    nm: "CORPORATE", pr: "₦500,000", pd: "/mo", tg: null, ac: "#CE93D8", hl: false,
+    nm: "CORPORATE", pr: "â‚¦500,000", pd: "/mo", tg: null, ac: "#CE93D8", hl: false,
     ft: ["Unlimited queries", "All 282 markets", "API access", "Dedicated account mgr", "Analytics dashboard", "SLA 99.5%"],
     ct: "Contact Sales", hr: "mailto:sales@naijamarketintel.ng",
   },
   {
-    nm: "ENTERPRISE", pr: "₦1.5M", pd: "/mo", tg: null, ac: "#00E5FF", hl: false,
+    nm: "ENTERPRISE", pr: "â‚¦1.5M", pd: "/mo", tg: null, ac: "#00E5FF", hl: false,
     ft: ["Unlimited API calls", "All 282 markets", "White-label", "Custom SLA", "Dedicated engineer", "Power BI integration"],
     ct: "Contact Sales", hr: "mailto:sales@naijamarketintel.ng",
   },
   {
-    nm: "API STARTER", pr: "₦500,000", pd: "/mo", tg: null, ac: "#80CBC4", hl: false,
+    nm: "API STARTER", pr: "â‚¦500,000", pd: "/mo", tg: null, ac: "#80CBC4", hl: false,
     ft: ["10,000 API calls/day", "All markets", "JSON & CSV", "Full documentation", "Analytics access"],
     ct: "Contact Sales", hr: "mailto:sales@naijamarketintel.ng",
   },
   {
-    nm: "API BUSINESS", pr: "₦1,000,000", pd: "/mo", tg: null, ac: "#81D4FA", hl: false,
+    nm: "API BUSINESS", pr: "â‚¦1,000,000", pd: "/mo", tg: null, ac: "#81D4FA", hl: false,
     ft: ["50,000 API calls/day", "All markets", "Dedicated support", "SLA 99.5%", "Custom endpoints"],
     ct: "Contact Sales", hr: "mailto:sales@naijamarketintel.ng",
   },
   {
-    nm: "API ENTERPRISE", pr: "₦1,500,000", pd: "/mo", tg: "FOR INSTITUTIONS", ac: "#F48FB1", hl: false,
+    nm: "API ENTERPRISE", pr: "â‚¦1,500,000", pd: "/mo", tg: "FOR INSTITUTIONS", ac: "#F48FB1", hl: false,
     ft: ["Unlimited API calls", "All markets", "White-label API", "Custom SLA", "Dedicated engineer", "Government & banking"],
     ct: "Contact Sales", hr: "mailto:sales@naijamarketintel.ng",
   },
 ];
 
 const TESTIMONIALS = [
-  { nm: "Alhaji Musa Ibrahim", rl: "Rice Trader · Kano", q: "Before NaijaMarket, I was losing ₦500K monthly to price manipulation. Now I check prices before every deal.", av: "MI" },
-  { nm: "Chioma Okafor", rl: "Procurement Manager · Lagos", q: "We reduced food procurement costs by 18% in 3 months. The arbitrage scanner alone pays for the subscription.", av: "CO" },
-  { nm: "Adebayo Fashola", rl: "Market Analyst · Abuja", q: "The inflation tracker is more accurate than waiting for NBS. Real-time, verified, and actually useful for our reports.", av: "AF" },
+  { nm: "Alhaji Musa Ibrahim", rl: "Rice Trader Â· Kano", q: "Before NaijaMarket, I was losing â‚¦500K monthly to price manipulation. Now I check prices before every deal.", av: "MI" },
+  { nm: "Chioma Okafor", rl: "Procurement Manager Â· Lagos", q: "We reduced food procurement costs by 18% in 3 months. The arbitrage scanner alone pays for the subscription.", av: "CO" },
+  { nm: "Adebayo Fashola", rl: "Market Analyst Â· Abuja", q: "The inflation tracker is more accurate than waiting for NBS. Real-time, verified, and actually useful for our reports.", av: "AF" },
 ];
 
 // ---------------------------------------------------------------------------
@@ -180,7 +180,7 @@ function useInView(threshold = 0.15) {
 // COMPONENTS
 // ---------------------------------------------------------------------------
 
-/* ═══════════════ Ticker ═══════════════ */
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• Ticker â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 function Ticker() {
   const [ticks, setTicks] = useState(TICKER);
   useEffect(() => {
@@ -205,7 +205,7 @@ function Ticker() {
   );
 }
 
-/* ═══════════════ Nav ═══════════════ */
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• Nav â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 function Nav() {
   const [scrolled, setScrolled] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -247,15 +247,15 @@ function Nav() {
         </button>
       </div>
 
-      {/* ── Trust Bar — sits directly below logo/nav links ── */}
+      {/* â”€â”€ Trust Bar â€” sits directly below logo/nav links â”€â”€ */}
       <div className="nm-trust-bar">
         <div className="nm-trust-bar-inner">
           {[
             { dot: "green", text: "GPS-Verified Data" },
-            { dot: "green", text: "Soft Launch — Mile 12 & Onitsha" },
+            { dot: "green", text: "Soft Launch â€” Mile 12 & Onitsha" },
             { dot: "blue",  text: "Aligned with NBS CPI" },
             { dot: "green", text: "36 States + FCT Covered" },
-            { dot: "amber", text: "Updated 3× Daily" },
+            { dot: "amber", text: "Updated 3Ã— Daily" },
           ].map((item, i) => (
             <span key={i} className="nm-trust-bar-item">
               <span className={`nm-trust-dot nm-trust-dot-${item.dot}`} />
@@ -284,7 +284,7 @@ function Nav() {
   );
 }
 
-/* ═══════════════ Price Checker ═══════════════ */
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• Price Checker â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 function PriceChecker() {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<PriceResult | null>(null);
@@ -307,8 +307,8 @@ function PriceChecker() {
   return (
     <div className="nm-ck">
       <div className="nm-ck-head">
-        <span className="nm-ck-live">● LIVE</span>
-        <span className="nm-ck-title">Try it — search any commodity</span>
+        <span className="nm-ck-live">â— LIVE</span>
+        <span className="nm-ck-title">Try it â€” search any commodity</span>
       </div>
 
       <form
@@ -368,8 +368,8 @@ function PriceChecker() {
             ))}
           </div>
           <div className="nm-ck-footer">
-            <span>Confidence: <strong>94%</strong> · 3+ validators</span>
-            <Link href="/register" className="nm-ck-cta">See all markets →</Link>
+            <span>Confidence: <strong>94%</strong> Â· 3+ validators</span>
+            <Link href="/register" className="nm-ck-cta">See all markets â†’</Link>
           </div>
         </div>
       )}
@@ -384,7 +384,7 @@ function PriceChecker() {
   );
 }
 
-/* ═══════════════ WhatsApp Demo ═══════════════ */
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• WhatsApp Demo â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 function WADemo() {
   const [step, setStep] = useState(0);
 
@@ -394,13 +394,13 @@ function WADemo() {
     return () => { clearTimeout(t1); clearTimeout(t2); };
   }, []);
 
-  const botReply = `🍚 Rice (50kg) - Lagos Markets
+  const botReply = `ðŸš Rice (50kg) - Lagos Markets
 
-📍 Mile 12: ₦82,450 (+0.34%)
-📍 Ojo Market: ₦81,200 (-0.15%)
-📍 Mushin: ₦83,100 (+0.52%)
+ðŸ“ Mile 12: â‚¦82,450 (+0.34%)
+ðŸ“ Ojo Market: â‚¦81,200 (-0.15%)
+ðŸ“ Mushin: â‚¦83,100 (+0.52%)
 
-📊 Avg: ₦82,250 | 🔄 Updated 2h ago
+ðŸ“Š Avg: â‚¦82,250 | ðŸ”„ Updated 2h ago
 
 Reply ALERT RICE 80000 to get notified`;
 
@@ -427,13 +427,13 @@ Reply ALERT RICE 80000 to get notified`;
         rel="noopener noreferrer"
         className="nm-wa-try"
       >
-        💬 Try it now on WhatsApp
+        ðŸ’¬ Try it now on WhatsApp
       </a>
     </div>
   );
 }
 
-/* ═══════════════ Hero Demo Tabs ═══════════════ */
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• Hero Demo Tabs â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 function DemoTabs() {
   const [tab, setTab] = useState<"prices" | "whatsapp">("prices");
   return (
@@ -443,13 +443,13 @@ function DemoTabs() {
           className={`nm-demo-tab${tab === "prices" ? " nm-demo-tab-active" : ""}`}
           onClick={() => setTab("prices")}
         >
-          🔍 Price Checker
+          ðŸ” Price Checker
         </button>
         <button
           className={`nm-demo-tab${tab === "whatsapp" ? " nm-demo-tab-active" : ""}`}
           onClick={() => setTab("whatsapp")}
         >
-          💬 WhatsApp Demo
+          ðŸ’¬ WhatsApp Demo
         </button>
       </div>
       {tab === "prices" ? <PriceChecker /> : <WADemo />}
@@ -457,7 +457,7 @@ function DemoTabs() {
   );
 }
 
-/* ═══════════════ Hero ═══════════════ */
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• Hero â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 function Hero() {
   const [visible, setVisible] = useState(false);
   useEffect(() => { setTimeout(() => setVisible(true), 150); }, []);
@@ -471,7 +471,7 @@ function Hero() {
         <div className="nm-hero-copy">
           <div className="nm-hero-badge">
             <span className="nm-pulse-dot" />
-            <span>LIVE — 282 Markets · 36 States + FCT</span>
+            <span>LIVE â€” 282 Markets Â· 36 States + FCT</span>
           </div>
 
           <h1 className="nm-hero-title">
@@ -480,8 +480,8 @@ function Hero() {
           </h1>
 
           <p className="nm-hero-subtitle">
-            Tomatoes at Mile 12 today: <strong style={{color:"#00C853"}}>₦42,500</strong>. Bodija: <strong style={{color:"#00C853"}}>₦38,200</strong>. That&apos;s ₦4,300 arbitrage per basket — before you leave the house.
-            GPS-verified prices from 282 markets. Updated 3× daily.
+            Tomatoes at Mile 12 today: <strong style={{color:"#00C853"}}>â‚¦42,500</strong>. Bodija: <strong style={{color:"#00C853"}}>â‚¦38,200</strong>. That&apos;s â‚¦4,300 arbitrage per basket â€” before you leave the house.
+            GPS-verified prices from 282 markets. Updated 3Ã— daily.
           </p>
 
           <div className="nm-hero-ctas">
@@ -491,7 +491,7 @@ function Hero() {
               rel="noopener noreferrer"
               className="nm-btn-green nm-btn-lg"
             >
-              💬 Check Prices on WhatsApp <span className="nm-arrow">→</span>
+              ðŸ’¬ Check Prices on WhatsApp <span className="nm-arrow">â†’</span>
             </a>
             <Link href="/register" className="nm-btn-outline nm-btn-lg">
               Start Free on Web
@@ -503,7 +503,7 @@ function Hero() {
               { v: "282", l: "Markets" },
               { v: "610+", l: "Commodities" },
               { v: "36+FCT", l: "States" },
-              { v: "3×", l: "Daily" },
+              { v: "3Ã—", l: "Daily" },
             ].map((stat, i) => (
               <div key={i} className="nm-stat">
                 <div className="nm-stat-val">{stat.v}</div>
@@ -523,7 +523,30 @@ function Hero() {
   );
 }
 
-/* ═══════════════ Features ═══════════════ */
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• Features â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
+function VideoSection() {
+  return (
+    <section className="nm-section nm-section-accent" style={{padding: "60px 24px"}}>
+      <div className="nm-section-inner" style={{maxWidth: "900px", margin: "0 auto"}}>
+        <div className="nm-section-header" style={{marginBottom: "32px"}}>
+          <span className="nm-section-tag">Platform Demo</span>
+          <h2 className="nm-section-title">See NaijaMarket Intel in Action</h2>
+          <p className="nm-section-desc">Real-time commodity prices across 282 Nigerian markets — updated three times daily.</p>
+        </div>
+        <div style={{position: "relative", borderRadius: "12px", overflow: "hidden", border: "1px solid rgba(0,200,83,0.2)", boxShadow: "0 8px 40px rgba(0,0,0,0.4)"}}>
+          <video
+            src="/videos/hero.mp4"
+            controls
+            playsInline
+            poster=""
+            style={{width: "100%", display: "block", maxHeight: "500px", objectFit: "cover", background: "#0a0a0a"}}
+          />
+        </div>
+      </div>
+    </section>
+  )
+}
+
 function FeaturesSection() {
   const { ref, visible } = useInView();
   return (
@@ -536,7 +559,7 @@ function FeaturesSection() {
             <span className="nm-g">Actually Saves You Money</span>
           </h2>
           <p className="nm-section-desc">
-            Nigerian food traders lose an estimated 15–30% of margin to price information asymmetry.
+            Nigerian food traders lose an estimated 15â€“30% of margin to price information asymmetry.
             We built the intelligence layer to close that gap.
           </p>
         </div>
@@ -559,13 +582,13 @@ function FeaturesSection() {
   );
 }
 
-/* ═══════════════ How It Works ═══════════════ */
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• How It Works â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 function HowItWorksSection() {
   const { ref, visible } = useInView();
   const steps = [
-    { num: "01", icon: "🔍", title: "Search Any Commodity", desc: "Type a commodity, market, or state. Get instant verified prices from our trader network." },
-    { num: "02", icon: "📊", title: "Analyze Market Trends", desc: "View price history, inflation trends, regional comparisons, and arbitrage opportunities." },
-    { num: "03", icon: "⚡", title: "Set Alerts & Act", desc: "Create custom price alerts. Get WhatsApp notifications. Make data-driven decisions." },
+    { num: "01", icon: "ðŸ”", title: "Search Any Commodity", desc: "Type a commodity, market, or state. Get instant verified prices from our trader network." },
+    { num: "02", icon: "ðŸ“Š", title: "Analyze Market Trends", desc: "View price history, inflation trends, regional comparisons, and arbitrage opportunities." },
+    { num: "03", icon: "âš¡", title: "Set Alerts & Act", desc: "Create custom price alerts. Get WhatsApp notifications. Make data-driven decisions." },
   ];
 
   return (
@@ -598,7 +621,7 @@ function HowItWorksSection() {
   );
 }
 
-/* ═══════════════ Pricing ═══════════════ */
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• Pricing â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 function PricingSection() {
   const { ref, visible } = useInView();
   return (
@@ -630,7 +653,7 @@ function PricingSection() {
               <ul className="nm-price-features">
                 {tier.ft.map((feature, j) => (
                   <li key={j}>
-                    <span className="nm-check">✓</span>
+                    <span className="nm-check">âœ“</span>
                     {feature}
                   </li>
                 ))}
@@ -649,7 +672,7 @@ function PricingSection() {
   );
 }
 
-/* ═══════════════ Testimonials ═══════════════ */
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• Testimonials â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 function TestimonialsSection() {
   const { ref, visible } = useInView();
   return (
@@ -688,7 +711,7 @@ function TestimonialsSection() {
   );
 }
 
-/* ═══════════════ CTA ═══════════════ */
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• CTA â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 function CTASection() {
   return (
     <section className="nm-section">
@@ -705,7 +728,7 @@ function CTASection() {
         </p>
         <div className="nm-cta-buttons">
           <Link href="/register" className="nm-btn-green nm-btn-lg">
-            Get Started Free →
+            Get Started Free â†’
           </Link>
           <a
             href="https://wa.me/2349131095009?text=Hi%20NaijaMarket"
@@ -713,7 +736,7 @@ function CTASection() {
             rel="noopener noreferrer"
             className="nm-btn-outline nm-btn-lg"
           >
-            💬 Chat on WhatsApp
+            ðŸ’¬ Chat on WhatsApp
           </a>
         </div>
         <div className="nm-cta-signup">
@@ -729,7 +752,7 @@ function CTASection() {
   );
 }
 
-/* ═══════════════ Footer ═══════════════ */
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• Footer â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 function Footer() {
   const columns = [
     {
@@ -789,8 +812,8 @@ function Footer() {
         ))}
       </div>
       <div className="nm-footer-bottom">
-        <span>© 2026 NaijaMarket Intel by Giggababytes Oy</span>
-        <span>🇳🇬 Built for Nigeria · 🇫🇮 Powered from Finland</span>
+        <span>Â© 2026 NaijaMarket Intel by Giggababytes Oy</span>
+        <span>ðŸ‡³ðŸ‡¬ Built for Nigeria Â· ðŸ‡«ðŸ‡® Powered from Finland</span>
       </div>
     </footer>
   );
@@ -807,6 +830,7 @@ export default function LandingPage() {
       <div className="nm-landing">
         <Nav />
         <Hero />
+        <VideoSection />
         <FeaturesSection />
         <HowItWorksSection />
         <WaitlistSection />
@@ -820,7 +844,7 @@ export default function LandingPage() {
 }
 
 // ============================================================================
-// STYLES — Mobile-first with tablet (640px) + desktop (1024px) breakpoints
+// STYLES â€” Mobile-first with tablet (640px) + desktop (1024px) breakpoints
 // ============================================================================
 
 const PAGE_STYLES = `
@@ -842,7 +866,7 @@ const PAGE_STYLES = `
   --nm-radius: 12px;
 }
 
-/* ── Light Mode Overrides ── */
+/* â”€â”€ Light Mode Overrides â”€â”€ */
 html.light :root,
 html.light {
   --nm-bg: #f0f4f8;
@@ -877,7 +901,7 @@ html { scroll-behavior: smooth; }
 ::-webkit-scrollbar-track { background: var(--nm-bg); }
 ::-webkit-scrollbar-thumb { background: rgba(0, 200, 83, 0.2); border-radius: 3px; }
 
-/* ── Base ── */
+/* â”€â”€ Base â”€â”€ */
 .nm-landing {
   min-height: 100vh;
   background: var(--nm-bg);
@@ -897,7 +921,7 @@ html { scroll-behavior: smooth; }
   -webkit-text-fill-color: transparent;
 }
 
-/* ── Animations ── */
+/* â”€â”€ Animations â”€â”€ */
 @keyframes nm-ticker-scroll {
   0% { transform: translateX(0); }
   100% { transform: translateX(-50%); }
@@ -915,7 +939,7 @@ html { scroll-behavior: smooth; }
 }
 .nm-fade-in { animation: nm-fade-up 0.5s ease both; }
 
-/* ── Ticker ── */
+/* â”€â”€ Ticker â”€â”€ */
 .nm-tk {
   background: rgba(0, 0, 0, 0.5);
   border-bottom: 1px solid rgba(0, 200, 83, 0.1);
@@ -942,7 +966,7 @@ html { scroll-behavior: smooth; }
 .nm-tk-up { color: #00C853; font-weight: 600; }
 .nm-tk-dn { color: #FF5252; font-weight: 600; }
 
-/* ── Nav ── */
+/* â”€â”€ Nav â”€â”€ */
 .nm-nav {
   position: fixed;
   top: 0; left: 0; right: 0;
@@ -1054,7 +1078,7 @@ html { scroll-behavior: smooth; }
   color: #fff;
 }
 
-/* ── Buttons ── */
+/* â”€â”€ Buttons â”€â”€ */
 .nm-btn-green {
   display: inline-flex;
   align-items: center;
@@ -1098,7 +1122,7 @@ html { scroll-behavior: smooth; }
 .nm-btn-lg { padding: 14px 24px; font-size: 14px; }
 .nm-arrow { font-size: 18px; }
 
-/* ── Hero ── */
+/* â”€â”€ Hero â”€â”€ */
 .nm-hero {
   min-height: 100vh;
   display: flex;
@@ -1203,7 +1227,7 @@ html { scroll-behavior: smooth; }
 }
 .nm-hero-demo { width: 100%; }
 
-/* ── Demo Card ── */
+/* â”€â”€ Demo Card â”€â”€ */
 .nm-demo-card {
   background: var(--nm-bg2);
   border: 1px solid var(--nm-border);
@@ -1235,7 +1259,7 @@ html { scroll-behavior: smooth; }
   background: rgba(0, 200, 83, 0.04);
 }
 
-/* ── Price Checker ── */
+/* â”€â”€ Price Checker â”€â”€ */
 .nm-ck { padding: 14px; }
 .nm-ck-head {
   display: flex;
@@ -1355,7 +1379,7 @@ html { scroll-behavior: smooth; }
 .nm-ck-empty { padding: 16px 0; font-size: 12px; color: var(--nm-text3); text-align: center; }
 .nm-ck-empty a { color: var(--nm-green); }
 
-/* ── WhatsApp Demo ── */
+/* â”€â”€ WhatsApp Demo â”€â”€ */
 .nm-wa-head {
   display: flex;
   align-items: center;
@@ -1423,7 +1447,7 @@ html { scroll-behavior: smooth; }
 }
 .nm-wa-try:hover { background: #20BD5A; }
 
-/* ── Trust Bar (inside fixed nav, below logo row) ── */
+/* â”€â”€ Trust Bar (inside fixed nav, below logo row) â”€â”€ */
 .nm-trust-bar {
   border-top: 1px solid rgba(0, 200, 83, 0.12);
   background: rgba(0, 0, 0, 0.35);
@@ -1457,7 +1481,7 @@ html { scroll-behavior: smooth; }
 .nm-trust-dot-blue  { background: #00B0FF; }
 .nm-trust-dot-amber { background: #FFB300; animation: nm-pulse 2.5s infinite; }
 
-/* ── Sections ── */
+/* â”€â”€ Sections â”€â”€ */
 .nm-section { padding: 64px 16px; }
 .nm-section-accent {
   background: linear-gradient(180deg, transparent, rgba(0, 200, 83, 0.012), transparent);
@@ -1488,7 +1512,7 @@ html { scroll-behavior: smooth; }
   line-height: 1.6;
 }
 
-/* ── Features Grid ── */
+/* â”€â”€ Features Grid â”€â”€ */
 .nm-features-grid { display: grid; grid-template-columns: 1fr; gap: 14px; }
 .nm-features-grid.nm-visible .nm-feature-card { animation: nm-fade-up 0.5s ease both; }
 .nm-feature-card {
@@ -1519,7 +1543,7 @@ html { scroll-behavior: smooth; }
 .nm-feature-title { font-size: 16px; font-weight: 700; color: var(--nm-text); margin-bottom: 6px; }
 .nm-feature-desc { font-size: 13px; color: var(--nm-text3); line-height: 1.6; }
 
-/* ── Steps ── */
+/* â”€â”€ Steps â”€â”€ */
 .nm-steps { display: flex; flex-direction: column; gap: 20px; }
 .nm-steps.nm-visible .nm-step { animation: nm-fade-up 0.5s ease both; }
 .nm-step {
@@ -1560,7 +1584,7 @@ html { scroll-behavior: smooth; }
 }
 .nm-step-connector { display: none; }
 
-/* ── Pricing ── */
+/* â”€â”€ Pricing â”€â”€ */
 .nm-pricing-grid { display: grid; grid-template-columns: 1fr; gap: 16px; }
 .nm-pricing-grid.nm-visible .nm-price-card { animation: nm-fade-up 0.5s ease both; }
 .nm-price-card {
@@ -1625,7 +1649,7 @@ html { scroll-behavior: smooth; }
   font-size: 13px;
 }
 
-/* ── Testimonials ── */
+/* â”€â”€ Testimonials â”€â”€ */
 .nm-testimonials { display: grid; grid-template-columns: 1fr; gap: 16px; }
 .nm-testimonials.nm-visible .nm-testimonial { animation: nm-fade-up 0.5s ease both; }
 .nm-testimonial {
@@ -1669,7 +1693,7 @@ html { scroll-behavior: smooth; }
 .nm-test-name { font-size: 13px; font-weight: 700; color: var(--nm-text); }
 .nm-test-role { font-size: 11px; color: var(--nm-text3); }
 
-/* ── CTA ── */
+/* â”€â”€ CTA â”€â”€ */
 .nm-cta-box {
   max-width: 780px;
   margin: 0 auto;
@@ -1718,7 +1742,7 @@ html { scroll-behavior: smooth; }
   gap: 10px;
 }
 
-/* ── Footer ── */
+/* â”€â”€ Footer â”€â”€ */
 .nm-footer {
   border-top: 1px solid var(--nm-border);
   padding: 40px 16px 20px;
@@ -1767,7 +1791,7 @@ html { scroll-behavior: smooth; }
   color: var(--nm-text4);
 }
 
-/* ── Email Signup ── */
+/* â”€â”€ Email Signup â”€â”€ */
 .nm-hero-signup {
   margin-top: 28px;
 }
@@ -1802,9 +1826,9 @@ html { scroll-behavior: smooth; }
   margin-top: 16px;
 }
 
-/* ══════════════════════════════════════════════════════════
-   TABLET — 640px+
-   ══════════════════════════════════════════════════════════ */
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+   TABLET â€” 640px+
+   â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 @media (min-width: 640px) {
   .nm-features-grid { grid-template-columns: repeat(2, 1fr); }
   .nm-steps { flex-direction: row; }
@@ -1817,9 +1841,9 @@ html { scroll-behavior: smooth; }
   .nm-stat-val { font-size: 26px; }
 }
 
-/* ══════════════════════════════════════════════════════════
-   DESKTOP — 1024px+
-   ══════════════════════════════════════════════════════════ */
+/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+   DESKTOP â€” 1024px+
+   â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 @media (min-width: 1024px) {
   .nm-nav-inner { padding: 0 40px; height: 68px; }
   .nm-nav-links { display: flex; }
@@ -1852,3 +1876,5 @@ html { scroll-behavior: smooth; }
   .nm-footer { padding: 56px 40px 28px; }
 }
 `;
+
+
