@@ -1,9 +1,12 @@
-// src/app/api/keys/route.ts
+﻿// src/app/api/keys/route.ts
 // NaijaMarket Intel - API Key Management
 
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import crypto from "crypto";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
+import { authOptions } from "@/lib/auth";
 
 // ============================================================================
 // HELPERS
@@ -41,6 +44,14 @@ export async function GET(request: NextRequest) {
         key_id,
         key_name,
         key_prefix,
+    const session = await getServerSession(authOptions);
+    if (!session?.user) {
+      return NextResponse.json(
+        { success: false, error: "Authentication required" },
+        { status: 401 }
+      );
+    }
+    const sessionPhone = (session.user as any)?.phone || "";
         created_at,
         last_used_at,
         request_count,
@@ -89,6 +100,14 @@ export async function POST(request: NextRequest) {
         { success: false, error: "Phone and name required" },
         { status: 400 }
       );
+    const session = await getServerSession(authOptions);
+    if (!session?.user) {
+      return NextResponse.json(
+        { success: false, error: "Authentication required" },
+        { status: 401 }
+      );
+    }
+    const sessionPhone = (session.user as any)?.phone || "";
     }
 
     // Check tier access (BUSINESS+ required)
@@ -182,6 +201,14 @@ export async function POST(request: NextRequest) {
 // ============================================================================
 
 export async function DELETE(request: NextRequest) {
+    const session = await getServerSession(authOptions);
+    if (!session?.user) {
+      return NextResponse.json(
+        { success: false, error: "Authentication required" },
+        { status: 401 }
+      );
+    }
+    const sessionPhone = (session.user as any)?.phone || "";
   try {
     const { searchParams } = new URL(request.url);
     const keyId = searchParams.get("keyId");
