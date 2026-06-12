@@ -1,17 +1,17 @@
-// ============================================================================
+﻿// ============================================================================
 // src/app/api/internal/sync-consumer/route.ts
-// NaijaMarket Intel - Consumer Sync API (WhatsApp → Azure SQL)
+// NaijaMarket Intel - Consumer Sync API (WhatsApp â†’ Azure SQL)
 // Version: 1.0.0
 // Date: 2026-02-20
 //
-// PURPOSE: When a consumer registers via WhatsApp (Apps Script → Google Sheets),
+// PURPOSE: When a consumer registers via WhatsApp (Apps Script â†’ Google Sheets),
 // Apps Script calls this endpoint to create the same record in Azure SQL.
 // This ensures web dashboard login works immediately after WhatsApp registration.
 //
 // SECURITY: Protected by INTERNAL_API_KEY (shared secret between Apps Script and Vercel)
 //
-// DIRECTION: Google Sheets → Azure SQL (WhatsApp registration)
-// COUNTERPART: register/route.ts handles Azure SQL → Google Sheets (Web registration)
+// DIRECTION: Google Sheets â†’ Azure SQL (WhatsApp registration)
+// COUNTERPART: register/route.ts handles Azure SQL â†’ Google Sheets (Web registration)
 // ============================================================================
 
 import { NextRequest, NextResponse } from "next/server";
@@ -25,7 +25,7 @@ const INTERNAL_API_KEY = process.env.INTERNAL_SYNC_API_KEY || "";
 
 const dbConfig: sql.config = {
   server: process.env.DATABASE_SERVER || "naijafood.database.windows.net",
-  database: process.env.DATABASE_NAME || "naijafoodmarket",
+  database: process.env.DATABASE_NAME || "naijafoodmarket-live",
   user: process.env.DATABASE_USER || "",
   password: process.env.DATABASE_PASSWORD || "",
   options: {
@@ -120,7 +120,7 @@ export async function POST(request: NextRequest) {
       .query("SELECT consumer_id FROM Consumers WHERE phone_number = @phone");
     
     if (existing.recordset.length > 0) {
-      // Already exists — update instead of fail
+      // Already exists â€” update instead of fail
       const existingId = existing.recordset[0].consumer_id;
       
       await db.request()
@@ -254,17 +254,7 @@ export async function POST(request: NextRequest) {
 // GET - Health check / info
 // ============================================================================
 
+
 export async function GET() {
-  return NextResponse.json({
-    endpoint: "/api/internal/sync-consumer",
-    purpose: "Sync WhatsApp consumer registrations to Azure SQL",
-    direction: "Google Sheets → Azure SQL",
-    methods: ["POST"],
-    required_header: "x-internal-api-key",
-    required_fields: ["consumer_id", "phone_number"],
-    optional_fields: [
-      "first_name", "last_name", "gender", "age_range",
-      "subscription_tier", "preferred_language", "registration_source"
-    ],
-  });
+  return NextResponse.json({ error: "Method not allowed" }, { status: 405 });
 }

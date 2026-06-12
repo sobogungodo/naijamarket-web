@@ -1,4 +1,4 @@
-// ============================================================================
+﻿// ============================================================================
 // src/app/api/webhooks/paystack/route.ts
 // NaijaMarket Intel - Paystack Payment Webhook
 // Version: 1.0.0 | Date: 2026-02-20
@@ -18,7 +18,7 @@
 //           invoice.payment_failed, refund.processed
 //
 // VERCEL ENV VARS NEEDED:
-//   PAYSTACK_SECRET_KEY (from Paystack dashboard → Settings → API Keys)
+//   PAYSTACK_SECRET_KEY (from Paystack dashboard â†’ Settings â†’ API Keys)
 //   TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_WHATSAPP_FROM
 //
 // PAYMENT INITIALIZATION MUST INCLUDE metadata:
@@ -71,7 +71,7 @@ function phoneToWhatsApp(phone: string): string {
 }
 
 function naira(amount: number): string {
-  return `₦${amount.toLocaleString("en-NG")}`;
+  return `â‚¦${amount.toLocaleString("en-NG")}`;
 }
 
 function genId(prefix: string): string {
@@ -97,14 +97,17 @@ async function sendWhatsApp(phone: string, message: string): Promise<boolean> {
       }
     );
     const data = await res.json();
-    if (res.ok) { console.log(`[WA] ✅ ${phone}: ${data.sid}`); return true; }
-    console.error(`[WA] ❌ ${phone}: ${data.message}`);
+    if (res.ok) { console.log(`[WA] âœ… ${phone}: ${data.sid}`); return true; }
+    console.error(`[WA] âŒ ${phone}: ${data.message}`);
     return false;
   } catch (e) { console.error("[WA] error:", e); return false; }
 }
 
 function verifySignature(body: string, sig: string): boolean {
-  if (!PAYSTACK_SECRET_KEY) return true; // dev mode
+  if (!PAYSTACK_SECRET_KEY) {
+    console.error("[PS] PAYSTACK_SECRET_KEY not set — rejecting all webhooks");
+    return false;
+  }
   return crypto.createHmac("sha512", PAYSTACK_SECRET_KEY).update(body).digest("hex") === sig;
 }
 
@@ -199,7 +202,7 @@ async function activateSubscription(
       )
     `;
 
-    console.log(`[PS] ✅ ${tierCode} activated for ${phone} until ${endISO}`);
+    console.log(`[PS] âœ… ${tierCode} activated for ${phone} until ${endISO}`);
     return { success: true };
   } catch (e: any) {
     console.error("[PS] Activation error:", e);
@@ -214,10 +217,20 @@ async function activateSubscription(
 async function onChargeSuccess(data: any): Promise<string> {
   const meta = extractMeta(data);
   const phone = meta.phone_number;
-  const amount = (data.amount || 0) / 100; // kobo → naira
+  const amount = (data.amount || 0) / 100; // kobo â†’ naira
   const ref = data.reference || "";
 
   if (!phone) return "No phone in metadata";
+
+  // Idempotency: skip if reference already processed
+  const existing = await prisma.$queryRaw`
+    SELECT transaction_id FROM Subscription_Transactions
+    WHERE payment_reference = ${ref} AND status = 'SUCCESS'
+  ` as any[];
+  if (existing.length > 0) {
+    console.log(`[PS] Duplicate ref ${ref} — skipping`);
+    return `Duplicate ignored: ${ref}`;
+  }
 
   console.log(`[PS] charge.success: ${phone} ${naira(amount)} ref=${ref}`);
 
@@ -236,7 +249,7 @@ async function onChargeSuccess(data: any): Promise<string> {
       )
     `;
     await sendWhatsApp(phone,
-      `✅ *Add-On Activated!*\n\n${meta.tier_name || "Your add-on"} is now active.\nPayment: ${naira(amount)}\n\nType *mystatus* to see details.`
+      `âœ… *Add-On Activated!*\n\n${meta.tier_name || "Your add-on"} is now active.\nPayment: ${naira(amount)}\n\nType *mystatus* to see details.`
     );
     return `Addon for ${phone}`;
   }
@@ -258,7 +271,7 @@ async function onChargeSuccess(data: any): Promise<string> {
       )
     `;
     await sendWhatsApp(phone,
-      `✅ *Morning Brief Activated!*\n\nYou'll receive daily prices at 5:30 AM.\nPayment: ${naira(amount)}\nValid until: ${endDate.toLocaleDateString("en-NG")}\n\n🌅 See you tomorrow morning!`
+      `âœ… *Morning Brief Activated!*\n\nYou'll receive daily prices at 5:30 AM.\nPayment: ${naira(amount)}\nValid until: ${endDate.toLocaleDateString("en-NG")}\n\nðŸŒ… See you tomorrow morning!`
     );
     return `Morning Brief for ${phone}`;
   }
@@ -274,11 +287,11 @@ async function onChargeSuccess(data: any): Promise<string> {
     const days = DURATION_DAYS[billing] || 30;
     const endDate = new Date(Date.now() + days * 86400000);
     await sendWhatsApp(phone,
-      `✅ *Payment Confirmed!*\n\n` +
+      `âœ… *Payment Confirmed!*\n\n` +
       `Your payment of ${naira(amount)} has been received.\n\n` +
-      `📦 *Plan:* ${tierName} (${billing})\n` +
-      `📅 *Valid Until:* ${endDate.toLocaleDateString("en-NG", { day: "numeric", month: "short", year: "numeric" })}\n` +
-      `🔓 *Status:* ACTIVE\n\n` +
+      `ðŸ“¦ *Plan:* ${tierName} (${billing})\n` +
+      `ðŸ“… *Valid Until:* ${endDate.toLocaleDateString("en-NG", { day: "numeric", month: "short", year: "numeric" })}\n` +
+      `ðŸ”“ *Status:* ACTIVE\n\n` +
       `Type *mystatus* to view details.\nType *price* to start checking prices.`
     );
   }
@@ -308,7 +321,7 @@ async function onChargeFailed(data: any): Promise<string> {
   `;
 
   await sendWhatsApp(phone,
-    `❌ *Payment Failed*\n\nWe couldn't process your payment of ${naira(amount)}.\n\n📋 *Reason:* ${reason}\n📎 *Ref:* ${ref}\n\nType *upgrade* to retry.`
+    `âŒ *Payment Failed*\n\nWe couldn't process your payment of ${naira(amount)}.\n\nðŸ“‹ *Reason:* ${reason}\nðŸ“Ž *Ref:* ${ref}\n\nType *upgrade* to retry.`
   );
 
   return `Failed ${phone}: ${reason}`;
@@ -326,7 +339,7 @@ async function onInvoicePaymentFailed(data: any): Promise<string> {
   `;
 
   await sendWhatsApp(phone,
-    `⚠️ *Subscription Renewal Failed*\n\nWe couldn't renew your subscription.\n\nYou have *${GRACE_PERIOD_DAYS} days* before downgrade to FREE.\n\nType *upgrade* to renew now.`
+    `âš ï¸ *Subscription Renewal Failed*\n\nWe couldn't renew your subscription.\n\nYou have *${GRACE_PERIOD_DAYS} days* before downgrade to FREE.\n\nType *upgrade* to renew now.`
   );
 
   return `Grace period for ${phone}`;
@@ -338,7 +351,7 @@ async function onRefundProcessed(data: any): Promise<string> {
   const amount = (data.amount || 0) / 100;
   if (phone) {
     await sendWhatsApp(phone,
-      `💰 *Refund Processed*\n\nYour refund of ${naira(amount)} has been processed.\nPlease allow 3-5 business days to see it in your account.`
+      `ðŸ’° *Refund Processed*\n\nYour refund of ${naira(amount)} has been processed.\nPlease allow 3-5 business days to see it in your account.`
     );
   }
   return `Refund ${naira(amount)} for ${phone}`;
@@ -356,12 +369,12 @@ export async function POST(request: NextRequest) {
     const sig = request.headers.get("x-paystack-signature") || "";
 
     if (!verifySignature(rawBody, sig)) {
-      console.error("[PS] ❌ Invalid signature");
+      console.error("[PS] âŒ Invalid signature");
       return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
     }
 
     const { event, data } = JSON.parse(rawBody);
-    console.log(`[PS] ═══ ${event} | ref=${data?.reference} | amt=${(data?.amount || 0) / 100} ═══`);
+    console.log(`[PS] â•â•â• ${event} | ref=${data?.reference} | amt=${(data?.amount || 0) / 100} â•â•â•`);
 
     let result: string;
     switch (event) {
@@ -373,11 +386,11 @@ export async function POST(request: NextRequest) {
       default:                          result = `Ignored: ${event}`;
     }
 
-    console.log(`[PS] ✅ ${Date.now() - t0}ms: ${result}`);
+    console.log(`[PS] âœ… ${Date.now() - t0}ms: ${result}`);
     return NextResponse.json({ success: true, event, result });
 
   } catch (e: any) {
     console.error("[PS] Fatal:", e);
-    return NextResponse.json({ success: false, error: e.message }, { status: 200 });
+    return NextResponse.json({ success: false, error: e.message }, { status: 500 });
   }
 }
