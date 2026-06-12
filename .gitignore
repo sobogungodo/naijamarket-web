@@ -69,3 +69,5 @@ __tests__/
 *.---
 .env.vapid
 xcopy
+
+admin-dashboard/.next/
