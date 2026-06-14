@@ -7,6 +7,7 @@ import NextAuth, { NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
 
 const FUNC_BASE = process.env.FUNC_API_BASE_URL || "https://func-naijamarket-api.azurewebsites.net/api";
+const FUNC_KEY  = process.env.FUNC_API_KEY || "";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -14,7 +15,7 @@ async function validateSession(consumer_id: string, session_token: string) {
   try {
     const resp = await fetch(`${FUNC_BASE}/validate_session`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...(FUNC_KEY ? {"x-functions-key": FUNC_KEY} : {}) },
       body: JSON.stringify({ consumer_id, session_token }),
     });
     if (!resp.ok) return null;
