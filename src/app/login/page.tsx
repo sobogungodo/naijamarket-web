@@ -435,7 +435,7 @@ function LoginForm() {
                   }}
                   className="w-full text-gray-400 hover:text-white text-sm py-2"
                 >
-                  ÔåÉ Change phone number
+                  ← Change phone number
                 </button>
               </form>
             )}
@@ -565,7 +565,7 @@ function LoginForm() {
                   }}
                   className="w-full text-gray-400 hover:text-white text-sm py-2"
                 >
-                  ÔåÉ Change email
+                  ← Change email
                 </button>
               </form>
             )}
@@ -636,7 +636,7 @@ export default function LoginPage() {
 
         {/* Footer */}
         <p className="text-center text-gray-600 text-xs mt-6 font-mono">
-          ┬® 2026 NaijaMarket Intel ÔÇó Giggababytes Oy
+          © 2026 NaijaMarket Intel • Giggababytes Oy
         </p>
       </div>
     </div>
