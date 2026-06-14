@@ -50,10 +50,10 @@ export async function GET(request: NextRequest) {
 
       if (type === 'consumers' || type === 'all') {
         consumerLogs = await query<any>(`
-          SELECT TOP (${type === 'all' ? 20 : limit})
+          SELECT
             s.session_id,
             s.phone_number,
-            ISNULL(c.name, 'Unknown') AS consumer_name,
+            ISNULL(c.full_name, ISNULL(c.first_name, 'Unknown')) AS consumer_name,
             ISNULL(c.subscription_tier, 'FREE') AS subscription_tier,
             s.session_status,
             s.current_step,
@@ -70,7 +70,7 @@ export async function GET(request: NextRequest) {
           LEFT JOIN dbo.Consumers c ON c.phone = s.phone_number
           WHERE 1=1 ${searchClause} ${dateFilter('s.created_at')}
           ORDER BY s.created_at DESC
-          ${type === 'consumers' ? `OFFSET ${offset} ROWS FETCH NEXT ${limit} ROWS ONLY` : ''}
+          OFFSET ${offset} ROWS FETCH NEXT ${type === 'all' ? 20 : limit} ROWS ONLY
         `);
       }
     }
@@ -91,7 +91,7 @@ export async function GET(request: NextRequest) {
 
       if (type === 'traders' || type === 'all') {
         traderLogs = await query<any>(`
-          SELECT TOP (${type === 'all' ? 20 : limit})
+          SELECT
             s.submission_id,
             s.trader_id,
             s.trader_name,
@@ -118,7 +118,7 @@ export async function GET(request: NextRequest) {
           JOIN dbo.Traders_register t ON t.trader_id = s.trader_id
           WHERE 1=1 ${searchClause} ${dateFilter('s.submitted_at')}
           ORDER BY s.submitted_at DESC
-          ${type === 'traders' ? `OFFSET ${offset} ROWS FETCH NEXT ${limit} ROWS ONLY` : ''}
+          OFFSET ${offset} ROWS FETCH NEXT ${type === 'all' ? 20 : limit} ROWS ONLY
         `);
       }
     }
@@ -139,7 +139,7 @@ export async function GET(request: NextRequest) {
 
       if (type === 'validators' || type === 'all') {
         validatorLogs = await query<any>(`
-          SELECT TOP (${type === 'all' ? 20 : limit})
+          SELECT
             vv.vote_id,
             vv.submission_id,
             vv.validator_id,
@@ -168,7 +168,7 @@ export async function GET(request: NextRequest) {
           LEFT JOIN dbo.Validators v ON v.validator_id = vv.validator_id
           WHERE 1=1 ${searchClause} ${dateFilter('vv.created_at')}
           ORDER BY vv.created_at DESC
-          ${type === 'validators' ? `OFFSET ${offset} ROWS FETCH NEXT ${limit} ROWS ONLY` : ''}
+          OFFSET ${offset} ROWS FETCH NEXT ${type === 'all' ? 20 : limit} ROWS ONLY
         `);
       }
     }
