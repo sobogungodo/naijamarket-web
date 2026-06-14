@@ -159,7 +159,16 @@ function LoginForm() {
     setError("");
 
     try {
-      // Step 1: Call login API — verifies OTP + creates session token
+      // Step 1: Verify OTP first
+      const verifyRes = await fetch("/api/auth/verify-otp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ phone: countryCode.replace("+","") + phone.replace(/\D/g,""), otp: phoneOtp }),
+      });
+      const verifyData = await verifyRes.json();
+      if (!verifyRes.ok || !verifyData.valid) throw new Error("Invalid or expired OTP code.");
+
+      // Step 2: Call login API — creates session token
       const loginRes = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
