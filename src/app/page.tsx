@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useRef, FormEvent } from "react";
 import Link from "next/link";
-import EmailSignup from "@/components/EmailSignup";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import WaitlistSection from '@/components/WaitlistSection'
 
@@ -745,7 +744,6 @@ function CTASection() {
             <span className="nm-cta-divider-text">or get free weekly market briefs</span>
             <span className="nm-cta-divider-line" />
           </div>
-          <EmailSignup variant="footer" source="cta_section" />
         </div>
       </div>
     </section>
