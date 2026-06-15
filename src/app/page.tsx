@@ -658,7 +658,7 @@ function PricingSection() {
               Custom SLA, white-label, Power BI integration, and dedicated support available.
             </div>
           </div>
-          
+          <a
             href="mailto:sales@naijamarketintel.ng"
             style={{
               display: "inline-block",
