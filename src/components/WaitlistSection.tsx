@@ -162,8 +162,6 @@ export default function WaitlistSection() {
             <div className="text-gray-600 text-xs mt-1">Free to join</div>
           </div>
         </div>
-          ))}
-        </div>
       </div>
     </section>
   )
