@@ -62,8 +62,6 @@ export default function WaitlistSection() {
       <div className="absolute inset-0 opacity-5 pointer-events-none" style={{ backgroundImage: 'linear-gradient(#00a651 1px,transparent 1px),linear-gradient(90deg,#00a651 1px,transparent 1px)', backgroundSize: '60px 60px' }} />
       <div className="relative container mx-auto max-w-2xl">
         <div className="text-center mb-12">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-green-500/30 bg-green-500/10 mb-6">
-          </div>
           <h2 className="text-3xl md:text-5xl font-bold text-white leading-tight mb-4">
             Get First Access to{' '}
             <span className="text-transparent bg-clip-text bg-gradient-to-r from-green-400 to-emerald-300">Real Market Prices</span>
