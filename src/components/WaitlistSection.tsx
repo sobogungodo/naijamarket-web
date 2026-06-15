@@ -63,8 +63,6 @@ export default function WaitlistSection() {
       <div className="relative container mx-auto max-w-2xl">
         <div className="text-center mb-12">
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-green-500/30 bg-green-500/10 mb-6">
-            <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
-            <span className="text-green-400 text-xs font-mono uppercase tracking-widest">Early Access — June 2026</span>
           </div>
           <h2 className="text-3xl md:text-5xl font-bold text-white leading-tight mb-4">
             Get First Access to{' '}
@@ -160,12 +158,12 @@ export default function WaitlistSection() {
           )}
         </div>
 
-        <div className="grid grid-cols-3 gap-4 mt-8 text-center">
-          {[{ value: '₦0', label: 'Cost to join' }, { value: 'June 2026', label: 'Launch date' }, { value: '~300', label: 'Alpha spots' }].map(({ value, label }) => (
-            <div key={label} className="bg-[#0d0d0d] border border-[#1a1a1a] rounded-xl p-4">
-              <div className="text-green-400 font-bold text-lg">{value}</div>
-              <div className="text-gray-600 text-xs mt-1">{label}</div>
-            </div>
+        <div className="flex justify-center mt-8">
+          <div className="bg-[#0d0d0d] border border-[#1a1a1a] rounded-xl px-8 py-4 text-center">
+            <div className="text-green-400 font-bold text-lg">₦0</div>
+            <div className="text-gray-600 text-xs mt-1">Free to join</div>
+          </div>
+        </div>
           ))}
         </div>
       </div>
