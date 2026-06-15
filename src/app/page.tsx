@@ -594,7 +594,7 @@ function HowItWorksSection() {
 function PricingSection() {
   const { ref, visible } = useInView();
   return (
-        <section id="pricing" className="nm-section" ref={ref}>
+    <section id="pricing" className="nm-section" ref={ref}>
       <div className="nm-section-inner">
         <div className="nm-section-header">
           <span className="nm-section-tag">Pricing</span>
