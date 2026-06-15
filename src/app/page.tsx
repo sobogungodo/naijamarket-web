@@ -117,38 +117,7 @@ const TIERS = [
     ft: ["25 queries/day", "3 markets", "Price forecast", "Market snapshot", "Historical data", "Priority support"],
     ct: "Go Gold", hr: "/register?plan=gold",
   },
-  {
-    nm: "BUSINESS", pr: "₦15,000", pd: "/mo", tg: null, ac: "#FF8A65", hl: false,
-    ft: ["100 queries/day", "5 markets", "Bulk buyer tool", "CSV & PDF export", "Full analytics", "Priority support"],
-    ct: "Go Business", hr: "/register?plan=business",
-  },
-  {
-    nm: "CORPORATE", pr: "₦500,000", pd: "/mo", tg: null, ac: "#CE93D8", hl: false,
-    ft: ["Unlimited queries", "All 282 markets", "API access", "Dedicated account mgr", "Analytics dashboard", "SLA 99.5%"],
-    ct: "Contact Sales", hr: "mailto:sales@naijamarketintel.ng",
-  },
-  {
-    nm: "ENTERPRISE", pr: "₦1.5M", pd: "/mo", tg: null, ac: "#00E5FF", hl: false,
-    ft: ["Unlimited API calls", "All 282 markets", "White-label", "Custom SLA", "Dedicated engineer", "Power BI integration"],
-    ct: "Contact Sales", hr: "mailto:sales@naijamarketintel.ng",
-  },
-  {
-    nm: "API STARTER", pr: "₦500,000", pd: "/mo", tg: null, ac: "#80CBC4", hl: false,
-    ft: ["10,000 API calls/day", "All markets", "JSON & CSV", "Full documentation", "Analytics access"],
-    ct: "Contact Sales", hr: "mailto:sales@naijamarketintel.ng",
-  },
-  {
-    nm: "API BUSINESS", pr: "₦1,000,000", pd: "/mo", tg: null, ac: "#81D4FA", hl: false,
-    ft: ["50,000 API calls/day", "All markets", "Dedicated support", "SLA 99.5%", "Custom endpoints"],
-    ct: "Contact Sales", hr: "mailto:sales@naijamarketintel.ng",
-  },
-  {
-    nm: "API ENTERPRISE", pr: "₦1,500,000", pd: "/mo", tg: "FOR INSTITUTIONS", ac: "#F48FB1", hl: false,
-    ft: ["Unlimited API calls", "All markets", "White-label API", "Custom SLA", "Dedicated engineer", "Government & banking"],
-    ct: "Contact Sales", hr: "mailto:sales@naijamarketintel.ng",
-  },
 ];
-
 const TESTIMONIALS = [
   { nm: "Alhaji Musa Ibrahim", rl: "Rice Trader · Kano", q: "Before NaijaMarket, I was losing ₦500K monthly to price manipulation. Now I check prices before every deal.", av: "MI" },
   { nm: "Chioma Okafor", rl: "Procurement Manager · Lagos", q: "We reduced food procurement costs by 18% in 3 months. The arbitrage scanner alone pays for the subscription.", av: "CO" },
@@ -517,6 +486,48 @@ function Hero() {
         <div className="nm-hero-demo">
           <DemoTabs />
         </div>
+
+        {/* Enterprise & API row */}
+        <div style={{
+          marginTop: "24px",
+          padding: "28px 32px",
+          background: "rgba(255,255,255,0.03)",
+          border: "1px solid rgba(255,255,255,0.08)",
+          borderRadius: "16px",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          flexWrap: "wrap",
+          gap: "20px",
+        }}>
+          <div>
+            <div style={{ color: "#fff", fontWeight: 700, fontSize: "16px", marginBottom: "6px" }}>
+              Business, Corporate &amp; API Plans
+            </div>
+            <div style={{ color: "#94A3B8", fontSize: "14px", maxWidth: "480px", lineHeight: 1.6 }}>
+              From ₦15,000/mo for businesses to unlimited API access for institutions.
+              Custom SLA, white-label, Power BI integration, and dedicated support available.
+            </div>
+          </div>
+          <a
+            href="mailto:sales@naijamarketintel.ng"
+            style={{
+              display: "inline-block",
+              padding: "12px 28px",
+              background: "transparent",
+              border: "1px solid rgba(255,255,255,0.2)",
+              borderRadius: "10px",
+              color: "#fff",
+              fontWeight: 600,
+              fontSize: "14px",
+              textDecoration: "none",
+              whiteSpace: "nowrap",
+              transition: "border-color 0.2s",
+            }}
+          >
+            Contact Sales →
+          </a>
+        </div>
       </div>
     </section>
   );
@@ -737,13 +748,6 @@ function CTASection() {
           >
             💬 Chat on WhatsApp
           </a>
-        </div>
-        <div className="nm-cta-signup">
-          <div className="nm-cta-divider">
-            <span className="nm-cta-divider-line" />
-            <span className="nm-cta-divider-text">or get free weekly market briefs</span>
-            <span className="nm-cta-divider-line" />
-          </div>
         </div>
       </div>
     </section>
