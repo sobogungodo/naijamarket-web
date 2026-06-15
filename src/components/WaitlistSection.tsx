@@ -13,6 +13,7 @@ export default function WaitlistSection() {
   const [step, setStep]           = useState<Step>('idle')
   const [message, setMessage]     = useState('')
   const [phoneErr, setPhoneErr]   = useState('')
+  const [emailErr, setEmailErr]   = useState('')
 
   function validatePhone(val: string) {
     setPhone(val); setPhoneErr('')
@@ -22,21 +23,39 @@ export default function WaitlistSection() {
     if (val.length > 6 && !ok) setPhoneErr('Enter a valid Nigerian number, e.g. 08012345678')
   }
 
+  function validateEmail(val: string) {
+    setEmail(val); setEmailErr('')
+    if (!val) return
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val)) setEmailErr('Enter a valid email address')
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!phone || phoneErr) return
+    if (!email || emailErr) { setEmailErr('Email is required'); return }
     setStep('loading')
     try {
       const res = await fetch('/api/waitlist', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone, name: name || undefined, email: email || undefined, interest, market_area: market || undefined }),
+        body: JSON.stringify({
+          phone, name: name || undefined, email,
+          interest, market_area: market || undefined,
+        }),
       })
       const data = await res.json()
-      if (!res.ok) { setPhoneErr(data.error || 'Something went wrong.'); setStep('idle'); return }
+      if (!res.ok) {
+        const errMsg = data.error || 'Something went wrong.'
+        if (errMsg.toLowerCase().includes('phone')) setPhoneErr(errMsg)
+        else if (errMsg.toLowerCase().includes('email')) setEmailErr(errMsg)
+        else setMessage(errMsg)
+        setStep('idle'); return
+      }
       setMessage(data.message); setStep('success')
     } catch { setStep('error'); setMessage('Network error — please try again.') }
   }
+
+  const canSubmit = !!phone && !phoneErr && !!email && !emailErr && step !== 'loading'
 
   return (
     <section id="waitlist" className="relative py-24 px-4 overflow-hidden" style={{ background: 'linear-gradient(180deg,#050505 0%,#0a0a0a 50%,#050505 100%)' }}>
@@ -70,8 +89,9 @@ export default function WaitlistSection() {
               <p className="text-gray-400 mb-6">{message}</p>
               <div className="bg-[#0a0a0a] rounded-xl p-4 border border-[#1a1a1a] text-left space-y-2">
                 <p className="text-gray-500 text-sm font-mono"><span className="text-green-400">✓</span> Spot reserved</p>
+                <p className="text-gray-500 text-sm font-mono"><span className="text-green-400">✓</span> Welcome email sent — check your inbox</p>
+                <p className="text-gray-500 text-sm font-mono"><span className="text-green-400">✓</span> Weekly market brief every Monday</p>
                 <p className="text-gray-500 text-sm font-mono"><span className="text-green-400">✓</span> WhatsApp invite coming at launch</p>
-                <p className="text-gray-500 text-sm font-mono"><span className="text-yellow-400">○</span> Save our number: +1 555 630 2963</p>
               </div>
             </div>
           ) : (
@@ -87,6 +107,7 @@ export default function WaitlistSection() {
                   ))}
                 </div>
               </div>
+
               <div>
                 <label className="block text-gray-400 text-sm mb-2">Phone Number <span className="text-green-500">*</span></label>
                 <div className="flex">
@@ -96,11 +117,21 @@ export default function WaitlistSection() {
                 </div>
                 {phoneErr && <p className="text-red-400 text-xs mt-1">{phoneErr}</p>}
               </div>
+
+              <div>
+                <label className="block text-gray-400 text-sm mb-2">Email Address <span className="text-green-500">*</span></label>
+                <input type="email" value={email} onChange={e => validateEmail(e.target.value)} placeholder="you@example.com" required
+                  className={`w-full bg-[#0a0a0a] border rounded-xl px-4 py-3 text-white placeholder-gray-600 text-sm focus:outline-none transition-colors ${emailErr ? 'border-red-500/60' : 'border-[#2a2a2a] focus:border-green-500/60'}`} />
+                {emailErr && <p className="text-red-400 text-xs mt-1">{emailErr}</p>}
+                <p className="text-gray-600 text-xs mt-1">Weekly market brief sent every Monday</p>
+              </div>
+
               <div>
                 <label className="block text-gray-400 text-sm mb-2">Name <span className="text-gray-600">(optional)</span></label>
                 <input type="text" value={name} onChange={e => setName(e.target.value)} placeholder="Your name"
                   className="w-full bg-[#0a0a0a] border border-[#2a2a2a] rounded-xl px-4 py-3 text-white placeholder-gray-600 text-sm focus:outline-none focus:border-green-500/60 transition-colors" />
               </div>
+
               <div>
                 <label className="block text-gray-400 text-sm mb-2">Your Market Area <span className="text-gray-600">(optional)</span></label>
                 <select value={market} onChange={e => setMarket(e.target.value)}
@@ -110,14 +141,12 @@ export default function WaitlistSection() {
                   {MARKETS.map(a => <option key={a} value={a} className="bg-[#111] text-white">{a}</option>)}
                 </select>
               </div>
-              <div>
-                <label className="block text-gray-400 text-sm mb-2">Email <span className="text-gray-600">(optional — for launch updates)</span></label>
-                <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="you@example.com"
-                  className="w-full bg-[#0a0a0a] border border-[#2a2a2a] rounded-xl px-4 py-3 text-white placeholder-gray-600 text-sm focus:outline-none focus:border-green-500/60 transition-colors" />
-              </div>
-              <button type="submit" disabled={step === 'loading' || !!phoneErr || !phone}
+
+              {message && <p className="text-red-400 text-sm text-center">{message}</p>}
+
+              <button type="submit" disabled={!canSubmit}
                 className="w-full py-4 rounded-xl text-sm font-bold transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                style={{ background: step === 'loading' || !phone || !!phoneErr ? '#1a3a2a' : 'linear-gradient(135deg,#00a651,#00c563)', color: '#fff' }}>
+                style={{ background: canSubmit ? 'linear-gradient(135deg,#00a651,#00c563)' : '#1a3a2a', color: '#fff' }}>
                 {step === 'loading' ? (
                   <span className="flex items-center justify-center gap-2">
                     <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/></svg>
@@ -125,8 +154,8 @@ export default function WaitlistSection() {
                   </span>
                 ) : '🚀 Join the Waitlist'}
               </button>
-              {step === 'error' && <p className="text-red-400 text-sm text-center">{message}</p>}
-              <p className="text-gray-600 text-xs text-center">No spam. WhatsApp invite only when we go live in your area.</p>
+
+              <p className="text-gray-600 text-xs text-center">No spam. Weekly market brief + WhatsApp invite when we go live.</p>
             </form>
           )}
         </div>
