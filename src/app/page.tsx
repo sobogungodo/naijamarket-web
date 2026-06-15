@@ -838,7 +838,7 @@ export default function LandingPage() {
         <WaitlistSection />
       <PricingSection />
         <TestimonialsSection />
-        <CTASection />
+        {/* <CTASection /> */}
         <Footer />
       </div>
     </>
