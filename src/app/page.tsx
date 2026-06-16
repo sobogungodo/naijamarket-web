@@ -390,7 +390,7 @@ Reply ALERT RICE 80000 to get notified`;
         )}
       </div>
       <a
-        href="https://wa.me/2349131095009?text=RICE%20LAGOS"
+        href="https://wa.me/2349131095009?text=menu"
         target="_blank"
         rel="noopener noreferrer"
         className="nm-wa-try"
@@ -454,7 +454,7 @@ function Hero() {
 
           <div className="nm-hero-ctas">
             <a
-              href="https://wa.me/2349131095009?text=Hi%20NaijaMarket"
+              href="https://wa.me/2349131095009?text=menu"
               target="_blank"
               rel="noopener noreferrer"
               className="nm-btn-green nm-btn-lg"
@@ -741,7 +741,7 @@ function CTASection() {
             Get Started Free →
           </Link>
           <a
-            href="https://wa.me/2349131095009?text=Hi%20NaijaMarket"
+            href="https://wa.me/2349131095009?text=menu"
             target="_blank"
             rel="noopener noreferrer"
             className="nm-btn-outline nm-btn-lg"

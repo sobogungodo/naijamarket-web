@@ -9,7 +9,7 @@
 import { useState, useEffect } from "react";
 
 const WA_NUMBER = "2349131095009"; // NaijaMarket Intel WhatsApp number
-const WA_URL = `https://wa.me/${WA_NUMBER}?text=Hi%20NaijaMarket%20Intel%2C%20I%20want%20to%20check%20prices`;
+const WA_URL = `https://wa.me/${WA_NUMBER}?text=menu`;
 
 interface WhatsAppCTAProps {
   inline?: boolean;
@@ -19,8 +19,8 @@ interface WhatsAppCTAProps {
 
 export default function WhatsAppCTA({
   inline = false,
-  message = "Hi NaijaMarket Intel, I want to check prices",
-  label = "Check prices on WhatsApp",
+  message = "menu",
+  label = "Price Check",
 }: WhatsAppCTAProps) {
   const [visible, setVisible] = useState(false);
   const url = `https://wa.me/${WA_NUMBER}?text=${encodeURIComponent(message)}`;
