@@ -371,7 +371,8 @@ export default function APIPortalPage() {
                   </div>
                   {ep.params.length > 0 && (
                     <div className="p-4">
-                      <table className="w-full text-sm">
+                      <div className="overflow-x-auto rounded-lg">
+            <table className="w-full text-sm">
                         <thead><tr className="text-left text-gray-500 text-xs uppercase">
                           <th className="pb-2 pr-4">Parameter</th><th className="pb-2 pr-4">Type</th><th className="pb-2 pr-4">Required</th><th className="pb-2">Description</th>
                         </tr></thead>
@@ -386,6 +387,7 @@ export default function APIPortalPage() {
                           ))}
                         </tbody>
                       </table>
+            </div>
                     </div>
                   )}
                 </div>

@@ -232,7 +232,8 @@ export default function SupplierDashboardPage() {
       {/* Supplier Table */}
       <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
         <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+          <div className="overflow-x-auto rounded-lg">
+            <table className="w-full text-sm">
             <thead>
               <tr className="bg-gray-50 dark:bg-gray-900 text-gray-500 text-xs uppercase tracking-wide">
                 <th className="text-left p-3">Commodity</th>
@@ -300,6 +301,7 @@ export default function SupplierDashboardPage() {
               })}
             </tbody>
           </table>
+            </div>
         </div>
       </div>
     </div>

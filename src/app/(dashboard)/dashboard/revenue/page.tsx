@@ -344,7 +344,8 @@ export default function RevenueAttributionPage() {
                 <Users className="w-4 h-4 text-green-500" /> Top Revenue Customers
               </h3>
               <div className="overflow-x-auto">
-                <table className="w-full text-sm">
+                <div className="overflow-x-auto rounded-lg">
+            <table className="w-full text-sm">
                   <thead>
                     <tr className="text-left text-gray-500 text-xs uppercase">
                       <th className="pb-2 pr-4">#</th><th className="pb-2 pr-4">Phone</th><th className="pb-2 pr-4 text-right">Revenue</th><th className="pb-2 text-right">Transactions</th>
@@ -361,6 +362,7 @@ export default function RevenueAttributionPage() {
                     ))}
                   </tbody>
                 </table>
+            </div>
               </div>
             </div>
           )}

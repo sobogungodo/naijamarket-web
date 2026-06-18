@@ -487,6 +487,7 @@ export default function HeatmapPage() {
             <h3 className="font-semibold">Regional Price Rankings</h3>
           </div>
           <div className="overflow-x-auto">
+            <div className="overflow-x-auto rounded-lg">
             <table className="w-full">
               <thead className="bg-[#252525]">
                 <tr>
@@ -547,6 +548,7 @@ export default function HeatmapPage() {
                 ))}
               </tbody>
             </table>
+            </div>
           </div>
         </div>
       )}

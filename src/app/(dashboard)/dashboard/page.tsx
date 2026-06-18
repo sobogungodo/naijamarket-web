@@ -254,7 +254,8 @@ export default function DashboardPage() {
           </div>
         </div>
         <div className="table-wrapper">
-          <table className="data-table">
+          <div className="overflow-x-auto rounded-lg">
+            <table className="data-table">
             <thead>
               <tr>
                 <th>Item</th>
@@ -300,6 +301,7 @@ export default function DashboardPage() {
               ))}
             </tbody>
           </table>
+            </div>
         </div>
       </div>
     </div>

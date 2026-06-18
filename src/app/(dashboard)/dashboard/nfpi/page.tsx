@@ -435,6 +435,7 @@ export default function NFPIDashboard() {
             </div>
           </div>
           <div className="overflow-x-auto">
+            <div className="overflow-x-auto rounded-lg">
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-left text-gray-400 border-b border-gray-700">
@@ -467,6 +468,7 @@ export default function NFPIDashboard() {
                 })}
               </tbody>
             </table>
+            </div>
           </div>
         </div>
       ) : !access_level.basket ? (

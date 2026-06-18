@@ -398,6 +398,7 @@ export default function ExportDataPage() {
             Recent Exports
           </h2>
           <div className="bg-[#1a1a1a] border border-gray-800 rounded-xl overflow-hidden">
+            <div className="overflow-x-auto rounded-lg">
             <table className="w-full">
               <thead>
                 <tr className="border-b border-gray-800">
@@ -421,6 +422,7 @@ export default function ExportDataPage() {
                 ))}
               </tbody>
             </table>
+            </div>
           </div>
         </div>
       )}

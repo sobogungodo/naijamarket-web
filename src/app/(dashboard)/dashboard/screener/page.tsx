@@ -517,6 +517,7 @@ export default function ScreenerPage() {
       {data && (
         <div className="bg-[#1a1a1a] border border-gray-800 rounded-xl overflow-hidden">
           <div className="overflow-x-auto">
+            <div className="overflow-x-auto rounded-lg">
             <table className="w-full">
               <thead className="bg-[#252525] border-b border-gray-700">
                 <tr>
@@ -620,6 +621,7 @@ export default function ScreenerPage() {
                 ))}
               </tbody>
             </table>
+            </div>
           </div>
           
           {data.results.length === 0 && (

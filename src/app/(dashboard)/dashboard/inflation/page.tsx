@@ -653,7 +653,8 @@ export default function InflationPage() {
           <p className="text-xs text-gray-500">13 items • 100% weight</p>
         </div>
         <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+          <div className="overflow-x-auto rounded-lg">
+            <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-gray-700">
                 <th className="text-left py-2 px-3 text-gray-400 font-medium">Item</th>
@@ -688,6 +689,7 @@ export default function InflationPage() {
               ))}
             </tbody>
           </table>
+            </div>
         </div>
       </div>
       

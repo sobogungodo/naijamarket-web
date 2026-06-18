@@ -547,6 +547,7 @@ function PricesPageContent() {
       {!loading && !error && (
         <div className="bg-terminal-surface border border-terminal-border rounded-xl overflow-hidden">
           <div className="overflow-x-auto">
+            <div className="overflow-x-auto rounded-lg">
             <table className="w-full" style={{ tableLayout: "fixed" }}>
               <colgroup>
                 <col style={{ width: "32px" }} />
@@ -696,6 +697,7 @@ function PricesPageContent() {
                 })}
               </tbody>
             </table>
+            </div>
           </div>
 
           {/* Empty State */}
