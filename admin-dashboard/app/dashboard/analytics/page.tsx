@@ -7,7 +7,7 @@
 // ============================================================
 
 import { useState, useEffect, useCallback } from 'react';
-import PlatformAnalyticsDashboard from '../../components/PlatformAnalyticsDashboard';
+import PlatformAnalyticsDashboard from '../../../components/PlatformAnalyticsDashboard';
 import {
   LineChart, Line, BarChart, Bar, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
