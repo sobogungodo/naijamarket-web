@@ -22,6 +22,18 @@ const ADMIN_PHONES = new Set([
   process.env.ADMIN_PHONE_2,
 ].filter(Boolean));
 
+export async function OPTIONS() {
+  return new Response(null, {
+    status: 204,
+    headers: {
+      "Access-Control-Allow-Origin": "https://naijamarket-admin.vercel.app",
+      "Access-Control-Allow-Methods": "GET, OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type, Authorization",
+      "Access-Control-Allow-Credentials": "true",
+    },
+  });
+}
+
 export async function GET(req: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
@@ -157,6 +169,10 @@ export async function GET(req: NextRequest) {
         ORDER BY date ASC
       `);
 
+    const corsHeaders = {
+      "Access-Control-Allow-Origin": "https://naijamarket-admin.vercel.app",
+      "Access-Control-Allow-Credentials": "true",
+    };
     return NextResponse.json({
       period_days:   days,
       site_overview: siteOverview.recordset[0],

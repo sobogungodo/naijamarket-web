@@ -7,6 +7,7 @@
 // ============================================================
 
 import { useState, useEffect, useCallback } from 'react';
+import PlatformAnalyticsDashboard from '../../components/PlatformAnalyticsDashboard';
 import {
   LineChart, Line, BarChart, Bar, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
@@ -224,7 +225,7 @@ export default function AnalyticsPage() {
   const [data, setData] = useState<AnalyticsData | null>(null);
   const [loading, setLoading] = useState(true);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
-  const [activeTab, setActiveTab] = useState<'overview' | 'geography' | 'pages'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'geography' | 'pages' | 'platform'>('overview');
 
   const fetchData = useCallback(async () => {
     try {
@@ -446,6 +447,15 @@ export default function AnalyticsPage() {
               : '📄 Top Pages'}
           </button>
         ))}
+        <button
+          className={`tab-btn ${activeTab === 'platform' ? 'active' : 'inactive'}`}
+          onClick={() => setActiveTab('platform')}
+          style={{ borderColor: activeTab === 'platform' ? 'rgba(245,158,11,0.5)' : undefined,
+                   background: activeTab === 'platform' ? 'rgba(245,158,11,0.1)' : undefined,
+                   color: activeTab === 'platform' ? '#f59e0b' : undefined }}
+        >
+          🏪 Platform Intel
+        </button>
       </div>
 
       {/* ══════════════════════════════════════════════════ */}
@@ -756,6 +766,14 @@ export default function AnalyticsPage() {
         </div>
       )}
 
+      {/* ══════════════════════════════════════════════════ */}
+      {/* TAB: PLATFORM INTEL                              */}
+      {/* ══════════════════════════════════════════════════ */}
+      {activeTab === 'platform' && (
+        <div className="analytics-card">
+          <PlatformAnalyticsDashboard />
+        </div>
+      )}
       {/* ── Footer ───────────────────────────────────────── */}
       <div style={{
         marginTop: 32, paddingTop: 16,
