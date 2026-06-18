@@ -138,6 +138,8 @@ const STICKY_STYLES = `
 .wa-sticky-reporter {
   background: #d97706;
   box-shadow: 0 4px 16px rgba(217,119,6,0.35);
+  right: auto;
+  left: 1.5rem;
 }
 .wa-sticky-reporter:hover {
   background: #b45309;
