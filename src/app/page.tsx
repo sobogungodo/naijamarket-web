@@ -1887,6 +1887,13 @@ html { scroll-behavior: smooth; }
 
   .nm-footer { padding: 56px 40px 28px; }
 }
+/* ── Landscape phones (rotated) ── */
+@media (max-height: 500px) and (orientation: landscape) {
+  .nm-hero { min-height: auto; padding: 100px 16px 40px; }
+  .nm-hero-title { font-size: clamp(22px, 5vw, 36px); }
+  .nm-hero-inner { gap: 24px; }
+}
+
 `;
 
 

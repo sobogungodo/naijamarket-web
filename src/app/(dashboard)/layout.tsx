@@ -225,7 +225,7 @@ export default function DashboardLayout({
       {/* Sidebar */}
       <aside
         className={`sidebar transition-transform duration-300 ease-in-out ${
-          sidebarOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"
+          sidebarOpen ? "translate-x-0" : "-translate-x-full sm:translate-x-0"
         }`}
         onClick={(e) => e.stopPropagation()}
       >
@@ -335,19 +335,19 @@ export default function DashboardLayout({
       {/* Mobile overlay */}
       {sidebarOpen && (
         <div
-          className="fixed inset-0 z-30 bg-black/60 md:hidden"
+          className="fixed inset-0 z-30 bg-black/60 sm:hidden"
           onClick={() => setSidebarOpen(false)}
         />
       )}
 
       {/* Main Content Area */}
-      <main className="ml-0 md:ml-64">
+      <main className="ml-0 sm:ml-64">
         {/* Command Bar */}
         <header className="sticky top-0 z-50 bg-terminal-bg/95 backdrop-blur-xl border-b border-terminal-border">
           <div className="flex items-center gap-4 px-6 py-3">
             {/* Hamburger — mobile only */}
             <button
-              className="md:hidden p-2 text-gray-400 hover:text-white hover:bg-terminal-surface rounded-lg transition-colors shrink-0"
+              className="sm:hidden p-2 text-gray-400 hover:text-white hover:bg-terminal-surface rounded-lg transition-colors shrink-0"
               onClick={(e) => { e.stopPropagation(); setSidebarOpen(!sidebarOpen); }}
               aria-label="Toggle menu"
             >
