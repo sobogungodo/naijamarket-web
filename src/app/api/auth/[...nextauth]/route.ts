@@ -28,7 +28,7 @@ async function validateSession(consumer_id: string, session_token: string) {
 
 // ── NextAuth Options ──────────────────────────────────────────────────────────
 
-const authOptions: NextAuthOptions = {
+export const authOptions: NextAuthOptions = {
   providers: [
 
     // ── Phone + OTP ───────────────────────────────────────────────────────────
