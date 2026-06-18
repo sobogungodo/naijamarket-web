@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, FormEvent } from "react";
 import Link from "next/link";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import WaitlistSection from '@/components/WaitlistSection'
+import WhatsAppCTA from '@/components/WhatsAppCTA'
 
 // ============================================================================
 // NaijaMarket Intel — Landing Page v2.1 — optimised June 2026
@@ -841,6 +842,7 @@ export default function LandingPage() {
         {/* <CTASection /> */}
         <Footer />
       </div>
+      <WhatsAppCTA />
     </>
   );
 }
@@ -1211,7 +1213,7 @@ html { scroll-behavior: smooth; }
 }
 .nm-hero-stats {
   display: grid;
-  grid-template-columns: repeat(4, auto);
+  grid-template-columns: repeat(2, auto);
   gap: 20px;
   width: fit-content;
 }
@@ -1831,6 +1833,14 @@ html { scroll-behavior: smooth; }
 /* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
    TABLET — 640px+
    â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
+/* ── Tiny screens < 400px: hide State column in price table ── */
+@media (max-width: 399px) {
+  .nm-ck-row { grid-template-columns: 2fr 1.4fr 0.9fr; }
+  .nm-ck-state { display: none; }
+  .nm-ck-row-h span:nth-child(2) { display: none; }
+  .nm-hero-stats { gap: 12px; }
+}
+
 @media (min-width: 640px) {
   .nm-features-grid { grid-template-columns: repeat(2, 1fr); }
   .nm-steps { flex-direction: row; }
@@ -1839,7 +1849,7 @@ html { scroll-behavior: smooth; }
   .nm-testimonials { grid-template-columns: repeat(3, 1fr); }
   .nm-footer-inner { grid-template-columns: 2fr 1fr 1fr 1fr; }
   .nm-footer-bottom { flex-direction: row; justify-content: space-between; }
-  .nm-hero-stats { gap: 32px; }
+  .nm-hero-stats { gap: 32px; grid-template-columns: repeat(4, auto); }
   .nm-stat-val { font-size: 26px; }
 }
 
@@ -1878,5 +1888,6 @@ html { scroll-behavior: smooth; }
   .nm-footer { padding: 56px 40px 28px; }
 }
 `;
+
 
 
