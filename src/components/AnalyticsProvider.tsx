@@ -35,7 +35,13 @@ async function fire(event_type: string, payload: Record<string, any>) {
 
 export default function AnalyticsProvider() {
   const pathname     = usePathname();
-  const { data: sess } = useSession();
+  let sess = null;
+  try {
+    const result = useSession();
+    sess = result?.data ?? null;
+  } catch {
+    sess = null;
+  }
   const sessionStart = useRef<number>(Date.now());
   const scrollFired  = useRef<Set<number>>(new Set());
 
