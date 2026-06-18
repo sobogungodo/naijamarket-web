@@ -198,6 +198,7 @@ export default function RootLayout({
           </ThemeProvider>
         </Providers>
         <WhatsAppCTA />
+      <WhatsAppCTA variant="reporter" message="reporter" label="Register as Price Reporter" />
       </body>
     </html>
   );
