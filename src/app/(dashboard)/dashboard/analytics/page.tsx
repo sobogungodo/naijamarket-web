@@ -18,6 +18,7 @@ import {
   Maximize2,
   X,
 } from "lucide-react";
+import AnalyticsDashboard from "@/components/AnalyticsDashboard";
 import {
   AreaChart,
   Area,
@@ -275,6 +276,7 @@ export default function AnalyticsPage() {
   const [error, setError] = useState<string | null>(null);
   const [period, setPeriod] = useState<"7d" | "30d" | "90d">("30d");
   const [showPowerBI, setShowPowerBI] = useState(false);
+  const [activeTab, setActiveTab] = useState<"market" | "platform">("market");
 
   // Power BI embed URL - configure in environment or settings
   const powerBIUrl = process.env.NEXT_PUBLIC_POWERBI_EMBED_URL || "";
@@ -359,7 +361,32 @@ export default function AnalyticsPage() {
             </button>
           )}
 
-          {/* Period Selector */}
+          {/* Tab Switcher */}
+          <div className="flex items-center gap-1 bg-[#1a1a1a] rounded-lg p-1">
+            <button
+              onClick={() => setActiveTab("market")}
+              className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                activeTab === "market"
+                  ? "bg-emerald-500 text-white"
+                  : "text-gray-400 hover:text-white"
+              }`}
+            >
+              Market
+            </button>
+            <button
+              onClick={() => setActiveTab("platform")}
+              className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                activeTab === "platform"
+                  ? "bg-amber-500 text-white"
+                  : "text-gray-400 hover:text-white"
+              }`}
+            >
+              Platform
+            </button>
+          </div>
+
+          {/* Period Selector — market tab only */}
+          {activeTab === "market" && (
           <div className="flex items-center gap-2 bg-[#1a1a1a] rounded-lg p-1">
             {(["7d", "30d", "90d"] as const).map((p) => (
               <button
@@ -375,8 +402,19 @@ export default function AnalyticsPage() {
               </button>
             ))}
           </div>
+          )}
         </div>
       </div>
+
+      {/* Platform Analytics Tab */}
+      {activeTab === "platform" && (
+        <div className="mt-2">
+          <AnalyticsDashboard />
+        </div>
+      )}
+
+      {/* Market Analytics Tab */}
+      {activeTab === "market" && (<>
 
       {/* Stats Row */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-6">
@@ -571,6 +609,8 @@ export default function AnalyticsPage() {
           </BarChart>
         </ResponsiveContainer>
       </div>
+
+      </>)}
 
       {/* Footer */}
       <div className="mt-6 text-center text-gray-600 text-sm">
