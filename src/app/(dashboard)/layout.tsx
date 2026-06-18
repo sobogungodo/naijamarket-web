@@ -187,6 +187,7 @@ export default function DashboardLayout({
   const { data: session } = useSession();
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [upgradeToast, setUpgradeToast] = useState<string | null>(null);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const user = session?.user as { name?: string; tier?: string } | undefined;
   const userName = user?.name || "User";
@@ -220,9 +221,14 @@ export default function DashboardLayout({
   }, [upgradeToast]);
 
   return (
-    <div className="min-h-screen bg-terminal-bg">
+    <div className="min-h-screen bg-terminal-bg" onClick={() => setSidebarOpen(false)}>
       {/* Sidebar */}
-      <aside className="sidebar">
+      <aside
+        className={`sidebar transition-transform duration-300 ease-in-out ${
+          sidebarOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"
+        }`}
+        onClick={(e) => e.stopPropagation()}
+      >
         {/* Logo */}
         <div className="sidebar-logo">
           <Link href="/dashboard" className="flex items-center gap-2">
@@ -239,28 +245,28 @@ export default function DashboardLayout({
         <nav className="sidebar-nav custom-scrollbar">
           {/* ---- CORE: Available to everyone ---- */}
           <div className="space-y-1">
-            <NavLink href="/dashboard" icon={LayoutDashboard} label="Dashboard" currentPath={pathname} userTier={userTier} />
-            <NavLink href="/dashboard/snapshot" icon={Globe2} label="Snapshot" currentPath={pathname} userTier={userTier} />
-            <NavLink href="/dashboard/prices" icon={TrendingUp} label="Prices" currentPath={pathname} userTier={userTier} />
-            <NavLink href="/dashboard/markets" icon={MapPin} label="Markets" currentPath={pathname} userTier={userTier} />
-            <NavLink href="/dashboard/compare" icon={GitCompare} label="Compare" currentPath={pathname} userTier={userTier} />
-            <NavLink href="/dashboard/inflation" icon={Activity} label="Inflation" currentPath={pathname} userTier={userTier} />
+            <NavLink href="/dashboard" icon={LayoutDashboard} label="Dashboard" currentPath={pathname} userTier={userTier} onClose={() => setSidebarOpen(false)} />
+            <NavLink href="/dashboard/snapshot" icon={Globe2} label="Snapshot" currentPath={pathname} userTier={userTier} onClose={() => setSidebarOpen(false)} />
+            <NavLink href="/dashboard/prices" icon={TrendingUp} label="Prices" currentPath={pathname} userTier={userTier} onClose={() => setSidebarOpen(false)} />
+            <NavLink href="/dashboard/markets" icon={MapPin} label="Markets" currentPath={pathname} userTier={userTier} onClose={() => setSidebarOpen(false)} />
+            <NavLink href="/dashboard/compare" icon={GitCompare} label="Compare" currentPath={pathname} userTier={userTier} onClose={() => setSidebarOpen(false)} />
+            <NavLink href="/dashboard/inflation" icon={Activity} label="Inflation" currentPath={pathname} userTier={userTier} onClose={() => setSidebarOpen(false)} />
 
             {/* ---- SILVER+ ---- */}
-            <NavLink href="/dashboard/watchlist" icon={Star} label="Watchlist" currentPath={pathname} userTier={userTier} minTier="SILVER" onLocked={setUpgradeToast} />
+            <NavLink href="/dashboard/watchlist" icon={Star} label="Watchlist" currentPath={pathname} userTier={userTier} onClose={() => setSidebarOpen(false)} minTier="SILVER" onLocked={setUpgradeToast} />
 
             {/* ---- GOLD+ ---- */}
-            <NavLink href="/dashboard/alerts" icon={Bell} label="Price Alerts" currentPath={pathname} userTier={userTier} minTier="GOLD" onLocked={setUpgradeToast} />
-            <NavLink href="/dashboard/arbitrage" icon={ArrowLeftRight} label="Arbitrage" currentPath={pathname} userTier={userTier} minTier="GOLD" onLocked={setUpgradeToast} />
-            <NavLink href="/dashboard/screener" icon={Filter} label="Screener" currentPath={pathname} userTier={userTier} minTier="GOLD" onLocked={setUpgradeToast} />
-            <NavLink href="/dashboard/heatmap" icon={Map} label="Heatmap" currentPath={pathname} userTier={userTier} minTier="GOLD" onLocked={setUpgradeToast} />
+            <NavLink href="/dashboard/alerts" icon={Bell} label="Price Alerts" currentPath={pathname} userTier={userTier} onClose={() => setSidebarOpen(false)} minTier="GOLD" onLocked={setUpgradeToast} />
+            <NavLink href="/dashboard/arbitrage" icon={ArrowLeftRight} label="Arbitrage" currentPath={pathname} userTier={userTier} onClose={() => setSidebarOpen(false)} minTier="GOLD" onLocked={setUpgradeToast} />
+            <NavLink href="/dashboard/screener" icon={Filter} label="Screener" currentPath={pathname} userTier={userTier} onClose={() => setSidebarOpen(false)} minTier="GOLD" onLocked={setUpgradeToast} />
+            <NavLink href="/dashboard/heatmap" icon={Map} label="Heatmap" currentPath={pathname} userTier={userTier} onClose={() => setSidebarOpen(false)} minTier="GOLD" onLocked={setUpgradeToast} />
 
             {/* ---- BUSINESS+ ---- */}
-            <NavLink href="/dashboard/morning-brief" icon={Sun} label="Morning Brief" currentPath={pathname} userTier={userTier} minTier="BUSINESS" onLocked={setUpgradeToast} />
-            <NavLink href="/dashboard/bulk-buyer" icon={ShoppingCart} label="Bulk Buyer" currentPath={pathname} userTier={userTier} minTier="BUSINESS" onLocked={setUpgradeToast} />
-            <NavLink href="/dashboard/analytics" icon={BarChart3} label="Analytics" currentPath={pathname} userTier={userTier} minTier="BUSINESS" onLocked={setUpgradeToast} />
-            <NavLink href="/dashboard/forecast" icon={Sparkles} label="Forecast" currentPath={pathname} userTier={userTier} minTier="BUSINESS" onLocked={setUpgradeToast} />
-            <NavLink href="/dashboard/reports" icon={FileText} label="Reports" currentPath={pathname} userTier={userTier} minTier="BUSINESS" onLocked={setUpgradeToast} />
+            <NavLink href="/dashboard/morning-brief" icon={Sun} label="Morning Brief" currentPath={pathname} userTier={userTier} onClose={() => setSidebarOpen(false)} minTier="BUSINESS" onLocked={setUpgradeToast} />
+            <NavLink href="/dashboard/bulk-buyer" icon={ShoppingCart} label="Bulk Buyer" currentPath={pathname} userTier={userTier} onClose={() => setSidebarOpen(false)} minTier="BUSINESS" onLocked={setUpgradeToast} />
+            <NavLink href="/dashboard/analytics" icon={BarChart3} label="Analytics" currentPath={pathname} userTier={userTier} onClose={() => setSidebarOpen(false)} minTier="BUSINESS" onLocked={setUpgradeToast} />
+            <NavLink href="/dashboard/forecast" icon={Sparkles} label="Forecast" currentPath={pathname} userTier={userTier} onClose={() => setSidebarOpen(false)} minTier="BUSINESS" onLocked={setUpgradeToast} />
+            <NavLink href="/dashboard/reports" icon={FileText} label="Reports" currentPath={pathname} userTier={userTier} onClose={() => setSidebarOpen(false)} minTier="BUSINESS" onLocked={setUpgradeToast} />
           </div>
 
           {/* Enterprise Section */}
@@ -268,10 +274,10 @@ export default function DashboardLayout({
             <div className="px-4 mb-2 text-2xs font-medium text-gray-500 uppercase tracking-wider">
               Enterprise
             </div>
-            <NavLink href="/dashboard/supplier" icon={Truck} label="Supplier Intel" currentPath={pathname} userTier={userTier} minTier="CORPORATE" onLocked={setUpgradeToast} />
-            <NavLink href="/dashboard/revenue" icon={DollarSign} label="Revenue" currentPath={pathname} userTier={userTier} minTier="ENTERPRISE" onLocked={setUpgradeToast} />
-            <NavLink href="/dashboard/api" icon={Key} label="API Keys" currentPath={pathname} userTier={userTier} minTier="CORPORATE" onLocked={setUpgradeToast} />
-            <NavLink href="/dashboard/api-portal" icon={Code2} label="API Portal" currentPath={pathname} userTier={userTier} minTier="CORPORATE" onLocked={setUpgradeToast} />
+            <NavLink href="/dashboard/supplier" icon={Truck} label="Supplier Intel" currentPath={pathname} userTier={userTier} onClose={() => setSidebarOpen(false)} minTier="CORPORATE" onLocked={setUpgradeToast} />
+            <NavLink href="/dashboard/revenue" icon={DollarSign} label="Revenue" currentPath={pathname} userTier={userTier} onClose={() => setSidebarOpen(false)} minTier="ENTERPRISE" onLocked={setUpgradeToast} />
+            <NavLink href="/dashboard/api" icon={Key} label="API Keys" currentPath={pathname} userTier={userTier} onClose={() => setSidebarOpen(false)} minTier="CORPORATE" onLocked={setUpgradeToast} />
+            <NavLink href="/dashboard/api-portal" icon={Code2} label="API Portal" currentPath={pathname} userTier={userTier} onClose={() => setSidebarOpen(false)} minTier="CORPORATE" onLocked={setUpgradeToast} />
           </div>
 
           {/* Tools Section */}
@@ -279,9 +285,9 @@ export default function DashboardLayout({
             <div className="px-4 mb-2 text-2xs font-medium text-gray-500 uppercase tracking-wider">
               Tools
             </div>
-            <NavLink href="/dashboard/tokens" icon={Coins} label="Token Wallet" currentPath={pathname} userTier={userTier} />
-            <NavLink href="/dashboard/history" icon={History} label="Query History" currentPath={pathname} userTier={userTier} />
-            <NavLink href="/dashboard/export" icon={Download} label="Export Data" currentPath={pathname} userTier={userTier} minTier="GOLD" onLocked={setUpgradeToast} />
+            <NavLink href="/dashboard/tokens" icon={Coins} label="Token Wallet" currentPath={pathname} userTier={userTier} onClose={() => setSidebarOpen(false)} />
+            <NavLink href="/dashboard/history" icon={History} label="Query History" currentPath={pathname} userTier={userTier} onClose={() => setSidebarOpen(false)} />
+            <NavLink href="/dashboard/export" icon={Download} label="Export Data" currentPath={pathname} userTier={userTier} onClose={() => setSidebarOpen(false)} minTier="GOLD" onLocked={setUpgradeToast} />
           </div>
         </nav>
 
@@ -326,11 +332,30 @@ export default function DashboardLayout({
         </div>
       </aside>
 
+      {/* Mobile overlay */}
+      {sidebarOpen && (
+        <div
+          className="fixed inset-0 z-30 bg-black/60 md:hidden"
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
+
       {/* Main Content Area */}
-      <main className="ml-64">
+      <main className="ml-0 md:ml-64">
         {/* Command Bar */}
-        <header className="sticky top-0 z-30 bg-terminal-bg/95 backdrop-blur-xl border-b border-terminal-border">
+        <header className="sticky top-0 z-50 bg-terminal-bg/95 backdrop-blur-xl border-b border-terminal-border">
           <div className="flex items-center gap-4 px-6 py-3">
+            {/* Hamburger — mobile only */}
+            <button
+              className="md:hidden p-2 text-gray-400 hover:text-white hover:bg-terminal-surface rounded-lg transition-colors shrink-0"
+              onClick={(e) => { e.stopPropagation(); setSidebarOpen(!sidebarOpen); }}
+              aria-label="Toggle menu"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                  d={sidebarOpen ? "M6 18L18 6M6 6l12 12" : "M4 6h16M4 12h16M4 18h16"} />
+              </svg>
+            </button>
             <div className="flex-1 flex items-center gap-2 bg-terminal-surface border border-terminal-border rounded-lg px-4 py-2">
               <Search className="w-4 h-4 text-gray-500" />
               <input
@@ -414,9 +439,10 @@ interface NavLinkProps {
   userTier: string;
   minTier?: string;
   onLocked?: (tier: string) => void;
+  onClose?: () => void;
 }
 
-function NavLink({ href, icon: Icon, label, currentPath, userTier, minTier, onLocked }: NavLinkProps) {
+function NavLink({ href, icon: Icon, label, currentPath, userTier, minTier, onLocked, onClose }: NavLinkProps) {
   const isActive = currentPath === href || 
     (href !== "/dashboard" && currentPath?.startsWith(href));
 
@@ -445,9 +471,11 @@ function NavLink({ href, icon: Icon, label, currentPath, userTier, minTier, onLo
     <Link
       href={href}
       className={`sidebar-link ${isActive ? "active" : ""}`}
+      onClick={() => onClose?.()}
     >
       <Icon className="w-4 h-4" />
       <span className="flex-1">{label}</span>
     </Link>
   );
 }
+
