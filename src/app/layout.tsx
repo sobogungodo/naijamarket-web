@@ -16,8 +16,6 @@ import { SingleSessionProvider } from "@/components/SingleSessionProvider";
 import SessionExpiredModal from "@/components/SessionExpiredModal";
 import { Toaster } from "sonner";
 import WhatsAppCTA from "@/components/WhatsAppCTA";
-import CookieBanner from "@/components/CookieBanner";
-import AnalyticsProvider from "@/components/AnalyticsProvider";
 import "@/styles/globals.css";
 
 const inter = Inter({ subsets: ["latin"] });
@@ -201,8 +199,6 @@ export default function RootLayout({
         </Providers>
         <WhatsAppCTA />
       <WhatsAppCTA variant="reporter" message="reporter" label="Register as Price Reporter" />
-      <CookieBanner />
-      <AnalyticsProvider />
       </body>
     </html>
   );
