@@ -522,7 +522,7 @@ function MarketCard({ market, isSelected, onClick }: MarketCardProps) {
       </div>
 
       {/* Stats row */}
-      <div className="grid grid-cols-3 gap-2">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
         <div className="bg-[#111] rounded-lg p-2 text-center">
           <div className="text-white font-bold text-lg leading-tight">
             {market.items_tracked}

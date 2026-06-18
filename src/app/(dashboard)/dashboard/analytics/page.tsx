@@ -331,7 +331,7 @@ export default function AnalyticsPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#0a0a0a] p-6">
+    <div className="min-h-screen bg-[#0a0a0a] p-4 md:p-6">
       {/* Power BI Modal */}
       {showPowerBI && powerBIUrl && (
         <PowerBIEmbed embedUrl={powerBIUrl} onClose={() => setShowPowerBI(false)} />
@@ -417,7 +417,7 @@ export default function AnalyticsPage() {
       {activeTab === "market" && (<>
 
       {/* Stats Row */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-6">
         <StatCard
           title="Markets"
           value={data.platformStats.totalMarkets}
@@ -457,7 +457,7 @@ export default function AnalyticsPage() {
       </div>
 
       {/* Main Charts */}
-      <div className="grid lg:grid-cols-3 gap-6 mb-6">
+      <div className="grid lg:grid-cols-3 gap-4 md:gap-6 mb-6">
         {/* NFPI Trend */}
         <div className="lg:col-span-2 bg-[#1a1a1a] border border-gray-800 rounded-xl p-4">
           <div className="flex items-center justify-between mb-4">
@@ -505,7 +505,7 @@ export default function AnalyticsPage() {
             <h3 className="text-white font-semibold">Regional Indices</h3>
             <Globe className="w-5 h-5 text-gray-500" />
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             {data.regionalIndices.slice(0, 6).map((region) => (
               <RegionalCard key={region.region} region={region} />
             ))}
@@ -514,7 +514,7 @@ export default function AnalyticsPage() {
       </div>
 
       {/* Top Movers + Categories */}
-      <div className="grid lg:grid-cols-3 gap-6 mb-6">
+      <div className="grid lg:grid-cols-3 gap-4 md:gap-6 mb-6">
         <div className="bg-[#1a1a1a] border border-gray-800 rounded-xl p-4">
           <div className="flex items-center gap-2 mb-4">
             <TrendingUp className="w-5 h-5 text-emerald-400" />

@@ -535,7 +535,7 @@ export default function WatchlistPage() {
             <p className="text-gray-400 mb-8 max-w-md mx-auto">
               Track your favorite markets and items. This feature requires a SILVER subscription or higher.
             </p>
-            <div className="bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg p-6 max-w-md mx-auto">
+            <div className="bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg p-4 md:p-6 max-w-md mx-auto">
               <h3 className="text-amber-400 font-semibold mb-4">Watchlist Limits by Tier:</h3>
               <ul className="text-left space-y-2 text-gray-300 text-sm">
                 <li className="flex justify-between">

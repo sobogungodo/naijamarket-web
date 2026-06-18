@@ -191,7 +191,7 @@ export default function HeatmapPage() {
   }
   
   return (
-    <div className="min-h-screen bg-[#0a0a0a] text-white p-4 md:p-6">
+    <div className="min-h-screen bg-[#0a0a0a] text-white p-4 md:p-4 md:p-6">
       {/* Header */}
       <div className="mb-6">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
@@ -238,7 +238,7 @@ export default function HeatmapPage() {
       
       {/* National Summary */}
       {data && (
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 md:grid-cols-5 gap-4 mb-6">
           <div className="bg-[#1a1a1a] border border-gray-800 rounded-xl p-4">
             <p className="text-gray-400 text-sm">NFPI Index</p>
             <p className="text-2xl font-bold text-white">{data.national.nfpiIndex}</p>
@@ -268,9 +268,9 @@ export default function HeatmapPage() {
       )}
       
       {/* Main Content */}
-      <div className="grid lg:grid-cols-3 gap-6">
+      <div className="grid lg:grid-cols-3 gap-4 md:gap-6">
         {/* Map */}
-        <div className="lg:col-span-2 bg-[#1a1a1a] border border-gray-800 rounded-xl p-6">
+        <div className="lg:col-span-2 bg-[#1a1a1a] border border-gray-800 rounded-xl p-4 md:p-6">
           <div className="flex items-center justify-between mb-4">
             <h3 className="font-semibold flex items-center gap-2">
               <Map className="w-5 h-5 text-orange-400" />
@@ -384,7 +384,7 @@ export default function HeatmapPage() {
               </div>
               
               {/* Stats */}
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div className="p-3 bg-[#252525] rounded-lg">
                   <p className="text-gray-500 text-xs">Avg Price</p>
                   <p className="font-semibold">{formatPrice(displayRegion.avgPrice)}</p>

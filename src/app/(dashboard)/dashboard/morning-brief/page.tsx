@@ -256,7 +256,7 @@ export default function MorningBriefPage() {
       {success && <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-lg p-3 flex items-center gap-2 text-emerald-400 text-sm"><Check className="w-4 h-4 shrink-0" /> {success}</div>}
 
       {isSubscribed && subscription.total_sent > 0 && (
-        <div className="grid grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div className="bg-[#141414] border border-[#2a2a2a] rounded-lg p-4"><div className="text-[10px] text-gray-500 uppercase">Briefs Sent</div><div className="text-xl font-bold text-white mt-1">{subscription.total_sent}</div></div>
           <div className="bg-[#141414] border border-[#2a2a2a] rounded-lg p-4"><div className="text-[10px] text-gray-500 uppercase">Last Sent</div><div className="text-sm text-white mt-1">{subscription.last_sent_at ? new Date(subscription.last_sent_at).toLocaleDateString("en-NG", { day: "numeric", month: "short" }) : "Never"}</div></div>
           <div className="bg-[#141414] border border-[#2a2a2a] rounded-lg p-4"><div className="text-[10px] text-gray-500 uppercase">Plan</div><div className="text-sm text-white mt-1">{subscription.plan_type === "PERSONALIZED" ? "Personalized" : "Default"}{subscription.price_weekly > 0 && <span className="text-emerald-400 ml-1">₦{subscription.price_weekly}/wk</span>}</div></div>
@@ -264,7 +264,7 @@ export default function MorningBriefPage() {
       )}
 
       {/* Plan Selection */}
-      <div className="bg-[#141414] border border-[#2a2a2a] rounded-xl p-6 space-y-6">
+      <div className="bg-[#141414] border border-[#2a2a2a] rounded-xl p-4 md:p-6 space-y-6">
         <h2 className="text-lg font-semibold text-white">Choose Your Brief</h2>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <button onClick={() => setPlanType("DEFAULT")} className={`text-left p-5 rounded-xl border-2 transition-all ${planType === "DEFAULT" ? "border-emerald-500 bg-emerald-500/5" : "border-[#2a2a2a] hover:border-[#3a3a3a]"}`}>
@@ -299,7 +299,7 @@ export default function MorningBriefPage() {
 
       {/* Personalization — Searchable Dropdowns */}
       {planType === "PERSONALIZED" && (
-        <div className="bg-[#141414] border border-[#2a2a2a] rounded-xl p-6 space-y-5">
+        <div className="bg-[#141414] border border-[#2a2a2a] rounded-xl p-4 md:p-6 space-y-5">
           <h3 className="font-semibold text-white">Customize Your Brief</h3>
           <div>
             <label className="text-xs text-gray-500 mb-1.5 block">Markets (up to 8)</label>
@@ -313,7 +313,7 @@ export default function MorningBriefPage() {
       )}
 
       {/* Delivery Settings */}
-      <div className="bg-[#141414] border border-[#2a2a2a] rounded-xl p-6">
+      <div className="bg-[#141414] border border-[#2a2a2a] rounded-xl p-4 md:p-6">
         <h3 className="font-semibold text-white flex items-center gap-2 mb-4"><Clock className="w-4 h-4 text-blue-400" /> Delivery Settings</h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
@@ -369,7 +369,7 @@ export default function MorningBriefPage() {
       </div>
 
       {!isSubscribed && (
-        <div className="bg-gradient-to-r from-amber-500/5 to-emerald-500/5 border border-[#2a2a2a] rounded-xl p-6 text-center">
+        <div className="bg-gradient-to-r from-amber-500/5 to-emerald-500/5 border border-[#2a2a2a] rounded-xl p-4 md:p-6 text-center">
           <p className="text-sm text-gray-400"><span className="text-white font-medium">50,000 traders</span> wake up wondering the same thing every morning.</p>
           <p className="text-sm text-gray-500 mt-1">Get your prices before you leave for the market. ₦100/week = less than sachet water.</p>
         </div>

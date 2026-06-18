@@ -201,7 +201,7 @@ export default function NFPIDashboard() {
   const status = getInflationStatus(latest.national_index);
 
   return (
-    <div className="space-y-6 p-4 md:p-6">
+    <div className="space-y-6 p-4 md:p-4 md:p-6">
       {/* Header */}
       <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
         <div>
@@ -248,7 +248,7 @@ export default function NFPIDashboard() {
       {/* Main Stats Row */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {/* National Index Card */}
-        <div className="bg-gray-800 rounded-xl p-6 border border-gray-700 hover:border-green-500/50 transition-colors">
+        <div className="bg-gray-800 rounded-xl p-4 md:p-6 border border-gray-700 hover:border-green-500/50 transition-colors">
           <div className="flex items-center justify-between mb-4">
             <span className="text-gray-400 text-sm font-medium">National NFPI</span>
             <span className={`flex items-center gap-1 text-sm font-medium ${
@@ -270,7 +270,7 @@ export default function NFPIDashboard() {
         </div>
 
         {/* Inflation Status Card */}
-        <div className="bg-gray-800 rounded-xl p-6 border border-gray-700">
+        <div className="bg-gray-800 rounded-xl p-4 md:p-6 border border-gray-700">
           <span className="text-gray-400 text-sm font-medium">Inflation Status</span>
           <div className={`mt-4 p-3 rounded-lg ${status.bg}`}>
             <div className={`text-2xl font-bold ${status.color}`}>
@@ -283,7 +283,7 @@ export default function NFPIDashboard() {
         </div>
 
         {/* Top Movers Card */}
-        <div className="bg-gray-800 rounded-xl p-6 border border-gray-700">
+        <div className="bg-gray-800 rounded-xl p-4 md:p-6 border border-gray-700">
           <span className="text-gray-400 text-sm font-medium">Top Movers This Period</span>
           <div className="mt-4 space-y-3">
             {latest.top_gainers && (
@@ -307,7 +307,7 @@ export default function NFPIDashboard() {
 
       {/* Trend Chart (GOLD+) */}
       {access_level.trend && trend && trend.length > 0 ? (
-        <div className="bg-gray-800 rounded-xl p-6 border border-gray-700">
+        <div className="bg-gray-800 rounded-xl p-4 md:p-6 border border-gray-700">
           <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-4 gap-3">
             <h2 className="text-xl font-semibold text-white">
               📈 NFPI Trend ({trend.length} months)
@@ -384,7 +384,7 @@ export default function NFPIDashboard() {
 
       {/* Category Breakdown */}
       {categories ? (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 md:grid-cols-4 gap-4">
           {[
             { key: "grains", name: "Grains & Staples", value: categories.grains, icon: "🌾", color: COLORS.grains },
             { key: "proteins", name: "Proteins", value: categories.proteins, icon: "🥩", color: COLORS.proteins },
@@ -419,7 +419,7 @@ export default function NFPIDashboard() {
 
       {/* Basket Details (BUSINESS+) */}
       {access_level.basket && basket && basket_prices ? (
-        <div className="bg-gray-800 rounded-xl p-6 border border-gray-700">
+        <div className="bg-gray-800 rounded-xl p-4 md:p-6 border border-gray-700">
           <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-4 gap-3">
             <h2 className="text-xl font-semibold text-white">
               🧺 NFPI Basket ({basket.length} items)
@@ -526,7 +526,7 @@ function LockedFeature({
   currentTier: string;
 }) {
   return (
-    <div className="bg-gray-800 rounded-xl p-6 border border-gray-700">
+    <div className="bg-gray-800 rounded-xl p-4 md:p-6 border border-gray-700">
       <div className="text-center py-8">
         <div className="w-16 h-16 bg-gray-700 rounded-full flex items-center justify-center mx-auto mb-4">
           <Lock className="text-gray-500" size={28} />

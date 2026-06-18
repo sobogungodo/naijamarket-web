@@ -36,7 +36,7 @@ export default function DashboardPage() {
       </div>
 
       {/* NFPI Index Card */}
-      <div className="bg-gradient-to-br from-naija-green/10 to-naija-gold/10 border border-naija-green/30 rounded-xl p-6">
+      <div className="bg-gradient-to-br from-naija-green/10 to-naija-gold/10 border border-naija-green/30 rounded-xl p-4 md:p-6">
         <div className="flex items-start justify-between">
           <div>
             <div className="text-sm text-gray-400 mb-1">NaijaFood Price Index (NFPI)</div>
@@ -82,7 +82,7 @@ export default function DashboardPage() {
       </div>
 
       {/* Stats Grid */}
-      <div className="grid grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         {[
           { 
             label: "Markets Tracked", 
@@ -125,7 +125,7 @@ export default function DashboardPage() {
       </div>
 
       {/* Two Column Layout */}
-      <div className="grid grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
         {/* Top Movers */}
         <div className="bg-terminal-surface border border-terminal-border rounded-xl overflow-hidden">
           <div className="px-4 py-3 border-b border-terminal-border flex items-center justify-between">

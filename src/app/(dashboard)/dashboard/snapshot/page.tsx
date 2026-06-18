@@ -238,7 +238,7 @@ function SnapshotPageInner() {
   const currentPeriod = TIME_PERIODS.find(p => p.value === selectedPeriod);
   
   return (
-    <div className="min-h-screen bg-[#0a0a0a] text-white p-4 md:p-6">
+    <div className="min-h-screen bg-[#0a0a0a] text-white p-4 md:p-4 md:p-6">
       {/* Header */}
       <div className="mb-6">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
@@ -333,7 +333,7 @@ function SnapshotPageInner() {
       )}
       
       {/* NFPI Index Hero */}
-      <div className="bg-gradient-to-br from-blue-900/30 to-indigo-900/20 border border-blue-700/50 rounded-xl p-6 mb-6">
+      <div className="bg-gradient-to-br from-blue-900/30 to-indigo-900/20 border border-blue-700/50 rounded-xl p-4 md:p-6 mb-6">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div>
             <div className="flex items-center gap-2 mb-1">
@@ -358,7 +358,7 @@ function SnapshotPageInner() {
             <p className="text-gray-500 text-xs mt-1">Baseline: {nfpi?.baseline ?? 100} ({nfpi?.asOf ?? "Jan 2026"})</p>
           </div>
           
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 md:grid-cols-4 gap-4">
             <div className="text-center">
               <p className="text-2xl font-bold text-white">{summary?.totalMarkets ?? 0}</p>
               <p className="text-xs text-gray-500">Markets</p>
@@ -384,7 +384,7 @@ function SnapshotPageInner() {
       </div>
       
       {/* Quick Stats Row */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 md:grid-cols-4 gap-4 mb-6">
         <div className="bg-[#1a1a1a] border border-gray-800 rounded-xl p-4">
           <div className="flex items-center justify-between mb-2">
             <MapPin className="w-5 h-5 text-emerald-400" />
@@ -423,7 +423,7 @@ function SnapshotPageInner() {
       </div>
       
       {/* Main Grid - Top Movers */}
-      <div className="grid lg:grid-cols-3 gap-6 mb-6">
+      <div className="grid lg:grid-cols-3 gap-4 md:gap-6 mb-6">
         {/* Top Gainers */}
         <div className="bg-[#1a1a1a] border border-gray-800 rounded-xl p-4">
           <div className="flex items-center justify-between mb-4">
@@ -542,7 +542,7 @@ function SnapshotPageInner() {
       </div>
       
       {/* Regional Breakdown & Markets */}
-      <div className="grid lg:grid-cols-2 gap-6 mb-6">
+      <div className="grid lg:grid-cols-2 gap-4 md:gap-6 mb-6">
         {/* Regional Breakdown */}
         <div className="bg-[#1a1a1a] border border-gray-800 rounded-xl p-4">
           <div className="flex items-center justify-between mb-4">

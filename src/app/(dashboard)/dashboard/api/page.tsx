@@ -161,7 +161,7 @@ export default function APIPage() {
       )}
 
       {/* Usage Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 md:grid-cols-4 gap-4">
         <div className="bg-[#141414] border border-[#2a2a2a] rounded-xl p-4">
           <div className="text-[10px] text-gray-500 uppercase flex items-center gap-1"><Key className="w-3 h-3" /> Active Keys</div>
           <div className="text-2xl font-bold text-white mt-1">{keys.filter(k => k.status === "active").length}</div>
@@ -182,7 +182,7 @@ export default function APIPage() {
 
       {/* Usage Chart */}
       {dailyUsage.length > 0 && (
-        <div className="bg-[#141414] border border-[#2a2a2a] rounded-xl p-6">
+        <div className="bg-[#141414] border border-[#2a2a2a] rounded-xl p-4 md:p-6">
           <h3 className="text-sm font-semibold text-white mb-4">Daily API Calls (30 days)</h3>
           <div className="flex items-end gap-[2px] h-32">
             {dailyUsage.map((d, i) => (
@@ -211,7 +211,7 @@ export default function APIPage() {
 
       {/* Endpoint Breakdown */}
       {endpointUsage.length > 0 && (
-        <div className="bg-[#141414] border border-[#2a2a2a] rounded-xl p-6">
+        <div className="bg-[#141414] border border-[#2a2a2a] rounded-xl p-4 md:p-6">
           <h3 className="text-sm font-semibold text-white mb-3">Endpoint Usage</h3>
           <div className="space-y-2">
             {endpointUsage.map((e, i) => {

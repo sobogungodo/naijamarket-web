@@ -315,7 +315,7 @@ export default function ForecastPage() {
   const tierName = tierLimits?.tier ?? "FREE";
   
   return (
-    <div className="min-h-screen bg-[#0a0a0a] text-white p-4 md:p-6">
+    <div className="min-h-screen bg-[#0a0a0a] text-white p-4 md:p-4 md:p-6">
       {/* Header */}
       <div className="mb-6">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
@@ -396,7 +396,7 @@ export default function ForecastPage() {
       </div>
       
       {/* Key Metrics Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 md:grid-cols-4 gap-4 mb-6">
         <div className="bg-[#1a1a1a] border border-gray-800 rounded-xl p-4">
           <div className="flex items-center justify-between mb-2">
             <span className="text-gray-400 text-sm">Current Price</span>
@@ -451,7 +451,7 @@ export default function ForecastPage() {
       </div>
       
       {/* Chart Section */}
-      <div className="bg-[#1a1a1a] border border-gray-800 rounded-xl p-4 md:p-6 mb-6">
+      <div className="bg-[#1a1a1a] border border-gray-800 rounded-xl p-4 md:p-4 md:p-6 mb-6">
         <div className="flex items-center gap-2 mb-6 overflow-x-auto pb-2">
           <button
             onClick={() => setActiveChart("seasonal")}
@@ -631,9 +631,9 @@ export default function ForecastPage() {
       </div>
       
       {/* Insights Grid */}
-      <div className="grid md:grid-cols-2 gap-6 mb-6">
+      <div className="grid md:grid-cols-2 gap-4 md:gap-6 mb-6">
         {/* Monthly Breakdown */}
-        <div className="bg-[#1a1a1a] border border-gray-800 rounded-xl p-4 md:p-6">
+        <div className="bg-[#1a1a1a] border border-gray-800 rounded-xl p-4 md:p-4 md:p-6">
           <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
             <Calendar className="w-5 h-5 text-emerald-400" />
             Monthly Price Index
@@ -689,7 +689,7 @@ export default function ForecastPage() {
         </div>
         
         {/* Predictions */}
-        <div className="bg-[#1a1a1a] border border-gray-800 rounded-xl p-4 md:p-6">
+        <div className="bg-[#1a1a1a] border border-gray-800 rounded-xl p-4 md:p-4 md:p-6">
           <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
             <Sparkles className="w-5 h-5 text-amber-400" />
             Price Predictions
@@ -776,13 +776,13 @@ export default function ForecastPage() {
       </div>
       
       {/* Market Insights Summary */}
-      <div className="bg-gradient-to-r from-[#1a1a1a] to-[#1f1f1f] border border-gray-800 rounded-xl p-4 md:p-6">
+      <div className="bg-gradient-to-r from-[#1a1a1a] to-[#1f1f1f] border border-gray-800 rounded-xl p-4 md:p-4 md:p-6">
         <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
           <Target className="w-5 h-5 text-emerald-400" />
           Market Intelligence Summary
         </h3>
         
-        <div className="grid md:grid-cols-3 gap-6">
+        <div className="grid md:grid-cols-3 gap-4 md:gap-6">
           <div>
             <h4 className="text-sm text-gray-400 mb-2">Current Seasonal Position</h4>
             <div className="flex items-center gap-2">

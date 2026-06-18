@@ -352,7 +352,7 @@ function CreateAlertModal({ isOpen, onClose, onSubmit, loading }: CreateAlertMod
               {/* Alert Type */}
               <div>
                 <label className="block text-sm text-gray-400 mb-2">Alert when price goes:</label>
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                   <button
                     type="button"
                     onClick={() => setAlertType("BELOW")}
@@ -575,7 +575,7 @@ export default function AlertsPage() {
   // Tier restriction (for FREE and SILVER users)
   if (limits.maxAlerts === 0 && alerts.length === 0) {
     return (
-      <div className="min-h-screen bg-[#0a0a0a] p-6">
+      <div className="min-h-screen bg-[#0a0a0a] p-4 md:p-6">
         <div className="max-w-2xl mx-auto">
           <div className="bg-[#1a1a1a] border border-gray-800 rounded-xl p-8 text-center">
             <Lock className="w-16 h-16 text-amber-400 mx-auto mb-4" />
@@ -606,7 +606,7 @@ export default function AlertsPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#0a0a0a] p-6">
+    <div className="min-h-screen bg-[#0a0a0a] p-4 md:p-6">
       <div className="max-w-4xl mx-auto">
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">

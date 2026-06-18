@@ -254,7 +254,7 @@ export default function APIPortalPage() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="bg-gradient-to-r from-slate-900 via-blue-900 to-slate-900 rounded-xl p-6 text-white">
+      <div className="bg-gradient-to-r from-slate-900 via-blue-900 to-slate-900 rounded-xl p-4 md:p-6 text-white">
         <div className="flex items-center gap-3 mb-2">
           <Code2 className="w-8 h-8 text-blue-400" />
           <h1 className="text-2xl font-bold">API Developer Portal</h1>
@@ -304,7 +304,7 @@ export default function APIPortalPage() {
       {activeTab === "docs" && (
         <div className="space-y-6">
           {/* Quick Start */}
-          <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+          <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 md:p-6">
             <h2 className="text-lg font-bold mb-4 flex items-center gap-2">
               <Zap className="w-5 h-5 text-yellow-500" /> Quick Start
             </h2>
@@ -336,7 +336,7 @@ export default function APIPortalPage() {
           </div>
 
           {/* Authentication */}
-          <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+          <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 md:p-6">
             <h2 className="text-lg font-bold mb-4 flex items-center gap-2">
               <Shield className="w-5 h-5 text-green-500" /> Authentication
             </h2>
@@ -356,7 +356,7 @@ export default function APIPortalPage() {
           </div>
 
           {/* Endpoints Reference */}
-          <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+          <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 md:p-6">
             <h2 className="text-lg font-bold mb-4 flex items-center gap-2">
               <Globe className="w-5 h-5 text-purple-500" /> API Endpoints
             </h2>
@@ -396,7 +396,7 @@ export default function APIPortalPage() {
           </div>
 
           {/* Code Examples */}
-          <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+          <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 md:p-6">
             <h2 className="text-lg font-bold mb-4 flex items-center gap-2">
               <Terminal className="w-5 h-5 text-orange-500" /> Code Examples
             </h2>
@@ -416,7 +416,7 @@ export default function APIPortalPage() {
           </div>
 
           {/* Response Format */}
-          <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+          <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 md:p-6">
             <h2 className="text-lg font-bold mb-4 flex items-center gap-2">
               <FileJson className="w-5 h-5 text-cyan-500" /> Response Format
             </h2>
@@ -449,7 +449,7 @@ export default function APIPortalPage() {
 
           {/* Rate Limits & Errors — UPDATED to show tier-based limits */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+            <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 md:p-6">
               <h3 className="font-bold mb-3 flex items-center gap-2"><Clock className="w-4 h-4 text-yellow-500" /> Rate Limits by Subscription</h3>
               <div className="space-y-2 text-sm">
                 <div className="flex justify-between"><span className="text-gray-500">Free – Business</span><span className="text-gray-400 italic">No API access</span></div>
@@ -458,7 +458,7 @@ export default function APIPortalPage() {
               </div>
               <p className="text-xs text-gray-500 mt-3">Rate limit headers: <code className="bg-gray-100 dark:bg-gray-700 px-1 rounded">X-RateLimit-Remaining</code></p>
             </div>
-            <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+            <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 md:p-6">
               <h3 className="font-bold mb-3 flex items-center gap-2"><AlertTriangle className="w-4 h-4 text-red-500" /> Error Codes</h3>
               <div className="space-y-2 text-sm">
                 <div className="flex justify-between"><span><code className="text-red-500">401</code></span><span className="text-gray-500">Missing/invalid API key</span></div>
@@ -476,7 +476,7 @@ export default function APIPortalPage() {
       {/* ================================================================ */}
       {activeTab === "playground" && (
         <div className="space-y-4">
-          <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+          <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 md:p-6">
             <h2 className="text-lg font-bold mb-4 flex items-center gap-2">
               <Play className="w-5 h-5 text-green-500" /> API Playground
             </h2>
@@ -568,7 +568,7 @@ export default function APIPortalPage() {
                 </div>
               )}
 
-              <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+              <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 md:p-6">
                 <div className="flex items-center justify-between mb-4">
                   <h2 className="text-lg font-bold flex items-center gap-2">
                     <Key className="w-5 h-5 text-amber-500" /> Your API Keys
@@ -627,7 +627,7 @@ export default function APIPortalPage() {
           {/* Non-API tiers: compact row */}
           <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5">
             <h3 className="text-sm font-bold text-gray-500 uppercase tracking-wide mb-3">Consumer Plans (No API Access)</h3>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <div className="grid grid-cols-1 md:grid-cols-2 md:grid-cols-4 gap-3">
               {NON_API_TIERS.map(t => {
                 const isCurrent = userTier === t.tier_code;
                 return (
@@ -770,7 +770,7 @@ export default function APIPortalPage() {
       {/* ================================================================ */}
       {activeTab === "usage" && (
         <div className="space-y-4">
-          <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+          <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 md:p-6">
             <h2 className="text-lg font-bold mb-4 flex items-center gap-2">
               <BarChart3 className="w-5 h-5 text-indigo-500" /> API Usage Overview
             </h2>

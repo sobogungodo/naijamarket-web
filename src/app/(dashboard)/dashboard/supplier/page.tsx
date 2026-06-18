@@ -140,7 +140,7 @@ export default function SupplierDashboardPage() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="bg-gradient-to-r from-emerald-900 via-teal-900 to-emerald-900 rounded-xl p-6 text-white">
+      <div className="bg-gradient-to-r from-emerald-900 via-teal-900 to-emerald-900 rounded-xl p-4 md:p-6 text-white">
         <div className="flex items-center justify-between">
           <div>
             <div className="flex items-center gap-3 mb-2">
@@ -163,7 +163,7 @@ export default function SupplierDashboardPage() {
 
       {/* KPI Cards */}
       {stats && (
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+        <div className="grid grid-cols-1 md:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
           {[
             { label: "Markets", value: stats.total_markets, icon: MapPin, color: "text-blue-600" },
             { label: "Commodities", value: stats.total_commodities, icon: Package, color: "text-purple-600" },

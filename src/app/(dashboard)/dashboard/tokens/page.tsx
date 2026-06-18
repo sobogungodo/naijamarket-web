@@ -357,7 +357,7 @@ export default function TokenWalletPage() {
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
 
         {/* Main Balance */}
-        <div className="md:col-span-2 bg-gradient-to-br from-emerald-500/10 via-emerald-600/5 to-transparent border border-emerald-500/20 rounded-xl p-6 relative overflow-hidden">
+        <div className="md:col-span-2 bg-gradient-to-br from-emerald-500/10 via-emerald-600/5 to-transparent border border-emerald-500/20 rounded-xl p-4 md:p-6 relative overflow-hidden">
           <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-500/5 rounded-full -translate-y-8 translate-x-8" />
           <div className="relative">
             <p className="text-sm text-emerald-400/70 flex items-center gap-1.5">

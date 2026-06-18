@@ -263,7 +263,7 @@ export default function ScreenerPage() {
   }
   
   return (
-    <div className="min-h-screen bg-[#0a0a0a] text-white p-4 md:p-6">
+    <div className="min-h-screen bg-[#0a0a0a] text-white p-4 md:p-4 md:p-6">
       {/* Header */}
       <div className="mb-6">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
@@ -415,7 +415,7 @@ export default function ScreenerPage() {
           {data?.tierLimits.advancedFilters && (
             <div className="mt-4 pt-4 border-t border-gray-700">
               <p className="text-sm text-gray-400 mb-3">Advanced Filters</p>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 md:grid-cols-4 gap-4">
                 <div>
                   <label className="text-xs text-gray-500 mb-1 block">Min Price (₦)</label>
                   <input
@@ -474,7 +474,7 @@ export default function ScreenerPage() {
       
       {/* Summary Cards */}
       {data && (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 md:grid-cols-4 gap-4 mb-6">
           <div className="bg-[#1a1a1a] border border-gray-800 rounded-xl p-4">
             <p className="text-gray-400 text-sm">Total Matches</p>
             <p className="text-2xl font-bold text-white">{data.summary.totalMatches}</p>

@@ -178,7 +178,7 @@ function OpportunityCard({
       {/* Expanded Details */}
       {expanded && (
         <div className="border-t border-[#2a2a2a] bg-[#0f0f0f] p-4">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6">
             {/* Buy Side */}
             <div className="bg-[#1a1a1a] p-4 rounded-lg border border-emerald-500/20">
               <div className="flex items-center gap-2 mb-3">
@@ -229,7 +229,7 @@ function OpportunityCard({
           {/* Profit Breakdown */}
           <div className="mt-4 p-4 bg-[#1a1a1a] rounded-lg border border-[#2a2a2a]">
             <h4 className="text-gray-400 text-sm mb-3">PROFIT BREAKDOWN</h4>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 md:grid-cols-4 gap-4">
               <div>
                 <p className="text-gray-500 text-xs">Gross Profit</p>
                 <p className="text-white font-mono">₦{opportunity.grossProfit.toLocaleString()}</p>
@@ -346,7 +346,7 @@ export default function ArbitragePage() {
             <p className="text-gray-400 mb-8 max-w-md mx-auto">
               Find profitable price spreads across Nigerian markets. This feature requires a GOLD subscription or higher.
             </p>
-            <div className="bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg p-6 max-w-md mx-auto">
+            <div className="bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg p-4 md:p-6 max-w-md mx-auto">
               <h3 className="text-amber-400 font-semibold mb-4">What you get with GOLD:</h3>
               <ul className="text-left space-y-3 text-gray-300">
                 <li className="flex items-center gap-2">

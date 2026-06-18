@@ -314,7 +314,7 @@ export default function BulkBuyerPage() {
   }
   
   return (
-    <div className="min-h-screen bg-[#0a0a0a] text-white p-4 md:p-6">
+    <div className="min-h-screen bg-[#0a0a0a] text-white p-4 md:p-4 md:p-6">
       {/* Header */}
       <div className="mb-6">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
@@ -372,7 +372,7 @@ export default function BulkBuyerPage() {
         </div>
       )}
       
-      <div className="grid lg:grid-cols-3 gap-6">
+      <div className="grid lg:grid-cols-3 gap-4 md:gap-6">
         {/* Left Column - Item Selection */}
         <div className="lg:col-span-2 space-y-6">
           {/* Category Filter */}
@@ -398,7 +398,7 @@ export default function BulkBuyerPage() {
               <Package className="w-5 h-5 text-blue-400" />
               Select Items ({tierLimits?.maxItems ?? 10} max)
             </h3>
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 md:grid-cols-2 md:grid-cols-3 gap-3">
               {filteredItems.map(item => {
                 const inCart = cart.some(c => c.item === item.name);
                 return (
@@ -429,8 +429,8 @@ export default function BulkBuyerPage() {
           {results && (
             <div className="space-y-4">
               {/* Result Summary */}
-              <div className="bg-gradient-to-br from-emerald-900/30 to-green-900/20 border border-emerald-700/50 rounded-xl p-6">
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="bg-gradient-to-br from-emerald-900/30 to-green-900/20 border border-emerald-700/50 rounded-xl p-4 md:p-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 md:grid-cols-4 gap-4">
                   <div className="text-center">
                     <p className="text-gray-400 text-sm">Items</p>
                     <p className="text-2xl font-bold text-white">{results.cartSummary.totalItems}</p>
@@ -521,7 +521,7 @@ export default function BulkBuyerPage() {
                         )}
                         
                         {/* Market quotes preview */}
-                        <div className="mt-3 grid grid-cols-2 md:grid-cols-4 gap-2">
+                        <div className="mt-3 grid grid-cols-1 md:grid-cols-2 md:grid-cols-4 gap-2">
                           {item.marketQuotes.slice(0, 4).map((quote, qIdx) => (
                             <div key={qIdx} className={`p-2 rounded text-xs ${
                               qIdx === 0 ? "bg-emerald-900/30 border border-emerald-700" : "bg-[#1a1a1a]"

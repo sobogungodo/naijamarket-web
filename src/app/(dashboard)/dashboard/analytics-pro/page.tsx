@@ -189,7 +189,7 @@ const KPICard = ({
   icon: React.ElementType;
   trend?: 'up' | 'down' | 'neutral';
 }) => (
-  <div className="bg-gradient-to-br from-gray-900 to-gray-800 rounded-xl p-6 border border-gray-700">
+  <div className="bg-gradient-to-br from-gray-900 to-gray-800 rounded-xl p-4 md:p-6 border border-gray-700">
     <div className="flex items-center justify-between mb-4">
       <div className="w-12 h-12 bg-orange-500/20 rounded-lg flex items-center justify-center">
         <Icon className="w-6 h-6 text-orange-500" />
@@ -220,7 +220,7 @@ const NFPITrendChart = ({ data, daysAccess }: { data: NFPIData[]; daysAccess: nu
   const filteredData = data.slice(0, daysAccess);
   
   return (
-    <div className="bg-gradient-to-br from-gray-900 to-gray-800 rounded-xl p-6 border border-gray-700">
+    <div className="bg-gradient-to-br from-gray-900 to-gray-800 rounded-xl p-4 md:p-6 border border-gray-700">
       <div className="flex items-center justify-between mb-6">
         <div>
           <h3 className="text-xl font-bold text-white">NaijaFood Price Index (NFPI)</h3>
@@ -306,7 +306,7 @@ const NFPITrendChart = ({ data, daysAccess }: { data: NFPIData[]; daysAccess: nu
       
       {/* NFPI Summary Stats */}
       {filteredData.length > 0 && (
-        <div className="grid grid-cols-4 gap-4 mt-6 pt-6 border-t border-gray-700">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mt-6 pt-6 border-t border-gray-700">
           <div className="text-center">
             <div className="text-2xl font-bold text-white">
               {filteredData[0]?.nfpi_value?.toFixed(2) || '-'}
@@ -420,7 +420,7 @@ const MarketHeatmap = ({ data }: { data: MarketHeatmapData[] }) => {
   };
   
   return (
-    <div className="bg-gradient-to-br from-gray-900 to-gray-800 rounded-xl p-6 border border-gray-700">
+    <div className="bg-gradient-to-br from-gray-900 to-gray-800 rounded-xl p-4 md:p-6 border border-gray-700">
       <div className="flex items-center justify-between mb-6">
         <div>
           <h3 className="text-xl font-bold text-white flex items-center gap-2">
@@ -474,7 +474,7 @@ const MarketHeatmap = ({ data }: { data: MarketHeatmapData[] }) => {
       </div>
       
       {/* Market Stats Grid */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-6 pt-6 border-t border-gray-700">
+      <div className="grid grid-cols-1 md:grid-cols-2 md:grid-cols-4 gap-4 mt-6 pt-6 border-t border-gray-700">
         <div className="text-center">
           <div className="text-2xl font-bold text-green-500">
             {data.filter(m => m.data_status === 'ACTIVE').length}
@@ -530,7 +530,7 @@ const VolatilityTracker = ({ data }: { data: VolatilityData[] }) => {
   }).sort((a, b) => b.volatilityScore - a.volatilityScore);
   
   return (
-    <div className="bg-gradient-to-br from-gray-900 to-gray-800 rounded-xl p-6 border border-gray-700">
+    <div className="bg-gradient-to-br from-gray-900 to-gray-800 rounded-xl p-4 md:p-6 border border-gray-700">
       <div className="flex items-center justify-between mb-6">
         <div>
           <h3 className="text-xl font-bold text-white flex items-center gap-2">
@@ -552,7 +552,7 @@ const VolatilityTracker = ({ data }: { data: VolatilityData[] }) => {
         </select>
       </div>
       
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6">
         {/* Volatility Bar Chart */}
         <div className="h-80">
           <ResponsiveContainer width="100%" height="100%">
@@ -643,7 +643,7 @@ const TopMovers = ({ gainers, losers }: { gainers: TopMover[]; losers: TopMover[
   const movers = view === 'gainers' ? gainers : losers;
   
   return (
-    <div className="bg-gradient-to-br from-gray-900 to-gray-800 rounded-xl p-6 border border-gray-700">
+    <div className="bg-gradient-to-br from-gray-900 to-gray-800 rounded-xl p-4 md:p-6 border border-gray-700">
       <div className="flex items-center justify-between mb-6">
         <h3 className="text-xl font-bold text-white">Top Movers</h3>
         
@@ -708,7 +708,7 @@ const PowerBILink = () => {
   const powerbiUrl = process.env.NEXT_PUBLIC_POWERBI_REPORT_URL;
   
   return (
-    <div className="bg-gradient-to-r from-blue-900 to-purple-900 rounded-xl p-6 border border-blue-700">
+    <div className="bg-gradient-to-r from-blue-900 to-purple-900 rounded-xl p-4 md:p-6 border border-blue-700">
       <div className="flex items-center justify-between">
         <div>
           <h3 className="text-xl font-bold text-white flex items-center gap-2">
@@ -730,7 +730,7 @@ const PowerBILink = () => {
         </a>
       </div>
       
-      <div className="grid grid-cols-3 gap-4 mt-6">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-6">
         <div className="bg-white/10 rounded-lg p-4 text-center">
           <div className="text-2xl font-bold text-white">Executive</div>
           <div className="text-xs text-blue-200">KPI Overview</div>
@@ -907,7 +907,7 @@ export default function AnalyticsProPage() {
       <main className="max-w-7xl mx-auto px-4 py-8">
         {/* KPI Cards Row */}
         {kpis && (
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+          <div className="grid grid-cols-1 md:grid-cols-2 md:grid-cols-4 gap-4 mb-8">
             <KPICard
               title="Active Traders"
               value={kpis.active_traders.toLocaleString()}

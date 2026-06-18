@@ -647,7 +647,7 @@ export default function SettingsPage() {
           <div className="flex-1 min-w-0">
             {/* Profile Section */}
             {activeSection === "profile" && settings && (
-              <div className="bg-[#1a1a1a] border border-gray-800 rounded-xl p-6">
+              <div className="bg-[#1a1a1a] border border-gray-800 rounded-xl p-4 md:p-6">
                 <h2 className="text-xl font-bold mb-6 flex items-center gap-2">
                   <User className="w-5 h-5 text-emerald-400" />
                   Profile Information
@@ -676,7 +676,7 @@ export default function SettingsPage() {
                 </div>
 
                 {/* Form Fields */}
-                <div className="grid md:grid-cols-2 gap-6">
+                <div className="grid md:grid-cols-2 gap-4 md:gap-6">
                   <div>
                     <label className="block text-sm text-gray-400 mb-2">First Name</label>
                     <div className="relative">
@@ -767,7 +767,7 @@ export default function SettingsPage() {
             {/* Subscription Section */}
             {activeSection === "subscription" && settings && (
               <div className="space-y-6">
-                <div className="bg-[#1a1a1a] border border-gray-800 rounded-xl p-6">
+                <div className="bg-[#1a1a1a] border border-gray-800 rounded-xl p-4 md:p-6">
                   <h2 className="text-xl font-bold mb-6 flex items-center gap-2">
                     <Crown className="w-5 h-5 text-yellow-400" />
                     Your Subscription
@@ -862,7 +862,7 @@ export default function SettingsPage() {
 
             {/* Notifications Section */}
             {activeSection === "notifications" && settings && (
-              <div className="bg-[#1a1a1a] border border-gray-800 rounded-xl p-6">
+              <div className="bg-[#1a1a1a] border border-gray-800 rounded-xl p-4 md:p-6">
                 <h2 className="text-xl font-bold mb-6 flex items-center gap-2">
                   <Bell className="w-5 h-5 text-emerald-400" />
                   Notification Preferences
@@ -953,7 +953,7 @@ export default function SettingsPage() {
 
             {/* Price Alerts Section */}
             {activeSection === "priceAlerts" && settings && (
-              <div className="bg-[#1a1a1a] border border-gray-800 rounded-xl p-6">
+              <div className="bg-[#1a1a1a] border border-gray-800 rounded-xl p-4 md:p-6">
                 <h2 className="text-xl font-bold mb-6 flex items-center gap-2">
                   <Activity className="w-5 h-5 text-emerald-400" />
                   Price Alert Settings
@@ -996,7 +996,7 @@ export default function SettingsPage() {
                       {/* Frequency */}
                       <div>
                         <label className="block text-sm text-gray-400 mb-2">Alert Frequency</label>
-                        <div className="grid grid-cols-3 gap-3">
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                           {(["instant", "hourly", "daily"] as const).map((freq) => (
                             <button
                               key={freq}
@@ -1064,7 +1064,7 @@ export default function SettingsPage() {
 
             {/* Preferences Section */}
             {activeSection === "preferences" && settings && (
-              <div className="bg-[#1a1a1a] border border-gray-800 rounded-xl p-6">
+              <div className="bg-[#1a1a1a] border border-gray-800 rounded-xl p-4 md:p-6">
                 <h2 className="text-xl font-bold mb-6 flex items-center gap-2">
                   <Palette className="w-5 h-5 text-emerald-400" />
                   Display Preferences
@@ -1074,7 +1074,7 @@ export default function SettingsPage() {
                   {/* Theme */}
                   <div>
                     <label className="block text-sm text-gray-400 mb-3">Theme</label>
-                    <div className="grid grid-cols-3 gap-3">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                       <button
                         onClick={() => updateSetting("preferences", "theme", "dark")}
                         className={`p-4 rounded-lg border flex flex-col items-center gap-2 transition-colors ${
@@ -1112,7 +1112,7 @@ export default function SettingsPage() {
                   </div>
 
                   {/* Language & Region */}
-                  <div className="grid md:grid-cols-2 gap-6">
+                  <div className="grid md:grid-cols-2 gap-4 md:gap-6">
                     <div>
                       <label className="block text-sm text-gray-400 mb-2">Language</label>
                       <div className="relative">
@@ -1149,7 +1149,7 @@ export default function SettingsPage() {
                   </div>
 
                   {/* Currency & Date Format */}
-                  <div className="grid md:grid-cols-2 gap-6">
+                  <div className="grid md:grid-cols-2 gap-4 md:gap-6">
                     <div>
                       <label className="block text-sm text-gray-400 mb-2">Currency Display</label>
                       <div className="relative">
@@ -1187,7 +1187,7 @@ export default function SettingsPage() {
             {/* Data & Privacy Section */}
             {activeSection === "dataPrivacy" && settings && (
               <div className="space-y-6">
-                <div className="bg-[#1a1a1a] border border-gray-800 rounded-xl p-6">
+                <div className="bg-[#1a1a1a] border border-gray-800 rounded-xl p-4 md:p-6">
                   <h2 className="text-xl font-bold mb-6 flex items-center gap-2">
                     <Database className="w-5 h-5 text-emerald-400" />
                     Data & Privacy
@@ -1219,7 +1219,7 @@ export default function SettingsPage() {
                 </div>
 
                 {/* Export Data */}
-                <div className="bg-[#1a1a1a] border border-gray-800 rounded-xl p-6">
+                <div className="bg-[#1a1a1a] border border-gray-800 rounded-xl p-4 md:p-6">
                   <h3 className="font-semibold mb-4 flex items-center gap-2">
                     <Download className="w-5 h-5 text-emerald-400" />
                     Export Your Data
@@ -1254,7 +1254,7 @@ export default function SettingsPage() {
             {activeSection === "security" && settings && (
               <div className="space-y-6">
                 {/* Password */}
-                <div className="bg-[#1a1a1a] border border-gray-800 rounded-xl p-6">
+                <div className="bg-[#1a1a1a] border border-gray-800 rounded-xl p-4 md:p-6">
                   <h2 className="text-xl font-bold mb-6 flex items-center gap-2">
                     <Key className="w-5 h-5 text-emerald-400" />
                     Password
@@ -1369,7 +1369,7 @@ export default function SettingsPage() {
                 <TwoFactorAuth />
 
                 {/* Active Sessions */}
-                <div className="bg-[#1a1a1a] border border-gray-800 rounded-xl p-6">
+                <div className="bg-[#1a1a1a] border border-gray-800 rounded-xl p-4 md:p-6">
                   <div className="flex items-center justify-between mb-4">
                     <h3 className="font-semibold flex items-center gap-2">
                       <Activity className="w-5 h-5 text-emerald-400" />
@@ -1392,7 +1392,7 @@ export default function SettingsPage() {
                 </div>
 
                 {/* Delete Account */}
-                <div className="bg-red-900/20 border border-red-900/50 rounded-xl p-6">
+                <div className="bg-red-900/20 border border-red-900/50 rounded-xl p-4 md:p-6">
                   <h3 className="font-semibold text-red-400 mb-2 flex items-center gap-2">
                     <Trash2 className="w-5 h-5" />
                     Delete Account

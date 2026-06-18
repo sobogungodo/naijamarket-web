@@ -134,7 +134,7 @@ export default function RevenueAttributionPage() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="bg-gradient-to-r from-violet-900 via-purple-900 to-violet-900 rounded-xl p-6 text-white">
+      <div className="bg-gradient-to-r from-violet-900 via-purple-900 to-violet-900 rounded-xl p-4 md:p-6 text-white">
         <div className="flex items-center justify-between flex-wrap gap-3">
           <div>
             <div className="flex items-center gap-3 mb-2">
@@ -169,7 +169,7 @@ export default function RevenueAttributionPage() {
       ) : stats ? (
         <>
           {/* KPI Cards */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 md:grid-cols-4 gap-4">
             <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5">
               <DollarSign className="w-5 h-5 text-green-600 mb-2" />
               <p className="text-2xl font-bold">{fmt(stats.total_revenue)}</p>
@@ -201,7 +201,7 @@ export default function RevenueAttributionPage() {
           {/* Revenue by Type + Channel (2-col) */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             {/* By Type */}
-            <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+            <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 md:p-6">
               <h3 className="font-bold mb-4 flex items-center gap-2">
                 <PieChart className="w-4 h-4 text-blue-500" /> Revenue by Feature
               </h3>
@@ -231,7 +231,7 @@ export default function RevenueAttributionPage() {
             </div>
 
             {/* By Channel */}
-            <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+            <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 md:p-6">
               <h3 className="font-bold mb-4 flex items-center gap-2">
                 <Globe className="w-4 h-4 text-green-500" /> Revenue by Channel
               </h3>
@@ -260,7 +260,7 @@ export default function RevenueAttributionPage() {
           {/* Attribution Sources + Tier Breakdown (2-col) */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             {/* Attribution Sources */}
-            <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+            <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 md:p-6">
               <h3 className="font-bold mb-4 flex items-center gap-2">
                 <TrendingUp className="w-4 h-4 text-orange-500" /> Attribution Sources
               </h3>
@@ -283,7 +283,7 @@ export default function RevenueAttributionPage() {
             </div>
 
             {/* Tier Breakdown */}
-            <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+            <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 md:p-6">
               <h3 className="font-bold mb-4 flex items-center gap-2">
                 <Users className="w-4 h-4 text-violet-500" /> Revenue by Subscription Tier
               </h3>
@@ -311,7 +311,7 @@ export default function RevenueAttributionPage() {
 
           {/* Revenue Trend (simple bar sparkline) */}
           {stats.daily_trend && stats.daily_trend.length > 0 && (
-            <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+            <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 md:p-6">
               <h3 className="font-bold mb-4 flex items-center gap-2">
                 <Calendar className="w-4 h-4 text-cyan-500" /> Daily Revenue Trend
               </h3>
@@ -339,7 +339,7 @@ export default function RevenueAttributionPage() {
 
           {/* Top Customers */}
           {stats.top_customers && stats.top_customers.length > 0 && (
-            <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+            <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4 md:p-6">
               <h3 className="font-bold mb-4 flex items-center gap-2">
                 <Users className="w-4 h-4 text-green-500" /> Top Revenue Customers
               </h3>

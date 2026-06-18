@@ -392,7 +392,7 @@ function MarketSelector({
       />
 
       {/* Markets grid */}
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-2 max-h-72 overflow-y-auto">
+      <div className="grid grid-cols-1 md:grid-cols-2 md:grid-cols-3 gap-2 max-h-72 overflow-y-auto">
         {filteredMarkets.map((market) => {
           const isSelected = selected.includes(market.market_id);
           const isDisabled = !isSelected && selected.length >= maxMarkets;
@@ -450,7 +450,7 @@ function ComparisonResults({ result, onReset }: { result: ComparisonResult; onRe
       </div>
 
       {/* Savings Highlight */}
-      <div className="bg-gradient-to-r from-emerald-500/20 to-amber-500/20 border border-emerald-500/30 rounded-xl p-6">
+      <div className="bg-gradient-to-r from-emerald-500/20 to-amber-500/20 border border-emerald-500/30 rounded-xl p-4 md:p-6">
         <div className="flex items-center gap-3 mb-4">
           <div className="w-12 h-12 bg-emerald-500/30 rounded-full flex items-center justify-center">
             <PiggyBank className="w-6 h-6 text-emerald-400" />
@@ -481,7 +481,7 @@ function ComparisonResults({ result, onReset }: { result: ComparisonResult; onRe
       </div>
 
       {/* Stats Row */}
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg p-4 text-center">
           <p className="text-gray-500 text-xs mb-1">Lowest Price</p>
           <p className="text-emerald-400 font-bold font-mono text-lg">

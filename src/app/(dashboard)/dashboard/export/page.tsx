@@ -205,7 +205,7 @@ export default function ExportDataPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#0a0a0a] p-6">
+    <div className="min-h-screen bg-[#0a0a0a] p-4 md:p-6">
       {/* Header */}
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-white flex items-center gap-2">
@@ -219,7 +219,7 @@ export default function ExportDataPage() {
 
       {/* Tier Check */}
       {!canExportAnything && (
-        <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-6 mb-6">
+        <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-4 md:p-6 mb-6">
           <div className="flex items-start gap-4">
             <Lock className="w-8 h-8 text-amber-400 flex-shrink-0" />
             <div>
@@ -235,7 +235,7 @@ export default function ExportDataPage() {
         </div>
       )}
 
-      <div className="grid lg:grid-cols-3 gap-6">
+      <div className="grid lg:grid-cols-3 gap-4 md:gap-6">
         {/* Export Options */}
         <div className="lg:col-span-2 space-y-4">
           <h2 className="text-lg font-semibold text-white mb-4">Available Exports</h2>
@@ -304,7 +304,7 @@ export default function ExportDataPage() {
               <FileText className="w-4 h-4 text-gray-400" />
               Export Format
             </h3>
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
               {["CSV", "JSON"].map((format) => (
                 <button
                   key={format}

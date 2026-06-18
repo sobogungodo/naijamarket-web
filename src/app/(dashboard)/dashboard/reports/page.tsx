@@ -574,7 +574,7 @@ export default function ReportsPage() {
 
   if (!loading && !hasReportAccess()) {
     return (
-      <div className="p-6 max-w-4xl mx-auto">
+      <div className="p-4 md:p-6 max-w-4xl mx-auto">
         <div className="bg-gradient-to-br from-[#1a1a1a] to-[#0a0a0a] border border-orange-500/30 rounded-2xl p-8 text-center">
           <div className="w-16 h-16 bg-orange-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
             <Crown className="w-8 h-8 text-orange-400" />
@@ -623,7 +623,7 @@ export default function ReportsPage() {
 
   if (loading || status === "loading") {
     return (
-      <div className="p-6 flex items-center justify-center min-h-[400px]">
+      <div className="p-4 md:p-6 flex items-center justify-center min-h-[400px]">
         <Loader2 className="w-8 h-8 text-naija-green animate-spin" />
       </div>
     );
@@ -634,7 +634,7 @@ export default function ReportsPage() {
   // ============================================================================
 
   return (
-    <div className="p-6">
+    <div className="p-4 md:p-6">
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
@@ -697,10 +697,10 @@ export default function ReportsPage() {
 
       {/* Tab Content */}
       {activeTab === "generate" && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 md:gap-6">
           {/* Report Type Selection */}
           <div className="lg:col-span-2">
-            <div className="bg-terminal-surface border border-terminal-border rounded-xl p-6">
+            <div className="bg-terminal-surface border border-terminal-border rounded-xl p-4 md:p-6">
               <h2 className="text-lg font-semibold text-white mb-4">Select Report Type</h2>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {reportTypes.map((type) => {
@@ -765,7 +765,7 @@ export default function ReportsPage() {
               {selectedReportType === "custom_analytics" && (
                 <div className="mt-6 p-4 bg-[#1a1a1a] rounded-xl">
                   <h3 className="text-sm font-medium text-gray-400 mb-3">Select Date Range</h3>
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
                       <label className="text-xs text-gray-500 mb-1 block">Start Date</label>
                       <input
@@ -797,7 +797,7 @@ export default function ReportsPage() {
           {/* Format & Generate */}
           <div className="space-y-6">
             {/* Format Selection */}
-            <div className="bg-terminal-surface border border-terminal-border rounded-xl p-6">
+            <div className="bg-terminal-surface border border-terminal-border rounded-xl p-4 md:p-6">
               <h2 className="text-lg font-semibold text-white mb-4">Output Format</h2>
               <div className="space-y-3">
                 {(["pdf", "excel", "html"] as const).map((format) => (
@@ -834,7 +834,7 @@ export default function ReportsPage() {
             </div>
 
             {/* Generate Button */}
-            <div className="bg-terminal-surface border border-terminal-border rounded-xl p-6">
+            <div className="bg-terminal-surface border border-terminal-border rounded-xl p-4 md:p-6">
               <button
                 onClick={handleGenerateReport}
                 disabled={generating || !selectedReportType || reportsRemaining === 0}
@@ -1002,11 +1002,11 @@ export default function ReportsPage() {
       {showScheduleModal && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
           <div className="bg-terminal-surface border border-terminal-border rounded-2xl max-w-md w-full">
-            <div className="p-6 border-b border-terminal-border">
+            <div className="p-4 md:p-6 border-b border-terminal-border">
               <h2 className="text-lg font-bold text-white">Schedule Report Delivery</h2>
               <p className="text-sm text-gray-500">Receive reports automatically via email or WhatsApp</p>
             </div>
-            <div className="p-6 space-y-4">
+            <div className="p-4 md:p-6 space-y-4">
               {/* Report Type */}
               <div>
                 <label className="text-sm text-gray-400 mb-2 block">Report Type</label>
@@ -1024,7 +1024,7 @@ export default function ReportsPage() {
               {/* Frequency */}
               <div>
                 <label className="text-sm text-gray-400 mb-2 block">Frequency</label>
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
                   {["daily", "weekly", "monthly"].map(freq => (
                     <button
                       key={freq}
@@ -1044,7 +1044,7 @@ export default function ReportsPage() {
               {/* Delivery Method */}
               <div>
                 <label className="text-sm text-gray-400 mb-2 block">Delivery Method</label>
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
                   {[
                     { id: "email", label: "Email", icon: <Mail className="w-4 h-4" /> },
                     { id: "whatsapp", label: "WhatsApp", icon: <MessageSquare className="w-4 h-4" /> },
@@ -1094,7 +1094,7 @@ export default function ReportsPage() {
                 </div>
               )}
             </div>
-            <div className="p-6 border-t border-terminal-border flex justify-end gap-3">
+            <div className="p-4 md:p-6 border-t border-terminal-border flex justify-end gap-3">
               <button
                 onClick={() => setShowScheduleModal(false)}
                 className="px-6 py-2 text-gray-400 hover:text-white transition-colors"
@@ -1140,7 +1140,7 @@ export default function ReportsPage() {
                 </button>
               </div>
             </div>
-            <div className="flex-1 overflow-y-auto p-6">
+            <div className="flex-1 overflow-y-auto p-4 md:p-6">
               <div className="bg-[#0a0a0a] rounded-lg p-4">
                 <pre className="text-sm text-gray-300 whitespace-pre-wrap overflow-auto">
                   {JSON.stringify(previewData.data, null, 2)}

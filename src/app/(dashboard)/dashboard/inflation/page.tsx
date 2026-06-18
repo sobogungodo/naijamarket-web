@@ -246,7 +246,7 @@ export default function InflationPage() {
   const nbs = data?.nbsComparison;
   
   return (
-    <div className="min-h-screen bg-[#0a0a0a] text-white p-4 md:p-6">
+    <div className="min-h-screen bg-[#0a0a0a] text-white p-4 md:p-4 md:p-6">
       {/* Header */}
       <div className="mb-6">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
@@ -316,7 +316,7 @@ export default function InflationPage() {
       </div>
       
       {/* Current Inflation Hero */}
-      <div className="bg-gradient-to-br from-orange-900/30 to-red-900/20 border border-orange-700/50 rounded-xl p-6 mb-6">
+      <div className="bg-gradient-to-br from-orange-900/30 to-red-900/20 border border-orange-700/50 rounded-xl p-4 md:p-6 mb-6">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-6">
           <div>
             <div className="flex items-center gap-2 mb-1">
@@ -349,7 +349,7 @@ export default function InflationPage() {
               <Scale className="w-5 h-5 text-blue-400" />
               <p className="text-sm font-medium">vs NBS Official Data</p>
             </div>
-            <div className="grid grid-cols-2 gap-4 mb-3">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-3">
               <div>
                 <p className="text-xs text-gray-500">NaijaMarket</p>
                 <p className="text-2xl font-bold text-orange-400">{nbs?.naijaMarket ?? 0}%</p>
@@ -438,7 +438,7 @@ export default function InflationPage() {
       </div>
       
       {/* Top Inflators & Deflators */}
-      <div className="grid lg:grid-cols-2 gap-6 mb-6">
+      <div className="grid lg:grid-cols-2 gap-4 md:gap-6 mb-6">
         {/* Top Inflators */}
         <div className="bg-[#1a1a1a] border border-gray-800 rounded-xl p-4">
           <div className="flex items-center gap-2 mb-4">
@@ -517,7 +517,7 @@ export default function InflationPage() {
       </div>
       
       {/* Regional Breakdown & Category Breakdown */}
-      <div className="grid lg:grid-cols-2 gap-6 mb-6">
+      <div className="grid lg:grid-cols-2 gap-4 md:gap-6 mb-6">
         {/* Regional Breakdown */}
         <div className="bg-[#1a1a1a] border border-gray-800 rounded-xl p-4">
           <div className="flex items-center gap-2 mb-4">
