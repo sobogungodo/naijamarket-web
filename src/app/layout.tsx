@@ -24,9 +24,10 @@ const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
   title: "NaijaMarket Intel - The Bloomberg of Nigerian Commodities",
-  description: "Real-time commodity price intelligence for Nigerian markets. Track food prices, building materials, and manufacturing costs across 226 markets in 37 states.",
+  description: "Real-time commodity price intelligence for Nigerian markets. Track food prices across 282 markets in 36 states + FCT. Updated 3× daily by GPS-verified traders.",
   manifest: "/manifest.json",
   applicationName: "NaijaMarket Intel",
+  keywords: ["Nigeria food prices", "commodity prices Nigeria", "market prices Nigeria", "food price tracker", "Nigerian market intelligence", "NaijaMarket Intel", "Bloomberg Nigeria", "commodity intelligence"],
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
@@ -52,10 +53,10 @@ export const metadata: Metadata = {
   openGraph: {
     type: "website",
     locale: "en_NG",
-    url: "https://naijamarketintel.ng",
+    url: "https://www.naijamarketintel.com",
     siteName: "NaijaMarket Intel",
-    title: "NaijaMarket Intel - Nigerian Commodity Prices",
-    description: "Real-time commodity prices from 226 Nigerian markets",
+    title: "NaijaMarket Intel — The Bloomberg of Nigerian Commodities",
+    description: "Real-time commodity prices from 282 Nigerian markets across 36 states + FCT",
     images: [
       {
         url: "/og-image.png",
