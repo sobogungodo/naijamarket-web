@@ -19,6 +19,7 @@ import WhatsAppCTA from "@/components/WhatsAppCTA";
 import CookieBanner from "@/components/CookieBanner";
 import AnalyticsProvider from "@/components/AnalyticsProvider";
 import "@/styles/globals.css";
+import StructuredData from "@/components/StructuredData";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -174,7 +175,8 @@ export default function RootLayout({
             {/* 3. Single Session Enforcement */}
             <SingleSessionProvider>
               {/* 4. Auth Shell (tier gating, redirect logic) */}
-              <AuthShell>
+              <StructuredData />
+        <AuthShell>
                 {children}
               </AuthShell>
 
