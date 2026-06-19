@@ -27,6 +27,10 @@ export const metadata: Metadata = {
   title: "NaijaMarket Intel - The Bloomberg of Nigerian Commodities",
   description: "Real-time commodity price intelligence for Nigerian markets. Track food prices across 282 markets in 36 states + FCT. Updated 3× daily by GPS-verified traders.",
   manifest: "/manifest.json",
+  metadataBase: new URL("https://www.naijamarketintel.com"),
+  alternates: {
+    canonical: "https://www.naijamarketintel.com",
+  },
   applicationName: "NaijaMarket Intel",
   keywords: ["Nigeria food prices", "commodity prices Nigeria", "market prices Nigeria", "food price tracker", "Nigerian market intelligence", "NaijaMarket Intel", "Bloomberg Nigeria", "commodity intelligence"],
   appleWebApp: {
