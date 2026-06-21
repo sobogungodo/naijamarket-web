@@ -51,7 +51,10 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ success: true, data });
   } catch (e: any) {
     console.error("[mobile/consumer/alerts GET]", e);
-    return NextResponse.json({ success: false, error: "Failed to fetch alerts" }, { status: 500 });
+    return NextResponse.json(
+      { success: false, error: "Failed to fetch alerts", detail: String(e?.message || e).slice(0, 400) },
+      { status: 500 }
+    );
   }
 }
 
