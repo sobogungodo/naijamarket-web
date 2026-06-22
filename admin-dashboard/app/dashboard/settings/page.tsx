@@ -218,7 +218,7 @@ export default function SettingsPage() {
   const [settings, setSettings] = useState(mockSettings);
 
   // Sections persisted to Admin_Config this phase.
-  const PERSISTED_TABS: SettingsTab[] = ['platform', 'validation', 'payouts'];
+  const PERSISTED_TABS: SettingsTab[] = ['platform', 'validation', 'payouts', 'fraud', 'notifications'];
 
   // Filter tabs based on user role
   const availableTabs = TABS.filter(tab => tab.requiredRole.includes(userRole));
@@ -235,6 +235,8 @@ export default function SettingsPage() {
             platform: { ...prev.platform, ...(json.data.platform || {}) },
             validation: { ...prev.validation, ...(json.data.validation || {}) },
             payouts: { ...prev.payouts, ...(json.data.payouts || {}) },
+            fraud: { ...prev.fraud, ...(json.data.fraud || {}) },
+            notifications: { ...prev.notifications, ...(json.data.notifications || {}) },
           }));
         }
       })
@@ -390,7 +392,10 @@ export default function SettingsPage() {
 
           {/* Fraud Detection Settings */}
           {activeTab === 'fraud' && (
-            <FraudSettings settings={mockSettings.fraud} />
+            <FraudSettings
+              settings={settings.fraud}
+              onChange={(key, value) => updateSetting('fraud', key, value)}
+            />
           )}
 
           {/* Payout Settings */}
@@ -403,7 +408,10 @@ export default function SettingsPage() {
 
           {/* Notification Settings */}
           {activeTab === 'notifications' && (
-            <NotificationSettings settings={mockSettings.notifications} />
+            <NotificationSettings
+              settings={settings.notifications}
+              onChange={(key, value) => updateSetting('notifications', key, value)}
+            />
           )}
 
           {/* API Keys */}
@@ -1044,7 +1052,7 @@ function ValidationSettings({ settings, onChange }: { settings: typeof mockSetti
 // FRAUD SETTINGS
 // ============================================
 
-function FraudSettings({ settings }: { settings: typeof mockSettings.fraud }) {
+function FraudSettings({ settings, onChange }: { settings: typeof mockSettings.fraud; onChange: (key: string, value: unknown) => void }) {
   return (
     <div className="space-y-6">
       <Alert variant="warning" icon={AlertTriangle}>
@@ -1056,22 +1064,26 @@ function FraudSettings({ settings }: { settings: typeof mockSettings.fraud }) {
           <ToggleSetting
             label="GPS Spoofing Detection"
             description="Detect fake GPS coordinates and impossible travel patterns"
-            defaultChecked={settings.gpsSpoofingEnabled}
+            checked={settings.gpsSpoofingEnabled}
+            onChange={(v) => onChange('gpsSpoofingEnabled', v)}
           />
           <ToggleSetting
             label="Price Manipulation Detection"
             description="Flag prices significantly outside market baseline"
-            defaultChecked={settings.priceManipulationEnabled}
+            checked={settings.priceManipulationEnabled}
+            onChange={(v) => onChange('priceManipulationEnabled', v)}
           />
           <ToggleSetting
             label="Collusion Detection"
             description="Identify suspicious validator-trader patterns"
-            defaultChecked={settings.collusionDetectionEnabled}
+            checked={settings.collusionDetectionEnabled}
+            onChange={(v) => onChange('collusionDetectionEnabled', v)}
           />
           <ToggleSetting
             label="Rapid Submission Detection"
             description="Flag users exceeding submission rate limits"
-            defaultChecked={settings.rapidSubmissionEnabled}
+            checked={settings.rapidSubmissionEnabled}
+            onChange={(v) => onChange('rapidSubmissionEnabled', v)}
           />
         </div>
       </SettingsSection>
@@ -1081,7 +1093,8 @@ function FraudSettings({ settings }: { settings: typeof mockSettings.fraud }) {
           <ToggleSetting
             label="Auto-Suspend on Critical Alert"
             description="Automatically suspend users with critical fraud alerts"
-            defaultChecked={settings.autoSuspendOnCritical}
+            checked={settings.autoSuspendOnCritical}
+            onChange={(v) => onChange('autoSuspendOnCritical', v)}
             variant="danger"
           />
         </div>
@@ -1092,17 +1105,20 @@ function FraudSettings({ settings }: { settings: typeof mockSettings.fraud }) {
           <Input
             label="Collusion Window (days)"
             type="number"
-            defaultValue={settings.collusionWindowDays}
+            value={settings.collusionWindowDays}
+            onChange={(e) => onChange('collusionWindowDays', Number(e.target.value))}
           />
           <Input
             label="Max Validator-Trader Interactions"
             type="number"
-            defaultValue={settings.maxValidatorTraderInteractions}
+            value={settings.maxValidatorTraderInteractions}
+            onChange={(e) => onChange('maxValidatorTraderInteractions', Number(e.target.value))}
           />
           <Input
             label="Suspicious GPS Threshold"
             type="number"
-            defaultValue={settings.suspiciousGpsThreshold}
+            value={settings.suspiciousGpsThreshold}
+            onChange={(e) => onChange('suspiciousGpsThreshold', Number(e.target.value))}
           />
         </div>
       </SettingsSection>
@@ -1191,7 +1207,7 @@ function PayoutSettings({ settings, onChange }: { settings: typeof mockSettings.
 // NOTIFICATION SETTINGS
 // ============================================
 
-function NotificationSettings({ settings }: { settings: typeof mockSettings.notifications }) {
+function NotificationSettings({ settings, onChange }: { settings: typeof mockSettings.notifications; onChange: (key: string, value: unknown) => void }) {
   return (
     <div className="space-y-6">
       <SettingsSection title="Email Notifications" icon={Mail}>
@@ -1199,27 +1215,32 @@ function NotificationSettings({ settings }: { settings: typeof mockSettings.noti
           <ToggleSetting
             label="Email Alerts"
             description="Enable email notifications"
-            defaultChecked={settings.emailAlertsEnabled}
+            checked={settings.emailAlertsEnabled}
+            onChange={(v) => onChange('emailAlertsEnabled', v)}
           />
           <ToggleSetting
             label="Fraud Alerts"
             description="Receive email for critical and high severity fraud alerts"
-            defaultChecked={settings.fraudAlertEmail}
+            checked={settings.fraudAlertEmail}
+            onChange={(v) => onChange('fraudAlertEmail', v)}
           />
           <ToggleSetting
             label="Payout Failures"
             description="Receive email when payout batch has failures"
-            defaultChecked={settings.payoutFailureEmail}
+            checked={settings.payoutFailureEmail}
+            onChange={(v) => onChange('payoutFailureEmail', v)}
           />
           <ToggleSetting
             label="Daily Report"
             description="Receive daily summary email at 6 AM"
-            defaultChecked={settings.dailyReportEmail}
+            checked={settings.dailyReportEmail}
+            onChange={(v) => onChange('dailyReportEmail', v)}
           />
           <ToggleSetting
             label="Weekly Report"
             description="Receive weekly summary email on Mondays"
-            defaultChecked={settings.weeklyReportEmail}
+            checked={settings.weeklyReportEmail}
+            onChange={(v) => onChange('weeklyReportEmail', v)}
           />
         </div>
       </SettingsSection>
@@ -1229,13 +1250,15 @@ function NotificationSettings({ settings }: { settings: typeof mockSettings.noti
           <ToggleSetting
             label="Slack Notifications"
             description="Send alerts to a Slack channel"
-            defaultChecked={settings.slackIntegration}
+            checked={settings.slackIntegration}
+            onChange={(v) => onChange('slackIntegration', v)}
           />
           <Input
             label="Slack Webhook URL"
             type="url"
             placeholder="https://hooks.slack.com/services/..."
-            defaultValue={settings.slackWebhook}
+            value={settings.slackWebhook}
+            onChange={(e) => onChange('slackWebhook', e.target.value)}
             disabled={!settings.slackIntegration}
           />
         </div>
