@@ -6,6 +6,15 @@ export default withAuth(
     const token = req.nextauth.token;
     const pathname = req.nextUrl.pathname;
 
+    // API routes: return JSON 401 (not an HTML redirect) when unauthenticated.
+    // /api/auth/* is excluded by the matcher so NextAuth keeps working.
+    if (pathname.startsWith('/api')) {
+      if (!token) {
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      }
+      return NextResponse.next();
+    }
+
     // Allow access to login page
     if (pathname === '/login') {
       if (token) {
@@ -40,7 +49,13 @@ export default withAuth(
         if (pathname === '/login') {
           return true;
         }
-        
+
+        // API routes always enter the middleware body so we can return a
+        // JSON 401 there instead of withAuth's default HTML redirect.
+        if (pathname.startsWith('/api')) {
+          return true;
+        }
+
         // Require auth for all other routes
         return !!token;
       },
@@ -51,6 +66,7 @@ export default withAuth(
 export const config = {
   matcher: [
     '/dashboard/:path*',
+    '/api/((?!auth).*)',
     '/login',
   ],
 };

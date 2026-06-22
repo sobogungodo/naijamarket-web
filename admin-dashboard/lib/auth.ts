@@ -1,63 +1,46 @@
 import { NextAuthOptions } from 'next-auth';
 import CredentialsProvider from 'next-auth/providers/credentials';
+import bcrypt from 'bcryptjs';
 import { AdminRole, ROLE_PERMISSIONS } from '@/types';
 
 // ============================================
-// ADMIN USERS (In production, use database)
+// ADMIN USERS — loaded from the ADMIN_CREDENTIALS env var (JSON array).
+// Never hardcode credentials in source.
 // ============================================
 
 interface AdminUserRecord {
   id: string;
   email: string;
-  password: string;
+  passwordHash: string;
   name: string;
   role: AdminRole;
 }
 
-const ADMIN_USERS: AdminUserRecord[] = [
-  {
-    id: '1',
-    email: 'olawale.sobogungodo@giggabytes.eu',
-    password: 'NaijaAdmin2024!',
-    name: 'Olawale Sobogungodo',
-    role: 'super_admin',
-  },
-  {
-    id: '2',
-    email: 'admin@naijamarket.ng',
-    password: 'AdminPass2024!',
-    name: 'Admin User',
-    role: 'admin',
-  },
-  {
-    id: '3',
-    email: 'supervisor@naijamarket.ng',
-    password: 'SuperPass2024!',
-    name: 'Supervisor User',
-    role: 'supervisor',
-  },
-  {
-    id: '4',
-    email: 'analyst@naijamarket.ng',
-    password: 'AnalystPass2024!',
-    name: 'Analyst User',
-    role: 'analyst',
-  },
-  {
-    id: '5',
-    email: 'danjumaaudu@yahoo.com',
-    password: 'NaijaIntel#2026',
-    name: 'Danjuma Audu',
-    role: 'admin',
-  },
-  {
-    id: '6',
-    email: 'ahmedbabalola.lasisi@gmail.com',
-    password: 'NaijaIntel#2026',
-    name: 'Ahmed Lasisi',
-    role: 'admin',
-  },
-];
+/**
+ * ADMIN_CREDENTIALS is a JSON array of records:
+ *   [{ "id": "1", "email": "...", "passwordHash": "$2a$12$...",
+ *      "name": "...", "role": "super_admin" }, ...]
+ * Set it in Vercel project env vars (Production + Preview).
+ */
+function loadAdminUsers(): AdminUserRecord[] {
+  const raw = process.env.ADMIN_CREDENTIALS;
+  if (!raw) {
+    console.error('[auth] ADMIN_CREDENTIALS env var is not set — no admins can log in.');
+    return [];
+  }
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) {
+      throw new Error('ADMIN_CREDENTIALS must be a JSON array');
+    }
+    return parsed as AdminUserRecord[];
+  } catch (e) {
+    console.error('[auth] Failed to parse ADMIN_CREDENTIALS:', e);
+    return [];
+  }
+}
+
+const ADMIN_USERS = loadAdminUsers();
 
 // ============================================
 // NEXTAUTH CONFIGURATION
@@ -84,8 +67,8 @@ export const authOptions: NextAuthOptions = {
           throw new Error('Invalid email or password');
         }
 
-        // In production, use bcrypt.compare
-        if (user.password !== credentials.password) {
+        const valid = await bcrypt.compare(credentials.password, user.passwordHash);
+        if (!valid) {
           throw new Error('Invalid email or password');
         }
 
