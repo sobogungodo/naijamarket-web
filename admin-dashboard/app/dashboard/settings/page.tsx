@@ -186,12 +186,10 @@ const mockSettings = {
     slackWebhook: '',
   },
   api: {
-    twilioAccountSid: 'AC************************',
-    twilioAuthToken: '********************************',
+    paystackPublicKey: '********************************',
+    paystackSecretKey: '********************************',
     vtpassApiKey: '********************************',
     vtpassSecretKey: '********************************',
-    flutterwavePublicKey: '********************************',
-    flutterwaveSecretKey: '********************************',
   },
 };
 
@@ -1169,19 +1167,19 @@ function ApiKeysSettings({
         API keys are sensitive. Never share them publicly. Rotate keys regularly for security.
       </Alert>
 
-      <SettingsSection title="Twilio (WhatsApp)" icon={MessageSquare}>
+      <SettingsSection title="Paystack (Payments)" icon={CreditCard}>
         <div className="space-y-4">
           <ApiKeyInput
-            label="Account SID"
-            value={settings.twilioAccountSid}
-            show={showKeys['twilioSid'] || false}
-            onToggle={() => onToggleKey('twilioSid')}
+            label="Public Key"
+            value={settings.paystackPublicKey}
+            show={showKeys['paystackPublic'] || false}
+            onToggle={() => onToggleKey('paystackPublic')}
           />
           <ApiKeyInput
-            label="Auth Token"
-            value={settings.twilioAuthToken}
-            show={showKeys['twilioToken'] || false}
-            onToggle={() => onToggleKey('twilioToken')}
+            label="Secret Key"
+            value={settings.paystackSecretKey}
+            show={showKeys['paystackSecret'] || false}
+            onToggle={() => onToggleKey('paystackSecret')}
           />
         </div>
       </SettingsSection>
@@ -1199,23 +1197,6 @@ function ApiKeysSettings({
             value={settings.vtpassSecretKey}
             show={showKeys['vtpassSecret'] || false}
             onToggle={() => onToggleKey('vtpassSecret')}
-          />
-        </div>
-      </SettingsSection>
-
-      <SettingsSection title="Flutterwave (Payments)" icon={CreditCard}>
-        <div className="space-y-4">
-          <ApiKeyInput
-            label="Public Key"
-            value={settings.flutterwavePublicKey}
-            show={showKeys['flutterwavePublic'] || false}
-            onToggle={() => onToggleKey('flutterwavePublic')}
-          />
-          <ApiKeyInput
-            label="Secret Key"
-            value={settings.flutterwaveSecretKey}
-            show={showKeys['flutterwaveSecret'] || false}
-            onToggle={() => onToggleKey('flutterwaveSecret')}
           />
         </div>
       </SettingsSection>
