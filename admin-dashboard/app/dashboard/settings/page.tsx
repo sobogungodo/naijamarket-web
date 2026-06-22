@@ -10,7 +10,6 @@ import {
   Shield,
   Bell,
   CreditCard,
-  Database,
   Key,
   Users,
   Globe,
@@ -18,9 +17,6 @@ import {
   AlertTriangle,
   CheckCircle,
   Save,
-  RefreshCw,
-  Eye,
-  EyeOff,
   Mail,
   Phone,
   MapPin,
@@ -185,7 +181,7 @@ const mockSettings = {
     slackWebhook: '',
   },
   api: {
-    paystackPublicKey: '********************************',
+    paystackPublicKey: '',
     paystackSecretKey: '********************************',
     vtpassApiKey: '********************************',
     vtpassSecretKey: '********************************',
@@ -211,14 +207,13 @@ export default function SettingsPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
-  const [showApiKeys, setShowApiKeys] = useState<Record<string, boolean>>({});
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>(initialTeamMembers);
 
   // Settings now live in state (seeded with defaults, hydrated from /api/config).
   const [settings, setSettings] = useState(mockSettings);
 
   // Sections persisted to Admin_Config this phase.
-  const PERSISTED_TABS: SettingsTab[] = ['platform', 'validation', 'payouts', 'fraud', 'notifications'];
+  const PERSISTED_TABS: SettingsTab[] = ['platform', 'validation', 'payouts', 'fraud', 'notifications', 'api'];
 
   // Filter tabs based on user role
   const availableTabs = TABS.filter(tab => tab.requiredRole.includes(userRole));
@@ -237,6 +232,7 @@ export default function SettingsPage() {
             payouts: { ...prev.payouts, ...(json.data.payouts || {}) },
             fraud: { ...prev.fraud, ...(json.data.fraud || {}) },
             notifications: { ...prev.notifications, ...(json.data.notifications || {}) },
+            api: { ...prev.api, ...(json.data.api || {}) },
           }));
         }
       })
@@ -263,9 +259,22 @@ export default function SettingsPage() {
     setIsSaving(true);
     try {
       const sectionData = (settings as Record<string, Record<string, unknown>>)[activeTab];
+      // API secrets are write-only: never re-persist the masked sentinel ('****'
+      // would overwrite the real encrypted key), the empty display-only public key,
+      // so only freshly-entered values are saved.
+      const entries =
+        activeTab === 'api'
+          ? Object.entries(sectionData).filter(
+              ([k, v]) => k !== 'paystackPublicKey' && v !== '****' && v !== ''
+            )
+          : Object.entries(sectionData);
+      if (entries.length === 0) {
+        setSaveError('No API key changes to save. Click “Edit” on a field to enter a new value.');
+        return;
+      }
       const adminEmail = (session?.user as { email?: string })?.email;
       const results = await Promise.all(
-        Object.entries(sectionData).map(([key_name, value]) =>
+        entries.map(([key_name, value]) =>
           fetch('/api/config', {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
@@ -285,10 +294,6 @@ export default function SettingsPage() {
     } finally {
       setIsSaving(false);
     }
-  };
-
-  const toggleApiKeyVisibility = (key: string) => {
-    setShowApiKeys(prev => ({ ...prev, [key]: !prev[key] }));
   };
 
   const handleUpdateMember = (updatedMember: TeamMember) => {
@@ -315,13 +320,15 @@ export default function SettingsPage() {
       title="Settings"
       subtitle="Configure platform settings and preferences"
       actions={
-        <Button
-          onClick={handleSave}
-          isLoading={isSaving}
-          leftIcon={Save}
-        >
-          Save Changes
-        </Button>
+        activeTab === 'api' ? null : (
+          <Button
+            onClick={handleSave}
+            isLoading={isSaving}
+            leftIcon={Save}
+          >
+            Save Changes
+          </Button>
+        )
       }
     >
       <div className="flex gap-6">
@@ -416,10 +423,9 @@ export default function SettingsPage() {
 
           {/* API Keys */}
           {activeTab === 'api' && (
-            <ApiKeysSettings 
-              settings={mockSettings.api} 
-              showKeys={showApiKeys}
-              onToggleKey={toggleApiKeyVisibility}
+            <ApiKeysSettings
+              settings={settings.api}
+              onChange={(key, value) => updateSetting('api', key, value)}
             />
           )}
 
@@ -1271,63 +1277,137 @@ function NotificationSettings({ settings, onChange }: { settings: typeof mockSet
 // API KEYS SETTINGS
 // ============================================
 
-function ApiKeysSettings({ 
-  settings, 
-  showKeys, 
-  onToggleKey 
-}: { 
-  settings: typeof mockSettings.api;
-  showKeys: Record<string, boolean>;
-  onToggleKey: (key: string) => void;
-}) {
+// Maps each api field → UI label, its Vercel env var, the owning project, and
+// whether it can be edited here. paystackPublicKey is display-only (not in Vercel yet).
+const API_KEY_FIELDS: {
+  key: keyof typeof mockSettings.api;
+  group: string;
+  groupIcon: React.ElementType;
+  label: string;
+  envVar: string;
+  project: string;
+  editable: boolean;
+}[] = [
+  { key: 'paystackPublicKey', group: 'Paystack (Payments)', groupIcon: CreditCard, label: 'Public Key', envVar: 'PAYSTACK_PUBLIC_KEY', project: 'naijamarket-web', editable: false },
+  { key: 'paystackSecretKey', group: 'Paystack (Payments)', groupIcon: CreditCard, label: 'Secret Key', envVar: 'PAYSTACK_SECRET_KEY', project: 'naijamarket-web', editable: true },
+  { key: 'vtpassApiKey', group: 'VTPass (Airtime)', groupIcon: Smartphone, label: 'API Key (Public)', envVar: 'VTPASS_PUBLIC_KEY', project: 'naijamarket-admin', editable: true },
+  { key: 'vtpassSecretKey', group: 'VTPass (Airtime)', groupIcon: Smartphone, label: 'Secret Key', envVar: 'VTPASS_SECRET_KEY', project: 'naijamarket-admin', editable: true },
+];
+
+function ApiKeysSettings({ settings, onChange }: { settings: typeof mockSettings.api; onChange: (key: string, value: unknown) => void }) {
+  const { data: session } = useSession();
+  const [editingField, setEditingField] = useState<string | null>(null);
+  const [draft, setDraft] = useState('');
+  const [savingField, setSavingField] = useState<string | null>(null);
+  const [fieldStatus, setFieldStatus] = useState<Record<string, { ok: boolean; msg: string }>>({});
+
+  const startEdit = (key: string) => {
+    setEditingField(key);
+    setDraft('');
+    setFieldStatus((s) => { const n = { ...s }; delete n[key]; return n; });
+  };
+  const cancelEdit = () => { setEditingField(null); setDraft(''); };
+
+  // Self-contained per-field save: update state, persist this single key, show
+  // inline status. The stored encrypted value is never read back or revealed.
+  const saveEdit = async (key: string) => {
+    const value = draft.trim();
+    if (!value) return;
+    setSavingField(key);
+    setFieldStatus((s) => { const n = { ...s }; delete n[key]; return n; });
+    try {
+      onChange(key, value);
+      const adminEmail = (session?.user as { email?: string })?.email;
+      const resp = await fetch('/api/config', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ section: 'api', key_name: key, value, adminEmail }),
+      });
+      const data = await resp.json();
+      if (!resp.ok || !data?.success) {
+        setFieldStatus((s) => ({ ...s, [key]: { ok: false, msg: data?.error || 'Failed to save key.' } }));
+      } else {
+        setFieldStatus((s) => ({ ...s, [key]: { ok: true, msg: '✓ Key updated' } }));
+        setEditingField(null);
+        setDraft('');
+      }
+    } catch {
+      setFieldStatus((s) => ({ ...s, [key]: { ok: false, msg: 'Network error while saving.' } }));
+    } finally {
+      setSavingField(null);
+    }
+  };
+
+  const groups = Array.from(new Set(API_KEY_FIELDS.map((f) => f.group)));
+
   return (
     <div className="space-y-6">
       <Alert variant="danger" icon={AlertTriangle}>
         API keys are sensitive. Never share them publicly. Rotate keys regularly for security.
       </Alert>
 
-      <SettingsSection title="Paystack (Payments)" icon={CreditCard}>
-        <div className="space-y-4">
-          <ApiKeyInput
-            label="Public Key"
-            value={settings.paystackPublicKey}
-            show={showKeys['paystackPublic'] || false}
-            onToggle={() => onToggleKey('paystackPublic')}
-          />
-          <ApiKeyInput
-            label="Secret Key"
-            value={settings.paystackSecretKey}
-            show={showKeys['paystackSecret'] || false}
-            onToggle={() => onToggleKey('paystackSecret')}
-          />
-        </div>
-      </SettingsSection>
+      {groups.map((group) => {
+        const fields = API_KEY_FIELDS.filter((f) => f.group === group);
+        const Icon = fields[0].groupIcon;
+        return (
+          <SettingsSection key={group} title={group} icon={Icon}>
+            <div className="space-y-4">
+              {fields.map((f) => {
+                const isEditing = editingField === f.key;
+                const stored = settings[f.key];
+                const hasValue = !!stored && stored !== '';
+                const status = fieldStatus[f.key];
+                return (
+                  <div key={f.key}>
+                    <label className="block text-sm font-medium text-dash-text mb-2">{f.label}</label>
+                    {isEditing ? (
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          autoFocus
+                          value={draft}
+                          onChange={(e) => setDraft(e.target.value)}
+                          placeholder={`Enter new ${f.label.toLowerCase()}…`}
+                          className="flex-1 bg-dash-bg border border-dash-border rounded-lg px-4 py-2.5 text-dash-text font-mono text-sm"
+                        />
+                        <Button onClick={() => saveEdit(f.key)} isLoading={savingField === f.key} disabled={!draft.trim()}>
+                          Save
+                        </Button>
+                        <Button variant="ghost" onClick={cancelEdit}>Cancel</Button>
+                      </div>
+                    ) : (
+                      <div className="flex gap-2 items-center">
+                        <input
+                          type="text"
+                          value={!f.editable && !hasValue ? 'Not configured' : '••••••••••••'}
+                          readOnly
+                          className="flex-1 bg-dash-bg border border-dash-border rounded-lg px-4 py-2.5 text-dash-muted font-mono text-sm"
+                        />
+                        {f.editable && (
+                          <Button variant="secondary" onClick={() => startEdit(f.key)}>Edit</Button>
+                        )}
+                      </div>
+                    )}
+                    <p className="mt-1 text-xs text-dash-muted">
+                      Vercel env: <span className="font-mono">{f.envVar}</span> ({f.project})
+                      {!f.editable && ' — display only, not stored here'}
+                    </p>
+                    {status && (
+                      <p className={`mt-1 text-xs ${status.ok ? 'text-status-success' : 'text-status-danger'}`}>
+                        {status.msg}
+                      </p>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </SettingsSection>
+        );
+      })}
 
-      <SettingsSection title="VTPass (Airtime)" icon={Smartphone}>
-        <div className="space-y-4">
-          <ApiKeyInput
-            label="API Key"
-            value={settings.vtpassApiKey}
-            show={showKeys['vtpassApi'] || false}
-            onToggle={() => onToggleKey('vtpassApi')}
-          />
-          <ApiKeyInput
-            label="Secret Key"
-            value={settings.vtpassSecretKey}
-            show={showKeys['vtpassSecret'] || false}
-            onToggle={() => onToggleKey('vtpassSecret')}
-          />
-        </div>
-      </SettingsSection>
-
-      <div className="flex gap-4">
-        <Button variant="secondary" leftIcon={RefreshCw}>
-          Rotate All Keys
-        </Button>
-        <Button variant="secondary" leftIcon={Database}>
-          Export Backup
-        </Button>
-      </div>
+      <Alert variant="info" icon={Key}>
+        Changes are stored securely. Update the corresponding Vercel environment variable to activate in production.
+      </Alert>
     </div>
   );
 }
@@ -1554,34 +1634,3 @@ function ToggleSetting({
   );
 }
 
-function ApiKeyInput({
-  label,
-  value,
-  show,
-  onToggle,
-}: {
-  label: string;
-  value: string;
-  show: boolean;
-  onToggle: () => void;
-}) {
-  return (
-    <div>
-      <label className="block text-sm font-medium text-dash-text mb-2">{label}</label>
-      <div className="flex gap-2">
-        <input
-          type={show ? 'text' : 'password'}
-          value={value}
-          readOnly
-          className="flex-1 bg-dash-bg border border-dash-border rounded-lg px-4 py-2.5 text-dash-text font-mono text-sm"
-        />
-        <Button variant="ghost" onClick={onToggle}>
-          {show ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-        </Button>
-        <Button variant="ghost">
-          <RefreshCw className="w-4 h-4" />
-        </Button>
-      </div>
-    </div>
-  );
-}
