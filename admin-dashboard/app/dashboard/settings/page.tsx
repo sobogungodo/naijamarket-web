@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
 import { PageWrapper } from '@/components/dashboard/layout';
 import { Button, Input, Badge, Alert } from '@/components/ui';
@@ -157,7 +157,7 @@ const mockSettings = {
     priceDeviationThreshold: 30,
   },
   fraud: {
-    gpsSpoffingEnabled: true,
+    gpsSpoofingEnabled: true,
     priceManipulationEnabled: true,
     collusionDetectionEnabled: true,
     rapidSubmissionEnabled: true,
@@ -174,7 +174,6 @@ const mockSettings = {
     validatorRewardAmount: 50,
     maxRetryAttempts: 3,
     vtpassEnabled: true,
-    flutterwaveEnabled: false,
   },
   notifications: {
     emailAlertsEnabled: true,
@@ -211,24 +210,79 @@ export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState<SettingsTab>('profile');
   const [isSaving, setIsSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [showApiKeys, setShowApiKeys] = useState<Record<string, boolean>>({});
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>(initialTeamMembers);
+
+  // Settings now live in state (seeded with defaults, hydrated from /api/config).
+  const [settings, setSettings] = useState(mockSettings);
+
+  // Sections persisted to Admin_Config this phase.
+  const PERSISTED_TABS: SettingsTab[] = ['platform', 'validation', 'payouts'];
 
   // Filter tabs based on user role
   const availableTabs = TABS.filter(tab => tab.requiredRole.includes(userRole));
 
+  // Hydrate persisted sections from the backend on mount; keep defaults on failure.
+  useEffect(() => {
+    let active = true;
+    fetch('/api/config')
+      .then((r) => r.json())
+      .then((json) => {
+        if (active && json?.success && json.data) {
+          setSettings((prev) => ({
+            ...prev,
+            platform: { ...prev.platform, ...(json.data.platform || {}) },
+            validation: { ...prev.validation, ...(json.data.validation || {}) },
+            payouts: { ...prev.payouts, ...(json.data.payouts || {}) },
+          }));
+        }
+      })
+      .catch(() => { /* keep defaults */ });
+    return () => { active = false; };
+  }, []);
+
+  const updateSetting = (section: SettingsTab, key: string, value: unknown) => {
+    setSettings((prev) => ({
+      ...prev,
+      [section]: { ...(prev as Record<string, Record<string, unknown>>)[section], [key]: value },
+    }));
+  };
+
   const handleSave = async () => {
-    setIsSaving(true);
+    setSaveError(null);
     setSaveSuccess(false);
-    
-    // Simulate API call
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    
-    setIsSaving(false);
-    setSaveSuccess(true);
-    
-    // Clear success message after 3 seconds
-    setTimeout(() => setSaveSuccess(false), 3000);
+
+    if (!PERSISTED_TABS.includes(activeTab)) {
+      setSaveError('Saving is not enabled for this tab yet.');
+      return;
+    }
+
+    setIsSaving(true);
+    try {
+      const sectionData = (settings as Record<string, Record<string, unknown>>)[activeTab];
+      const adminEmail = (session?.user as { email?: string })?.email;
+      const results = await Promise.all(
+        Object.entries(sectionData).map(([key_name, value]) =>
+          fetch('/api/config', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ section: activeTab, key_name, value, adminEmail }),
+          }).then((r) => r.json())
+        )
+      );
+      const failed = results.find((r) => !r?.success);
+      if (failed) {
+        setSaveError(failed.error || 'Failed to save some settings.');
+      } else {
+        setSaveSuccess(true);
+        setTimeout(() => setSaveSuccess(false), 3000);
+      }
+    } catch {
+      setSaveError('Network error while saving.');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const toggleApiKeyVisibility = (key: string) => {
@@ -307,6 +361,12 @@ export default function SettingsPage() {
             </Alert>
           )}
 
+          {saveError && (
+            <Alert variant="danger" icon={AlertTriangle} className="mb-6">
+              {saveError}
+            </Alert>
+          )}
+
           {/* Profile Settings */}
           {activeTab === 'profile' && (
             <ProfileSettings session={session} />
@@ -314,12 +374,18 @@ export default function SettingsPage() {
 
           {/* Platform Settings */}
           {activeTab === 'platform' && (
-            <PlatformSettings settings={mockSettings.platform} />
+            <PlatformSettings
+              settings={settings.platform}
+              onChange={(key, value) => updateSetting('platform', key, value)}
+            />
           )}
 
           {/* Validation Settings */}
           {activeTab === 'validation' && (
-            <ValidationSettings settings={mockSettings.validation} />
+            <ValidationSettings
+              settings={settings.validation}
+              onChange={(key, value) => updateSetting('validation', key, value)}
+            />
           )}
 
           {/* Fraud Detection Settings */}
@@ -329,7 +395,10 @@ export default function SettingsPage() {
 
           {/* Payout Settings */}
           {activeTab === 'payouts' && (
-            <PayoutSettings settings={mockSettings.payouts} />
+            <PayoutSettings
+              settings={settings.payouts}
+              onChange={(key, value) => updateSetting('payouts', key, value)}
+            />
           )}
 
           {/* Notification Settings */}
@@ -792,9 +861,12 @@ function ProfileSettings({ session }: { session: SessionData | null }) {
           </div>
           <Badge variant="warning">Not Enabled</Badge>
         </div>
-        <Button variant="secondary" className="mt-4" leftIcon={Shield}>
-          Enable 2FA
-        </Button>
+        <div className="mt-4 flex items-center gap-3">
+          <Button variant="secondary" leftIcon={Shield} disabled>
+            Enable 2FA
+          </Button>
+          <Badge variant="info">Coming Soon</Badge>
+        </div>
       </SettingsSection>
     </div>
   );
@@ -804,29 +876,33 @@ function ProfileSettings({ session }: { session: SessionData | null }) {
 // PLATFORM SETTINGS
 // ============================================
 
-function PlatformSettings({ settings }: { settings: typeof mockSettings.platform }) {
+function PlatformSettings({ settings, onChange }: { settings: typeof mockSettings.platform; onChange: (key: string, value: unknown) => void }) {
   return (
     <div className="space-y-6">
       <SettingsSection title="General" icon={Globe}>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <Input
             label="Platform Name"
-            defaultValue={settings.platformName}
+            value={settings.platformName}
+            onChange={(e) => onChange('platformName', e.target.value)}
             leftIcon={Globe}
           />
           <Input
             label="Tagline"
-            defaultValue={settings.tagline}
+            value={settings.tagline}
+            onChange={(e) => onChange('tagline', e.target.value)}
           />
           <Input
             label="Support Email"
             type="email"
-            defaultValue={settings.supportEmail}
+            value={settings.supportEmail}
+            onChange={(e) => onChange('supportEmail', e.target.value)}
             leftIcon={Mail}
           />
           <Input
             label="Support Phone"
-            defaultValue={settings.supportPhone}
+            value={settings.supportPhone}
+            onChange={(e) => onChange('supportPhone', e.target.value)}
             leftIcon={Phone}
           />
         </div>
@@ -836,7 +912,11 @@ function PlatformSettings({ settings }: { settings: typeof mockSettings.platform
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <label className="block text-sm font-medium text-dash-text mb-2">Default Language</label>
-            <select className="w-full bg-dash-bg border border-dash-border rounded-lg px-4 py-2.5 text-dash-text">
+            <select
+              className="w-full bg-dash-bg border border-dash-border rounded-lg px-4 py-2.5 text-dash-text"
+              value={settings.defaultLanguage}
+              onChange={(e) => onChange('defaultLanguage', e.target.value)}
+            >
               <option value="en">English</option>
               <option value="pcm">Pidgin English</option>
               <option value="yo">Yoruba</option>
@@ -846,7 +926,11 @@ function PlatformSettings({ settings }: { settings: typeof mockSettings.platform
           </div>
           <div>
             <label className="block text-sm font-medium text-dash-text mb-2">Timezone</label>
-            <select className="w-full bg-dash-bg border border-dash-border rounded-lg px-4 py-2.5 text-dash-text">
+            <select
+              className="w-full bg-dash-bg border border-dash-border rounded-lg px-4 py-2.5 text-dash-text"
+              value={settings.timezone}
+              onChange={(e) => onChange('timezone', e.target.value)}
+            >
               <option value="Africa/Lagos">Africa/Lagos (WAT)</option>
               <option value="UTC">UTC</option>
             </select>
@@ -859,13 +943,15 @@ function PlatformSettings({ settings }: { settings: typeof mockSettings.platform
           <ToggleSetting
             label="Maintenance Mode"
             description="Temporarily disable the platform for maintenance"
-            defaultChecked={settings.maintenanceMode}
+            checked={settings.maintenanceMode}
+            onChange={(v) => onChange('maintenanceMode', v)}
             variant="danger"
           />
           <ToggleSetting
             label="Registration Open"
             description="Allow new traders and validators to register"
-            defaultChecked={settings.registrationOpen}
+            checked={settings.registrationOpen}
+            onChange={(v) => onChange('registrationOpen', v)}
           />
         </div>
       </SettingsSection>
@@ -877,7 +963,7 @@ function PlatformSettings({ settings }: { settings: typeof mockSettings.platform
 // VALIDATION SETTINGS
 // ============================================
 
-function ValidationSettings({ settings }: { settings: typeof mockSettings.validation }) {
+function ValidationSettings({ settings, onChange }: { settings: typeof mockSettings.validation; onChange: (key: string, value: unknown) => void }) {
   return (
     <div className="space-y-6">
       <SettingsSection title="Validation Rules" icon={CheckCircle}>
@@ -885,27 +971,31 @@ function ValidationSettings({ settings }: { settings: typeof mockSettings.valida
           <Input
             label="Validators Per Submission"
             type="number"
-            defaultValue={settings.validatorsPerSubmission}
+            value={settings.validatorsPerSubmission}
+            onChange={(e) => onChange('validatorsPerSubmission', Number(e.target.value))}
             min={1}
             max={10}
           />
           <Input
             label="Consensus Threshold"
             type="number"
-            defaultValue={settings.consensusThreshold}
+            value={settings.consensusThreshold}
+            onChange={(e) => onChange('consensusThreshold', Number(e.target.value))}
             min={1}
             max={10}
           />
           <Input
             label="Validation Timeout (minutes)"
             type="number"
-            defaultValue={settings.validationTimeoutMinutes}
+            value={settings.validationTimeoutMinutes}
+            onChange={(e) => onChange('validationTimeoutMinutes', Number(e.target.value))}
             leftIcon={Timer}
           />
           <Input
             label="Instant Approval Threshold"
             type="number"
-            defaultValue={settings.instantApprovalThreshold}
+            value={settings.instantApprovalThreshold}
+            onChange={(e) => onChange('instantApprovalThreshold', Number(e.target.value))}
             leftIcon={Percent}
           />
         </div>
@@ -916,12 +1006,14 @@ function ValidationSettings({ settings }: { settings: typeof mockSettings.valida
           <Input
             label="Max Submissions Per Day"
             type="number"
-            defaultValue={settings.maxSubmissionsPerDay}
+            value={settings.maxSubmissionsPerDay}
+            onChange={(e) => onChange('maxSubmissionsPerDay', Number(e.target.value))}
           />
           <Input
             label="Max Submissions Per Hour"
             type="number"
-            defaultValue={settings.maxSubmissionsPerHour}
+            value={settings.maxSubmissionsPerHour}
+            onChange={(e) => onChange('maxSubmissionsPerHour', Number(e.target.value))}
           />
         </div>
       </SettingsSection>
@@ -931,13 +1023,15 @@ function ValidationSettings({ settings }: { settings: typeof mockSettings.valida
           <Input
             label="GPS Radius (meters)"
             type="number"
-            defaultValue={settings.gpsRadiusMeters}
+            value={settings.gpsRadiusMeters}
+            onChange={(e) => onChange('gpsRadiusMeters', Number(e.target.value))}
             leftIcon={MapPin}
           />
           <Input
             label="Price Deviation Threshold (%)"
             type="number"
-            defaultValue={settings.priceDeviationThreshold}
+            value={settings.priceDeviationThreshold}
+            onChange={(e) => onChange('priceDeviationThreshold', Number(e.target.value))}
             leftIcon={Percent}
           />
         </div>
@@ -962,7 +1056,7 @@ function FraudSettings({ settings }: { settings: typeof mockSettings.fraud }) {
           <ToggleSetting
             label="GPS Spoofing Detection"
             description="Detect fake GPS coordinates and impossible travel patterns"
-            defaultChecked={settings.gpsSpoffingEnabled}
+            defaultChecked={settings.gpsSpoofingEnabled}
           />
           <ToggleSetting
             label="Price Manipulation Detection"
@@ -1020,7 +1114,7 @@ function FraudSettings({ settings }: { settings: typeof mockSettings.fraud }) {
 // PAYOUT SETTINGS
 // ============================================
 
-function PayoutSettings({ settings }: { settings: typeof mockSettings.payouts }) {
+function PayoutSettings({ settings, onChange }: { settings: typeof mockSettings.payouts; onChange: (key: string, value: unknown) => void }) {
   return (
     <div className="space-y-6">
       <SettingsSection title="Reward Amounts" icon={Wallet}>
@@ -1028,17 +1122,20 @@ function PayoutSettings({ settings }: { settings: typeof mockSettings.payouts })
           <Input
             label="Trader Reward (₦)"
             type="number"
-            defaultValue={settings.traderRewardAmount}
+            value={settings.traderRewardAmount}
+            onChange={(e) => onChange('traderRewardAmount', Number(e.target.value))}
           />
           <Input
             label="Validator Reward (₦)"
             type="number"
-            defaultValue={settings.validatorRewardAmount}
+            value={settings.validatorRewardAmount}
+            onChange={(e) => onChange('validatorRewardAmount', Number(e.target.value))}
           />
           <Input
             label="Minimum Payout Balance (₦)"
             type="number"
-            defaultValue={settings.minimumPayoutBalance}
+            value={settings.minimumPayoutBalance}
+            onChange={(e) => onChange('minimumPayoutBalance', Number(e.target.value))}
           />
         </div>
       </SettingsSection>
@@ -1047,9 +1144,10 @@ function PayoutSettings({ settings }: { settings: typeof mockSettings.payouts })
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <label className="block text-sm font-medium text-dash-text mb-2">Payout Day</label>
-            <select 
+            <select
               className="w-full bg-dash-bg border border-dash-border rounded-lg px-4 py-2.5 text-dash-text"
-              defaultValue={settings.payoutDay}
+              value={settings.payoutDay}
+              onChange={(e) => onChange('payoutDay', e.target.value)}
             >
               <option value="monday">Monday</option>
               <option value="tuesday">Tuesday</option>
@@ -1063,12 +1161,14 @@ function PayoutSettings({ settings }: { settings: typeof mockSettings.payouts })
           <Input
             label="Payout Time"
             type="time"
-            defaultValue={settings.payoutTime}
+            value={settings.payoutTime}
+            onChange={(e) => onChange('payoutTime', e.target.value)}
           />
           <Input
             label="Max Retry Attempts"
             type="number"
-            defaultValue={settings.maxRetryAttempts}
+            value={settings.maxRetryAttempts}
+            onChange={(e) => onChange('maxRetryAttempts', Number(e.target.value))}
           />
         </div>
       </SettingsSection>
@@ -1078,12 +1178,8 @@ function PayoutSettings({ settings }: { settings: typeof mockSettings.payouts })
           <ToggleSetting
             label="VTPass (Airtime)"
             description="Primary provider for airtime distribution"
-            defaultChecked={settings.vtpassEnabled}
-          />
-          <ToggleSetting
-            label="Flutterwave (Bank Transfer)"
-            description="Alternative provider for direct bank transfers"
-            defaultChecked={settings.flutterwaveEnabled}
+            checked={settings.vtpassEnabled}
+            onChange={(v) => onChange('vtpassEnabled', v)}
           />
         </div>
       </SettingsSection>
@@ -1385,13 +1481,28 @@ function ToggleSetting({
   description,
   defaultChecked = false,
   variant = 'default',
+  checked,
+  onChange,
 }: {
   label: string;
   description: string;
   defaultChecked?: boolean;
   variant?: 'default' | 'danger';
+  checked?: boolean;
+  onChange?: (value: boolean) => void;
 }) {
-  const [checked, setChecked] = useState(defaultChecked);
+  // Controlled when an onChange handler is supplied; otherwise self-managed.
+  const [internalChecked, setInternalChecked] = useState(defaultChecked);
+  const isControlled = onChange !== undefined;
+  const value = isControlled ? !!checked : internalChecked;
+
+  const handleToggle = () => {
+    if (isControlled) {
+      onChange!(!value);
+    } else {
+      setInternalChecked((c) => !c);
+    }
+  };
 
   return (
     <div className="flex items-center justify-between p-4 bg-dash-bg rounded-lg border border-dash-border">
@@ -1400,11 +1511,11 @@ function ToggleSetting({
         <p className="text-sm text-dash-muted">{description}</p>
       </div>
       <button
-        onClick={() => setChecked(!checked)}
+        onClick={handleToggle}
         className={`
           relative w-12 h-6 rounded-full transition-colors
-          ${checked 
-            ? variant === 'danger' ? 'bg-status-danger' : 'bg-naija-green-500' 
+          ${value
+            ? variant === 'danger' ? 'bg-status-danger' : 'bg-naija-green-500'
             : 'bg-dash-border'
           }
         `}
@@ -1412,7 +1523,7 @@ function ToggleSetting({
         <span
           className={`
             absolute top-1 w-4 h-4 rounded-full bg-white transition-transform
-            ${checked ? 'translate-x-7' : 'translate-x-1'}
+            ${value ? 'translate-x-7' : 'translate-x-1'}
           `}
         />
       </button>
