@@ -33,6 +33,7 @@ export async function GET(request: NextRequest) {
     const item = (sp.get("item") || "").trim();
     const state = (sp.get("state") || "").trim();
     const marketId = (sp.get("market_id") || "").trim();
+    const trending = sp.get("trending") === "true";
     const limit = Math.min(parseInt(sp.get("limit") || "20") || 20, 50);
 
     let where =
@@ -41,19 +42,60 @@ export async function GET(request: NextRequest) {
     if (state) where += ` AND state LIKE '%${esc(state)}%'`;
     if (marketId) where += ` AND market_id = '${esc(marketId)}'`;
 
-    const rows = await prisma.$queryRawUnsafe<any[]>(`
+    // trending=true → "Top picks": one item per category (highest confidence).
+    // default → diversified ticker: one row per item (cheapest market).
+    const sql = trending
+      ? `
       SELECT TOP ${limit}
         item_id, item_name, market_name, market_id, state,
-        CAST(price_naira AS FLOAT) AS price_naira, unit, trend,
-        CAST(price_change_pct AS FLOAT) AS price_change_pct,
-        CAST(week_high AS FLOAT) AS week_high,
-        CAST(week_low AS FLOAT) AS week_low,
-        CAST(confidence_score AS FLOAT) AS confidence_score,
-        last_updated
-      FROM Latest_Prices_Summary WITH (NOLOCK)
-      ${where}
+        price_naira, unit, trend, price_change_pct,
+        week_high, week_low, confidence_score, last_updated
+      FROM (
+        SELECT
+          item_id, item_name, market_name, market_id, state,
+          category_id, category_name,
+          CAST(price_naira AS FLOAT) AS price_naira, unit, trend,
+          CAST(price_change_pct AS FLOAT) AS price_change_pct,
+          CAST(week_high AS FLOAT) AS week_high,
+          CAST(week_low AS FLOAT) AS week_low,
+          CAST(confidence_score AS FLOAT) AS confidence_score,
+          last_updated,
+          ROW_NUMBER() OVER (
+            PARTITION BY category_id
+            ORDER BY confidence_score DESC, last_updated DESC
+          ) AS rn
+        FROM Latest_Prices_Summary WITH (NOLOCK)
+        ${where}
+      ) t
+      WHERE rn = 1
+      ORDER BY confidence_score DESC
+    `
+      : `
+      SELECT TOP ${limit}
+        item_id, item_name, market_name, market_id, state,
+        price_naira, unit, trend, price_change_pct,
+        week_high, week_low, confidence_score, last_updated
+      FROM (
+        SELECT
+          item_id, item_name, market_name, market_id, state,
+          CAST(price_naira AS FLOAT) AS price_naira, unit, trend,
+          CAST(price_change_pct AS FLOAT) AS price_change_pct,
+          CAST(week_high AS FLOAT) AS week_high,
+          CAST(week_low AS FLOAT) AS week_low,
+          CAST(confidence_score AS FLOAT) AS confidence_score,
+          last_updated,
+          ROW_NUMBER() OVER (
+            PARTITION BY item_id
+            ORDER BY price_naira ASC, market_id ASC
+          ) AS rn
+        FROM Latest_Prices_Summary WITH (NOLOCK)
+        ${where}
+      ) t
+      WHERE rn = 1
       ORDER BY last_updated DESC
-    `);
+    `;
+
+    const rows = await prisma.$queryRawUnsafe<any[]>(sql);
 
     const data = rows.map((r) => ({
       item_id: r.item_id,
