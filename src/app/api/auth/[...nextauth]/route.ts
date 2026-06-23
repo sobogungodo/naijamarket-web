@@ -133,6 +133,11 @@ export const authOptions: NextAuthOptions = {
           if (consumer) {
             token.tier   = consumer.tier || (consumer as any).subscription_tier;
             token.status = consumer.status;
+            // TEMP DEBUG — remove after diagnosing sidebar "User"
+            console.log("[JWT-REFRESH] consumer keys:", JSON.stringify(Object.keys(consumer || {})));
+            console.log("[JWT-REFRESH] consumer.full_name:", (consumer as any)?.full_name);
+            console.log("[JWT-REFRESH] consumer.name:", (consumer as any)?.name);
+            console.log("[JWT-REFRESH] token.name before:", token.name);
             token.name   = (consumer as any).full_name || [(consumer as any).first_name, (consumer as any).last_name].filter(Boolean).join(" ") || (consumer as any).name || token.name;
             token.email  = consumer.email || token.email;
           }
