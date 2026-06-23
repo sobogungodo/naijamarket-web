@@ -15,14 +15,27 @@ import Link from "next/link";
 // DASHBOARD PAGE
 // ============================================================================
 
+interface Mover {
+  name: string;
+  market: string;
+  price: number;
+  change: number;
+}
+
 interface DashboardStats {
   marketCount: number;
   itemCount: number;
   latestPriceDate: string | null;
   todayRowCount: number;
+  topGainers: Mover[];
+  topLosers: Mover[];
 }
 
 const numberFmt = new Intl.NumberFormat("en-NG");
+
+function formatNaira(value: number): string {
+  return "₦" + numberFmt.format(Math.round(value));
+}
 
 function formatStatDate(iso: string | null): string {
   if (!iso) return "—";
@@ -47,6 +60,8 @@ export default function DashboardPage() {
             itemCount: data.itemCount,
             latestPriceDate: data.latestPriceDate,
             todayRowCount: data.todayRowCount,
+            topGainers: Array.isArray(data.topGainers) ? data.topGainers : [],
+            topLosers: Array.isArray(data.topLosers) ? data.topLosers : [],
           });
         }
       })
@@ -86,6 +101,11 @@ export default function DashboardPage() {
       color: "text-naija-red",
     },
   ];
+
+  // Real movers from the DB when available; fall back to placeholder rows
+  // until the stats request resolves.
+  const gainers = stats && stats.topGainers.length ? stats.topGainers : topGainers;
+  const losers = stats && stats.topLosers.length ? stats.topLosers : topLosers;
 
   return (
     <div className="space-y-6">
@@ -186,7 +206,7 @@ export default function DashboardPage() {
                 TOP GAINERS
               </div>
               <div className="space-y-2">
-                {topGainers.map((item, index) => (
+                {gainers.map((item, index) => (
                   <div key={index} className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
                       <span className="w-5 h-5 flex items-center justify-center text-2xs text-gray-500 bg-terminal-muted rounded">
@@ -198,8 +218,8 @@ export default function DashboardPage() {
                       </div>
                     </div>
                     <div className="text-right">
-                      <div className="text-sm font-mono text-white">{item.price}</div>
-                      <div className="text-xs text-price-up">+{item.change}%</div>
+                      <div className="text-sm font-mono text-white">{typeof item.price === "number" ? formatNaira(item.price) : item.price}</div>
+                      <div className="text-xs text-price-up">+{Number(item.change).toFixed(1)}%</div>
                     </div>
                   </div>
                 ))}
@@ -213,7 +233,7 @@ export default function DashboardPage() {
                 TOP LOSERS
               </div>
               <div className="space-y-2">
-                {topLosers.map((item, index) => (
+                {losers.map((item, index) => (
                   <div key={index} className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
                       <span className="w-5 h-5 flex items-center justify-center text-2xs text-gray-500 bg-terminal-muted rounded">
@@ -225,8 +245,8 @@ export default function DashboardPage() {
                       </div>
                     </div>
                     <div className="text-right">
-                      <div className="text-sm font-mono text-white">{item.price}</div>
-                      <div className="text-xs text-price-down">{item.change}%</div>
+                      <div className="text-sm font-mono text-white">{typeof item.price === "number" ? formatNaira(item.price) : item.price}</div>
+                      <div className="text-xs text-price-down">{Number(item.change).toFixed(1)}%</div>
                     </div>
                   </div>
                 ))}

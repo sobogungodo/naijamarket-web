@@ -59,7 +59,7 @@ export const authOptions: NextAuthOptions = {
           id:           consumer.id,
           phone:        consumer.phone,
           email:        consumer.email,
-          name:         (consumer as any).full_name || (consumer as any).name || "",
+          name:         (consumer as any).full_name || [(consumer as any).first_name, (consumer as any).last_name].filter(Boolean).join(" ") || (consumer as any).name || "",
           tier:         consumer.tier || (consumer as any).subscription_tier,
           status:       consumer.status,
           sessionToken: credentials.session_token,
@@ -94,7 +94,7 @@ export const authOptions: NextAuthOptions = {
           id:           consumer.id,
           phone:        consumer.phone,
           email:        consumer.email,
-          name:         (consumer as any).full_name || (consumer as any).name || "",
+          name:         (consumer as any).full_name || [(consumer as any).first_name, (consumer as any).last_name].filter(Boolean).join(" ") || (consumer as any).name || "",
           tier:         consumer.tier || (consumer as any).subscription_tier,
           status:       consumer.status,
           sessionToken: credentials.session_token,
@@ -133,7 +133,7 @@ export const authOptions: NextAuthOptions = {
           if (consumer) {
             token.tier   = consumer.tier || (consumer as any).subscription_tier;
             token.status = consumer.status;
-            token.name   = consumer.name || token.name;
+            token.name   = (consumer as any).full_name || [(consumer as any).first_name, (consumer as any).last_name].filter(Boolean).join(" ") || (consumer as any).name || token.name;
             token.email  = consumer.email || token.email;
           }
         } catch {

@@ -33,6 +33,56 @@ export async function GET() {
       today_row_count: 0,
     };
 
+    // Top movers — real food prices from Latest_Prices_Summary.
+    // Gainers: biggest positive %; Losers: biggest negative %.
+    type MoverRow = {
+      item_name: string | null;
+      market_name: string | null;
+      state: string | null;
+      price_naira: number | null;
+      price_change_pct: number | null;
+      trend: string | null;
+    };
+
+    const mapMover = (m: MoverRow) => ({
+      name: m.item_name ?? "",
+      market: m.market_name ?? m.state ?? "",
+      price: Number(m.price_naira ?? 0),
+      change: Number(m.price_change_pct ?? 0),
+    });
+
+    let topGainers: ReturnType<typeof mapMover>[] = [];
+    let topLosers: ReturnType<typeof mapMover>[] = [];
+    try {
+      const [gainers, losers] = await Promise.all([
+        prisma.$queryRaw`
+          SELECT TOP 5 item_name, market_name, state,
+            CAST(price_naira AS FLOAT) AS price_naira,
+            CAST(price_change_pct AS FLOAT) AS price_change_pct, trend
+          FROM dbo.Latest_Prices_Summary WITH (NOLOCK)
+          WHERE is_nbs_ref = 0 AND is_food = 1
+            AND price_change_pct IS NOT NULL AND price_change_pct > 0
+            AND price_naira > 0
+          ORDER BY price_change_pct DESC
+        ` as Promise<MoverRow[]>,
+        prisma.$queryRaw`
+          SELECT TOP 5 item_name, market_name, state,
+            CAST(price_naira AS FLOAT) AS price_naira,
+            CAST(price_change_pct AS FLOAT) AS price_change_pct, trend
+          FROM dbo.Latest_Prices_Summary WITH (NOLOCK)
+          WHERE is_nbs_ref = 0 AND is_food = 1
+            AND price_change_pct IS NOT NULL AND price_change_pct < 0
+            AND price_naira > 0
+          ORDER BY price_change_pct ASC
+        ` as Promise<MoverRow[]>,
+      ]);
+      topGainers = (gainers ?? []).map(mapMover);
+      topLosers = (losers ?? []).map(mapMover);
+    } catch (moverErr: any) {
+      // Non-fatal — keep stats working even if movers query fails.
+      console.error("[dashboard/stats] movers query error:", moverErr?.message);
+    }
+
     return NextResponse.json({
       success: true,
       marketCount: Number(row.market_count ?? 0),
@@ -41,6 +91,8 @@ export async function GET() {
         ? new Date(row.latest_price_date).toISOString()
         : null,
       todayRowCount: Number(row.today_row_count ?? 0),
+      topGainers,
+      topLosers,
     });
   } catch (error: any) {
     console.error("[dashboard/stats] query error:", error?.message);
