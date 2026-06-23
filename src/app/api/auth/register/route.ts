@@ -62,28 +62,28 @@ async function sendBrevoWelcome(email: string, phone: string) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { email, phone, password, countryCode } = body;
+    const { email, phone, password, countryCode, tier } = body;
 
     console.log("📝 Registration request:", { email, phone, countryCode });
 
-    // Validate required fields
-    if (!email || !phone || !password) {
-      return NextResponse.json({ error: "Email, phone, and password are required" }, { status: 400 });
+    // Validate required fields — only phone is mandatory; email/password optional
+    if (!phone) {
+      return NextResponse.json({ error: "Phone number is required" }, { status: 400 });
     }
 
-    // Validate email format
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    // Validate email format only if an email was provided
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       return NextResponse.json({ error: "Invalid email format" }, { status: 400 });
     }
 
     // Format phone number
     const formattedPhone = formatPhoneNumber(phone, countryCode);
-    const formattedEmail = email.toLowerCase().trim();
+    const formattedEmail = email ? email.toLowerCase().trim() : null;
     console.log("📱 Formatted phone:", formattedPhone);
     console.log("📧 Formatted email:", formattedEmail);
 
-    // Validate password
-    if (password.length < 8) {
+    // Validate password only if one was provided
+    if (password && password.length < 8) {
       return NextResponse.json({ error: "Password must be at least 8 characters" }, { status: 400 });
     }
 
@@ -99,16 +99,18 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Check if user exists by email
-    const existingByEmail = await prisma.consumers.findFirst({
-      where: { email: formattedEmail },
-    });
-    if (existingByEmail) {
-      console.log("❌ Email already exists:", formattedEmail);
-      return NextResponse.json(
-        { error: "An account with this email already exists" },
-        { status: 400 }
-      );
+    // Check if user exists by email (only when an email was provided)
+    if (formattedEmail) {
+      const existingByEmail = await prisma.consumers.findFirst({
+        where: { email: formattedEmail },
+      });
+      if (existingByEmail) {
+        console.log("❌ Email already exists:", formattedEmail);
+        return NextResponse.json(
+          { error: "An account with this email already exists" },
+          { status: 400 }
+        );
+      }
     }
 
     // ============================================================
@@ -131,31 +133,33 @@ export async function POST(request: NextRequest) {
     console.log("✅ Phone verified");
 
     // ============================================================
-    // VERIFY EMAIL WAS VERIFIED
+    // VERIFY EMAIL WAS VERIFIED (only when an email was provided)
     // ============================================================
-    const emailOtpRecord = await prisma.oTP_Codes.findFirst({
-      where: { 
-        identifier: formattedEmail, 
-        type: "email", 
-        verified: true 
-      },
-      orderBy: { created_at: "desc" },
-    });
+    if (formattedEmail) {
+      const emailOtpRecord = await prisma.oTP_Codes.findFirst({
+        where: {
+          identifier: formattedEmail,
+          type: "email",
+          verified: true
+        },
+        orderBy: { created_at: "desc" },
+      });
 
-    if (!emailOtpRecord) {
-      console.log("❌ Email not verified:", formattedEmail);
-      return NextResponse.json({ error: "Email not verified. Please verify your email first." }, { status: 400 });
+      if (!emailOtpRecord) {
+        console.log("❌ Email not verified:", formattedEmail);
+        return NextResponse.json({ error: "Email not verified. Please verify your email first." }, { status: 400 });
+      }
+
+      console.log("✅ Email verified");
     }
-
-    console.log("✅ Email verified");
 
     // ============================================================
     // CREATE ACCOUNT
     // ============================================================
     console.log("🔐 Creating account...");
 
-    // Hash password
-    const hashedPassword = await bcrypt.hash(password, 12);
+    // Hash password (only when one was provided)
+    const hashedPassword = password ? await bcrypt.hash(password, 12) : null;
 
     // Generate consumer ID
     const consumerId = `CON${Date.now()}`;
@@ -167,9 +171,9 @@ export async function POST(request: NextRequest) {
         phone_number: formattedPhone,
         email: formattedEmail,
         password_hash: hashedPassword,
-        phone_verified: true,    // Phone is verified ✅
-        email_verified: true,    // Email is verified ✅
-        subscription_tier: "FREE",
+        phone_verified: true,                 // Phone is verified ✅
+        email_verified: !!formattedEmail,     // Only true when email provided & verified
+        subscription_tier: tier || "FREE",
         account_status: "ACTIVE",
         registration_source: "WEB",
         daily_query_limit: 3,
@@ -205,15 +209,15 @@ export async function POST(request: NextRequest) {
       where: {
         OR: [
           { identifier: formattedPhone },
-          { identifier: formattedEmail },
+          ...(formattedEmail ? [{ identifier: formattedEmail }] : []),
         ],
       },
     });
 
     console.log("✅ OTP records cleaned up");
 
-    // Brevo welcome — non-blocking
-    sendBrevoWelcome(formattedEmail, formattedPhone).catch(() => {})
+    // Brevo welcome — non-blocking (only when an email was provided)
+    if (formattedEmail) sendBrevoWelcome(formattedEmail, formattedPhone).catch(() => {})
 
     return NextResponse.json({
       success: true,
