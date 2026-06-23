@@ -32,6 +32,9 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import sql from "mssql";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/app/api/auth/[...nextauth]/route";
+import { checkAndDecrementQuery } from "@/lib/query-gate";
 
 // ============================================================================
 // FOOD-ONLY CATEGORY MAP (15 categories)
@@ -523,6 +526,34 @@ export async function GET(request: NextRequest) {
     const trend    = searchParams.get("trend")    || "";
     const sort     = searchParams.get("sort")     || "updated";
     const limit    = Math.min(parseInt(searchParams.get("limit") || "200"), 500);
+
+    // ── FREE-tier weekly query gate ────────────────────────────────────────
+    // Only an explicit price check (count=1, sent by the UI on a real search)
+    // is counted — page loads, filter toggles, and pagination are free.
+    if (searchParams.get("count") === "1") {
+      try {
+        const session = await getServerSession(authOptions);
+        const userId = (session?.user as any)?.id;
+        const tier = (session?.user as any)?.tier || "FREE";
+        if (userId) {
+          const gate = await checkAndDecrementQuery(userId, tier);
+          if (!gate.allowed) {
+            return NextResponse.json(
+              {
+                error: "query_limit_reached",
+                message: gate.upsell,
+                remaining: 0,
+                upgrade_url: "/subscribe",
+              },
+              { status: 429 }
+            );
+          }
+        }
+      } catch (gateErr: any) {
+        // Fail open — never block price checks on a gate/session error.
+        console.error("[prices] query-gate error (fail-open):", gateErr?.message);
+      }
+    }
 
     // Map category display name → category_id
     const categoryId = category

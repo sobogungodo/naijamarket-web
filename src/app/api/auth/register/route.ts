@@ -187,9 +187,9 @@ export async function POST(request: NextRequest) {
         subscription_tier: tier || "FREE",
         account_status: "ACTIVE",
         registration_source: "WEB",
-        daily_query_limit: 3,
+        daily_query_limit: 5,
         max_markets: 3,
-        queries_remaining: 3,
+        queries_remaining: 5,
       },
     });
 

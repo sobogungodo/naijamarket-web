@@ -141,6 +141,9 @@ function PricesPageContent() {
   // Modal state
   const [selectedPrice, setSelectedPrice] = useState<SelectedPrice | null>(null);
 
+  // FREE-tier weekly query limit upsell (set when /api/prices returns 429)
+  const [upsell, setUpsell] = useState<string | null>(null);
+
   // ============================================================================
   // DATA FETCHING
   // ============================================================================
@@ -155,7 +158,11 @@ function PricesPageContent() {
 
     try {
       const params = new URLSearchParams();
-      if (searchQuery) params.append("search", searchQuery);
+      if (searchQuery) {
+        params.append("search", searchQuery);
+        // Explicit price check → counts against the FREE weekly allowance.
+        params.append("count", "1");
+      }
       if (categoryFilter) params.append("category", categoryFilter);
       if (stateFilter) params.append("state", stateFilter);
       if (marketFilter) params.append("market", marketFilter);
@@ -164,7 +171,16 @@ function PricesPageContent() {
       params.append("limit", "200");
 
       const response = await fetch("/api/prices?" + params.toString());
-      
+
+      // FREE weekly limit reached — show upsell, keep existing prices visible.
+      if (response.status === 429) {
+        const limitData = await response.json().catch(() => ({} as any));
+        setUpsell(limitData.message || "You've used your free price checks for this week.");
+        setLoading(false);
+        setRefreshing(false);
+        return;
+      }
+
       if (!response.ok) {
         throw new Error(`HTTP error: ${response.status}`);
       }
@@ -367,6 +383,35 @@ function PricesPageContent() {
 
   return (
     <div className="space-y-6">
+      {/* FREE-tier weekly limit upsell */}
+      {upsell && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" onClick={() => setUpsell(null)}>
+          <div
+            className="w-full max-w-md bg-terminal-bg border border-terminal-border rounded-xl p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-2 mb-3">
+              <span className="text-naija-green text-lg font-display font-bold">NaijaMarket Intel</span>
+            </div>
+            <p className="text-sm text-gray-300 whitespace-pre-line mb-5">{upsell}</p>
+            <div className="flex items-center gap-3">
+              <a
+                href="/subscribe"
+                className="flex-1 text-center bg-naija-green hover:bg-naija-green/90 text-black font-semibold py-3 rounded-lg"
+              >
+                Upgrade Now →
+              </a>
+              <button
+                onClick={() => setUpsell(null)}
+                className="px-4 py-3 text-sm text-gray-400 hover:text-white"
+              >
+                Not now
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Page Header */}
       <div className="flex items-center justify-between">
         <div>
