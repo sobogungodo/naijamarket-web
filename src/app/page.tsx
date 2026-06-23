@@ -3,7 +3,6 @@
 import { useState, useEffect, useRef, FormEvent } from "react";
 import Link from "next/link";
 import { ThemeToggle } from "@/components/ThemeToggle";
-import WaitlistSection from '@/components/WaitlistSection'
 import WhatsAppCTA from '@/components/WhatsAppCTA'
 
 // ============================================================================
@@ -836,10 +835,10 @@ export default function LandingPage() {
         <VideoSection />
         <FeaturesSection />
         <HowItWorksSection />
-        <WaitlistSection />
-      <PricingSection />
+        {/* <WaitlistSection /> — hidden; /api/waitlist route kept live for any direct submissions */}
+        <PricingSection />
         <TestimonialsSection />
-        {/* <CTASection /> */}
+        <CTASection />
         <Footer />
       </div>
       <WhatsAppCTA />

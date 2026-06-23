@@ -1,9 +1,17 @@
 // ============================================================================
 // middleware.ts 
 // NaijaMarket Intel - Route Protection Middleware + Single Session Validation
-// Version: 2.1.0 - Added public content routes to skip list
-// Date: 2026-02-23
-// 
+// Version: 2.2.0 - Merged PWA routes into the live (src/) middleware
+// Date: 2026-06-23
+//
+// CHANGES FROM v2.1.0:
+// - Added /offline, /pricing to PUBLIC_CONTENT_ROUTES
+// - Added /api/mobile, /api/push to skip list (PWA push notifications)
+// - Added /sw.js and /manifest.json to static file checks
+// - Note: these were previously authored in a root middleware.ts that Next.js
+//   never loaded (app lives in src/, so src/middleware.ts is the active file).
+//   That dead root file has now been deleted.
+//
 // CHANGES FROM v2.0.0:
 // - Added /about, /privacy, /ndpr, /blog, /terms, /contact to skip list
 // - Fixes 404 → back button → forced login redirect bug
@@ -50,6 +58,8 @@ const PUBLIC_CONTENT_ROUTES = [
   "/food-news",
   "/terms",
   "/contact",
+  "/offline",      // PWA offline page
+  "/pricing",      // Pricing page
 ];
 
 export async function middleware(request: NextRequest) {
@@ -69,6 +79,10 @@ export async function middleware(request: NextRequest) {
     pathname.startsWith("/api/subscribe-email") ||
     pathname.startsWith("/api/unsubscribe") ||
     pathname.startsWith("/api/waitlist") ||
+    pathname.startsWith("/api/mobile") ||
+    pathname.startsWith("/api/push") ||        // PWA push notification APIs
+    pathname === "/sw.js" ||                   // Service worker
+    pathname === "/manifest.json" ||           // PWA manifest
     pathname.includes(".") ||
     pathname.startsWith("/images") ||
     pathname.startsWith("/icons") ||

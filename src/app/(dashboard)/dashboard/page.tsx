@@ -1,11 +1,13 @@
-import { 
-  TrendingUp, 
-  TrendingDown, 
+"use client";
+
+import { useEffect, useState } from "react";
+import {
+  TrendingUp,
+  TrendingDown,
   ArrowRight,
   MapPin,
   Clock,
-  Zap,
-  AlertTriangle
+  Zap
 } from "lucide-react";
 import Link from "next/link";
 
@@ -13,7 +15,78 @@ import Link from "next/link";
 // DASHBOARD PAGE
 // ============================================================================
 
+interface DashboardStats {
+  marketCount: number;
+  itemCount: number;
+  latestPriceDate: string | null;
+  todayRowCount: number;
+}
+
+const numberFmt = new Intl.NumberFormat("en-NG");
+
+function formatStatDate(iso: string | null): string {
+  if (!iso) return "—";
+  return new Date(iso).toLocaleDateString("en-NG", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
+}
+
 export default function DashboardPage() {
+  const [stats, setStats] = useState<DashboardStats | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    fetch("/api/dashboard/stats")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (active && data?.success) {
+          setStats({
+            marketCount: data.marketCount,
+            itemCount: data.itemCount,
+            latestPriceDate: data.latestPriceDate,
+            todayRowCount: data.todayRowCount,
+          });
+        }
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const statCards = [
+    {
+      label: "Markets Tracked",
+      value: stats ? numberFmt.format(stats.marketCount) : "…",
+      subtext: "Across Nigeria",
+      icon: MapPin,
+      color: "text-naija-green",
+    },
+    {
+      label: "Commodities Tracked",
+      value: stats ? numberFmt.format(stats.itemCount) : "…",
+      subtext: "Active in catalog",
+      icon: TrendingUp,
+      color: "text-naija-gold",
+    },
+    {
+      label: "Price Updates",
+      value: stats ? numberFmt.format(stats.todayRowCount) : "…",
+      subtext: "Latest collection day",
+      icon: Zap,
+      color: "text-naija-blue",
+    },
+    {
+      label: "Latest Price Date",
+      value: stats ? formatStatDate(stats.latestPriceDate) : "…",
+      subtext: "Most recent prices",
+      icon: Clock,
+      color: "text-naija-red",
+    },
+  ];
+
   return (
     <div className="space-y-6">
       {/* Page Header */}
@@ -83,36 +156,7 @@ export default function DashboardPage() {
 
       {/* Stats Grid */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        {[
-          { 
-            label: "Markets Tracked", 
-            value: "226", 
-            subtext: "Active today: 198",
-            icon: MapPin,
-            color: "text-naija-green"
-          },
-          { 
-            label: "Price Updates", 
-            value: "1,247", 
-            subtext: "Last 24 hours",
-            icon: Zap,
-            color: "text-naija-gold"
-          },
-          { 
-            label: "Avg Response Time", 
-            value: "2.3s", 
-            subtext: "API latency",
-            icon: Clock,
-            color: "text-naija-blue"
-          },
-          { 
-            label: "Price Alerts", 
-            value: "5", 
-            subtext: "3 triggered today",
-            icon: AlertTriangle,
-            color: "text-naija-red"
-          },
-        ].map((stat) => (
+        {statCards.map((stat) => (
           <div key={stat.label} className="price-card">
             <div className="flex items-center justify-between mb-2">
               <span className="text-xs text-gray-500">{stat.label}</span>
