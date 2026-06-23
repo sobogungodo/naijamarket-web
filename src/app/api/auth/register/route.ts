@@ -1,12 +1,11 @@
 // src/app/api/auth/register/route.ts
 // NaijaMarket Intel - Registration API
 // Requires BOTH Phone (WhatsApp) AND Email OTP verification
-// Updated: 2026-02-20 — Added dual-write sync to Google Sheets
+// Updated: 2026-06-24 — Inserts CONSUMER role into User_Roles (WA sync via Azure SQL)
 
 import { NextRequest, NextResponse } from "next/server";
 import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
-import { syncConsumerToSheets } from "@/lib/sync-to-sheets";
 
 const prisma = new PrismaClient();
 
@@ -219,26 +218,6 @@ export async function POST(request: NextRequest) {
       }
     } catch (roleErr) {
       console.error("User_Roles insert failed (non-blocking):", roleErr);
-    }
-
-    // ============================================================
-    // DUAL-WRITE: Sync to Google Sheets for WhatsApp recognition
-    // Runs async — won't block registration if it fails
-    // ============================================================
-    try {
-      const syncResult = await syncConsumerToSheets({
-        consumer_id: consumerId,
-        phone_number: formattedPhone,
-        registration_date: new Date().toISOString().split("T")[0],
-        registration_source: "WEB",
-        subscription_tier: "FREE",
-        daily_query_limit: 3,
-        max_markets: 3,
-        account_status: "ACTIVE",
-      });
-      console.log("📋 Google Sheets sync:", syncResult.success ? "✅" : "❌", syncResult.method);
-    } catch (syncError) {
-      console.error("📋 Google Sheets sync failed (non-blocking):", syncError);
     }
 
     // Clean up OTP records
