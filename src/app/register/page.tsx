@@ -341,11 +341,11 @@ export default function RegisterPage() {
       }
 
       setStep("complete");
-      
-      // Redirect after showing success
+
+      // Redirect after showing the welcome message (longer copy → give time to read)
       setTimeout(() => {
         router.push("/dashboard");
-      }, 2000);
+      }, 7000);
 
     } catch (err: any) {
       setError(err.message);
@@ -723,11 +723,29 @@ export default function RegisterPage() {
               <div className="w-16 h-16 bg-naija-green/20 rounded-full flex items-center justify-center mx-auto mb-4">
                 <CheckIcon />
               </div>
-              <h2 className="text-xl font-semibold text-white mb-2">Welcome to NaijaMarket Intel!</h2>
-              <p className="text-gray-400 mb-4">
-                Your account has been created successfully.
-              </p>
-              <p className="text-sm text-gray-500">Redirecting to dashboard...</p>
+              <h2 className="text-xl font-semibold text-white mb-4">Welcome to NaijaMarket Intel!</h2>
+              <div className="text-left max-w-md mx-auto bg-terminal-bg border border-terminal-border rounded-lg p-4 mb-5 space-y-3">
+                <p className="text-sm text-gray-300">
+                  <span className="text-naija-green font-semibold">✅ You now have access to live Nigerian commodity prices.</span>
+                  <br />
+                  Before you go to the market, check prices here first so you don&apos;t get surprised when you arrive
+                </p>
+                <p className="text-sm text-gray-300">
+                  📊 Compare prices across markets<br />
+                  📍 Find the cheapest market near you<br />
+                  🔔 Set alerts when prices drop
+                </p>
+                <p className="text-sm text-gray-400">
+                  These prices are reported by real people inside real markets — updated 3 times daily.
+                </p>
+              </div>
+              <button
+                onClick={() => router.push("/dashboard")}
+                className="w-full bg-naija-green hover:bg-naija-green/90 text-black font-semibold py-3 rounded-lg"
+              >
+                Go to Dashboard →
+              </button>
+              <p className="text-xs text-gray-500 mt-3">Redirecting automatically…</p>
             </div>
           )}
         </div>
