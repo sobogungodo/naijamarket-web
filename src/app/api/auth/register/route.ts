@@ -116,11 +116,13 @@ export async function POST(request: NextRequest) {
     // ============================================================
     // VERIFY PHONE WAS VERIFIED
     // ============================================================
-    const phoneOtpRecord = await prisma.oTP_Codes.findFirst({
-      where: { 
-        identifier: formattedPhone, 
-        type: "phone", 
-        verified: true 
+    const phoneOtpRecord = await prisma.oTP_Sessions.findFirst({
+      where: {
+        OR: [
+          { phone_number: formattedPhone },
+          { phone_number: "+" + formattedPhone },
+        ],
+        verified: true,
       },
       orderBy: { created_at: "desc" },
     });

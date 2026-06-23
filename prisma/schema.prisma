@@ -86,6 +86,17 @@ model OTP_Codes {
   @@index([identifier, type], map: "IX_OTP_Identifier")
 }
 
+model OTP_Sessions {
+  otp_session_id Int      @id @default(autoincrement())
+  phone_number   String   @db.VarChar(20)
+  otp_code       String   @db.VarChar(10)
+  verified       Boolean  @default(false)
+  expires_at     DateTime
+  created_at     DateTime @default(now())
+
+  @@map("OTP_Sessions")
+}
+
 model Approved_Prices {
   price_id             String    @id(map: "PK__Approved__1681726DF2AAC986") @db.VarChar(50)
   submission_id        String?   @db.VarChar(50)
