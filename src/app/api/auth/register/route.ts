@@ -62,7 +62,7 @@ async function sendBrevoWelcome(email: string, phone: string) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { email, phone, password, countryCode, tier } = body;
+    const { email, phone, password, countryCode, tier, fullName } = body;
 
     console.log("📝 Registration request:", { email, phone, countryCode });
 
@@ -166,12 +166,22 @@ export async function POST(request: NextRequest) {
     // Generate consumer ID
     const consumerId = `CON${Date.now()}`;
 
+    // Persist the name the user entered during registration (step 1).
+    // full_name is the source of truth for the sidebar; derive first/last too.
+    const cleanFullName = String(fullName || "").trim().slice(0, 50);
+    const nameParts = cleanFullName.split(/\s+/).filter(Boolean);
+    const firstName = (nameParts[0] || "").slice(0, 50);
+    const lastName = nameParts.slice(1).join(" ").slice(0, 50);
+
     // Create consumer account
     const consumer = await prisma.consumers.create({
       data: {
         consumer_id: consumerId,
         phone_number: formattedPhone,
         email: formattedEmail,
+        full_name: cleanFullName || null,
+        first_name: firstName || null,
+        last_name: lastName || null,
         password_hash: hashedPassword,
         phone_verified: true,                 // Phone is verified ✅
         email_verified: !!formattedEmail,     // Only true when email provided & verified
