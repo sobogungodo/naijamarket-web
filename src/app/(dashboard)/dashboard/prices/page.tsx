@@ -143,6 +143,8 @@ function PricesPageContent() {
 
   // FREE-tier weekly query limit upsell (set when /api/prices returns 429)
   const [upsell, setUpsell] = useState<string | null>(null);
+  // Remaining weekly checks for FREE tier (null = paid tier / unknown)
+  const [remaining, setRemaining] = useState<number | null>(null);
 
   // ============================================================================
   // DATA FETCHING
@@ -190,7 +192,11 @@ function PricesPageContent() {
       if (result.success) {
         setPrices(result.data || []);
         setDataSource(result.source || "unknown");
-        
+        // FREE tier: server reports remaining weekly checks (null for paid tiers).
+        if (typeof result.queriesRemaining === "number") {
+          setRemaining(result.queriesRemaining);
+        }
+
         if (result.filters) {
           setFilterOptions({
             categories: result.filters.categories || [],
@@ -465,6 +471,14 @@ function PricesPageContent() {
               </button>
             )}
           </div>
+
+          {/* FREE-tier remaining weekly searches (null for paid tiers) */}
+          {remaining !== null && (
+            <span className="text-xs text-gray-400">
+              <span className={remaining <= 1 ? "text-naija-gold font-semibold" : "text-naija-green font-semibold"}>{remaining}</span>
+              {" "}free search{remaining === 1 ? "" : "es"} left this week
+            </span>
+          )}
 
           {/* Category Filter */}
           <div className="relative" ref={categoryRef}>

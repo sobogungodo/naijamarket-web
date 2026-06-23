@@ -530,6 +530,8 @@ export async function GET(request: NextRequest) {
     // ── FREE-tier weekly query gate ────────────────────────────────────────
     // Only an explicit price check (count=1, sent by the UI on a real search)
     // is counted — page loads, filter toggles, and pagination are free.
+    // gateRemaining: null = not gated (non-FREE / no count); >=0 = FREE remaining.
+    let gateRemaining: number | null = null;
     if (searchParams.get("count") === "1") {
       try {
         const session = await getServerSession(authOptions);
@@ -548,6 +550,7 @@ export async function GET(request: NextRequest) {
               { status: 429 }
             );
           }
+          if (gate.remaining >= 0) gateRemaining = gate.remaining;
         }
       } catch (gateErr: any) {
         // Fail open — never block price checks on a gate/session error.
@@ -602,14 +605,19 @@ export async function GET(request: NextRequest) {
       },
       filters,
       source,
+      queriesRemaining: gateRemaining,
       responseTime: `${responseTime}ms`,
       timestamp: new Date().toISOString(),
     }, {
       headers: {
         // Vercel Edge: cache 30s, serve stale up to 60s while revalidating
-        "Cache-Control": "s-maxage=30, stale-while-revalidate=60",
+        // NOTE: when gated (count=1) the response is per-user; avoid shared caching.
+        "Cache-Control": gateRemaining !== null
+          ? "private, no-store"
+          : "s-maxage=30, stale-while-revalidate=60",
         "X-Response-Time": `${responseTime}ms`,
         "X-Data-Source": source,
+        ...(gateRemaining !== null ? { "X-Queries-Remaining": String(gateRemaining) } : {}),
       },
     });
 
