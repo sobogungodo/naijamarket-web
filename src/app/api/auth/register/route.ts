@@ -197,6 +197,31 @@ export async function POST(request: NextRequest) {
     console.log("✅ Consumer created:", consumer.consumer_id);
 
     // ============================================================
+    // Insert CONSUMER role so the WA engine recognises this user.
+    // User_Roles is keyless / @@ignored by Prisma, so use raw SQL and mirror
+    // the WA welcome flow: idempotent check + insert with '+' phone format.
+    // Non-blocking — a failure here must not fail an otherwise-successful signup.
+    // ============================================================
+    try {
+      const phonePlus = `+${formattedPhone}`;
+      const existing = await prisma.$queryRaw<Array<{ cnt: number }>>`
+        SELECT CAST(COUNT(*) AS INT) AS cnt FROM dbo.User_Roles
+        WHERE phone_number = ${formattedPhone} OR phone_number = ${phonePlus}
+      `;
+      if (!existing?.[0] || Number(existing[0].cnt) === 0) {
+        await prisma.$executeRaw`
+          INSERT INTO dbo.User_Roles (phone_number, role, status, created_at)
+          VALUES (${phonePlus}, 'CONSUMER', 'ACTIVE', GETUTCDATE())
+        `;
+        console.log("✅ User_Roles CONSUMER role inserted");
+      } else {
+        console.log("ℹ️ User_Roles role already exists — skipped");
+      }
+    } catch (roleErr) {
+      console.error("User_Roles insert failed (non-blocking):", roleErr);
+    }
+
+    // ============================================================
     // DUAL-WRITE: Sync to Google Sheets for WhatsApp recognition
     // Runs async — won't block registration if it fails
     // ============================================================
