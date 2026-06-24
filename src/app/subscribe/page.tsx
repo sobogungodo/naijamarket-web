@@ -45,26 +45,26 @@ interface TierData {
 
 const TIER_FEATURES: Record<string, string[]> = {
   FREE: [
-    "3 price queries per week",
+    "5 price queries per week",
     "3 markets access",
     "Basic price data",
     "WhatsApp support",
   ],
   SILVER: [
-    "5 price queries per day",
+    "10 price queries per day",
     "3 markets access",
     "Price history (7 days)",
     "WhatsApp support",
   ],
   GOLD: [
-    "15 price queries per day",
+    "25 price queries per day",
     "3 markets access",
     "Price history (30 days)",
     "Price alerts",
     "Email support",
   ],
   BUSINESS: [
-    "30 price queries per day",
+    "100 price queries per day",
     "5 markets access",
     "Price history (90 days)",
     "Price alerts",

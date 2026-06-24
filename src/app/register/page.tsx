@@ -42,7 +42,7 @@ const SUBSCRIPTION_TIERS = [
     period: "forever",
     emailRequired: false,
     emailAllowed: false,
-    features: ["3 queries/week", "Basic prices", "1 market"]
+    features: ["5 queries/week", "Basic prices", "3 markets"]
   },
   { 
     id: "SILVER", 
@@ -51,7 +51,7 @@ const SUBSCRIPTION_TIERS = [
     period: "/week",
     emailRequired: false,
     emailAllowed: false,
-    features: ["5 queries/day", "Price trends", "3 markets"]
+    features: ["10 queries/day", "Price trends", "3 markets"]
   },
   { 
     id: "GOLD", 
@@ -60,7 +60,7 @@ const SUBSCRIPTION_TIERS = [
     period: "/month",
     emailRequired: false,
     emailAllowed: false,
-    features: ["15 queries/day", "Multi-market", "Alerts"]
+    features: ["25 queries/day", "Multi-market", "Alerts"]
   },
   { 
     id: "BUSINESS", 
@@ -70,7 +70,7 @@ const SUBSCRIPTION_TIERS = [
     emailRequired: false,
     emailAllowed: true,
     highlight: true,
-    features: ["30 queries/day", "Email login", "PDF reports", "Excel export"]
+    features: ["100 queries/day", "Email login", "PDF reports", "Excel export"]
   },
   { 
     id: "CORPORATE", 

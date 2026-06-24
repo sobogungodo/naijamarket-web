@@ -104,7 +104,7 @@ const FEATURES = [
 const TIERS = [
   {
     nm: "FREE", pr: "₦0", pd: "", tg: null, ac: "#64FFDA", hl: false,
-    ft: ["5 queries/week", "1 market", "WhatsApp access", "Basic price search", "1 free guest query"],
+    ft: ["5 queries/week", "3 markets", "WhatsApp access", "Basic price search", "1 free guest query"],
     ct: "Start Free", hr: "/register",
   },
   {
