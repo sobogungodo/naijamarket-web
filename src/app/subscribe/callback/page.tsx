@@ -83,6 +83,22 @@ function CallbackContent() {
           setMessage(data.message || "Payment successful! Your subscription has been upgraded.");
           setPayment(data.payment);
           setSubscription(data.subscription);
+
+          // If the user started from the mobile app (flag persisted on /subscribe),
+          // deep-link back into it so the app can refresh and confirm the new tier.
+          // We still render the web success page underneath as a fallback if the
+          // deep link doesn't resolve (e.g. app not installed / link blocked).
+          try {
+            const fromApp =
+              typeof window !== "undefined" && sessionStorage.getItem("nm_app") === "1";
+            if (fromApp) {
+              sessionStorage.removeItem("nm_app");
+              const tier = encodeURIComponent(data.payment?.tier || data.subscription?.tier || "");
+              window.location.href = `naijamarketconsumer://account?upgrade=success&tier=${tier}`;
+            }
+          } catch {
+            /* sessionStorage / navigation unavailable — fall through to web success */
+          }
         } else if (data.payment?.status === "PENDING") {
           setStatus("pending");
           setMessage(data.message || "Payment is being processed. Please wait...");

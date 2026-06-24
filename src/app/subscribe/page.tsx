@@ -131,6 +131,20 @@ export default function SubscribePage() {
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Remember if the user arrived from the mobile app (?app=1) so the post-payment
+  // callback can deep-link back into the app. Stored in sessionStorage because the
+  // Paystack round-trip drops query params from the callback URL (same origin/tab
+  // preserves it).
+  useEffect(() => {
+    try {
+      if (new URLSearchParams(window.location.search).get("app") === "1") {
+        sessionStorage.setItem("nm_app", "1");
+      }
+    } catch {
+      /* sessionStorage unavailable — non-fatal, web success page still shows */
+    }
+  }, []);
+
   // Fetch tiers and user subscription on mount
   useEffect(() => {
     const fetchData = async () => {
