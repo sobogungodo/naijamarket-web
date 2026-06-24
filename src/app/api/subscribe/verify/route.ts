@@ -286,11 +286,53 @@ async function upgradeSubscription(
       }
     }
 
-    if (existingResult.recordset.length > 0) {
-      // Update existing subscription
-      const oldTier = existingResult.recordset[0].tier_code;
+    // Phone variants for matching across channels (rows may be stored with or
+    // without a '+' prefix). Resolve consumer_id so this row reconciles with the
+    // webhook's consumer_id-keyed MERGE.
+    const cleanPhone = String(phone).replace(/^\+/, "");
+    const phonePlus = "+" + cleanPhone;
+    let consumerId: string | null = null;
+    try {
+      const cres = await pool.request()
+        .input("phone", sql.NVarChar(20), phone)
+        .input("phonePlus", sql.NVarChar(20), phonePlus)
+        .input("phoneClean", sql.NVarChar(20), cleanPhone)
+        .query(`
+          SELECT TOP 1 consumer_id FROM Consumers
+          WHERE phone_number IN (@phone, @phonePlus, @phoneClean)
+             OR phone IN (@phone, @phonePlus, @phoneClean)
+        `);
+      consumerId = cres.recordset?.[0]?.consumer_id ?? null;
+    } catch (e) {
+      console.error(`[subscribe/verify] consumer_id lookup failed ref=${reference}:`, e);
+    }
+
+    // Idempotency: if this payment_reference is already recorded, don't write again.
+    const refCheck = await pool.request()
+      .input("payment_reference", sql.NVarChar(50), reference)
+      .query(`SELECT COUNT(*) AS cnt FROM Consumer_Active_Subscriptions WHERE payment_reference = @payment_reference`);
+    if ((refCheck.recordset?.[0]?.cnt ?? 0) > 0) {
+      console.log(`[subscribe/verify] payment_reference ${reference} already recorded — skipping CAS write`);
+    } else {
+      // One ACTIVE row per consumer: supersede ALL existing ACTIVE rows for this
+      // consumer (any channel — matched by phone in +/non-+ form OR consumer_id)
+      // BEFORE inserting the new one. Guarantees a single ACTIVE row at all times.
+      await pool.request()
+        .input("phone", sql.NVarChar(20), phone)
+        .input("phonePlus", sql.NVarChar(20), phonePlus)
+        .input("phoneClean", sql.NVarChar(20), cleanPhone)
+        .input("consumer_id", sql.NVarChar(50), consumerId)
+        .query(`
+          UPDATE Consumer_Active_Subscriptions
+          SET status = 'SUPERSEDED', updated_at = GETUTCDATE()
+          WHERE status = 'ACTIVE'
+            AND ( phone_number IN (@phone, @phonePlus, @phoneClean)
+               OR (@consumer_id IS NOT NULL AND consumer_id = @consumer_id) )
+        `);
 
       await pool.request()
+        .input("subscription_id", sql.NVarChar(50), subscriptionId)
+        .input("consumer_id", sql.NVarChar(50), consumerId)
         .input("phone", sql.NVarChar(20), phone)
         .input("tier_code", sql.NVarChar(20), tier)
         .input("tier_name", sql.NVarChar(50), config.tierName)
@@ -300,71 +342,24 @@ async function upgradeSubscription(
         .input("payment_provider", sql.NVarChar(20), provider)
         .input("payment_amount", sql.Decimal(18, 2), amount)
         .input("billing_cycle", sql.NVarChar(20), config.billingCycle)
-        .input("upgraded_from", sql.NVarChar(20), oldTier)
         .query(`
-          UPDATE Consumer_Active_Subscriptions
-          SET tier_code = @tier_code,
-              tier_name = @tier_name,
-              start_date = @start_date,
-              end_date = @end_date,
-              payment_reference = @payment_reference,
-              payment_provider = @payment_provider,
-              payment_amount = @payment_amount,
-              billing_cycle = @billing_cycle,
-              upgraded_from = @upgraded_from,
-              upgraded_at = GETDATE(),
-              updated_at = GETDATE(),
-              queries_used_today = 0,
-              queries_used_week = 0
-          WHERE phone_number = @phone AND status = 'ACTIVE'
+          INSERT INTO Consumer_Active_Subscriptions (
+            subscription_id, consumer_id, phone_number, tier_code, tier_name, status,
+            start_date, end_date, payment_reference, payment_provider,
+            payment_amount, billing_cycle, queries_used_today, queries_used_week,
+            created_at, updated_at
+          ) VALUES (
+            @subscription_id, @consumer_id, @phone, @tier_code, @tier_name, 'ACTIVE',
+            @start_date, @end_date, @payment_reference, @payment_provider,
+            @payment_amount, @billing_cycle, 0, 0,
+            GETDATE(), GETDATE()
+          )
         `);
-    } else {
-      // Idempotency: if this payment_reference was already recorded (e.g. the
-      // callback page loaded twice, or webhook + callback both ran), skip the
-      // INSERT so we don't create duplicate ACTIVE rows for one payment.
-      const refCheck = await pool.request()
-        .input("payment_reference", sql.NVarChar(50), reference)
-        .query(`
-          SELECT COUNT(*) AS cnt FROM Consumer_Active_Subscriptions
-          WHERE payment_reference = @payment_reference
-        `);
-      const alreadyRecorded = (refCheck.recordset?.[0]?.cnt ?? 0) > 0;
-
-      if (!alreadyRecorded) {
-        // Insert new subscription
-        await pool.request()
-          .input("subscription_id", sql.NVarChar(50), subscriptionId)
-          .input("phone", sql.NVarChar(20), phone)
-          .input("tier_code", sql.NVarChar(20), tier)
-          .input("tier_name", sql.NVarChar(50), config.tierName)
-          .input("start_date", sql.Date, startDate)
-          .input("end_date", sql.Date, endDate)
-          .input("payment_reference", sql.NVarChar(50), reference)
-          .input("payment_provider", sql.NVarChar(20), provider)
-          .input("payment_amount", sql.Decimal(18, 2), amount)
-          .input("billing_cycle", sql.NVarChar(20), config.billingCycle)
-          .query(`
-            INSERT INTO Consumer_Active_Subscriptions (
-              subscription_id, phone_number, tier_code, tier_name, status,
-              start_date, end_date, payment_reference, payment_provider,
-              payment_amount, billing_cycle, queries_used_today, queries_used_week,
-              created_at, updated_at
-            ) VALUES (
-              @subscription_id, @phone, @tier_code, @tier_name, 'ACTIVE',
-              @start_date, @end_date, @payment_reference, @payment_provider,
-              @payment_amount, @billing_cycle, 0, 0,
-              GETDATE(), GETDATE()
-            )
-          `);
-      } else {
-        console.log(`[subscribe/verify] payment_reference ${reference} already recorded — skipping duplicate INSERT`);
-      }
     }
 
     // Update the Consumers table — the source of truth for tier across web/WA/app.
     // (Column is subscription_tier, not tier; match phone in +/non-+ form on either
     // phone_number or phone. Do NOT swallow errors — log loudly if nothing updates.)
-    const cleanPhone = String(phone).replace(/^\+/, "");
     try {
       const upd = await pool.request()
         .input("phone", sql.NVarChar(20), phone)
