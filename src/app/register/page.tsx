@@ -328,11 +328,22 @@ export default function RegisterPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Registration failed");
 
+      // Mint a session token via the login API (mirrors the login page flow).
+      // The phone-otp provider requires { session_token, consumer_id }; the
+      // OTP verified earlier is still valid here because /api/auth/register no
+      // longer deletes it (upstream /login consumes it).
+      const loginRes = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type: "phone", phone, countryCode, otp }),
+      });
+      const loginData = await loginRes.json();
+      if (!loginRes.ok) throw new Error(loginData.error || "Sign-in failed");
+
       // Auto sign in
       const result = await signIn("phone-otp", {
-        phone,
-        countryCode,
-        otp, // Reuse the verified OTP
+        session_token: loginData.session_token,
+        consumer_id: loginData.consumer.id,
         redirect: false,
       });
 

@@ -220,17 +220,11 @@ export async function POST(request: NextRequest) {
       console.error("User_Roles insert failed (non-blocking):", roleErr);
     }
 
-    // Clean up OTP records
-    await prisma.oTP_Codes.deleteMany({
-      where: {
-        OR: [
-          { identifier: formattedPhone },
-          ...(formattedEmail ? [{ identifier: formattedEmail }] : []),
-        ],
-      },
-    });
-
-    console.log("✅ OTP records cleaned up");
+    // NOTE: Do NOT delete OTP records here. The client follows registration with
+    // a call to /api/auth/login to mint a session token, and the upstream /login
+    // function requires the phone OTP to still be in a verified state (F8 guard)
+    // and consumes it itself. Deleting it here caused "OTP verification required"
+    // on the auto sign-in. Any leftover email OTP expires naturally.
 
     // Brevo welcome — non-blocking (only when an email was provided)
     if (formattedEmail) sendBrevoWelcome(formattedEmail, formattedPhone).catch(() => {})
