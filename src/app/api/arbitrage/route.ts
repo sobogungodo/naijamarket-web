@@ -23,6 +23,9 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import sql from "mssql";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/app/api/auth/[...nextauth]/route";
+import { checkAndDecrementQuery } from "@/lib/query-gate";
 
 // ============================================================================
 // MSSQL CONNECTION POOL (single pool — temp tables persist within a request)
@@ -552,6 +555,28 @@ export async function GET(request: NextRequest) {
     const buyState = url.searchParams.get("buyState") || undefined;
     const sellState = url.searchParams.get("sellState") || undefined;
     const userMinProfit = url.searchParams.get("minProfit");
+
+    // FREE-tier weekly query gate — only on explicit search (count=1).
+    // NOTE: arbitrage is GOLD+ (FREE is 403'd below) and the gate only limits
+    // FREE, so this is currently inert; added for symmetry/future-proofing.
+    if (url.searchParams.get("count") === "1") {
+      try {
+        const session = await getServerSession(authOptions);
+        const userId = (session?.user as any)?.id;
+        const sTier = (session?.user as any)?.tier || "FREE";
+        if (userId) {
+          const gate = await checkAndDecrementQuery(userId, sTier);
+          if (!gate.allowed) {
+            return NextResponse.json(
+              { success: false, error: "query_limit_reached", message: gate.upsell, remaining: 0, upgrade_url: "/subscribe" },
+              { status: 429 }
+            );
+          }
+        }
+      } catch (gateErr: any) {
+        console.error("[arbitrage] query-gate error (fail-open):", gateErr?.message);
+      }
+    }
 
     const tierConfig = getTierConfig(tier);
 

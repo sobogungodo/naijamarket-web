@@ -686,8 +686,9 @@ export default function ComparePage() {
         item_id: selectedItem.id,
         markets: selectedMarkets.join(","),
         tier,
+        count: "1", // explicit price check → counts against FREE weekly allowance
       });
-      
+
       const response = await fetch(`/api/compare?${params}`);
       const data = await response.json();
       console.log("Compare API response:", data);

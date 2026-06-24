@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/app/api/auth/[...nextauth]/route";
+import { checkAndDecrementQuery } from "@/lib/query-gate";
 
 // GET /api/compare?item=Rice&item_id=ITM00001&markets=MKT0001,MKT0002&tier=FREE
 export async function GET(request: NextRequest) {
@@ -9,6 +12,26 @@ export async function GET(request: NextRequest) {
     const itemId = searchParams.get("item_id");
     const marketsParam = searchParams.get("markets");
     const tier = searchParams.get("tier") || "FREE";
+
+    // FREE-tier weekly query gate — only on explicit compare (count=1).
+    if (searchParams.get("count") === "1") {
+      try {
+        const session = await getServerSession(authOptions);
+        const userId = (session?.user as any)?.id;
+        const sTier = (session?.user as any)?.tier || "FREE";
+        if (userId) {
+          const gate = await checkAndDecrementQuery(userId, sTier);
+          if (!gate.allowed) {
+            return NextResponse.json(
+              { success: false, error: "query_limit_reached", message: gate.upsell, remaining: 0, upgrade_url: "/subscribe" },
+              { status: 429 }
+            );
+          }
+        }
+      } catch (gateErr: any) {
+        console.error("[compare] query-gate error (fail-open):", gateErr?.message);
+      }
+    }
 
     // Validate required parameters
     if (!itemName) {

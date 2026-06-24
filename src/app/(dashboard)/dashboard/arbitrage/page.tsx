@@ -292,12 +292,13 @@ export default function ArbitragePage() {
       const params = new URLSearchParams({
         tier,
         minProfit: String(minProfit),
+        count: "1", // explicit search → counts against FREE weekly allowance (inert for GOLD+ arbitrage)
         ...(itemFilter && { item: itemFilter }),
         ...(categoryFilter && { category: categoryFilter }),
         ...(buyStateFilter && { buyState: buyStateFilter }),
         ...(sellStateFilter && { sellState: sellStateFilter }),
       });
-      
+
       const response = await fetch(`/api/arbitrage?${params}`);
       const data = await response.json();
       
