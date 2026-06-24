@@ -74,6 +74,12 @@ const TIER_CONFIG: Record<string, TierConfig> = {
   ENTERPRISE: { tierName: "Enterprise", queryLimit: null, maxMarkets: 226, duration: 30, billingCycle: "monthly" },
 };
 
+// Tier ranking — higher number = higher tier. Used to block downgrades of an
+// active, unexpired subscription.
+const TIER_RANK: Record<string, number> = {
+  FREE: 0, SILVER: 1, GOLD: 2, BUSINESS: 3, CORPORATE: 4, ENTERPRISE: 5,
+};
+
 // ============================================================================
 // HELPER FUNCTIONS
 // ============================================================================
@@ -261,10 +267,24 @@ async function upgradeSubscription(
     const existingResult = await pool.request()
       .input("phone", sql.NVarChar(20), phone)
       .query(`
-        SELECT subscription_id, tier_code
+        SELECT subscription_id, tier_code, end_date
         FROM Consumer_Active_Subscriptions
         WHERE phone_number = @phone AND status = 'ACTIVE'
       `);
+
+    // Downgrade protection: never reduce an active, unexpired higher tier.
+    // (e.g. a SILVER payment must not clobber an active BUSINESS subscription.)
+    if (existingResult.recordset.length > 0) {
+      const cur = existingResult.recordset[0];
+      const curRank = TIER_RANK[String(cur.tier_code || "").toUpperCase()] ?? 0;
+      const newRank = TIER_RANK[String(tier || "").toUpperCase()] ?? 0;
+      const curEnd = cur.end_date ? new Date(cur.end_date) : null;
+      const stillValid = curEnd ? curEnd >= new Date() : true;
+      if (newRank < curRank && stillValid) {
+        console.warn(`[subscribe/verify] DOWNGRADE BLOCKED: active ${cur.tier_code} (rank ${curRank}, ends ${cur.end_date}) — refusing to apply lower tier ${tier} (rank ${newRank}) ref=${reference}`);
+        return true; // payment acknowledged; keep the higher active tier
+      }
+    }
 
     if (existingResult.recordset.length > 0) {
       // Update existing subscription
