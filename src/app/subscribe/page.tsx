@@ -143,8 +143,14 @@ export default function SubscribePage() {
           setTiers(tiersData.tiers);
         }
 
-        // Fetch user's current subscription if logged in
-        if (session?.user?.phone) {
+        // Current tier comes from the session — the NextAuth jwt callback refreshes
+        // it from the DB (Consumers.subscription_tier via validate_session) on every
+        // request, so it's authoritative and immune to phone +/-prefix mismatches.
+        // Only fall back to the phone-keyed lookup if the session has no tier.
+        const sessionTier = (session?.user as any)?.tier as string | undefined;
+        if (sessionTier) {
+          setCurrentTier(sessionTier);
+        } else if (session?.user?.phone) {
           const subResponse = await fetch(`/api/subscribe?phone=${encodeURIComponent(session.user.phone)}`);
           const subData = await subResponse.json();
 
