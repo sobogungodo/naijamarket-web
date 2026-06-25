@@ -301,40 +301,62 @@ async function recordPayment(
 async function getSubscriptionStatus(phone: string): Promise<SubscriptionStatus | null> {
   let pool: sql.ConnectionPool | null = null;
 
+  // Phone numbers are stored inconsistently with/without a '+' prefix across
+  // channels, so match all three forms.
+  const clean = String(phone || "").replace(/\+/g, "");
+  const withPlus = "+" + clean;
+  const bind = (r: sql.Request) =>
+    r.input("p", sql.NVarChar(20), phone)
+     .input("pp", sql.NVarChar(20), withPlus)
+     .input("pc", sql.NVarChar(20), clean);
+
   try {
     pool = await sql.connect(dbConfig);
 
-    const result = await pool.request()
-      .input("phone", sql.NVarChar(20), phone)
-      .query(`
-        SELECT TOP 1
-          phone_number,
-          tier_code,
-          tier_name,
-          status,
-          start_date,
-          end_date,
-          ISNULL(CAST(queries_used_today AS INT), 0) as queries_used_today,
-          ISNULL(max_markets, 3) as max_markets
-        FROM Consumer_Active_Subscriptions
-        WHERE phone_number = @phone
-        ORDER BY created_at DESC
-      `);
+    // Source of truth: Consumers.subscription_tier — updated by BOTH the webhook
+    // and the verify path. Consumer_Active_Subscriptions can carry stale/superseded
+    // rows, so it's used only as a secondary source for dates/usage.
+    const consRes = await bind(pool.request()).query(`
+      SELECT TOP 1
+        subscription_tier,
+        subscription_start_date,
+        subscription_end_date,
+        ISNULL(max_markets, 3) AS max_markets
+      FROM Consumers
+      WHERE phone IN (@p, @pp, @pc) OR phone_number IN (@p, @pp, @pc)
+      ORDER BY updated_at DESC
+    `);
 
-    if (result.recordset.length === 0) {
+    const subRes = await bind(pool.request()).query(`
+      SELECT TOP 1
+        tier_code, tier_name, status, start_date, end_date,
+        ISNULL(CAST(queries_used_today AS INT), 0) AS queries_used_today,
+        ISNULL(max_markets, 3) AS max_markets
+      FROM Consumer_Active_Subscriptions
+      WHERE phone_number IN (@p, @pp, @pc) AND status = 'ACTIVE'
+      ORDER BY created_at DESC
+    `);
+
+    const cons = consRes.recordset[0];
+    const sub = subRes.recordset[0];
+    if (!cons && !sub) {
       return null;
     }
 
-    const row = result.recordset[0];
+    const tier = cons?.subscription_tier || sub?.tier_code || "FREE";
+    const startRaw = cons?.subscription_start_date || sub?.start_date || null;
+    const endRaw = cons?.subscription_end_date || sub?.end_date || null;
+    const maxMarkets = cons?.max_markets ?? sub?.max_markets ?? 3;
+
     return {
-      phone: row.phone_number,
-      tier: row.tier_code || "FREE",
-      tierName: row.tier_name || "Free",
-      status: row.status || "ACTIVE",
-      startDate: row.start_date ? row.start_date.toISOString().split("T")[0] : null,
-      endDate: row.end_date ? row.end_date.toISOString().split("T")[0] : null,
-      queriesUsedToday: row.queries_used_today || 0,
-      maxMarkets: row.max_markets || 3,
+      phone: withPlus,
+      tier,
+      tierName: sub?.tier_name || tier || "Free",
+      status: sub?.status || "ACTIVE",
+      startDate: startRaw ? new Date(startRaw).toISOString().split("T")[0] : null,
+      endDate: endRaw ? new Date(endRaw).toISOString().split("T")[0] : null,
+      queriesUsedToday: sub?.queries_used_today || 0,
+      maxMarkets: maxMarkets || 3,
     };
   } catch (error) {
     console.error("Error getting subscription status:", error);
