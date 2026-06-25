@@ -61,7 +61,8 @@ async function sendBrevoWelcome(email: string, phone: string) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { email, phone, password, countryCode, tier, fullName } = body;
+    // `tier` is intentionally not read — registration always creates a FREE account.
+    const { email, phone, password, countryCode, fullName } = body;
 
     console.log("📝 Registration request:", { email, phone, countryCode });
 
@@ -184,7 +185,10 @@ export async function POST(request: NextRequest) {
         password_hash: hashedPassword,
         phone_verified: true,                 // Phone is verified ✅
         email_verified: !!formattedEmail,     // Only true when email provided & verified
-        subscription_tier: tier || "FREE",
+        // Registration ALWAYS creates a FREE account. Paid tiers are granted only
+        // after payment (Paystack → webhook/verify). Never trust a client-supplied
+        // paid tier here, or users could self-grant paid plans for free.
+        subscription_tier: "FREE",
         account_status: "ACTIVE",
         registration_source: "WEB",
         daily_query_limit: 5,

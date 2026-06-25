@@ -353,10 +353,14 @@ export default function RegisterPage() {
 
       setStep("complete");
 
-      // Redirect after showing the welcome message (longer copy → give time to read)
+      // Registration always creates a FREE account (the server enforces this). If
+      // the user picked a paid plan, send them to the payment flow with the tier
+      // preselected — they only get the paid tier after paying. FREE users go
+      // straight to the dashboard.
+      const isPaidTier = tier && tier.toUpperCase() !== "FREE";
       setTimeout(() => {
-        router.push("/dashboard");
-      }, 7000);
+        router.push(isPaidTier ? `/subscribe?tier=${encodeURIComponent(tier)}` : "/dashboard");
+      }, isPaidTier ? 1800 : 7000);
 
     } catch (err: any) {
       setError(err.message);

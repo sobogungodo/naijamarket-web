@@ -7,7 +7,7 @@
 
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
@@ -173,6 +173,25 @@ export default function SubscribePage() {
     setSelectedProvider(null);
     setError(null);
   };
+
+  // Preselect a tier passed via ?tier= (e.g. redirected here from registration
+  // after picking a paid plan) once tiers + current tier have loaded — so the user
+  // doesn't have to pick the plan again. Only applies if it's an upgrade.
+  const preselectedRef = useRef(false);
+  useEffect(() => {
+    if (loading || preselectedRef.current) return;
+    try {
+      const wanted = new URLSearchParams(window.location.search).get("tier");
+      if (!wanted) return;
+      const code = wanted.toUpperCase();
+      if (TIER_ORDER.includes(code) && TIER_ORDER.indexOf(code) > TIER_ORDER.indexOf(currentTier)) {
+        preselectedRef.current = true;
+        setSelectedTier(code);
+      }
+    } catch {
+      /* no-op */
+    }
+  }, [loading, currentTier]);
 
   // Handle payment
   const handlePayment = async () => {
