@@ -151,6 +151,10 @@ function getTransactionSign(type: string): string {
 export default function TokenWalletPage() {
   const { data: session, status } = useSession();
 
+  // Payments temporarily disabled for the testing phase.
+  // Flip to `true` to re-enable token-pack purchases (Paystack).
+  const PAYMENTS_ENABLED = false;
+
   const [wallet, setWallet] = useState<WalletData | null>(null);
   const [packs, setPacks] = useState<TokenPack[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -510,30 +514,45 @@ export default function TokenWalletPage() {
                 </div>
 
                 {/* Buy button */}
-                <button
-                  onClick={() => handlePurchase(pack)}
-                  disabled={purchasing === pack.id}
-                  className={`w-full py-2.5 rounded-lg text-sm font-medium transition-all flex items-center justify-center gap-2 ${
-                    pack.isPopular
-                      ? "bg-emerald-500 hover:bg-emerald-400 text-black"
-                      : "bg-gray-700 hover:bg-gray-600 text-white"
-                  } disabled:opacity-50`}
-                >
-                  {purchasing === pack.id ? (
-                    <>
-                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                      Processing...
-                    </>
-                  ) : (
-                    <>
-                      <ShoppingCart className="w-3.5 h-3.5" />
-                      Buy Now
-                    </>
-                  )}
-                </button>
+                {PAYMENTS_ENABLED ? (
+                  <button
+                    onClick={() => handlePurchase(pack)}
+                    disabled={purchasing === pack.id}
+                    className={`w-full py-2.5 rounded-lg text-sm font-medium transition-all flex items-center justify-center gap-2 ${
+                      pack.isPopular
+                        ? "bg-emerald-500 hover:bg-emerald-400 text-black"
+                        : "bg-gray-700 hover:bg-gray-600 text-white"
+                    } disabled:opacity-50`}
+                  >
+                    {purchasing === pack.id ? (
+                      <>
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        Processing...
+                      </>
+                    ) : (
+                      <>
+                        <ShoppingCart className="w-3.5 h-3.5" />
+                        Buy Now
+                      </>
+                    )}
+                  </button>
+                ) : (
+                  <button
+                    disabled
+                    className="w-full py-2.5 rounded-lg text-sm font-medium bg-gray-700 text-gray-500 cursor-not-allowed flex items-center justify-center gap-2 opacity-60"
+                  >
+                    Coming Soon
+                  </button>
+                )}
               </div>
             ))}
           </div>
+
+          {!PAYMENTS_ENABLED && (
+            <p className="text-center text-xs text-gray-500">
+              Payments will be enabled at launch
+            </p>
+          )}
 
           {packs.length === 0 && (
             <div className="text-center py-12 bg-gray-800/20 border border-gray-700/30 rounded-xl">
