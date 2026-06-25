@@ -62,9 +62,9 @@ export async function POST(request: NextRequest) {
     console.log("[TokenPurchase] Step 2: Querying Token_Packs for packId:", packId);
 
     const packResult = await pool.request()
-      .input("pack_id", sql.Int, packId)
+      .input("pack_id", sql.NVarChar(50), packId)
       .query(`
-        SELECT pack_id, pack_name, token_count, price_ngn, bonus_tokens, is_active
+        SELECT pack_id, pack_name, tokens, price_naira, bonus_tokens, is_active
         FROM dbo.Token_Packs
         WHERE pack_id = @pack_id AND is_active = 1
       `);
@@ -77,7 +77,7 @@ export async function POST(request: NextRequest) {
     }
 
     const pack = packResult.recordset[0];
-    console.log("[TokenPurchase] Step 3: Pack found:", pack.pack_name, "Price:", pack.price_ngn);
+    console.log("[TokenPurchase] Step 3: Pack found:", pack.pack_name, "Price:", pack.price_naira);
 
     // 2. Get consumer details (need email/phone for Paystack)
     const consumerResult = await pool.request()
@@ -96,30 +96,18 @@ export async function POST(request: NextRequest) {
 
     // 3. Generate payment reference
     const reference = generateReference();
-    const amountNgn = pack.price_ngn;
-    const totalTokens = (pack.token_count || 0) + (pack.bonus_tokens || 0);
+    const amountNgn = Number(pack.price_naira);
+    const totalTokens = (pack.tokens || 0) + (pack.bonus_tokens || 0);
 
-    console.log("[TokenPurchase] Step 5: Logging pending transaction. Ref:", reference, "Amount:", amountNgn, "Tokens:", totalTokens);
+    console.log("[TokenPurchase] Step 5: Ref:", reference, "Amount:", amountNgn, "Tokens:", totalTokens);
 
-    // 4. Log pending transaction in database
-    await pool.request()
-      .input("consumer_id", sql.NVarChar(50), consumerId)
-      .input("transaction_type", sql.NVarChar(20), "PURCHASE")
-      .input("token_amount", sql.Int, totalTokens)
-      .input("description", sql.NVarChar(200), `Purchase: ${pack.pack_name} (${pack.token_count}+${pack.bonus_tokens || 0} tokens)`)
-      .input("reference_id", sql.NVarChar(100), reference)
-      .input("payment_amount", sql.Decimal(18, 2), amountNgn)
-      .input("payment_currency", sql.NVarChar(3), "NGN")
-      .input("payment_provider", sql.NVarChar(20), "PAYSTACK")
-      .input("payment_status", sql.NVarChar(20), "PENDING")
-      .query(`
-        INSERT INTO dbo.Token_Transactions 
-          (consumer_id, transaction_type, token_amount, description, reference_id, 
-           payment_amount, payment_currency, payment_provider, payment_status)
-        VALUES 
-          (@consumer_id, @transaction_type, @token_amount, @description, @reference_id,
-           @payment_amount, @payment_currency, @payment_provider, @payment_status)
-      `);
+    // 4. Pending-transaction logging is DISABLED pending a write-path rework.
+    // The real dbo.Token_Transactions requires transaction_id (varchar PK),
+    // wallet_id (NOT NULL → wallet must exist), consumer_phone, and
+    // token_balance_before/after — this needs to be designed alongside the
+    // Paystack verify/credit flow before payments are re-enabled. Payments are
+    // currently OFF (UI shows "Coming Soon"), so this path is unreachable.
+    // TODO(payments): re-implement pending log + crediting against real schema.
 
     console.log("[TokenPurchase] Step 6: Calling Paystack initialize...");
 
@@ -185,15 +173,8 @@ export async function POST(request: NextRequest) {
 
     // Paystack rejected
     console.error(`[TokenPurchase] ❌ Paystack rejected: ${paystackData.message}`);
-
-    // Update transaction as failed
-    await pool.request()
-      .input("reference_id", sql.NVarChar(100), reference)
-      .query(`
-        UPDATE dbo.Token_Transactions
-        SET payment_status = 'FAILED', description = description + ' [Paystack: ' + '${(paystackData.message || "unknown error").replace(/'/g, "''")}' + ']'
-        WHERE reference_id = @reference_id
-      `);
+    // (No Token_Transactions row to mark FAILED — pending logging is disabled
+    //  pending the write-path rework noted above.)
 
     return NextResponse.json(
       { success: false, error: paystackData.message || "Payment initialization failed" },

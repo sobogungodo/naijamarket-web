@@ -22,10 +22,11 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const consumerId = searchParams.get("consumerId");
+    const phoneParam = searchParams.get("phone"); // optional direct phone
 
-    if (!consumerId) {
+    if (!consumerId && !phoneParam) {
       return NextResponse.json(
-        { success: false, error: "Consumer ID is required" },
+        { success: false, error: "consumerId or phone is required" },
         { status: 400 }
       );
     }
@@ -35,122 +36,86 @@ export async function GET(request: NextRequest) {
     try {
       pool = await sql.connect(sqlConfig);
 
-      // 1. Get wallet balance
+      // Resolve the wallet key — Token_* tables are keyed by consumer_phone.
+      let phone = (phoneParam || "").replace(/\D/g, "");
+      if (!phone && consumerId) {
+        const cr = await pool.request()
+          .input("cid", sql.NVarChar(50), consumerId)
+          .query(`SELECT TOP 1 phone_number, phone FROM dbo.Consumers WHERE consumer_id = @cid`);
+        const raw = cr.recordset[0]?.phone_number || cr.recordset[0]?.phone || "";
+        phone = String(raw).replace(/\D/g, "");
+      }
+      const p1 = phone;
+      const p2 = "+" + phone;
+
+      // 1. Wallet (keyed by consumer_phone)
       const walletResult = await pool.request()
-        .input("consumer_id", sql.NVarChar(50), consumerId)
+        .input("p1", sql.NVarChar(30), p1)
+        .input("p2", sql.NVarChar(30), p2)
         .query(`
-          SELECT 
-            wallet_id,
-            consumer_id,
-            token_balance,
-            total_purchased,
-            total_used,
-            total_expired,
-            welcome_bonus_claimed,
-            created_at,
-            updated_at
+          SELECT TOP 1
+            wallet_id, consumer_phone, token_balance, total_purchased,
+            total_spent, total_expired, total_amount_paid, total_queries_made,
+            wallet_status, created_at, updated_at
           FROM dbo.Token_Wallets
-          WHERE consumer_id = @consumer_id
+          WHERE consumer_phone IN (@p1, @p2)
         `);
 
-      // 2. Get available token packs
+      // 2. Active token packs (real columns; hide the PROMO_FREE welcome bonus)
       const packsResult = await pool.request()
         .query(`
-          SELECT 
-            pack_id,
-            pack_name,
-            token_count,
-            price_ngn,
-            bonus_tokens,
-            savings_percent,
-            is_popular,
-            is_active,
-            description
+          SELECT
+            pack_id, pack_name, display_name, tokens, price_naira, bonus_tokens,
+            savings_percent, is_popular, description_en
           FROM dbo.Token_Packs
-          WHERE is_active = 1
-          ORDER BY price_ngn ASC
+          WHERE is_active = 1 AND pack_id <> 'PROMO_FREE'
+          ORDER BY sort_order ASC, price_naira ASC
         `);
 
-      // 3. Get recent transactions (last 50)
+      // 3. Recent transactions (keyed by consumer_phone)
       const txResult = await pool.request()
-        .input("consumer_id", sql.NVarChar(50), consumerId)
+        .input("p1", sql.NVarChar(30), p1)
+        .input("p2", sql.NVarChar(30), p2)
         .query(`
           SELECT TOP 50
-            transaction_id,
-            consumer_id,
-            transaction_type,
-            token_amount,
-            description,
-            reference_id,
-            payment_amount,
-            payment_currency,
-            payment_provider,
-            payment_status,
-            created_at
+            transaction_id, transaction_type, tokens_amount, description,
+            payment_reference, payment_amount, payment_status, created_at
           FROM dbo.Token_Transactions
-          WHERE consumer_id = @consumer_id
+          WHERE consumer_phone IN (@p1, @p2)
           ORDER BY created_at DESC
         `);
 
-      // Build wallet data (create default if not exists)
-      let wallet = walletResult.recordset[0] || null;
-
-      if (!wallet) {
-        // Auto-create wallet with welcome bonus
-        await pool.request()
-          .input("consumer_id", sql.NVarChar(50), consumerId)
-          .query(`
-            INSERT INTO dbo.Token_Wallets (consumer_id, token_balance, total_purchased, total_used, total_expired, welcome_bonus_claimed)
-            VALUES (@consumer_id, 3, 3, 0, 0, 1)
-          `);
-
-        // Log the welcome bonus transaction
-        await pool.request()
-          .input("consumer_id", sql.NVarChar(50), consumerId)
-          .query(`
-            INSERT INTO dbo.Token_Transactions (consumer_id, transaction_type, token_amount, description, payment_status)
-            VALUES (@consumer_id, 'WELCOME_BONUS', 3, 'Welcome bonus - 3 free tokens!', 'COMPLETED')
-          `);
-
-        wallet = {
-          consumer_id: consumerId,
-          token_balance: 3,
-          total_purchased: 3,
-          total_used: 0,
-          total_expired: 0,
-          welcome_bonus_claimed: true,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        };
-      }
+      // No auto-create against the real schema (wallet_id is a required varchar PK).
+      // A missing wallet simply means a zero balance.
+      const wallet = walletResult.recordset[0] || null;
 
       return NextResponse.json({
         success: true,
         wallet: {
-          balance: wallet.token_balance ?? 0,
-          totalPurchased: wallet.total_purchased ?? 0,
-          totalUsed: wallet.total_used ?? 0,
-          totalExpired: wallet.total_expired ?? 0,
-          welcomeBonusClaimed: wallet.welcome_bonus_claimed ?? false,
-          createdAt: wallet.created_at,
-          updatedAt: wallet.updated_at,
+          balance: wallet?.token_balance ?? 0,
+          totalPurchased: wallet?.total_purchased ?? 0,
+          totalUsed: wallet?.total_spent ?? 0,
+          totalExpired: wallet?.total_expired ?? 0,
+          welcomeBonusClaimed: true,
+          createdAt: wallet?.created_at ?? null,
+          updatedAt: wallet?.updated_at ?? null,
         },
         packs: packsResult.recordset.map((p: Record<string, unknown>) => ({
           id: p.pack_id,
           name: p.pack_name,
-          tokens: p.token_count,
-          price: p.price_ngn,
+          tokens: p.tokens,
+          price: Number(p.price_naira),
           bonus: p.bonus_tokens ?? 0,
           savings: p.savings_percent ?? 0,
-          isPopular: p.is_popular ?? false,
-          description: p.description ?? "",
+          isPopular: !!p.is_popular,
+          description: p.description_en ?? "",
         })),
         transactions: txResult.recordset.map((t: Record<string, unknown>) => ({
           id: t.transaction_id,
           type: t.transaction_type,
-          amount: t.token_amount,
+          amount: t.tokens_amount,
           description: t.description,
-          reference: t.reference_id,
+          reference: t.payment_reference,
           paymentAmount: t.payment_amount,
           paymentStatus: t.payment_status,
           createdAt: t.created_at,
