@@ -15,7 +15,7 @@ import AuthShell from "@/components/AuthShell";
 import { SingleSessionProvider } from "@/components/SingleSessionProvider";
 import SessionExpiredModal from "@/components/SessionExpiredModal";
 import { Toaster } from "sonner";
-import WhatsAppCTA from "@/components/WhatsAppCTA";
+import ConditionalCTA from "@/components/ConditionalCTA";
 import CookieBanner from "@/components/CookieBanner";
 import AnalyticsProvider from "@/components/AnalyticsProvider";
 import "@/styles/globals.css";
@@ -204,10 +204,12 @@ export default function RootLayout({
               }}
               closeButton
             />
+
+            {/* Marketing CTAs — public pages only, hidden when authenticated or on
+                /dashboard. Inside <Providers> so useSession() resolves. */}
+            <ConditionalCTA />
           </ThemeProvider>
         </Providers>
-        <WhatsAppCTA />
-      <WhatsAppCTA variant="reporter" message="reporter" label="Register as Price Reporter" />
       <CookieBanner />
       <AnalyticsProvider />
       </body>
