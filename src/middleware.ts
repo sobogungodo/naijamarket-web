@@ -114,7 +114,10 @@ export async function middleware(request: NextRequest) {
   // CASE 1: Not authenticated → protected route → login
   if (!isAuthenticated && isProtectedRoute) {
     const loginUrl = new URL("/login", request.url);
-    loginUrl.searchParams.set("callbackUrl", pathname);
+    // Preserve the full destination (path + query) so flags like ?app=1 survive
+    // the login round-trip — without the query, the mobile-app upgrade flow loses
+    // its origin marker and the post-payment deep link never fires.
+    loginUrl.searchParams.set("callbackUrl", pathname + request.nextUrl.search);
     const response = NextResponse.redirect(loginUrl);
     response.headers.set("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
     response.headers.set("Pragma", "no-cache");
