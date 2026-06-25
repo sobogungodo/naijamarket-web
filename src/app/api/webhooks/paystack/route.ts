@@ -187,20 +187,33 @@ async function activateSubscription(
       WHERE phone_number = ${phone}
     `;
 
-    // Log transaction
-    await prisma.$executeRaw`
-      INSERT INTO Subscription_Transactions (
-        transaction_id, phone_number, transaction_type,
-        product_code, product_name, billing_cycle,
-        amount, currency, payment_provider, payment_reference,
-        status, verified_at, created_at
-      ) VALUES (
-        ${txnId}, ${phone}, 'NEW_SUBSCRIPTION',
-        ${tierCode}, ${tierName}, ${billingCycle},
-        ${amount}, 'NGN', ${provider}, ${ref},
-        'SUCCESS', GETDATE(), GETDATE()
-      )
-    `;
+    // Log transaction — ledger write is non-blocking: a failure here must NOT
+    // fail an activation that has already been applied above.
+    try {
+      const crows = await prisma.$queryRaw<Array<{ consumer_id: string | null }>>`
+        SELECT TOP 1 consumer_id FROM Consumers WHERE phone_number = ${phone}
+      `;
+      const consumerId = crows[0]?.consumer_id ?? null;
+      await prisma.$executeRaw`
+        INSERT INTO Subscription_Transactions (
+          transaction_id, consumer_id, phone_number, transaction_type,
+          product_code, product_name, billing_cycle,
+          gross_amount, net_amount, currency,
+          payment_provider, payment_reference, payment_channel,
+          payment_status, subscription_start, subscription_end,
+          created_at, completed_at, verified_at
+        ) VALUES (
+          ${txnId}, ${consumerId}, ${phone}, 'NEW_SUBSCRIPTION',
+          ${tierCode}, ${tierName}, ${billingCycle.toUpperCase()},
+          ${amount}, ${amount}, 'NGN',
+          ${provider}, ${ref}, 'WEBHOOK',
+          'COMPLETED', ${new Date().toISOString()}, ${endISO},
+          GETUTCDATE(), GETUTCDATE(), GETUTCDATE()
+        )
+      `;
+    } catch (ledgerErr: any) {
+      console.error(`[PS] Ledger write failed (non-blocking) ref=${ref}:`, ledgerErr?.message || ledgerErr);
+    }
 
     console.log(`[PS] âœ… ${tierCode} activated for ${phone} until ${endISO}`);
     return { success: true };
@@ -225,7 +238,7 @@ async function onChargeSuccess(data: any): Promise<string> {
   // Idempotency: skip if reference already processed
   const existing = await prisma.$queryRaw`
     SELECT transaction_id FROM Subscription_Transactions
-    WHERE payment_reference = ${ref} AND status = 'SUCCESS'
+    WHERE payment_reference = ${ref} AND payment_status = 'COMPLETED'
   ` as any[];
   if (existing.length > 0) {
     console.log(`[PS] Duplicate ref ${ref} — skipping`);
@@ -237,17 +250,25 @@ async function onChargeSuccess(data: any): Promise<string> {
   // Route by product type
   if (meta.product_type === "ADDON" || meta.addon_code) {
     const txnId = genId("TXN");
-    await prisma.$executeRaw`
-      INSERT INTO Subscription_Transactions (
-        transaction_id, phone_number, transaction_type,
-        product_code, product_name, amount, currency,
-        payment_provider, payment_reference, status, verified_at, created_at
-      ) VALUES (
-        ${txnId}, ${phone}, 'ADDON_PURCHASE',
-        ${meta.addon_code || "ADDON"}, ${meta.tier_name || "Add-on"},
-        ${amount}, 'NGN', 'PAYSTACK', ${ref}, 'SUCCESS', GETDATE(), GETDATE()
-      )
-    `;
+    try {
+      await prisma.$executeRaw`
+        INSERT INTO Subscription_Transactions (
+          transaction_id, consumer_id, phone_number, transaction_type,
+          product_code, product_name,
+          gross_amount, net_amount, currency,
+          payment_provider, payment_reference, payment_channel,
+          payment_status, created_at, completed_at, verified_at
+        ) VALUES (
+          ${txnId}, ${meta.consumer_id || null}, ${phone}, 'ADDON_PURCHASE',
+          ${meta.addon_code || "ADDON"}, ${meta.tier_name || "Add-on"},
+          ${amount}, ${amount}, 'NGN',
+          'PAYSTACK', ${ref}, 'WEBHOOK',
+          'COMPLETED', GETUTCDATE(), GETUTCDATE(), GETUTCDATE()
+        )
+      `;
+    } catch (ledgerErr: any) {
+      console.error(`[PS] Addon ledger write failed (non-blocking) ref=${ref}:`, ledgerErr?.message || ledgerErr);
+    }
     await sendWhatsApp(phone,
       `âœ… *Add-On Activated!*\n\n${meta.tier_name || "Your add-on"} is now active.\nPayment: ${naira(amount)}\n\nType *mystatus* to see details.`
     );
@@ -258,18 +279,25 @@ async function onChargeSuccess(data: any): Promise<string> {
     const txnId = genId("TXN");
     const days = DURATION_DAYS[meta.billing_cycle] || 7;
     const endDate = new Date(Date.now() + days * 86400000);
-    await prisma.$executeRaw`
-      INSERT INTO Subscription_Transactions (
-        transaction_id, phone_number, transaction_type,
-        product_code, product_name, billing_cycle,
-        amount, currency, payment_provider, payment_reference,
-        status, verified_at, created_at
-      ) VALUES (
-        ${txnId}, ${phone}, 'MORNING_BRIEF',
-        'MORNING_BRIEF', 'Market Opener Morning Brief', ${meta.billing_cycle || "WEEKLY"},
-        ${amount}, 'NGN', 'PAYSTACK', ${ref}, 'SUCCESS', GETDATE(), GETDATE()
-      )
-    `;
+    try {
+      await prisma.$executeRaw`
+        INSERT INTO Subscription_Transactions (
+          transaction_id, consumer_id, phone_number, transaction_type,
+          product_code, product_name, billing_cycle,
+          gross_amount, net_amount, currency,
+          payment_provider, payment_reference, payment_channel,
+          payment_status, created_at, completed_at, verified_at
+        ) VALUES (
+          ${txnId}, ${meta.consumer_id || null}, ${phone}, 'MORNING_BRIEF',
+          'MORNING_BRIEF', 'Market Opener Morning Brief', ${(meta.billing_cycle || "WEEKLY").toUpperCase()},
+          ${amount}, ${amount}, 'NGN',
+          'PAYSTACK', ${ref}, 'WEBHOOK',
+          'COMPLETED', GETUTCDATE(), GETUTCDATE(), GETUTCDATE()
+        )
+      `;
+    } catch (ledgerErr: any) {
+      console.error(`[PS] Morning Brief ledger write failed (non-blocking) ref=${ref}:`, ledgerErr?.message || ledgerErr);
+    }
     await sendWhatsApp(phone,
       `âœ… *Morning Brief Activated!*\n\nYou'll receive daily prices at 5:30 AM.\nPayment: ${naira(amount)}\nValid until: ${endDate.toLocaleDateString("en-NG")}\n\nðŸŒ… See you tomorrow morning!`
     );
@@ -308,17 +336,23 @@ async function onChargeFailed(data: any): Promise<string> {
   const reason = data.gateway_response || "Payment failed";
 
   const txnId = genId("TXN");
-  await prisma.$executeRaw`
-    INSERT INTO Subscription_Transactions (
-      transaction_id, phone_number, transaction_type,
-      amount, currency, payment_provider, payment_reference,
-      status, notes, created_at
-    ) VALUES (
-      ${txnId}, ${phone}, 'PAYMENT_FAILED',
-      ${amount}, 'NGN', 'PAYSTACK', ${ref},
-      'FAILED', ${reason}, GETDATE()
-    )
-  `;
+  try {
+    await prisma.$executeRaw`
+      INSERT INTO Subscription_Transactions (
+        transaction_id, consumer_id, phone_number, transaction_type,
+        gross_amount, net_amount, currency,
+        payment_provider, payment_reference, payment_channel,
+        payment_status, failure_reason, created_at
+      ) VALUES (
+        ${txnId}, ${meta.consumer_id || null}, ${phone}, 'PAYMENT_FAILED',
+        ${amount}, ${amount}, 'NGN',
+        'PAYSTACK', ${ref}, 'WEBHOOK',
+        'FAILED', ${reason}, GETUTCDATE()
+      )
+    `;
+  } catch (ledgerErr: any) {
+    console.error(`[PS] Failed-payment ledger write failed (non-blocking) ref=${ref}:`, ledgerErr?.message || ledgerErr);
+  }
 
   await sendWhatsApp(phone,
     `âŒ *Payment Failed*\n\nWe couldn't process your payment of ${naira(amount)}.\n\nðŸ“‹ *Reason:* ${reason}\nðŸ“Ž *Ref:* ${ref}\n\nType *upgrade* to retry.`

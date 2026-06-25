@@ -390,6 +390,46 @@ async function upgradeSubscription(
       console.error(`[subscribe/verify] Consumers tier update FAILED ref=${reference}:`, e);
     }
 
+    // Ledger entry in Subscription_Transactions — non-blocking; a failure here
+    // must not undo the activation already applied above. Mirrors the columns
+    // written by the Paystack webhook; payment_channel = 'WEB' for this path.
+    try {
+      const transactionId = "TXN-" + Date.now().toString(36).toUpperCase() + "-" +
+        Math.random().toString(36).substring(2, 8).toUpperCase();
+      await pool.request()
+        .input("transaction_id", sql.NVarChar(50), transactionId)
+        .input("consumer_id", sql.NVarChar(50), consumerId)
+        .input("phone", sql.NVarChar(20), phone)
+        .input("product_code", sql.NVarChar(50), tier)
+        .input("product_name", sql.NVarChar(255), config.tierName)
+        .input("billing_cycle", sql.NVarChar(50), String(config.billingCycle).toUpperCase())
+        .input("gross_amount", sql.Decimal(18, 2), amount)
+        .input("net_amount", sql.Decimal(18, 2), amount)
+        .input("payment_provider", sql.NVarChar(255), String(provider).toUpperCase())
+        .input("payment_reference", sql.NVarChar(50), reference)
+        .input("subscription_start", sql.NVarChar(50), startDate.toISOString())
+        .input("subscription_end", sql.NVarChar(50), endDate.toISOString())
+        .query(`
+          INSERT INTO Subscription_Transactions (
+            transaction_id, consumer_id, phone_number, transaction_type,
+            product_code, product_name, billing_cycle,
+            gross_amount, net_amount, currency,
+            payment_provider, payment_reference, payment_channel,
+            payment_status, subscription_start, subscription_end,
+            created_at, completed_at, verified_at
+          ) VALUES (
+            @transaction_id, @consumer_id, @phone, 'NEW_SUBSCRIPTION',
+            @product_code, @product_name, @billing_cycle,
+            @gross_amount, @net_amount, 'NGN',
+            @payment_provider, @payment_reference, 'WEB',
+            'COMPLETED', @subscription_start, @subscription_end,
+            GETUTCDATE(), GETUTCDATE(), GETUTCDATE()
+          )
+        `);
+    } catch (ledgerErr) {
+      console.error(`[subscribe/verify] Subscription_Transactions ledger write failed (non-blocking) ref=${reference}:`, ledgerErr);
+    }
+
     return true;
   } catch (error) {
     console.error("Error upgrading subscription:", error);
