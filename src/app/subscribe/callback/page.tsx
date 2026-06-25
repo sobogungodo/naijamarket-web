@@ -84,20 +84,19 @@ function CallbackContent() {
           setPayment(data.payment);
           setSubscription(data.subscription);
 
-          // If the user started from the mobile app (flag persisted on /subscribe),
-          // deep-link back into it so the app can refresh and confirm the new tier.
-          // We still render the web success page underneath as a fallback if the
-          // deep link doesn't resolve (e.g. app not installed / link blocked).
+          // If the user started from the mobile app, deep-link back so the app can
+          // refresh and confirm the new tier. App origin is carried through Paystack
+          // metadata (data.payment.source) — reliable across the mobile browser
+          // boundary, unlike sessionStorage. The web success page still renders
+          // underneath as a fallback if the deep link doesn't resolve.
           try {
-            const fromApp =
-              typeof window !== "undefined" && sessionStorage.getItem("nm_app") === "1";
+            const fromApp = data.payment?.source === "app";
             if (fromApp) {
-              sessionStorage.removeItem("nm_app");
               const tier = encodeURIComponent(data.payment?.tier || data.subscription?.tier || "");
               window.location.href = `naijamarketconsumer://account?upgrade=success&tier=${tier}`;
             }
           } catch {
-            /* sessionStorage / navigation unavailable — fall through to web success */
+            /* navigation unavailable — fall through to web success */
           }
         } else if (data.payment?.status === "PENDING") {
           setStatus("pending");

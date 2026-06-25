@@ -353,7 +353,7 @@ async function getSubscriptionStatus(phone: string): Promise<SubscriptionStatus 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { tier, provider, phone, email, name, consumerId } = body;
+    const { tier, provider, phone, email, name, consumerId, source } = body;
 
     // Validate required fields
     if (!tier || !provider) {
@@ -400,7 +400,8 @@ export async function POST(request: NextRequest) {
     const customerName = name || "NaijaMarket Customer";
     const customerPhone = phone || "";
 
-    // Metadata for payment provider
+    // Metadata for payment provider. `source: 'app'` rides through Paystack so the
+    // callback can detect a mobile-app origin server-side (no browser storage).
     const metadata = {
       tier: tierKey,
       tierName: tierInfo.tierName,
@@ -409,6 +410,7 @@ export async function POST(request: NextRequest) {
       billingCycle: tierInfo.billingCycle,
       duration: tierInfo.duration,
       durationUnit: tierInfo.durationUnit,
+      ...(source === "app" ? { source: "app" } : {}),
     };
 
     // Initialize payment with selected provider

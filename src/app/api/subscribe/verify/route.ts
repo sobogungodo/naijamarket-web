@@ -27,6 +27,7 @@ interface VerificationResult {
   tier?: string;
   phone?: string;
   consumerId?: string;
+  source?: string;
   error?: string;
 }
 
@@ -154,6 +155,7 @@ async function verifyPaystackPayment(reference: string): Promise<VerificationRes
         tier,
         phone,
         consumerId: metadata.consumerId,
+        source: metadata.source,
       };
     }
 
@@ -200,6 +202,7 @@ async function verifyFlutterwavePayment(reference: string): Promise<Verification
       tier: meta.tier,
       phone: meta.phone || transaction.customer?.phone_number,
       consumerId: meta.consumerId,
+      source: meta.source,
     };
   } catch (error) {
     console.error("Flutterwave verification error:", error);
@@ -494,6 +497,7 @@ export async function GET(request: NextRequest) {
         tierName: tierConfig?.tierName || verificationResult.tier,
         phone: verificationResult.phone,
         provider,
+        source: verificationResult.source,
         transactionId: transactionId || undefined,
       },
       subscription: upgraded ? {
