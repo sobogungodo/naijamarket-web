@@ -115,6 +115,10 @@ const TIER_COLORS: Record<string, { bg: string; border: string; text: string }> 
 // Tier order for comparison
 const TIER_ORDER = ["FREE", "SILVER", "GOLD", "BUSINESS", "CORPORATE", "ENTERPRISE"];
 
+// Payments temporarily disabled for the testing phase.
+// Flip to `true` to re-enable Paystack/Flutterwave checkout exactly as before.
+const PAYMENTS_ENABLED = false;
+
 // ============================================================================
 // MAIN COMPONENT
 // ============================================================================
@@ -440,30 +444,47 @@ export default function SubscribePage() {
             </div>
 
             {/* Pay Button */}
-            <button
-              onClick={handlePayment}
-              disabled={!selectedProvider || processing}
-              className={`w-full py-4 px-6 rounded-lg font-semibold text-lg transition-colors flex items-center justify-center gap-2 ${
-                selectedProvider && !processing
-                  ? "bg-emerald-500 hover:bg-emerald-600 text-black"
-                  : "bg-gray-800 text-gray-500 cursor-not-allowed"
-              }`}
-            >
-              {processing ? (
-                <>
-                  <Loader2 className="w-5 h-5 animate-spin" />
-                  Processing...
-                </>
-              ) : (
-                <>
-                  Pay {tiers.find((t) => t.code === selectedTier)?.priceFormatted || ""}
-                </>
-              )}
-            </button>
+            {PAYMENTS_ENABLED ? (
+              <>
+                <button
+                  onClick={handlePayment}
+                  disabled={!selectedProvider || processing}
+                  className={`w-full py-4 px-6 rounded-lg font-semibold text-lg transition-colors flex items-center justify-center gap-2 ${
+                    selectedProvider && !processing
+                      ? "bg-emerald-500 hover:bg-emerald-600 text-black"
+                      : "bg-gray-800 text-gray-500 cursor-not-allowed"
+                  }`}
+                >
+                  {processing ? (
+                    <>
+                      <Loader2 className="w-5 h-5 animate-spin" />
+                      Processing...
+                    </>
+                  ) : (
+                    <>
+                      Pay {tiers.find((t) => t.code === selectedTier)?.priceFormatted || ""}
+                    </>
+                  )}
+                </button>
 
-            <p className="text-center text-xs text-gray-500 mt-4">
-              You will be redirected to complete payment securely.
-            </p>
+                <p className="text-center text-xs text-gray-500 mt-4">
+                  You will be redirected to complete payment securely.
+                </p>
+              </>
+            ) : (
+              <>
+                {/* Testing phase — payment action disabled, UI preserved */}
+                <button
+                  disabled
+                  className="w-full py-4 px-6 rounded-lg font-semibold text-lg bg-gray-800 text-gray-500 cursor-not-allowed flex items-center justify-center gap-2"
+                >
+                  Coming Soon
+                </button>
+                <p className="text-center text-xs text-gray-500 mt-4">
+                  Payments will be enabled at launch
+                </p>
+              </>
+            )}
           </div>
         )}
 
