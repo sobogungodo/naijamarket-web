@@ -33,7 +33,7 @@ import {
   BarChart3,
   Play,
 } from 'lucide-react';
-import type { FraudAlert, ActivityItem } from '@/types';
+import type { FraudAlert, ActivityItem, AdreMetrics } from '@/types';
 
 // ============================================
 // TYPES
@@ -419,6 +419,194 @@ function SyntheticEngineSection() {
 }
 
 // ============================================
+// ADRE SECTION COMPONENT (W5)
+// Average Daily Reporter Earnings — live from /api/rewards/adre
+// ============================================
+
+function AdreSection() {
+  const [adreData, setAdreData] = useState<AdreMetrics | null>(null);
+  const [adreLoading, setAdreLoading] = useState(true);
+  const [adreError, setAdreError] = useState<string | null>(null);
+
+  const fetchAdre = useCallback(async () => {
+    try {
+      setAdreError(null);
+      const res = await fetch('/api/rewards/adre', { cache: 'no-store' });
+      const json = await res.json();
+      if (json.success) {
+        setAdreData(json as AdreMetrics);
+      } else {
+        setAdreError(json.error ?? 'Failed to load');
+      }
+    } catch (e) {
+      setAdreError('Network error');
+      console.error('[AdreSection]', e);
+    } finally {
+      setAdreLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchAdre();
+    const interval = setInterval(fetchAdre, 5 * 60 * 1000);
+    return () => clearInterval(interval);
+  }, [fetchAdre]);
+
+  const today = adreData?.today;
+  const thresholds = adreData?.thresholds;
+  const floor = thresholds?.floor ?? 700;
+  const ceiling = thresholds?.ceiling ?? 1500;
+
+  const chartData = (adreData?.sparkline ?? []).map((d) => ({
+    name: d.cache_date,
+    adre: d.adre_value,
+    floor,
+    ceiling,
+  }));
+
+  return (
+    <div className="dash-card">
+      {/* Header */}
+      <div className="flex items-center justify-between mb-5">
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 rounded-lg bg-naija-gold-400/10 flex items-center justify-center">
+            <Wallet className="w-4 h-4 text-naija-gold-400" />
+          </div>
+          <div>
+            <h3 className="font-semibold text-dash-text">Reporter Earnings (ADRE)</h3>
+            <p className="text-xs text-dash-muted">
+              Average Daily Reporter Earnings — qualified reporters (≥5 approved/day)
+            </p>
+          </div>
+        </div>
+        <Button variant="ghost" size="sm" onClick={fetchAdre} disabled={adreLoading}>
+          <RefreshCw className={`w-3.5 h-3.5 ${adreLoading ? 'animate-spin' : ''}`} />
+        </Button>
+      </div>
+
+      {adreError ? (
+        <div className="p-4 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-sm">
+          {adreError}
+        </div>
+      ) : (
+        <>
+          {/* Top row: big ADRE + side stats */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-5">
+            <div className="bg-[#0f1320] rounded-lg p-4 border border-gray-800/60">
+              <div className="flex items-center gap-2 mb-1">
+                <TrendingUp className="w-3.5 h-3.5 text-naija-gold-400" />
+                <span className="text-xs text-dash-muted">Today&apos;s ADRE</span>
+              </div>
+              {adreLoading ? (
+                <Skeleton className="h-9 w-28" />
+              ) : (
+                <p className="text-3xl font-bold font-mono text-dash-text">
+                  {formatNaira(today?.adre ?? 0)}
+                </p>
+              )}
+              <p className="text-xs text-dash-muted mt-1">
+                floor {formatNaira(floor)} · ceiling {formatNaira(ceiling)}
+              </p>
+            </div>
+
+            <div className="bg-[#0f1320] rounded-lg p-4 border border-gray-800/60">
+              <div className="flex items-center gap-2 mb-1">
+                <Users className="w-3.5 h-3.5 text-status-info" />
+                <span className="text-xs text-dash-muted">Qualified Reporters</span>
+              </div>
+              {adreLoading ? (
+                <Skeleton className="h-9 w-20" />
+              ) : (
+                <p className="text-3xl font-bold font-mono text-dash-text">
+                  {(today?.qualified_reporters ?? 0).toLocaleString()}
+                </p>
+              )}
+              <p className="text-xs text-dash-muted mt-1">≥5 approved submissions today</p>
+            </div>
+
+            <div className="bg-[#0f1320] rounded-lg p-4 border border-gray-800/60">
+              <div className="flex items-center gap-2 mb-1">
+                <BarChart3 className="w-3.5 h-3.5 text-naija-green-500" />
+                <span className="text-xs text-dash-muted">Total Credits</span>
+              </div>
+              {adreLoading ? (
+                <Skeleton className="h-9 w-28" />
+              ) : (
+                <p className="text-3xl font-bold font-mono text-dash-text">
+                  {formatNaira(today?.total_credits ?? 0)}
+                </p>
+              )}
+              <p className="text-xs text-dash-muted mt-1">distributed to qualified reporters</p>
+            </div>
+          </div>
+
+          {/* Alert banner */}
+          {!adreLoading && today?.alert_ceiling && (
+            <div className="p-4 mb-5 rounded-lg bg-red-500/10 border border-red-500/30 text-red-300 text-sm flex items-start gap-2">
+              <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+              <span>
+                ADRE above {formatNaira(ceiling)} for {today.consecutive_ceiling_breaches} consecutive
+                days — investigate submission inflation and validator collusion
+              </span>
+            </div>
+          )}
+          {!adreLoading && today?.alert_floor && !today?.alert_ceiling && (
+            <div className="p-4 mb-5 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-300 text-sm flex items-start gap-2">
+              <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+              <span>
+                ADRE below {formatNaira(floor)} for {today.consecutive_floor_breaches} consecutive
+                days — investigate assignment volumes and bonus job health
+              </span>
+            </div>
+          )}
+
+          {/* 7-day sparkline */}
+          <div className="mb-3">
+            <div className="flex items-center justify-between text-xs text-dash-muted mb-2">
+              <span>7-day ADRE trend</span>
+              <div className="flex items-center gap-3">
+                <span className="flex items-center gap-1.5">
+                  <span className="w-3 h-3 rounded-full bg-naija-gold-400" /> ADRE
+                </span>
+                <span className="flex items-center gap-1.5">
+                  <span className="w-3 h-3 rounded-full bg-red-500" /> Floor / Ceiling
+                </span>
+              </div>
+            </div>
+            {adreLoading ? (
+              <Skeleton className="w-full h-[220px]" variant="rectangular" />
+            ) : chartData.length === 0 ? (
+              <div className="h-[220px] flex items-center justify-center text-sm text-dash-muted">
+                No cached history yet — trend builds up daily.
+              </div>
+            ) : (
+              <AreaChartComponent
+                data={chartData}
+                dataKeys={[
+                  { key: 'adre', name: 'ADRE', color: CHART_COLORS.secondary },
+                  { key: 'floor', name: 'Floor', color: CHART_COLORS.gray },
+                  { key: 'ceiling', name: 'Ceiling', color: CHART_COLORS.red },
+                ]}
+                height={220}
+                gradient={false}
+                formatter={(value) => formatNaira(value)}
+              />
+            )}
+          </div>
+
+          {/* Footer */}
+          <div className="pt-4 border-t border-gray-800/60 text-xs text-dash-muted">
+            {adreData?.computed_at
+              ? <>Last computed: <span className="text-dash-text">{formatRelativeTime(new Date(adreData.computed_at))}</span></>
+              : '—'}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+// ============================================
 // DASHBOARD PAGE COMPONENT
 // ============================================
 
@@ -636,6 +824,9 @@ export default function DashboardPage() {
 
         {/* ── SYNTHETIC ENGINE ─────────────────────────────────────────── */}
         <SyntheticEngineSection />
+
+        {/* ── ADRE — REPORTER EARNINGS (W5) ────────────────────────────── */}
+        <AdreSection />
 
         {/* Bottom Stats Row */}
         <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">

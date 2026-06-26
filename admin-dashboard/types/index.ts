@@ -567,3 +567,36 @@ export interface TimeSeriesData {
   timestamp: string;
   [key: string]: string | number;
 }
+
+// ============================================================
+// W5 — ADRE (Average Daily Reporter Earnings)
+// ============================================================
+export interface AdreDay {
+  cache_date: string
+  adre_value: number
+  qualified_count: number
+  total_credits: number
+  floor_breach: boolean
+  ceiling_breach: boolean
+}
+
+export interface AdreMetrics {
+  today: {
+    adre: number
+    qualified_reporters: number
+    total_credits: number
+    floor_breach: boolean
+    ceiling_breach: boolean
+    consecutive_floor_breaches: number
+    consecutive_ceiling_breaches: number
+    alert_floor: boolean
+    alert_ceiling: boolean
+  }
+  sparkline: AdreDay[]
+  thresholds: {
+    floor: number
+    ceiling: number
+    breach_days: number
+  }
+  computed_at: string
+}
