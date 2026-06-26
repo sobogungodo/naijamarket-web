@@ -182,12 +182,50 @@ export async function PATCH(request: NextRequest) {
         SET registration_status = @status, suspension_reason = @reason
         WHERE trader_id = @userId
       `, { userId, status: newStatus, reason: reason || '' });
+
+      // [audit] log admin trader status change (fire-and-forget)
+      try {
+        const tr = await query<{ phone_number: string }>(
+          `SELECT phone_number FROM dbo.Traders_register WHERE trader_id = @userId`,
+          { userId }
+        );
+        const phone = tr[0]?.phone_number || userId;
+        await execute(`
+          INSERT INTO dbo.Trader_Activity_Log (phone_number, platform, event_type, event_detail, session_token, ip_address, created_at)
+          VALUES (@phone, 'ADMIN', 'TRADER_STATUS_CHANGED', @detail, NULL, @ip, SYSUTCDATETIME())
+        `, {
+          phone,
+          detail: JSON.stringify({ action, newStatus, userId, reason: reason || '' }),
+          ip: request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || '',
+        });
+      } catch (e) {
+        console.error('[users PATCH] trader status audit non-fatal:', e);
+      }
     } else {
       await execute(`
         UPDATE dbo.Validators
         SET status = @status, suspension_reason = @reason
         WHERE validator_id = @userId
       `, { userId, status: newStatus, reason: reason || '' });
+
+      // [audit] log admin validator status change (fire-and-forget)
+      try {
+        const vr = await query<{ phone_number: string }>(
+          `SELECT phone_number FROM dbo.Validators WHERE validator_id = @userId`,
+          { userId }
+        );
+        const phone = vr[0]?.phone_number || userId;
+        await execute(`
+          INSERT INTO dbo.Trader_Activity_Log (phone_number, platform, event_type, event_detail, session_token, ip_address, created_at)
+          VALUES (@phone, 'ADMIN', 'VALIDATOR_STATUS_CHANGED', @detail, NULL, @ip, SYSUTCDATETIME())
+        `, {
+          phone,
+          detail: JSON.stringify({ action, newStatus, userId, reason: reason || '' }),
+          ip: request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || '',
+        });
+      } catch (e) {
+        console.error('[users PATCH] validator status audit non-fatal:', e);
+      }
     }
 
     return NextResponse.json({ success: true, message: `User ${action}d successfully` });
