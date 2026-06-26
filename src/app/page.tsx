@@ -94,10 +94,7 @@ const DEMO_PRICES: Record<string, PriceResult> = {
 
 const FEATURES = [
   { icon: "📡", title: "Real-Time Prices", desc: "Live GPS-verified prices from 282 markets across 36 states + FCT. Updated 3× daily by on-ground traders.", accent: "#00C853" },
-  { icon: "📊", title: "Bloomberg-Grade Analytics", desc: "Inflation tracking, heatmaps, arbitrage scanner, and market screeners at startup prices.", accent: "#FFB300" },
-  { icon: "🛡️", title: "Fraud-Proof Verification", desc: "GPS validation, community consensus, and ML anomaly detection. 95%+ confidence.", accent: "#00B0FF" },
   { icon: "🔔", title: "Smart Price Alerts", desc: "Set thresholds. Get WhatsApp notifications when prices cross your targets.", accent: "#FF5252" },
-  { icon: "📈", title: "Inflation Tracker", desc: "NaijaMarket Food Price Index vs NBS. Real inflation, not months later.", accent: "#E040FB" },
   { icon: "🌍", title: "Regional Comparison", desc: "Compare prices across states. Spot arbitrage opportunities before competitors.", accent: "#26A69A" },
 ];
 
@@ -693,9 +690,6 @@ function TestimonialsSection() {
           <h2 className="nm-section-title">
             Trusted by <span className="nm-g">Nigerian Traders</span>
           </h2>
-          <p className="nm-section-desc" style={{fontSize:"11px", marginTop:"8px"}}>
-            Illustrative quotes based on typical user outcomes. Real testimonials coming at launch.
-          </p>
         </div>
         <div className={`nm-testimonials${visible ? " nm-visible" : ""}`}>
           {TESTIMONIALS.map((t, i) => (
