@@ -10,9 +10,9 @@ import {
 } from 'lucide-react';
 
 const PieChart = dynamic(() => import('recharts').then(m => m.PieChart), { ssr: false });
-const Pie = dynamic(() => import('recharts').then(m => m.Pie), { ssr: false });
+const Pie = dynamic(() => import('recharts').then(m => m.Pie as unknown as React.ComponentType<any>), { ssr: false });
 const Cell = dynamic(() => import('recharts').then(m => m.Cell), { ssr: false });
-const Tooltip = dynamic(() => import('recharts').then(m => m.Tooltip), { ssr: false });
+const Tooltip = dynamic(() => import('recharts').then(m => m.Tooltip as React.ComponentType<any>), { ssr: false });
 const ResponsiveContainer = dynamic(() => import('recharts').then(m => m.ResponsiveContainer), { ssr: false });
 
 interface CommodityItem {
@@ -116,7 +116,7 @@ export default function CommoditiesPage() {
 
   const totalPages = Math.ceil(filtered.length / perPage);
   const paginated = filtered.slice((page - 1) * perPage, page * perPage);
-  const uniqueCats = [...new Set(items.map(i => i.category_id))].sort();
+  const uniqueCats = Array.from(new Set(items.map(i => i.category_id))).sort();
 
   const openAdd = () => {
     setEditItem(null);

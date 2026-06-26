@@ -10,13 +10,13 @@ import {
 } from 'lucide-react';
 
 const BarChart = dynamic(() => import('recharts').then(m => m.BarChart), { ssr: false });
-const Bar = dynamic(() => import('recharts').then(m => m.Bar), { ssr: false });
-const XAxis = dynamic(() => import('recharts').then(m => m.XAxis), { ssr: false });
-const YAxis = dynamic(() => import('recharts').then(m => m.YAxis), { ssr: false });
-const Tooltip = dynamic(() => import('recharts').then(m => m.Tooltip), { ssr: false });
+const Bar = dynamic(() => import('recharts').then(m => m.Bar as unknown as React.ComponentType<any>), { ssr: false });
+const XAxis = dynamic(() => import('recharts').then(m => m.XAxis as React.ComponentType<any>), { ssr: false });
+const YAxis = dynamic(() => import('recharts').then(m => m.YAxis as React.ComponentType<any>), { ssr: false });
+const Tooltip = dynamic(() => import('recharts').then(m => m.Tooltip as React.ComponentType<any>), { ssr: false });
 const ResponsiveContainer = dynamic(() => import('recharts').then(m => m.ResponsiveContainer), { ssr: false });
 const PieChart = dynamic(() => import('recharts').then(m => m.PieChart), { ssr: false });
-const Pie = dynamic(() => import('recharts').then(m => m.Pie), { ssr: false });
+const Pie = dynamic(() => import('recharts').then(m => m.Pie as unknown as React.ComponentType<any>), { ssr: false });
 const Cell = dynamic(() => import('recharts').then(m => m.Cell), { ssr: false });
 
 interface Market {
@@ -133,7 +133,7 @@ export default function MarketsPage() {
 
   const totalPages = Math.ceil(filtered.length / perPage);
   const paginated = filtered.slice((page - 1) * perPage, page * perPage);
-  const uniqueStates = [...new Set(markets.map(m => m.state))].sort();
+  const uniqueStates = Array.from(new Set(markets.map(m => m.state))).sort();
 
   const openAdd = () => {
     setEditMarket(null);
