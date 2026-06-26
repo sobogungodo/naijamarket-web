@@ -492,7 +492,7 @@ function Hero() {
 /* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• Features â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 function VideoSection() {
   return (
-    <section className="nm-section nm-section-accent" style={{padding: "60px 24px"}}>
+    <section className="nm-section nm-section-accent" style={{padding: "24px 24px 60px"}}>
       <div className="nm-section-inner" style={{maxWidth: "900px", margin: "0 auto"}}>
         <div className="nm-section-header" style={{marginBottom: "32px"}}>
           <span className="nm-section-tag">Platform Demo</span>
@@ -1126,7 +1126,7 @@ html { scroll-behavior: smooth; }
   align-items: center;
   position: relative;
   overflow: hidden;
-  padding: 145px 16px 48px;
+  padding: 145px 16px 24px;
 }
 .nm-hero-grid-bg {
   position: absolute;
