@@ -29,14 +29,43 @@ export async function GET(request: NextRequest) {
       ORDER BY price_date DESC
     `);
 
-    // 2. Today's slot detail from cache
-    const today = new Date().toISOString().slice(0, 10);
+    // 2. Today's slot detail — sourced LIVE from Daily_Prices so a stale
+    //    generation cache never zeroes out the dashboard. price_date is stored
+    //    in WAT (UTC+1), so compute "today" the same way.
+    const today = new Date(Date.now() + 60 * 60 * 1000).toISOString().slice(0, 10);
     const todayCache = history.find((h: any) =>
       new Date(h.price_date).toISOString().slice(0, 10) === today
     );
 
-    let todaySlots: any[] = [];
-    if (todayCache?.slot_detail) {
+    const todayLive = await query<any>(`
+      SELECT
+        time_slot,
+        MAX(time_slot_name) AS time_slot_name,
+        COUNT(*)            AS rows_generated,
+        MIN(generated_at)   AS started_at,
+        MAX(generated_at)   AS completed_at,
+        SUM(CASE WHEN data_source = 'REAL_ANCHORED' THEN 1 ELSE 0 END) AS real_anchored,
+        SUM(CASE WHEN data_source = 'SIM_TRACKED'   THEN 1 ELSE 0 END) AS sim_tracked,
+        SUM(CASE WHEN data_source = 'SIM_BASELINE'  THEN 1 ELSE 0 END) AS sim_baseline,
+        AVG(CAST(confidence_score AS FLOAT))                           AS avg_confidence
+      FROM dbo.Daily_Prices
+      WHERE price_date = CAST(DATEADD(HOUR, 1, GETUTCDATE()) AS DATE)
+      GROUP BY time_slot
+      ORDER BY time_slot
+    `);
+    let todaySlots: any[] = todayLive.map((r: any) => ({
+      time_slot: r.time_slot,
+      time_slot_name: r.time_slot_name,
+      rows_generated: r.rows_generated,
+      started_at: r.started_at,
+      completed_at: r.completed_at,
+      real_anchored: r.real_anchored,
+      sim_tracked: r.sim_tracked,
+      sim_baseline: r.sim_baseline,
+      avg_confidence: r.avg_confidence,
+    }));
+    // Defensive fallback to the cache if the live query returns nothing
+    if (todaySlots.length === 0 && todayCache?.slot_detail) {
       try { todaySlots = JSON.parse(todayCache.slot_detail); } catch { todaySlots = []; }
     }
 
@@ -93,7 +122,11 @@ export async function GET(request: NextRequest) {
     // 6. Pipeline health
     const expectedRows = 172020;
     const staleMinutes = summaryFreshness[0]?.minutes_stale || 9999;
-    const todayData = todayCache;
+    // Prefer LIVE today data (from Daily_Prices) over the possibly-stale cache.
+    const todayLiveTotal = todaySlots.reduce((a: number, s: any) => a + (s.rows_generated || 0), 0);
+    const todayData = todaySlots.length > 0
+      ? { total_rows: todayLiveTotal, slots_generated: todaySlots.length }
+      : todayCache;
 
     let pipelineStatus: 'healthy' | 'degraded' | 'critical' | 'unknown' = 'unknown';
     let statusReason = '';
