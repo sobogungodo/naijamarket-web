@@ -10,7 +10,7 @@ import { query } from '@/lib/db';
 //   Submissions, Validator_Votes, Validator_Notification_Queue
 // ============================================================
 
-export const dynamic = 'force-dynamic'
+export const revalidate = 60
 export async function GET(request: NextRequest) {
   try {
     const now = new Date().toISOString();

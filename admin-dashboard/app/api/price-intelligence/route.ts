@@ -14,6 +14,8 @@ import { query } from '@/lib/db';
 //   is_nbs_ref (computed bit), is_food (computed bit)
 // ============================================================
 
+export const revalidate = 60;
+
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const view      = searchParams.get('view') || 'overview';

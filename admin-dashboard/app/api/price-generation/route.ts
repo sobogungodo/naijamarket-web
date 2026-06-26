@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { query } from '@/lib/db';
 
-export const dynamic = 'force-dynamic';
+export const revalidate = 60;
 export const maxDuration = 30;
 
 export async function GET(request: NextRequest) {
