@@ -7,6 +7,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef, Suspense } from "react";
+import { useLang } from "@/lib/lang";
 import { useSearchParams } from "next/navigation";
 import { 
   Search, 
@@ -100,6 +101,8 @@ function PricesPageContent() {
   const urlCategory = searchParams.get("category") || "";
   const urlState = searchParams.get("state") || "";
   const urlMarket = searchParams.get("market") || "";
+
+  const { t } = useLang();
 
   // Data state
   const [prices, setPrices] = useState<PriceItem[]>([]);
@@ -421,7 +424,7 @@ function PricesPageContent() {
       {/* Page Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-display font-bold text-white">Latest Prices</h1>
+          <h1 className="text-2xl font-display font-bold text-white">{t("prices_title")}</h1>
           <p className="text-sm text-gray-500 mt-1 flex items-center gap-2">
             Commodity prices from {filterOptions.markets.length || 224} markets · Updated 3× daily
             {dataSource && dataSource !== "loading" && (
@@ -460,7 +463,7 @@ function PricesPageContent() {
             <Search className="w-4 h-4 text-gray-500" />
             <input
               type="text"
-              placeholder="Search items, markets, or categories..."
+              placeholder={t("page_search_ph")}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="flex-1 bg-transparent text-sm text-white placeholder:text-gray-500 outline-none"

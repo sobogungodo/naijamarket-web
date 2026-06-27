@@ -6,20 +6,22 @@
 import { usePathname } from 'next/navigation';
 import Link from 'next/link';
 import { Home, Search, Bell, User, TrendingUp } from 'lucide-react';
+import { useLang } from '@/lib/lang';
+import type { StringKey } from '@/lib/i18n';
 
 interface NavItem {
   href: string;
-  label: string;
+  labelKey: StringKey;
   icon: React.ComponentType<{ className?: string }>;
   badge?: number;
 }
 
 const navItems: NavItem[] = [
-  { href: '/', label: 'Home', icon: Home },
-  { href: '/prices', label: 'Prices', icon: Search },
-  { href: '/trends', label: 'Trends', icon: TrendingUp },
-  { href: '/alerts', label: 'Alerts', icon: Bell },
-  { href: '/account', label: 'Account', icon: User },
+  { href: '/', labelKey: 'nav_home', icon: Home },
+  { href: '/prices', labelKey: 'nav_prices', icon: Search },
+  { href: '/trends', labelKey: 'nav_trends', icon: TrendingUp },
+  { href: '/alerts', labelKey: 'nav_alerts', icon: Bell },
+  { href: '/account', labelKey: 'nav_account', icon: User },
 ];
 
 interface BottomNavigationProps {
@@ -28,6 +30,7 @@ interface BottomNavigationProps {
 
 export function BottomNavigation({ alertCount = 0 }: BottomNavigationProps) {
   const pathname = usePathname();
+  const { t } = useLang();
   
   // Haptic feedback on tap (if supported)
   const triggerHaptic = () => {
@@ -113,7 +116,7 @@ export function BottomNavigation({ alertCount = 0 }: BottomNavigationProps) {
                   ${active ? 'text-green-400' : ''}
                 `}
               >
-                {item.label}
+                {t(item.labelKey)}
               </span>
               
               {/* Active indicator dot */}

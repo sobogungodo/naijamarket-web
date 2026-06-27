@@ -9,6 +9,7 @@
 // ============================================================================
 
 import { useState, useEffect, useCallback } from "react";
+import { useLang } from "@/lib/lang";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import {
@@ -135,7 +136,8 @@ const getSeasonIcon = (month: number) => {
 export default function ForecastPage() {
   const { data: session, status } = useSession();
   const router = useRouter();
-  
+  const { t } = useLang();
+
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [forecastData, setForecastData] = useState<ForecastData | null>(null);
@@ -322,7 +324,7 @@ export default function ForecastPage() {
           <div>
             <div className="flex items-center gap-2 mb-1">
               <Sparkles className="w-6 h-6 text-amber-400" />
-              <h1 className="text-2xl md:text-3xl font-bold">Seasonal Forecast</h1>
+              <h1 className="text-2xl md:text-3xl font-bold">{t("forecast_title")}</h1>
               <span className="px-2 py-0.5 bg-amber-500/20 text-amber-400 text-xs rounded-full">
                 ECFC
               </span>

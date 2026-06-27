@@ -36,6 +36,9 @@ import {
   History,
 } from "lucide-react";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { LanguageToggle } from "@/components/LanguageToggle";
+import { useLang } from "@/lib/lang";
+import { navLabel } from "@/lib/i18n";
 
 // ============================================================================
 // TYPES
@@ -371,7 +374,8 @@ export default function DashboardLayout({
             </div>
 
             <div className="flex items-center gap-2">
-              <Link 
+              <LanguageToggle />
+              <Link
                 href="/dashboard/alerts"
                 className="p-2 text-gray-400 hover:text-white hover:bg-terminal-surface rounded-lg transition-colors"
               >
@@ -443,7 +447,9 @@ interface NavLinkProps {
 }
 
 function NavLink({ href, icon: Icon, label, currentPath, userTier, minTier, onLocked, onClose }: NavLinkProps) {
-  const isActive = currentPath === href || 
+  const { lang } = useLang();
+  const display = navLabel(href, lang, label);
+  const isActive = currentPath === href ||
     (href !== "/dashboard" && currentPath?.startsWith(href));
 
   const isLocked = minTier ? !hasTierAccess(userTier, minTier) : false;
@@ -456,7 +462,7 @@ function NavLink({ href, icon: Icon, label, currentPath, userTier, minTier, onLo
         title={`Requires ${tierBadgeLabel(minTier!)} subscription`}
       >
         <Icon className="w-4 h-4 text-gray-500" />
-        <span className="flex-1 text-gray-500">{label}</span>
+        <span className="flex-1 text-gray-500">{display}</span>
         <span className="flex items-center gap-1">
           <Lock className="w-3 h-3 text-gray-600" />
           <span className="px-1.5 py-0.5 text-2xs font-medium bg-gray-700/50 text-gray-500 rounded">
@@ -474,7 +480,7 @@ function NavLink({ href, icon: Icon, label, currentPath, userTier, minTier, onLo
       onClick={() => onClose?.()}
     >
       <Icon className="w-4 h-4" />
-      <span className="flex-1">{label}</span>
+      <span className="flex-1">{display}</span>
     </Link>
   );
 }
