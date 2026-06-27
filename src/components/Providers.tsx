@@ -6,6 +6,7 @@
 import { ReactNode, useEffect, useState } from 'react';
 import { SessionProvider } from 'next-auth/react';
 import { ThemeProvider } from 'next-themes';
+import { LanguageProvider } from '@/lib/lang';
 import { PWAInstallBanner } from './PWAInstallBanner';
 import { OfflineIndicator } from './OfflineIndicator';
 import { PWAUpdateBanner } from './PWAUpdateBanner';
@@ -121,25 +122,27 @@ export function Providers({ children }: ProvidersProps) {
 
   return (
     <SessionProvider>
-      <ThemeProvider
-        attribute="class"
-        defaultTheme="dark"
-        enableSystem={false}
-        disableTransitionOnChange
-      >
-        {/* Global PWA components */}
-        <OfflineIndicator position="top" />
-        <PWAInstallBanner delayMs={5000} position="bottom" />
-        <PWAUpdateBanner />
-        
-        {/* Main content */}
-        <div className="min-h-screen bg-gray-950">
-          {children}
-        </div>
-        
-        {/* Bottom navigation (mobile only) */}
-        <BottomNavigation alertCount={alertCount} />
-      </ThemeProvider>
+      <LanguageProvider>
+        <ThemeProvider
+          attribute="class"
+          defaultTheme="dark"
+          enableSystem={false}
+          disableTransitionOnChange
+        >
+          {/* Global PWA components */}
+          <OfflineIndicator position="top" />
+          <PWAInstallBanner delayMs={5000} position="bottom" />
+          <PWAUpdateBanner />
+
+          {/* Main content */}
+          <div className="min-h-screen bg-gray-950">
+            {children}
+          </div>
+
+          {/* Bottom navigation (mobile only) */}
+          <BottomNavigation alertCount={alertCount} />
+        </ThemeProvider>
+      </LanguageProvider>
     </SessionProvider>
   );
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useLang } from "@/lib/lang";
 import { useSession } from "next-auth/react";
 import { 
   BarChart3, 
@@ -567,6 +568,7 @@ function ComparisonResults({ result, onReset }: { result: ComparisonResult; onRe
 
 export default function ComparePage() {
   const { data: session } = useSession();
+  const { t } = useLang();
   
   // Step tracking
   const [step, setStep] = useState<"category" | "item" | "markets" | "results">("category");
@@ -732,7 +734,7 @@ export default function ComparePage() {
               <BarChart3 className="w-5 h-5 text-blue-400" />
             </div>
             <div>
-              <h1 className="text-2xl font-bold">Compare Markets</h1>
+              <h1 className="text-2xl font-bold">{t("compare_title")}</h1>
               <p className="text-gray-500 text-sm font-mono">COMP &lt;GO&gt;</p>
             </div>
           </div>

@@ -10,6 +10,7 @@ import {
   Zap
 } from "lucide-react";
 import Link from "next/link";
+import { useLang } from "@/lib/lang";
 
 // ============================================================================
 // DASHBOARD PAGE
@@ -47,6 +48,7 @@ function formatStatDate(iso: string | null): string {
 }
 
 export default function DashboardPage() {
+  const { t } = useLang();
   const [stats, setStats] = useState<DashboardStats | null>(null);
 
   useEffect(() => {
@@ -112,9 +114,9 @@ export default function DashboardPage() {
       {/* Page Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-display font-bold text-white">Market Snapshot</h1>
+          <h1 className="text-2xl font-display font-bold text-white">{t("dash_title")}</h1>
           <p className="text-sm text-gray-500 mt-1">
-            Last updated: {new Date().toLocaleString("en-NG", { 
+            {t("dash_last_updated")} {new Date().toLocaleString("en-NG", {
               dateStyle: "medium", 
               timeStyle: "short" 
             })}
@@ -195,7 +197,7 @@ export default function DashboardPage() {
           <div className="px-4 py-3 border-b border-terminal-border flex items-center justify-between">
             <h2 className="text-sm font-semibold text-white">Top Movers (24h)</h2>
             <Link href="/dashboard/prices" className="text-xs text-naija-green hover:underline">
-              View All
+              {t("common_view_all")}
             </Link>
           </div>
           <div className="divide-y divide-terminal-border/50">
@@ -258,9 +260,9 @@ export default function DashboardPage() {
         {/* Recent Activity */}
         <div className="bg-terminal-surface border border-terminal-border rounded-xl overflow-hidden">
           <div className="px-4 py-3 border-b border-terminal-border flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-white">Your Activity</h2>
+            <h2 className="text-sm font-semibold text-white">{t("dash_your_activity")}</h2>
             <Link href="/dashboard/watchlists" className="text-xs text-naija-green hover:underline">
-              Manage Watchlist
+              {t("dash_manage_watchlist")}
             </Link>
           </div>
           <div className="p-4">
@@ -287,7 +289,7 @@ export default function DashboardPage() {
 
             {/* Recent Queries */}
             <div>
-              <div className="text-2xs text-gray-500 mb-2">RECENT QUERIES</div>
+              <div className="text-2xs text-gray-500 mb-2">{t("dash_recent_queries")}</div>
               <div className="space-y-1.5">
                 {recentQueries.map((query, index) => (
                   <div key={index} className="flex items-center justify-between text-xs">
@@ -304,7 +306,7 @@ export default function DashboardPage() {
       {/* Price Table */}
       <div className="bg-terminal-surface border border-terminal-border rounded-xl overflow-hidden">
         <div className="px-4 py-3 border-b border-terminal-border flex items-center justify-between">
-          <h2 className="text-sm font-semibold text-white">Live Prices - Lagos Markets</h2>
+          <h2 className="text-sm font-semibold text-white">{t("dash_live_prices")}</h2>
           <div className="flex items-center gap-2">
             <select className="bg-terminal-bg border border-terminal-border text-xs text-gray-400 rounded px-2 py-1 outline-none focus:border-naija-green">
               <option>Lagos</option>
@@ -313,7 +315,7 @@ export default function DashboardPage() {
               <option>Port Harcourt</option>
             </select>
             <Link href="/dashboard/prices" className="text-xs text-naija-green hover:underline">
-              View All
+              {t("common_view_all")}
             </Link>
           </div>
         </div>

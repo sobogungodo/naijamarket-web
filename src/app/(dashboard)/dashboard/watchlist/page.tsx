@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useLang } from "@/lib/lang";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { 
@@ -341,7 +342,8 @@ function AddModal({
 export default function WatchlistPage() {
   const { data: session, status } = useSession();
   const router = useRouter();
-  
+  const { t } = useLang();
+
   const [watchlist, setWatchlist] = useState<WatchlistSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -506,7 +508,7 @@ export default function WatchlistPage() {
             <div className="w-20 h-20 bg-amber-500/20 rounded-full flex items-center justify-center mx-auto mb-6">
               <Star className="w-10 h-10 text-amber-400" />
             </div>
-            <h1 className="text-3xl font-bold mb-4">My Watchlist</h1>
+            <h1 className="text-3xl font-bold mb-4">{t("watchlist_title")}</h1>
             <p className="text-gray-400 mb-8 max-w-md mx-auto">
               Save your favorite markets and items for quick access. Sign in to get started.
             </p>
@@ -591,7 +593,7 @@ export default function WatchlistPage() {
                 <Star className="w-5 h-5 text-amber-400" />
               </div>
               <div>
-                <h1 className="text-2xl font-bold">My Watchlist</h1>
+                <h1 className="text-2xl font-bold">{t("watchlist_title")}</h1>
                 <p className="text-gray-500 text-sm font-mono">MOST &lt;GO&gt;</p>
               </div>
             </div>

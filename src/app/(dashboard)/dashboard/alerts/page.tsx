@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useLang } from "@/lib/lang";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import {
@@ -430,6 +431,7 @@ function CreateAlertModal({ isOpen, onClose, onSubmit, loading }: CreateAlertMod
 export default function AlertsPage() {
   const { data: session, status } = useSession();
   const router = useRouter();
+  const { t } = useLang();
 
   const [alerts, setAlerts] = useState<PriceAlert[]>([]);
   const [limits, setLimits] = useState<AlertLimits>({ maxAlerts: 0, canCreate: false, currentCount: 0, remaining: 0 });
@@ -613,10 +615,10 @@ export default function AlertsPage() {
           <div>
             <h1 className="text-2xl font-bold text-white flex items-center gap-2">
               <Bell className="w-7 h-7 text-amber-400" />
-              Price Alerts
+              {t("alerts_title")}
             </h1>
             <p className="text-gray-400 mt-1">
-              Get notified when prices reach your target levels
+              {t("alerts_subtitle")}
             </p>
           </div>
           <div className="flex items-center gap-4">
@@ -663,7 +665,7 @@ export default function AlertsPage() {
         {alerts.length === 0 ? (
           <div className="bg-[#1a1a1a] border border-gray-800 rounded-xl p-12 text-center">
             <Bell className="w-16 h-16 text-gray-600 mx-auto mb-4" />
-            <h3 className="text-xl text-white mb-2">No Price Alerts Yet</h3>
+            <h3 className="text-xl text-white mb-2">{t("alerts_none")}</h3>
             <p className="text-gray-400 mb-6">
               Create your first alert to get notified when prices change.
             </p>

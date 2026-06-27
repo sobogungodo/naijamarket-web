@@ -58,6 +58,7 @@ import {
   Users,
 } from "lucide-react";
 import TwoFactorAuth from "@/components/TwoFactorAuth";
+import { useLang } from "@/lib/lang";
 
 // ============================================================================
 // TYPE DEFINITIONS
@@ -269,7 +270,8 @@ function ToggleSwitch({ label, description, icon, checked, onChange, disabled }:
 export default function SettingsPage() {
   const { data: session, status } = useSession();
   const router = useRouter();
-  
+  const { lang, setLang } = useLang();
+
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [activeSection, setActiveSection] = useState<SettingsSection>("profile");
@@ -1237,15 +1239,16 @@ export default function SettingsPage() {
                       <div className="relative">
                         <Globe className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-500" />
                         <select
-                          value={settings.preferences.language}
-                          onChange={(e) => updateSetting("preferences", "language", e.target.value)}
+                          value={lang}
+                          onChange={(e) => {
+                            const v = e.target.value === "pcm" ? "pcm" : "en";
+                            setLang(v);
+                            updateSetting("preferences", "language", v);
+                          }}
                           className="w-full pl-10 pr-4 py-3 bg-[#252525] border border-gray-700 rounded-lg focus:outline-none focus:border-emerald-500"
                         >
                           <option value="en">English</option>
-                          <option value="pcm">Pidgin English</option>
-                          <option value="yo">Yoruba</option>
-                          <option value="ig">Igbo</option>
-                          <option value="ha">Hausa</option>
+                          <option value="pcm">Naija Pidgin</option>
                         </select>
                       </div>
                     </div>
