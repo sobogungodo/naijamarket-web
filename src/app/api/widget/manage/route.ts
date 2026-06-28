@@ -19,7 +19,7 @@ export async function GET() {
   try {
     const keys = await prisma.$queryRaw<any[]>`
       SELECT widget_id, widget_key, organization, contact_email, allowed_domains, layout, theme,
-             plan, monthly_fee, total_loads, today_loads, last_loaded_at, status, created_at, expires_at
+             [plan], monthly_fee, total_loads, today_loads, last_loaded_at, status, created_at, expires_at
       FROM Widget_Keys
       ORDER BY created_at DESC
     `;
@@ -53,7 +53,7 @@ export async function POST(request: NextRequest) {
 
     await prisma.$executeRaw`
       INSERT INTO Widget_Keys 
-        (widget_key, organization, contact_email, contact_phone, allowed_domains, layout, theme, plan, monthly_fee, default_items, default_market)
+        (widget_key, organization, contact_email, contact_phone, allowed_domains, layout, theme, [plan], monthly_fee, default_items, default_market)
       VALUES 
         (${widgetKey}, ${organization}, ${contact_email}, ${contact_phone || null}, 
          ${allowed_domains || "*"}, ${layout || "table"}, ${theme || "dark"}, 

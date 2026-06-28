@@ -28,7 +28,7 @@ export async function GET(request: NextRequest) {
     }
 
     const subs = await prisma.$queryRaw<any[]>`
-      SELECT fmcg_id, company_name, contact_name, contact_email, alert_type, plan, 
+      SELECT fmcg_id, company_name, contact_name, contact_email, alert_type, [plan],
              delivery_method, total_alerts_sent, last_alert_at, status, created_at
       FROM FMCG_Alert_Subscriptions
       ORDER BY created_at DESC
@@ -65,7 +65,7 @@ export async function POST(request: NextRequest) {
     await prisma.$executeRaw`
       INSERT INTO FMCG_Alert_Subscriptions 
         (company_name, contact_name, contact_email, contact_phone, tracked_items, tracked_markets,
-         alert_type, delivery_method, whatsapp_number, plan, monthly_fee, price_change_threshold)
+         alert_type, delivery_method, whatsapp_number, [plan], monthly_fee, price_change_threshold)
       VALUES 
         (${company_name}, ${contact_name}, ${contact_email}, ${contact_phone || null}, ${itemsJSON}, ${marketsJSON},
          ${alert_type || "DAILY"}, ${delivery_method || "EMAIL"}, ${whatsapp_number || null}, ${selectedPlan}, ${fee}, ${price_change_threshold || 5.0})
