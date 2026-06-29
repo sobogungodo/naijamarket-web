@@ -14,6 +14,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { useTheme } from "next-themes";
 import { Sun, Moon, Monitor } from "lucide-react";
 
@@ -33,13 +34,13 @@ export default function PublicNavbar() {
 
         {/* ── Logo ─────────────────────────────────────────────────────── */}
         <Link href="/" className="flex items-center gap-2 flex-shrink-0">
-          <div className="w-8 h-8 bg-gradient-to-br from-emerald-500 to-emerald-700 rounded-lg
-                          flex items-center justify-center shadow-sm">
-            <span className="text-white font-bold text-xs">NM</span>
-          </div>
-          <span className="font-bold text-sm text-gray-900 dark:text-white">
-            NaijaMarket<span className="text-emerald-500 dark:text-emerald-400">Intel</span>
-          </span>
+          <Image
+            src="/logo.png"
+            alt="NaijaMarket Intel"
+            width={40}
+            height={40}
+            className="rounded-full"
+          />
         </Link>
 
         {/* ── Nav Links ────────────────────────────────────────────────── */}

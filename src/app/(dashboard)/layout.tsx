@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
 import { signOut, useSession } from "next-auth/react";
 import {
@@ -235,12 +236,13 @@ export default function DashboardLayout({
         {/* Logo */}
         <div className="sidebar-logo">
           <Link href="/dashboard" className="flex items-center gap-2">
-            <div className="w-8 h-8 bg-gradient-to-br from-naija-green to-naija-gold rounded-lg flex items-center justify-center">
-              <span className="text-terminal-bg font-bold text-sm">NM</span>
-            </div>
-            <span className="font-display font-bold" style={{ color: "var(--text-primary)" }}>
-              NaijaMarket<span className="text-naija-green">Intel</span>
-            </span>
+            <Image
+              src="/logo.png"
+              alt="NaijaMarket Intel"
+              width={40}
+              height={40}
+              className="rounded-full"
+            />
           </Link>
         </div>
 
