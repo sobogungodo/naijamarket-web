@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, FormEvent } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import WhatsAppCTA from '@/components/WhatsAppCTA'
 
@@ -186,10 +187,7 @@ function Nav() {
       <Ticker />
       <div className="nm-nav-inner">
         <Link href="/" className="nm-logo">
-          <div className="nm-logo-icon">NM</div>
-          <span className="nm-logo-text">
-            NaijaMarket<span className="nm-g">Intel</span>
-          </span>
+          <Image src="/logo.png" alt="NaijaMarket Intel" width={40} height={40} className="rounded-full" />
         </Link>
 
         <div className="nm-nav-links">
@@ -785,10 +783,7 @@ function Footer() {
       <div className="nm-footer-inner">
         <div className="nm-footer-brand">
           <div className="nm-logo" style={{ marginBottom: 16 }}>
-            <div className="nm-logo-icon">NM</div>
-            <span className="nm-logo-text">
-              NaijaMarket<span className="nm-g">Intel</span>
-            </span>
+            <Image src="/logo.png" alt="NaijaMarket Intel" width={40} height={40} className="rounded-full" />
           </div>
           <p className="nm-footer-tagline">
             Real-time, GPS-verified commodity price intelligence for Nigeria.
