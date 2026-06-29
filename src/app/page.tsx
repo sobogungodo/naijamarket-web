@@ -187,7 +187,7 @@ function Nav() {
       <Ticker />
       <div className="nm-nav-inner">
         <Link href="/" className="nm-logo">
-          <Image src="/logo.png" alt="NaijaMarket Intel" width={40} height={40} className="rounded-full" />
+          <Image src="/logo.png" alt="NaijaMarket Intel" width={100} height={100} className="rounded-full" />
         </Link>
 
         <div className="nm-nav-links">
@@ -783,7 +783,7 @@ function Footer() {
       <div className="nm-footer-inner">
         <div className="nm-footer-brand">
           <div className="nm-logo" style={{ marginBottom: 16 }}>
-            <Image src="/logo.png" alt="NaijaMarket Intel" width={40} height={40} className="rounded-full" />
+            <Image src="/logo.png" alt="NaijaMarket Intel" width={100} height={100} className="rounded-full" />
           </div>
           <p className="nm-footer-tagline">
             Real-time, GPS-verified commodity price intelligence for Nigeria.

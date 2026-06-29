@@ -31,8 +31,8 @@ export default function BlogNavbar() {
           <Image
             src="/logo.png"
             alt="NaijaMarket Intel"
-            width={40}
-            height={40}
+            width={48}
+            height={48}
             className="rounded-full"
           />
         </Link>
