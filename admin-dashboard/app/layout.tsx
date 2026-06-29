@@ -8,7 +8,12 @@ export const metadata: Metadata = {
   title: 'NaijaMarket Intel | Admin Dashboard',
   description: 'Operations Control Center for NaijaMarket Intel - The Bloomberg of Nigerian Commodities',
   icons: {
-    icon: '/favicon.ico',
+    icon: [
+      { url: '/favicon.ico', sizes: '32x32' },
+      { url: '/favicon-16x16.png', sizes: '16x16' },
+      { url: '/favicon-32x32.png', sizes: '32x32' },
+    ],
+    shortcut: '/favicon.ico',
   },
 };
 

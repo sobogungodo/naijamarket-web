@@ -2,6 +2,7 @@
 
 import React from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
 import {
@@ -211,9 +212,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
         <div className="h-16 flex items-center justify-between px-4 border-b border-dash-border">
           {!collapsed && (
             <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-naija-green-500 to-naija-gold-500 flex items-center justify-center">
-                <TrendingUp className="w-5 h-5 text-white" />
-              </div>
+              <Image src="/logo.png" alt="NaijaMarket Intel" width={36} height={36} className="rounded-full flex-shrink-0" />
               <div className="flex flex-col">
                 <span className="font-bold text-dash-text text-sm">NaijaMarket</span>
                 <span className="text-[10px] text-naija-green-500 font-medium tracking-wider">ADMIN</span>
@@ -221,9 +220,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
             </div>
           )}
           {collapsed && (
-            <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-naija-green-500 to-naija-gold-500 flex items-center justify-center mx-auto">
-              <TrendingUp className="w-5 h-5 text-white" />
-            </div>
+            <Image src="/logo.png" alt="NaijaMarket Intel" width={40} height={40} className="rounded-full mx-auto" />
           )}
         </div>
 

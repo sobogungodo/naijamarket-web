@@ -2,11 +2,11 @@
 
 import React, { useState } from 'react';
 import { signIn } from 'next-auth/react';
+import Image from 'next/image';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Button, Input, Alert } from '@/components/ui';
-import { 
-  TrendingUp, 
-  Mail, 
+import {
+  Mail,
   Lock, 
   AlertCircle,
   Shield,
@@ -67,9 +67,7 @@ export default function LoginPage() {
         <div className="relative z-10 flex flex-col justify-center p-12">
           {/* Logo */}
           <div className="flex items-center gap-3 mb-8">
-            <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-naija-green-500 to-naija-gold-500 flex items-center justify-center shadow-lg glow-green">
-              <TrendingUp className="w-8 h-8 text-white" />
-            </div>
+            <Image src="/logo.png" alt="NaijaMarket Intel" width={56} height={56} className="rounded-full" />
             <div>
               <h1 className="text-2xl font-bold text-white">NaijaMarket Intel</h1>
               <p className="text-naija-green-400 text-sm font-medium tracking-wider">ADMIN DASHBOARD</p>
@@ -121,9 +119,7 @@ export default function LoginPage() {
         <div className="w-full max-w-md">
           {/* Mobile logo */}
           <div className="lg:hidden flex items-center gap-3 mb-8 justify-center">
-            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-naija-green-500 to-naija-gold-500 flex items-center justify-center">
-              <TrendingUp className="w-7 h-7 text-white" />
-            </div>
+            <Image src="/logo.png" alt="NaijaMarket Intel" width={48} height={48} className="rounded-full" />
             <div>
               <h1 className="text-xl font-bold text-white">NaijaMarket Intel</h1>
               <p className="text-naija-green-400 text-xs font-medium">ADMIN DASHBOARD</p>
