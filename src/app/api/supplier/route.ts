@@ -36,7 +36,7 @@ export const dynamic = "force-dynamic";
 
 const SQL_CONFIG: sql.config = {
   server:   process.env.AZURE_SQL_SERVER   || process.env.DATABASE_SERVER   || "naijafood.database.windows.net",
-  database: process.env.AZURE_SQL_DATABASE || process.env.DATABASE_NAME     || "naijafoodmarket",
+  database: process.env.AZURE_SQL_DATABASE || process.env.DATABASE_NAME     || "naijafoodmarket-live",
   user:     process.env.AZURE_SQL_USER     || process.env.DATABASE_USER     || "",
   password: process.env.AZURE_SQL_PASSWORD || process.env.DATABASE_PASSWORD || "",
   options:  { encrypt: true, trustServerCertificate: false },
