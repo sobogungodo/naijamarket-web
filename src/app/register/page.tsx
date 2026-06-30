@@ -25,13 +25,8 @@ import Link from "next/link";
 
 const COUNTRY_CODES = [
   { code: "+234", country: "Nigeria", flag: "🇳🇬" },
-  { code: "+233", country: "Ghana", flag: "🇬🇭" },
-  { code: "+254", country: "Kenya", flag: "🇰🇪" },
-  { code: "+27", country: "South Africa", flag: "🇿🇦" },
-  { code: "+1", country: "USA/Canada", flag: "🇺🇸" },
-  { code: "+44", country: "UK", flag: "🇬🇧" },
-  { code: "+32", country: "Belgium", flag: "🇧🇪" },
   { code: "+358", country: "Finland", flag: "🇫🇮" },
+  { code: "+32", country: "Belgium", flag: "🇧🇪" },
 ];
 
 const SUBSCRIPTION_TIERS = [

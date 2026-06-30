@@ -3,54 +3,18 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 
-// 38 Countries: EU (22) + West Africa (16)
+// Country set — Nigeria (default) + Finland/Belgium for testing/diaspora.
+// Matches the mobile app and other web surfaces (NG/FI/BE).
 const COUNTRIES = [
-  // West Africa (Primary Markets)
   { code: 'NG', name: 'Nigeria', dialCode: '+234', flag: '🇳🇬' },
-  { code: 'GH', name: 'Ghana', dialCode: '+233', flag: '🇬🇭' },
-  { code: 'CI', name: 'Ivory Coast', dialCode: '+225', flag: '🇨🇮' },
-  { code: 'SN', name: 'Senegal', dialCode: '+221', flag: '🇸🇳' },
-  { code: 'TG', name: 'Togo', dialCode: '+228', flag: '🇹🇬' },
-  { code: 'BJ', name: 'Benin', dialCode: '+229', flag: '🇧🇯' },
-  { code: 'BF', name: 'Burkina Faso', dialCode: '+226', flag: '🇧🇫' },
-  { code: 'NE', name: 'Niger', dialCode: '+227', flag: '🇳🇪' },
-  { code: 'ML', name: 'Mali', dialCode: '+223', flag: '🇲🇱' },
-  { code: 'GN', name: 'Guinea', dialCode: '+224', flag: '🇬🇳' },
-  { code: 'SL', name: 'Sierra Leone', dialCode: '+232', flag: '🇸🇱' },
-  { code: 'LR', name: 'Liberia', dialCode: '+231', flag: '🇱🇷' },
-  { code: 'GM', name: 'Gambia', dialCode: '+220', flag: '🇬🇲' },
-  { code: 'GW', name: 'Guinea-Bissau', dialCode: '+245', flag: '🇬🇼' },
-  { code: 'CV', name: 'Cape Verde', dialCode: '+238', flag: '🇨🇻' },
-  { code: 'MR', name: 'Mauritania', dialCode: '+222', flag: '🇲🇷' },
-  // European Union (Testing/Diaspora)
   { code: 'FI', name: 'Finland', dialCode: '+358', flag: '🇫🇮' },
-  { code: 'GB', name: 'United Kingdom', dialCode: '+44', flag: '🇬🇧' },
-  { code: 'DE', name: 'Germany', dialCode: '+49', flag: '🇩🇪' },
-  { code: 'FR', name: 'France', dialCode: '+33', flag: '🇫🇷' },
-  { code: 'IT', name: 'Italy', dialCode: '+39', flag: '🇮🇹' },
-  { code: 'ES', name: 'Spain', dialCode: '+34', flag: '🇪🇸' },
-  { code: 'NL', name: 'Netherlands', dialCode: '+31', flag: '🇳🇱' },
   { code: 'BE', name: 'Belgium', dialCode: '+32', flag: '🇧🇪' },
-  { code: 'AT', name: 'Austria', dialCode: '+43', flag: '🇦🇹' },
-  { code: 'PL', name: 'Poland', dialCode: '+48', flag: '🇵🇱' },
-  { code: 'SE', name: 'Sweden', dialCode: '+46', flag: '🇸🇪' },
-  { code: 'DK', name: 'Denmark', dialCode: '+45', flag: '🇩🇰' },
-  { code: 'NO', name: 'Norway', dialCode: '+47', flag: '🇳🇴' },
-  { code: 'PT', name: 'Portugal', dialCode: '+351', flag: '🇵🇹' },
-  { code: 'IE', name: 'Ireland', dialCode: '+353', flag: '🇮🇪' },
-  { code: 'GR', name: 'Greece', dialCode: '+30', flag: '🇬🇷' },
-  { code: 'CZ', name: 'Czech Republic', dialCode: '+420', flag: '🇨🇿' },
-  { code: 'HU', name: 'Hungary', dialCode: '+36', flag: '🇭🇺' },
-  { code: 'RO', name: 'Romania', dialCode: '+40', flag: '🇷🇴' },
-  { code: 'BG', name: 'Bulgaria', dialCode: '+359', flag: '🇧🇬' },
-  { code: 'HR', name: 'Croatia', dialCode: '+385', flag: '🇭🇷' },
-  { code: 'SI', name: 'Slovenia', dialCode: '+386', flag: '🇸🇮' },
 ];
 
 export default function TraderLoginPage() {
   const router = useRouter();
   const [step, setStep] = useState<'phone' | 'otp'>('phone');
-  const [selectedCountry, setSelectedCountry] = useState(COUNTRIES[16]); // Finland for testing
+  const [selectedCountry, setSelectedCountry] = useState(COUNTRIES[0]); // Nigeria (default)
   const [phoneNumber, setPhoneNumber] = useState('');
   const [otp, setOtp] = useState('');
   const [traderName, setTraderName] = useState('');
