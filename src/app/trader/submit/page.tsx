@@ -163,8 +163,8 @@ export default function TraderSubmitPage() {
           <h2 className="text-2xl font-bold text-white mb-2">Price Submitted!</h2>
           <p className="text-gray-400 mb-6">
             {profile && profile.reputation >= 80 
-              ? 'Instantly approved! ₦20 added to your balance.'
-              : 'Sent for validation. You\'ll earn ₦20 once approved.'
+              ? 'Instantly approved! ₦50 added to your balance.'
+              : 'Sent for validation. You\'ll earn ₦50 once approved.'
             }
           </p>
           <div className="space-y-3">

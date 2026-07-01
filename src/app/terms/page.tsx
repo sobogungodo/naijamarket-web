@@ -75,7 +75,7 @@ export default function TermsPage() {
           <li>Accept that fraudulent submissions will result in reputation penalties and potential account termination</li>
         </ul>
         <p>
-          <strong>Rewards:</strong> Approved submissions earn ₦20 in airtime credits.
+          <strong>Rewards:</strong> Approved submissions earn ₦50 in airtime credits.
           Minimum payout balance is ₦500. Payouts are processed weekly on Fridays.
         </p>
       </div>
