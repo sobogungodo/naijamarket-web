@@ -76,7 +76,7 @@ export default function TermsPage() {
         </ul>
         <p>
           <strong>Rewards:</strong> Approved submissions earn ₦50 in airtime credits.
-          Minimum payout balance is ₦500. Payouts are processed weekly on Fridays.
+          Minimum payout balance is ₦5,000. Payouts are made via free monthly auto-payout on the last day of each month, with early transfer available every 15 days if your balance is ≥ ₦5,000 (you pay the NIP fee).
         </p>
       </div>
 
