@@ -34,7 +34,7 @@ import { NextRequest, NextResponse } from "next/server";
 import sql from "mssql";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
-import { checkAndDecrementQuery } from "@/lib/query-gate";
+import { checkQuery, logQuery } from "@/lib/query-gate";
 
 // ============================================================================
 // FOOD-ONLY CATEGORY MAP (15 categories)
@@ -538,7 +538,7 @@ export async function GET(request: NextRequest) {
         const userId = (session?.user as any)?.id;
         const tier = (session?.user as any)?.tier || "FREE";
         if (userId) {
-          const gate = await checkAndDecrementQuery(userId, tier);
+          const gate = await checkQuery(userId, tier);
           if (!gate.allowed) {
             return NextResponse.json(
               {
@@ -550,7 +550,10 @@ export async function GET(request: NextRequest) {
               { status: 429 }
             );
           }
-          if (gate.remaining >= 0) gateRemaining = gate.remaining;
+          // Count this query across ALL tiers (paid daily caps + Query_Log row).
+          // Gate-time logging preserves the prior FREE timing; best-effort (never throws).
+          await logQuery(userId, tier, "WEB", { item_name: search, market_name: market });
+          if (gate.remaining >= 0) gateRemaining = Math.max(0, gate.remaining - 1);
         }
       } catch (gateErr: any) {
         // Fail open — never block price checks on a gate/session error.

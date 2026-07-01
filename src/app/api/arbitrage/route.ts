@@ -25,7 +25,7 @@ import { NextRequest, NextResponse } from "next/server";
 import sql from "mssql";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
-import { checkAndDecrementQuery } from "@/lib/query-gate";
+import { checkQuery, logQuery } from "@/lib/query-gate";
 
 // ============================================================================
 // MSSQL CONNECTION POOL (single pool — temp tables persist within a request)
@@ -565,13 +565,14 @@ export async function GET(request: NextRequest) {
         const userId = (session?.user as any)?.id;
         const sTier = (session?.user as any)?.tier || "FREE";
         if (userId) {
-          const gate = await checkAndDecrementQuery(userId, sTier);
+          const gate = await checkQuery(userId, sTier);
           if (!gate.allowed) {
             return NextResponse.json(
               { success: false, error: "query_limit_reached", message: gate.upsell, remaining: 0, upgrade_url: "/subscribe" },
               { status: 429 }
             );
           }
+          await logQuery(userId, sTier, "WEB", { item_name: item });
         }
       } catch (gateErr: any) {
         console.error("[arbitrage] query-gate error (fail-open):", gateErr?.message);

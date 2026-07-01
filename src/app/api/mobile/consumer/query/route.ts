@@ -1,11 +1,13 @@
 // src/app/api/mobile/consumer/query/route.ts
 // NaijaMarket Intel — Consumer mobile query gate (Bearer JWT auth).
 // The app calls this BEFORE each price search. Shares the single source of
-// truth (Consumers.queries_remaining) with the web gate via checkAndDecrementQuery.
+// truth with the web gate: FREE = Consumers.queries_remaining (5/week), paid
+// tiers = daily Query_Log counts. Gate-time check + log (Option A) — self-
+// contained, no post-success app call required.
 
 import { NextRequest, NextResponse } from "next/server";
 import { jwtVerify } from "jose";
-import { checkAndDecrementQuery } from "@/lib/query-gate";
+import { checkQuery, logQuery } from "@/lib/query-gate";
 
 export const dynamic = "force-dynamic";
 
@@ -30,16 +32,20 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: false, error: "UNAUTHORIZED" }, { status: 401 });
   }
 
-  const gate = await checkAndDecrementQuery(
-    consumer.consumer_id,
-    consumer.subscription_tier || "FREE"
-  );
+  const tier = consumer.subscription_tier || "FREE";
+  const gate = await checkQuery(consumer.consumer_id, tier);
+
+  // Count this query across ALL tiers (paid daily caps + Query_Log row).
+  // Only when allowed; best-effort (never throws). Gate-time to match web.
+  if (gate.allowed) {
+    await logQuery(consumer.consumer_id, tier, "MOBILE");
+  }
 
   return NextResponse.json(
     {
       success: true,
       allowed: gate.allowed,
-      remaining: gate.remaining,
+      remaining: gate.allowed && gate.remaining >= 0 ? Math.max(0, gate.remaining - 1) : gate.remaining,
       ...(gate.allowed ? {} : { upsell: gate.upsell, upgrade_url: "/subscribe" }),
     },
     {
