@@ -964,7 +964,7 @@ html { scroll-behavior: smooth; }
 
 /* ── Base ── */
 .nm-landing {
-  min-height: 100vh;
+  min-height: 100dvh;
   background: var(--nm-bg);
   color: var(--nm-text);
   font-family: var(--nm-font);
@@ -1002,7 +1002,7 @@ html { scroll-behavior: smooth; }
 
 /* ── Ticker ── */
 .nm-tk {
-  background: rgba(0, 0, 0, 0.5);
+  background: var(--nm-bg2);
   border-bottom: 1px solid rgba(0, 200, 83, 0.1);
   height: 34px;
   display: flex;
@@ -1185,7 +1185,7 @@ html { scroll-behavior: smooth; }
 
 /* ── Hero ── */
 .nm-hero {
-  min-height: 100vh;
+  min-height: 100dvh;
   display: flex;
   align-items: center;
   position: relative;
@@ -1511,7 +1511,7 @@ html { scroll-behavior: smooth; }
 /* ── Trust Bar (inside fixed nav, below logo row) ── */
 .nm-trust-bar {
   border-top: 1px solid rgba(0, 200, 83, 0.12);
-  background: rgba(0, 0, 0, 0.35);
+  background: var(--nm-bg2);
   padding: 7px 16px;
 }
 .nm-trust-bar-inner {
@@ -1874,7 +1874,7 @@ html { scroll-behavior: smooth; }
 .nm-cta-divider-line {
   flex: 1;
   height: 1px;
-  background: rgba(255,255,255,0.08);
+  background: var(--nm-border);
 }
 .nm-cta-divider-text {
   font-size: 11px;
@@ -1894,8 +1894,8 @@ html { scroll-behavior: smooth; }
 .nm-appdl-grid { display: flex; flex-wrap: wrap; justify-content: center; gap: 28px; }
 .nm-appdl-card {
   display: flex; flex-direction: column; align-items: center; gap: 16px;
-  background: rgba(255,255,255,0.03);
-  border: 1px solid rgba(255,255,255,0.08);
+  background: var(--nm-card);
+  border: 1px solid var(--nm-border);
   border-radius: 20px; padding: 28px 32px;
 }
 .nm-appdl-card-title { font-size: 14px; font-weight: 600; color: var(--nm-text3); }
