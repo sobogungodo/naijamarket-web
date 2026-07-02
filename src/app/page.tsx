@@ -801,7 +801,6 @@ function Footer() {
             Real-time, GPS-verified commodity price intelligence for Nigeria.
             The Bloomberg of Nigerian Commodities.
           </p>
-
         </div>
         {columns.map((col, i) => (
           <div key={i} className="nm-footer-col">
@@ -813,6 +812,19 @@ function Footer() {
             ))}
           </div>
         ))}
+        <div className="nm-footer-apps">
+          <div className="nm-footer-apps-label">Get the app — scan to download</div>
+          <div className="nm-footer-apps-row">
+            <a href={CONSUMER_APP_URL} target="_blank" rel="noopener noreferrer" className="nm-footer-app">
+              <Image src="/qr-naijamarket-intel.png" alt="NaijaMarket Intel app QR code" width={76} height={76} className="nm-footer-qr" />
+              <span>Buyers &amp; Businesses</span>
+            </a>
+            <a href={REPORTER_APP_URL} target="_blank" rel="noopener noreferrer" className="nm-footer-app">
+              <Image src="/qr-naijamarket-reporter.png" alt="NaijaMarket Reporter app QR code" width={76} height={76} className="nm-footer-qr" />
+              <span>Price Reporters</span>
+            </a>
+          </div>
+        </div>
       </div>
       <div className="nm-footer-bottom">
         <span>© 2026 NaijaMarket Intel by Giggababytes Oy</span>
@@ -826,31 +838,6 @@ function Footer() {
 // MAIN PAGE COMPONENT
 // ---------------------------------------------------------------------------
 
-function AppDownloadSection() {
-  return (
-    <section className="nm-section nm-appdl">
-      <h2 className="nm-appdl-title">Get the <span className="nm-g">app</span></h2>
-      <p className="nm-appdl-desc">Live prices on the go — scan to download.</p>
-      <div className="nm-appdl-grid">
-        <div className="nm-appdl-card">
-          <div className="nm-appdl-card-title">For Buyers &amp; Businesses</div>
-          <Image src="/qr-naijamarket-intel.png" alt="NaijaMarket Intel app QR code" width={160} height={160} className="nm-appdl-qr" />
-          <a href={CONSUMER_APP_URL} target="_blank" rel="noopener noreferrer">
-            <Image src="/google-play-badge.png" alt="Get NaijaMarket Intel on Google Play" width={180} height={54} className="nm-appdl-badge" />
-          </a>
-        </div>
-        <div className="nm-appdl-card">
-          <div className="nm-appdl-card-title">For Price Reporters</div>
-          <Image src="/qr-naijamarket-reporter.png" alt="NaijaMarket Reporter app QR code" width={160} height={160} className="nm-appdl-qr" />
-          <a href={REPORTER_APP_URL} target="_blank" rel="noopener noreferrer">
-            <Image src="/google-play-badge.png" alt="Get NaijaMarket Reporter on Google Play" width={180} height={54} className="nm-appdl-badge" />
-          </a>
-        </div>
-      </div>
-    </section>
-  );
-}
-
 export default function LandingPage() {
   return (
     <>
@@ -863,7 +850,6 @@ export default function LandingPage() {
         {/* <WaitlistSection /> — hidden; /api/waitlist route kept live for any direct submissions */}
         <PricingSection />
         <TestimonialsSection />
-        <AppDownloadSection />
         <Footer />
       </div>
       <WhatsAppCTA />

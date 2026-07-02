@@ -911,6 +911,35 @@ html { scroll-behavior: smooth; }
   line-height: 1.6;
   max-width: 280px;
 }
+/* Compact app-download — right-hand footer column, top-aligned with the logo */
+.nm-footer-apps { margin-top: 0; }
+.nm-footer-apps-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--nm-text3);
+  margin-bottom: 10px;
+}
+.nm-footer-apps-row { display: flex; gap: 16px; }
+.nm-footer-app {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  text-decoration: none;
+  transition: transform 0.2s ease;
+}
+.nm-footer-app:hover { transform: translateY(-2px); }
+.nm-footer-app span {
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--nm-text3);
+}
+.nm-footer-qr {
+  border-radius: 8px;
+  background: #fff;
+  padding: 5px;
+  display: block;
+}
 .nm-footer-col-title {
   font-size: 11px;
   font-weight: 700;
@@ -1008,7 +1037,9 @@ html { scroll-behavior: smooth; }
   .nm-step { flex: 1; }
   .nm-pricing-grid { grid-template-columns: repeat(3, 1fr); }
   .nm-testimonials { grid-template-columns: repeat(3, 1fr); }
-  .nm-footer-inner { grid-template-columns: 2fr 1fr 1fr 1fr; }
+  .nm-footer-inner { grid-template-columns: 2fr 1fr 1fr 1fr auto; }
+  .nm-footer-apps { justify-self: end; }
+  .nm-footer-apps-label { text-align: right; }
   .nm-footer-bottom { flex-direction: row; justify-content: space-between; }
   .nm-hero-stats { gap: 32px; grid-template-columns: repeat(4, auto); }
   .nm-stat-val { font-size: 26px; }
