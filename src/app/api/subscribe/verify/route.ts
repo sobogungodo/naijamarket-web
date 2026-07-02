@@ -393,7 +393,14 @@ async function upgradeSubscription(
     // Ledger entry in Subscription_Transactions — non-blocking; a failure here
     // must not undo the activation already applied above. Mirrors the columns
     // written by the Paystack webhook; payment_channel = 'WEB' for this path.
-    try {
+    // Idempotency: verify can run more than once per payment (deep-link return +
+    // foreground refresh) — skip if this payment_reference already has a ledger row.
+    const txCheck = await pool.request()
+      .input("payment_reference", sql.NVarChar(50), reference)
+      .query(`SELECT COUNT(*) AS cnt FROM Subscription_Transactions WHERE payment_reference = @payment_reference`);
+    if ((txCheck.recordset?.[0]?.cnt ?? 0) > 0) {
+      console.log(`[subscribe/verify] Subscription_Transactions ref ${reference} already recorded — skipping ledger write`);
+    } else try {
       const transactionId = "TXN-" + Date.now().toString(36).toUpperCase() + "-" +
         Math.random().toString(36).substring(2, 8).toUpperCase();
       await pool.request()
