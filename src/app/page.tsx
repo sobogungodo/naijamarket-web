@@ -534,7 +534,7 @@ function Hero() {
 /* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• Features â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 function VideoSection() {
   return (
-    <section className="nm-section nm-section-accent" style={{padding: "24px 24px 60px"}}>
+    <section className="nm-section nm-section-accent" style={{paddingTop: "24px"}}>
       <div className="nm-section-inner" style={{maxWidth: "900px", margin: "0 auto"}}>
         <div className="nm-section-header" style={{marginBottom: "32px"}}>
           <span className="nm-section-tag">Platform Demo</span>
