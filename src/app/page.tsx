@@ -757,38 +757,6 @@ function TestimonialsSection() {
   );
 }
 
-/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• CTA â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
-function CTASection() {
-  return (
-    <section className="nm-section">
-      <div className="nm-cta-box">
-        <div className="nm-cta-glow-1" />
-        <div className="nm-cta-glow-2" />
-        <h2 className="nm-cta-title">
-          Stop Guessing.<br />
-          <span className="nm-g">Start Knowing.</span>
-        </h2>
-        <p className="nm-cta-desc">
-          Join thousands of Nigerian traders and businesses making smarter
-          decisions with verified market data.
-        </p>
-        <div className="nm-cta-buttons">
-          <Link href="/register" className="nm-btn-green nm-btn-lg">
-            Get Started Free →
-          </Link>
-          <a
-            href="https://wa.me/2349131095009?text=menu"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="nm-btn-outline nm-btn-lg"
-          >
-            <Icon name="whatsapp" size={18} /> Chat on WhatsApp
-          </a>
-        </div>
-      </div>
-    </section>
-  );
-}
 
 /* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• Footer â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 function Footer() {
@@ -895,7 +863,6 @@ export default function LandingPage() {
         {/* <WaitlistSection /> — hidden; /api/waitlist route kept live for any direct submissions */}
         <PricingSection />
         <TestimonialsSection />
-        <CTASection />
         <AppDownloadSection />
         <Footer />
       </div>
