@@ -97,10 +97,10 @@ const DEMO_PRICES: Record<string, PriceResult> = {
   },
 };
 
-const FEATURES = [
-  { icon: "📡", title: "Real-Time Prices", desc: "Live GPS-verified prices from 282 markets across 36 states + FCT. Updated 3× daily by on-ground traders.", accent: "#00C853" },
-  { icon: "🔔", title: "Smart Price Alerts", desc: "Set thresholds. Get WhatsApp notifications when prices cross your targets.", accent: "#FF5252" },
-  { icon: "🌍", title: "Regional Comparison", desc: "Compare prices across states. Spot arbitrage opportunities before competitors.", accent: "#26A69A" },
+const FEATURES: { icon: IconName; title: string; desc: string; accent: string }[] = [
+  { icon: "activity", title: "Real-Time Prices", desc: "Live GPS-verified prices from 282 markets across 36 states + FCT. Updated 3× daily by on-ground traders.", accent: "#00C853" },
+  { icon: "bell", title: "Smart Price Alerts", desc: "Set thresholds. Get WhatsApp notifications when prices cross your targets.", accent: "#FF5252" },
+  { icon: "globe", title: "Regional Comparison", desc: "Compare prices across states. Spot arbitrage opportunities before competitors.", accent: "#26A69A" },
 ];
 
 const TIERS = [
@@ -151,6 +151,45 @@ function useInView(threshold = 0.15) {
 // ---------------------------------------------------------------------------
 
 /* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• Ticker â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
+/* ═══════════════ Inline SVG icons (replace emoji — consistent cross-platform) ═══════════════ */
+type IconName = "activity" | "bell" | "globe" | "search" | "bar-chart" | "zap" | "whatsapp";
+function Icon({ name, size = 24, style }: { name: IconName; size?: number; style?: React.CSSProperties }) {
+  const s = {
+    width: size,
+    height: size,
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: 2,
+    strokeLinecap: "round" as const,
+    strokeLinejoin: "round" as const,
+    style,
+    "aria-hidden": true,
+    focusable: false,
+  };
+  switch (name) {
+    case "activity":
+      return (<svg {...s}><polyline points="22 12 18 12 15 21 9 3 6 12 2 12" /></svg>);
+    case "bell":
+      return (<svg {...s}><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" /><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" /></svg>);
+    case "globe":
+      return (<svg {...s}><circle cx="12" cy="12" r="10" /><path d="M2 12h20" /><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" /></svg>);
+    case "search":
+      return (<svg {...s}><circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" /></svg>);
+    case "bar-chart":
+      return (<svg {...s}><line x1="18" y1="20" x2="18" y2="10" /><line x1="12" y1="20" x2="12" y2="4" /><line x1="6" y1="20" x2="6" y2="14" /></svg>);
+    case "zap":
+      return (<svg {...s}><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" /></svg>);
+    case "whatsapp":
+      return (
+        <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" style={style} aria-hidden focusable={false}>
+          <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51l-.57-.01c-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.71.306 1.263.489 1.694.626.712.226 1.36.194 1.872.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 0 1-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 0 1-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 0 1 2.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0 0 12.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 0 0 5.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 0 0-3.48-8.413z" />
+        </svg>
+      );
+  }
+}
+
+/* ═══════════════ Ticker ═══════════════ */
 function Ticker() {
   const [ticks, setTicks] = useState(TICKER);
   useEffect(() => {
@@ -394,7 +433,7 @@ Reply ALERT RICE 80000 to get notified`;
         rel="noopener noreferrer"
         className="nm-wa-try"
       >
-        💬 Try it now on WhatsApp
+        <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8 }}><Icon name="whatsapp" size={16} /> Try it now on WhatsApp</span>
       </a>
     </div>
   );
@@ -410,13 +449,13 @@ function DemoTabs() {
           className={`nm-demo-tab${tab === "prices" ? " nm-demo-tab-active" : ""}`}
           onClick={() => setTab("prices")}
         >
-          🔍 Price Checker
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}><Icon name="search" size={15} /> Price Checker</span>
         </button>
         <button
           className={`nm-demo-tab${tab === "whatsapp" ? " nm-demo-tab-active" : ""}`}
           onClick={() => setTab("whatsapp")}
         >
-          💬 WhatsApp Demo
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}><Icon name="whatsapp" size={15} /> WhatsApp Demo</span>
         </button>
       </div>
       {tab === "prices" ? <PriceChecker /> : <WADemo />}
@@ -447,7 +486,7 @@ function Hero() {
           </h1>
 
           <p className="nm-hero-subtitle">
-            Tomatoes at Mile 12 today: <strong style={{color:"#00C853"}}>₦42,500</strong>. Bodija: <strong style={{color:"#00C853"}}>₦38,200</strong>. That&apos;s ₦4,300 arbitrage per basket — before you leave the house.
+            Tomatoes at Mile 12 today: <strong style={{color:"var(--price-up)"}}>₦42,500</strong>. Bodija: <strong style={{color:"var(--price-up)"}}>₦38,200</strong>. That&apos;s ₦4,300 arbitrage per basket — before you leave the house.
             GPS-verified prices from 282 markets. Updated 3× daily.
           </p>
 
@@ -458,7 +497,7 @@ function Hero() {
               rel="noopener noreferrer"
               className="nm-btn-green nm-btn-lg"
             >
-              💬 Check Prices on WhatsApp <span className="nm-arrow">→</span>
+              <Icon name="whatsapp" size={18} /> Check Prices on WhatsApp <span className="nm-arrow">→</span>
             </a>
             <Link href="/register" className="nm-btn-outline nm-btn-lg">
               Start Free on Web
@@ -539,7 +578,7 @@ function FeaturesSection() {
               style={{ animationDelay: `${i * 0.08}s`, "--nm-accent": f.accent } as React.CSSProperties}
             >
               <div className="nm-feature-glow" />
-              <div className="nm-feature-icon">{f.icon}</div>
+              <div className="nm-feature-icon"><Icon name={f.icon} size={28} style={{ color: f.accent }} /></div>
               <h3 className="nm-feature-title">{f.title}</h3>
               <p className="nm-feature-desc">{f.desc}</p>
             </div>
@@ -553,10 +592,10 @@ function FeaturesSection() {
 /* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• How It Works â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 function HowItWorksSection() {
   const { ref, visible } = useInView();
-  const steps = [
-    { num: "01", icon: "🔍", title: "Search Any Commodity", desc: "Type a commodity, market, or state. Get instant verified prices from our trader network." },
-    { num: "02", icon: "📊", title: "Analyze Market Trends", desc: "View price history, inflation trends, regional comparisons, and arbitrage opportunities." },
-    { num: "03", icon: "⚡", title: "Set Alerts & Act", desc: "Create custom price alerts. Get WhatsApp notifications. Make data-driven decisions." },
+  const steps: { num: string; icon: IconName; title: string; desc: string }[] = [
+    { num: "01", icon: "search", title: "Search Any Commodity", desc: "Type a commodity, market, or state. Get instant verified prices from our trader network." },
+    { num: "02", icon: "bar-chart", title: "Analyze Market Trends", desc: "View price history, inflation trends, regional comparisons, and arbitrage opportunities." },
+    { num: "03", icon: "zap", title: "Set Alerts & Act", desc: "Create custom price alerts. Get WhatsApp notifications. Make data-driven decisions." },
   ];
 
   return (
@@ -577,7 +616,7 @@ function HowItWorksSection() {
               style={{ animationDelay: `${i * 0.15}s` }}
             >
               <div className="nm-step-num">{step.num}</div>
-              <div className="nm-step-icon">{step.icon}</div>
+              <div className="nm-step-icon" style={{ color: "var(--nm-green)" }}><Icon name={step.icon} size={24} /></div>
               <h3 className="nm-step-title">{step.title}</h3>
               <p className="nm-step-desc">{step.desc}</p>
               {i < 2 && <div className="nm-step-connector" />}
@@ -639,8 +678,8 @@ function PricingSection() {
         <div style={{
           marginTop: "24px",
           padding: "28px 32px",
-          background: "rgba(255,255,255,0.03)",
-          border: "1px solid rgba(255,255,255,0.08)",
+          background: "var(--nm-card)",
+          border: "1px solid var(--nm-border)",
           borderRadius: "16px",
           display: "flex",
           alignItems: "center",
@@ -649,10 +688,10 @@ function PricingSection() {
           gap: "20px",
         }}>
           <div>
-            <div style={{ color: "#fff", fontWeight: 700, fontSize: "16px", marginBottom: "6px" }}>
+            <div style={{ color: "var(--nm-text)", fontWeight: 700, fontSize: "16px", marginBottom: "6px" }}>
               Business, Corporate &amp; API Plans
             </div>
-            <div style={{ color: "#94A3B8", fontSize: "14px", maxWidth: "480px", lineHeight: 1.6 }}>
+            <div style={{ color: "var(--nm-text2)", fontSize: "14px", maxWidth: "480px", lineHeight: 1.6 }}>
               From ₦15,000/mo for businesses to unlimited API access for institutions.
               Custom SLA, white-label, Power BI integration, and dedicated support available.
             </div>
@@ -663,9 +702,9 @@ function PricingSection() {
               display: "inline-block",
               padding: "12px 28px",
               background: "transparent",
-              border: "1px solid rgba(255,255,255,0.2)",
+              border: "1px solid var(--nm-border)",
               borderRadius: "10px",
-              color: "#fff",
+              color: "var(--nm-text)",
               fontWeight: 600,
               fontSize: "14px",
               textDecoration: "none",
@@ -742,7 +781,7 @@ function CTASection() {
             rel="noopener noreferrer"
             className="nm-btn-outline nm-btn-lg"
           >
-            💬 Chat on WhatsApp
+            <Icon name="whatsapp" size={18} /> Chat on WhatsApp
           </a>
         </div>
       </div>
@@ -985,8 +1024,8 @@ html { scroll-behavior: smooth; }
 }
 .nm-tk-sym { color: var(--nm-text3); font-weight: 600; }
 .nm-tk-pr { color: var(--nm-text); }
-.nm-tk-up { color: #00C853; font-weight: 600; }
-.nm-tk-dn { color: #FF5252; font-weight: 600; }
+.nm-tk-up { color: var(--price-up); font-weight: 600; }
+.nm-tk-dn { color: var(--price-down); font-weight: 600; }
 
 /* ── Nav ── */
 .nm-nav {
@@ -1378,8 +1417,8 @@ html { scroll-behavior: smooth; }
 .nm-ck-mkt { color: var(--nm-text); font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .nm-ck-state { color: var(--nm-text3); }
 .nm-ck-price { color: var(--nm-text); font-weight: 600; text-align: right; }
-.nm-ck-up { color: #00C853; font-weight: 600; text-align: right; }
-.nm-ck-down { color: #FF5252; font-weight: 600; text-align: right; }
+.nm-ck-up { color: var(--price-up); font-weight: 600; text-align: right; }
+.nm-ck-down { color: var(--price-down); font-weight: 600; text-align: right; }
 .nm-ck-footer {
   display: flex;
   justify-content: space-between;
