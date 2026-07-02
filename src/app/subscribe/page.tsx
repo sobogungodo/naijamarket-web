@@ -117,7 +117,7 @@ const TIER_ORDER = ["FREE", "SILVER", "GOLD", "BUSINESS", "CORPORATE", "ENTERPRI
 
 // Payments temporarily disabled for the testing phase.
 // Flip to `true` to re-enable Paystack/Flutterwave checkout exactly as before.
-const PAYMENTS_ENABLED = false;
+const PAYMENTS_ENABLED = true;
 
 // ============================================================================
 // MAIN COMPONENT
