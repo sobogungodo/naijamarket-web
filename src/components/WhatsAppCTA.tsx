@@ -7,9 +7,9 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import "./WhatsAppCTA.css";
 
 const WA_NUMBER = "2349131095009"; // NaijaMarket Intel WhatsApp number
-const WA_URL = `https://wa.me/${WA_NUMBER}?text=menu`;
 
 interface WhatsAppCTAProps {
   inline?: boolean;
@@ -38,7 +38,6 @@ export default function WhatsAppCTA({
   if (inline) {
     return (
       <>
-        <style>{INLINE_STYLES}</style>
         <a
           href={url}
           target="_blank"
@@ -58,7 +57,6 @@ export default function WhatsAppCTA({
   const isReporter = variant === "reporter";
   return (
     <>
-      <style>{STICKY_STYLES}</style>
       <a
         href={url}
         target="_blank"
@@ -102,80 +100,3 @@ function PencilIcon({ size = 20 }: { size?: number }) {
     </svg>
   );
 }
-
-const STICKY_STYLES = `
-.wa-sticky {
-  position: fixed;
-  bottom: 1.5rem;
-  right: 1.5rem;
-  z-index: 50;
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  background: #25d366;
-  color: #fff;
-  border-radius: 2rem;
-  padding: 0.65rem 1.1rem 0.65rem 0.85rem;
-  font-size: 0.88rem;
-  font-weight: 600;
-  text-decoration: none;
-  box-shadow: 0 4px 16px rgba(37,211,102,0.35);
-  opacity: 0;
-  transform: translateY(8px);
-  transition: opacity 0.25s ease, transform 0.25s ease, box-shadow 0.2s ease;
-  pointer-events: none;
-}
-.wa-sticky-visible {
-  opacity: 1;
-  transform: translateY(0);
-  pointer-events: auto;
-}
-.wa-sticky:hover {
-  background: #22c55e;
-  box-shadow: 0 6px 20px rgba(37,211,102,0.45);
-}
-.wa-sticky-label { white-space: nowrap; }
-.wa-sticky-reporter {
-  background: #d97706;
-  box-shadow: 0 4px 16px rgba(217,119,6,0.35);
-  right: auto;
-  left: 1.5rem;
-}
-.wa-sticky-reporter:hover {
-  background: #b45309;
-  box-shadow: 0 6px 20px rgba(217,119,6,0.45);
-}
-@media (max-width: 480px) {
-  .wa-sticky { padding: 0.75rem; border-radius: 50%; }
-  .wa-sticky-label { display: none; }
-}
-`;
-
-const INLINE_STYLES = `
-.wa-inline {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.6rem;
-  background: #25d366;
-  color: #fff;
-  border-radius: 8px;
-  padding: 0.7rem 1.25rem;
-  font-size: 0.9rem;
-  font-weight: 600;
-  text-decoration: none;
-  transition: background 0.2s ease, box-shadow 0.2s ease;
-  box-shadow: 0 2px 8px rgba(37,211,102,0.25);
-}
-.wa-inline:hover {
-  background: #22c55e;
-  box-shadow: 0 4px 14px rgba(37,211,102,0.4);
-}
-.wa-inline-badge {
-  background: rgba(255,255,255,0.2);
-  border-radius: 4px;
-  padding: 0.1em 0.45em;
-  font-size: 0.75rem;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-}
-`;

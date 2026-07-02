@@ -7,7 +7,7 @@
 // ============================================================================
 
 import type { Metadata, Viewport } from "next";
-import { Inter } from "next/font/google";
+import { Inter, DM_Sans, JetBrains_Mono } from "next/font/google";
 import { Suspense } from "react";
 import Providers from "@/components/Providers";
 import { ThemeProvider } from "@/components/ThemeProvider";
@@ -22,6 +22,10 @@ import "@/styles/globals.css";
 import StructuredData from "@/components/StructuredData";
 
 const inter = Inter({ subsets: ["latin"] });
+
+// Landing-page fonts — loaded via next/font (was a render-blocking @import in page.tsx)
+const dmSans = DM_Sans({ subsets: ["latin"], variable: "--font-dm-sans", display: "swap" });
+const jetbrainsMono = JetBrains_Mono({ subsets: ["latin"], variable: "--font-jetbrains-mono", display: "swap" });
 
 export const metadata: Metadata = {
   title: "NaijaMarket Intel - The Bloomberg of Nigerian Commodities",
@@ -141,7 +145,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang="en" className={`${dmSans.variable} ${jetbrainsMono.variable}`} suppressHydrationWarning>
       <head>
         {/* Anti-flash: apply saved theme BEFORE hydration to prevent FOUC */}
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />
