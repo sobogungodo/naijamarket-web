@@ -64,7 +64,6 @@ export default function WhatsAppCTA({
         className={`wa-sticky ${isReporter ? "wa-sticky-reporter" : ""} ${visible ? "wa-sticky-visible" : ""}`}
         aria-label={isReporter ? "Register as Price Reporter on WhatsApp" : "Open NaijaMarket Intel on WhatsApp"}
         title={isReporter ? "Register as Price Reporter" : "Check prices on WhatsApp"}
-        style={isReporter ? { bottom: "5.5rem" } : {}}
       >
         {isReporter ? <PencilIcon size={26} /> : <WhatsAppIcon size={26} />}
         <span className="wa-sticky-label">{isReporter ? "Register as Price Reporter" : "Price Check"}</span>

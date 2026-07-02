@@ -3,7 +3,7 @@
 /* ── Sticky floating button ── */
 .wa-sticky {
   position: fixed;
-  bottom: 1.5rem;
+  bottom: 5rem;
   right: 1.5rem;
   z-index: 50;
   display: flex;
@@ -35,8 +35,9 @@
 .wa-sticky-reporter {
   background: #d97706;
   box-shadow: 0 4px 16px rgba(217,119,6,0.35);
-  right: auto;
-  left: 1.5rem;
+  right: 1.5rem;
+  left: auto;
+  bottom: 8.75rem;
 }
 .wa-sticky-reporter:hover {
   background: #b45309;
