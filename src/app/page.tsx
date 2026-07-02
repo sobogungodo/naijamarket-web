@@ -6,6 +6,10 @@ import Image from "next/image";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import WhatsAppCTA from '@/components/WhatsAppCTA'
 
+// App download links (Google Play)
+const CONSUMER_APP_URL = "https://play.google.com/store/apps/details?id=com.giggababytes.naijamarketconsumer";
+const REPORTER_APP_URL = "https://play.google.com/store/apps/details?id=com.giggababytes.naijamarkettrader";
+
 // ============================================================================
 // NaijaMarket Intel — Landing Page v2.1 — optimised June 2026
 // "The Bloomberg of Nigerian Commodities"
@@ -814,6 +818,31 @@ function Footer() {
 // MAIN PAGE COMPONENT
 // ---------------------------------------------------------------------------
 
+function AppDownloadSection() {
+  return (
+    <section className="nm-section nm-appdl">
+      <h2 className="nm-appdl-title">Get the <span className="nm-g">app</span></h2>
+      <p className="nm-appdl-desc">Live prices on the go — scan to download.</p>
+      <div className="nm-appdl-grid">
+        <div className="nm-appdl-card">
+          <div className="nm-appdl-card-title">For Buyers &amp; Businesses</div>
+          <Image src="/qr-naijamarket-intel.png" alt="NaijaMarket Intel app QR code" width={160} height={160} className="nm-appdl-qr" />
+          <a href={CONSUMER_APP_URL} target="_blank" rel="noopener noreferrer">
+            <Image src="/google-play-badge.png" alt="Get NaijaMarket Intel on Google Play" width={180} height={54} className="nm-appdl-badge" />
+          </a>
+        </div>
+        <div className="nm-appdl-card">
+          <div className="nm-appdl-card-title">For Price Reporters</div>
+          <Image src="/qr-naijamarket-reporter.png" alt="NaijaMarket Reporter app QR code" width={160} height={160} className="nm-appdl-qr" />
+          <a href={REPORTER_APP_URL} target="_blank" rel="noopener noreferrer">
+            <Image src="/google-play-badge.png" alt="Get NaijaMarket Reporter on Google Play" width={180} height={54} className="nm-appdl-badge" />
+          </a>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 export default function LandingPage() {
   return (
     <>
@@ -828,6 +857,7 @@ export default function LandingPage() {
         <PricingSection />
         <TestimonialsSection />
         <CTASection />
+        <AppDownloadSection />
         <Footer />
       </div>
       <WhatsAppCTA />
@@ -1817,6 +1847,21 @@ html { scroll-behavior: smooth; }
 .nm-footer-signup {
   margin-top: 16px;
 }
+
+/* ── App Download ── */
+.nm-appdl { text-align: center; }
+.nm-appdl-title { font-size: 32px; font-weight: 800; margin-bottom: 8px; }
+.nm-appdl-desc { color: var(--nm-text3); margin-bottom: 32px; }
+.nm-appdl-grid { display: flex; flex-wrap: wrap; justify-content: center; gap: 28px; }
+.nm-appdl-card {
+  display: flex; flex-direction: column; align-items: center; gap: 16px;
+  background: rgba(255,255,255,0.03);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 20px; padding: 28px 32px;
+}
+.nm-appdl-card-title { font-size: 14px; font-weight: 600; color: var(--nm-text3); }
+.nm-appdl-qr { border-radius: 12px; background: #fff; padding: 8px; display: block; }
+.nm-appdl-badge { height: auto; display: block; }
 
 /* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
    TABLET — 640px+
