@@ -5,6 +5,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import WhatsAppCTA from '@/components/WhatsAppCTA'
+import "./landing.css";
 
 // App download links (Google Play)
 const CONSUMER_APP_URL = "https://play.google.com/store/apps/details?id=com.giggababytes.naijamarketconsumer";
@@ -97,10 +98,10 @@ const DEMO_PRICES: Record<string, PriceResult> = {
   },
 };
 
-const FEATURES = [
-  { icon: "📡", title: "Real-Time Prices", desc: "Live GPS-verified prices from 282 markets across 36 states + FCT. Updated 3× daily by on-ground traders.", accent: "#00C853" },
-  { icon: "🔔", title: "Smart Price Alerts", desc: "Set thresholds. Get WhatsApp notifications when prices cross your targets.", accent: "#FF5252" },
-  { icon: "🌍", title: "Regional Comparison", desc: "Compare prices across states. Spot arbitrage opportunities before competitors.", accent: "#26A69A" },
+const FEATURES: { icon: IconName; title: string; desc: string; accent: string }[] = [
+  { icon: "activity", title: "Real-Time Prices", desc: "Live GPS-verified prices from 282 markets across 36 states + FCT. Updated 3× daily by on-ground traders.", accent: "#00C853" },
+  { icon: "bell", title: "Smart Price Alerts", desc: "Set thresholds. Get WhatsApp notifications when prices cross your targets.", accent: "#FF5252" },
+  { icon: "globe", title: "Regional Comparison", desc: "Compare prices across states. Spot arbitrage opportunities before competitors.", accent: "#26A69A" },
 ];
 
 const TIERS = [
@@ -151,6 +152,45 @@ function useInView(threshold = 0.15) {
 // ---------------------------------------------------------------------------
 
 /* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• Ticker â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
+/* ═══════════════ Inline SVG icons (replace emoji — consistent cross-platform) ═══════════════ */
+type IconName = "activity" | "bell" | "globe" | "search" | "bar-chart" | "zap" | "whatsapp";
+function Icon({ name, size = 24, style }: { name: IconName; size?: number; style?: React.CSSProperties }) {
+  const s = {
+    width: size,
+    height: size,
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: 2,
+    strokeLinecap: "round" as const,
+    strokeLinejoin: "round" as const,
+    style,
+    "aria-hidden": true,
+    focusable: false,
+  };
+  switch (name) {
+    case "activity":
+      return (<svg {...s}><polyline points="22 12 18 12 15 21 9 3 6 12 2 12" /></svg>);
+    case "bell":
+      return (<svg {...s}><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" /><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" /></svg>);
+    case "globe":
+      return (<svg {...s}><circle cx="12" cy="12" r="10" /><path d="M2 12h20" /><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" /></svg>);
+    case "search":
+      return (<svg {...s}><circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" /></svg>);
+    case "bar-chart":
+      return (<svg {...s}><line x1="18" y1="20" x2="18" y2="10" /><line x1="12" y1="20" x2="12" y2="4" /><line x1="6" y1="20" x2="6" y2="14" /></svg>);
+    case "zap":
+      return (<svg {...s}><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" /></svg>);
+    case "whatsapp":
+      return (
+        <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" style={style} aria-hidden focusable={false}>
+          <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51l-.57-.01c-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.71.306 1.263.489 1.694.626.712.226 1.36.194 1.872.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 0 1-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 0 1-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 0 1 2.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0 0 12.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 0 0 5.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 0 0-3.48-8.413z" />
+        </svg>
+      );
+  }
+}
+
+/* ═══════════════ Ticker ═══════════════ */
 function Ticker() {
   const [ticks, setTicks] = useState(TICKER);
   useEffect(() => {
@@ -394,7 +434,7 @@ Reply ALERT RICE 80000 to get notified`;
         rel="noopener noreferrer"
         className="nm-wa-try"
       >
-        💬 Try it now on WhatsApp
+        <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 8 }}><Icon name="whatsapp" size={16} /> Try it now on WhatsApp</span>
       </a>
     </div>
   );
@@ -410,13 +450,13 @@ function DemoTabs() {
           className={`nm-demo-tab${tab === "prices" ? " nm-demo-tab-active" : ""}`}
           onClick={() => setTab("prices")}
         >
-          🔍 Price Checker
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}><Icon name="search" size={15} /> Price Checker</span>
         </button>
         <button
           className={`nm-demo-tab${tab === "whatsapp" ? " nm-demo-tab-active" : ""}`}
           onClick={() => setTab("whatsapp")}
         >
-          💬 WhatsApp Demo
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}><Icon name="whatsapp" size={15} /> WhatsApp Demo</span>
         </button>
       </div>
       {tab === "prices" ? <PriceChecker /> : <WADemo />}
@@ -447,7 +487,7 @@ function Hero() {
           </h1>
 
           <p className="nm-hero-subtitle">
-            Tomatoes at Mile 12 today: <strong style={{color:"#00C853"}}>₦42,500</strong>. Bodija: <strong style={{color:"#00C853"}}>₦38,200</strong>. That&apos;s ₦4,300 arbitrage per basket — before you leave the house.
+            Tomatoes at Mile 12 today: <strong style={{color:"var(--price-up)"}}>₦42,500</strong>. Bodija: <strong style={{color:"var(--price-up)"}}>₦38,200</strong>. That&apos;s ₦4,300 arbitrage per basket — before you leave the house.
             GPS-verified prices from 282 markets. Updated 3× daily.
           </p>
 
@@ -458,7 +498,7 @@ function Hero() {
               rel="noopener noreferrer"
               className="nm-btn-green nm-btn-lg"
             >
-              💬 Check Prices on WhatsApp <span className="nm-arrow">→</span>
+              <Icon name="whatsapp" size={18} /> Check Prices on WhatsApp <span className="nm-arrow">→</span>
             </a>
             <Link href="/register" className="nm-btn-outline nm-btn-lg">
               Start Free on Web
@@ -494,7 +534,7 @@ function Hero() {
 /* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• Features â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 function VideoSection() {
   return (
-    <section className="nm-section nm-section-accent" style={{padding: "24px 24px 60px"}}>
+    <section className="nm-section nm-section-accent" style={{paddingTop: "24px"}}>
       <div className="nm-section-inner" style={{maxWidth: "900px", margin: "0 auto"}}>
         <div className="nm-section-header" style={{marginBottom: "32px"}}>
           <span className="nm-section-tag">Platform Demo</span>
@@ -539,7 +579,7 @@ function FeaturesSection() {
               style={{ animationDelay: `${i * 0.08}s`, "--nm-accent": f.accent } as React.CSSProperties}
             >
               <div className="nm-feature-glow" />
-              <div className="nm-feature-icon">{f.icon}</div>
+              <div className="nm-feature-icon"><Icon name={f.icon} size={28} style={{ color: f.accent }} /></div>
               <h3 className="nm-feature-title">{f.title}</h3>
               <p className="nm-feature-desc">{f.desc}</p>
             </div>
@@ -553,10 +593,10 @@ function FeaturesSection() {
 /* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• How It Works â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 function HowItWorksSection() {
   const { ref, visible } = useInView();
-  const steps = [
-    { num: "01", icon: "🔍", title: "Search Any Commodity", desc: "Type a commodity, market, or state. Get instant verified prices from our trader network." },
-    { num: "02", icon: "📊", title: "Analyze Market Trends", desc: "View price history, inflation trends, regional comparisons, and arbitrage opportunities." },
-    { num: "03", icon: "⚡", title: "Set Alerts & Act", desc: "Create custom price alerts. Get WhatsApp notifications. Make data-driven decisions." },
+  const steps: { num: string; icon: IconName; title: string; desc: string }[] = [
+    { num: "01", icon: "search", title: "Search Any Commodity", desc: "Type a commodity, market, or state. Get instant verified prices from our trader network." },
+    { num: "02", icon: "bar-chart", title: "Analyze Market Trends", desc: "View price history, inflation trends, regional comparisons, and arbitrage opportunities." },
+    { num: "03", icon: "zap", title: "Set Alerts & Act", desc: "Create custom price alerts. Get WhatsApp notifications. Make data-driven decisions." },
   ];
 
   return (
@@ -577,7 +617,7 @@ function HowItWorksSection() {
               style={{ animationDelay: `${i * 0.15}s` }}
             >
               <div className="nm-step-num">{step.num}</div>
-              <div className="nm-step-icon">{step.icon}</div>
+              <div className="nm-step-icon" style={{ color: "var(--nm-green)" }}><Icon name={step.icon} size={24} /></div>
               <h3 className="nm-step-title">{step.title}</h3>
               <p className="nm-step-desc">{step.desc}</p>
               {i < 2 && <div className="nm-step-connector" />}
@@ -639,8 +679,8 @@ function PricingSection() {
         <div style={{
           marginTop: "24px",
           padding: "28px 32px",
-          background: "rgba(255,255,255,0.03)",
-          border: "1px solid rgba(255,255,255,0.08)",
+          background: "var(--nm-card)",
+          border: "1px solid var(--nm-border)",
           borderRadius: "16px",
           display: "flex",
           alignItems: "center",
@@ -649,10 +689,10 @@ function PricingSection() {
           gap: "20px",
         }}>
           <div>
-            <div style={{ color: "#fff", fontWeight: 700, fontSize: "16px", marginBottom: "6px" }}>
+            <div style={{ color: "var(--nm-text)", fontWeight: 700, fontSize: "16px", marginBottom: "6px" }}>
               Business, Corporate &amp; API Plans
             </div>
-            <div style={{ color: "#94A3B8", fontSize: "14px", maxWidth: "480px", lineHeight: 1.6 }}>
+            <div style={{ color: "var(--nm-text2)", fontSize: "14px", maxWidth: "480px", lineHeight: 1.6 }}>
               From ₦15,000/mo for businesses to unlimited API access for institutions.
               Custom SLA, white-label, Power BI integration, and dedicated support available.
             </div>
@@ -663,9 +703,9 @@ function PricingSection() {
               display: "inline-block",
               padding: "12px 28px",
               background: "transparent",
-              border: "1px solid rgba(255,255,255,0.2)",
+              border: "1px solid var(--nm-border)",
               borderRadius: "10px",
-              color: "#fff",
+              color: "var(--nm-text)",
               fontWeight: 600,
               fontSize: "14px",
               textDecoration: "none",
@@ -717,38 +757,6 @@ function TestimonialsSection() {
   );
 }
 
-/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• CTA â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
-function CTASection() {
-  return (
-    <section className="nm-section">
-      <div className="nm-cta-box">
-        <div className="nm-cta-glow-1" />
-        <div className="nm-cta-glow-2" />
-        <h2 className="nm-cta-title">
-          Stop Guessing.<br />
-          <span className="nm-g">Start Knowing.</span>
-        </h2>
-        <p className="nm-cta-desc">
-          Join thousands of Nigerian traders and businesses making smarter
-          decisions with verified market data.
-        </p>
-        <div className="nm-cta-buttons">
-          <Link href="/register" className="nm-btn-green nm-btn-lg">
-            Get Started Free →
-          </Link>
-          <a
-            href="https://wa.me/2349131095009?text=menu"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="nm-btn-outline nm-btn-lg"
-          >
-            💬 Chat on WhatsApp
-          </a>
-        </div>
-      </div>
-    </section>
-  );
-}
 
 /* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• Footer â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
 function Footer() {
@@ -793,7 +801,6 @@ function Footer() {
             Real-time, GPS-verified commodity price intelligence for Nigeria.
             The Bloomberg of Nigerian Commodities.
           </p>
-
         </div>
         {columns.map((col, i) => (
           <div key={i} className="nm-footer-col">
@@ -805,6 +812,19 @@ function Footer() {
             ))}
           </div>
         ))}
+        <div className="nm-footer-apps">
+          <div className="nm-footer-apps-label">Get the app — scan to download</div>
+          <div className="nm-footer-apps-row">
+            <a href={CONSUMER_APP_URL} target="_blank" rel="noopener noreferrer" className="nm-footer-app">
+              <Image src="/qr-naijamarket-intel.png" alt="NaijaMarket Intel app QR code" width={76} height={76} className="nm-footer-qr" />
+              <span>Buyers &amp; Businesses</span>
+            </a>
+            <a href={REPORTER_APP_URL} target="_blank" rel="noopener noreferrer" className="nm-footer-app">
+              <Image src="/qr-naijamarket-reporter.png" alt="NaijaMarket Reporter app QR code" width={76} height={76} className="nm-footer-qr" />
+              <span>Price Reporters</span>
+            </a>
+          </div>
+        </div>
       </div>
       <div className="nm-footer-bottom">
         <span>© 2026 NaijaMarket Intel by Giggababytes Oy</span>
@@ -818,35 +838,9 @@ function Footer() {
 // MAIN PAGE COMPONENT
 // ---------------------------------------------------------------------------
 
-function AppDownloadSection() {
-  return (
-    <section className="nm-section nm-appdl">
-      <h2 className="nm-appdl-title">Get the <span className="nm-g">app</span></h2>
-      <p className="nm-appdl-desc">Live prices on the go — scan to download.</p>
-      <div className="nm-appdl-grid">
-        <div className="nm-appdl-card">
-          <div className="nm-appdl-card-title">For Buyers &amp; Businesses</div>
-          <Image src="/qr-naijamarket-intel.png" alt="NaijaMarket Intel app QR code" width={160} height={160} className="nm-appdl-qr" />
-          <a href={CONSUMER_APP_URL} target="_blank" rel="noopener noreferrer">
-            <Image src="/google-play-badge.png" alt="Get NaijaMarket Intel on Google Play" width={180} height={54} className="nm-appdl-badge" />
-          </a>
-        </div>
-        <div className="nm-appdl-card">
-          <div className="nm-appdl-card-title">For Price Reporters</div>
-          <Image src="/qr-naijamarket-reporter.png" alt="NaijaMarket Reporter app QR code" width={160} height={160} className="nm-appdl-qr" />
-          <a href={REPORTER_APP_URL} target="_blank" rel="noopener noreferrer">
-            <Image src="/google-play-badge.png" alt="Get NaijaMarket Reporter on Google Play" width={180} height={54} className="nm-appdl-badge" />
-          </a>
-        </div>
-      </div>
-    </section>
-  );
-}
-
 export default function LandingPage() {
   return (
     <>
-      <style>{PAGE_STYLES}</style>
       <div className="nm-landing">
         <Nav />
         <Hero />
@@ -856,1078 +850,9 @@ export default function LandingPage() {
         {/* <WaitlistSection /> — hidden; /api/waitlist route kept live for any direct submissions */}
         <PricingSection />
         <TestimonialsSection />
-        <CTASection />
-        <AppDownloadSection />
         <Footer />
       </div>
       <WhatsAppCTA />
     </>
   );
 }
-
-// ============================================================================
-// STYLES — Mobile-first with tablet (640px) + desktop (1024px) breakpoints
-// ============================================================================
-
-const PAGE_STYLES = `
-@import url('https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600;9..40,700;9..40,800&family=JetBrains+Mono:wght@400;500;600;700;800&display=swap');
-
-:root {
-  --nm-bg: #0A0F14;
-  --nm-bg2: #0F1520;
-  --nm-card: rgba(15, 20, 30, 0.6);
-  --nm-border: rgba(255, 255, 255, 0.06);
-  --nm-green: #00C853;
-  --nm-green-dim: rgba(0, 200, 83, 0.1);
-  --nm-text: #E2E8F0;
-  --nm-text2: #94A3B8;
-  --nm-text3: #64748B;
-  --nm-text4: #475569;
-  --nm-font: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;
-  --nm-mono: 'JetBrains Mono', 'Fira Code', monospace;
-  --nm-radius: 12px;
-}
-
-/* ── Light Mode Overrides ── */
-html.light :root,
-html.light {
-  --nm-bg: #f0f4f8;
-  --nm-bg2: #ffffff;
-  --nm-card: rgba(255, 255, 255, 0.9);
-  --nm-border: rgba(0, 0, 0, 0.08);
-  --nm-green: #00a846;
-  --nm-green-dim: rgba(0, 168, 70, 0.1);
-  --nm-text: #0f172a;
-  --nm-text2: #334155;
-  --nm-text3: #64748b;
-  --nm-text4: #94a3b8;
-}
-
-html:not(.dark) {
-  --nm-bg: #f0f4f8;
-  --nm-bg2: #ffffff;
-  --nm-card: rgba(255, 255, 255, 0.9);
-  --nm-border: rgba(0, 0, 0, 0.08);
-  --nm-green: #00a846;
-  --nm-green-dim: rgba(0, 168, 70, 0.1);
-  --nm-text: #0f172a;
-  --nm-text2: #334155;
-  --nm-text3: #64748b;
-  --nm-text4: #94a3b8;
-}
-
-* { margin: 0; padding: 0; box-sizing: border-box; }
-html { scroll-behavior: smooth; }
-::selection { background: rgba(0, 200, 83, 0.3); color: #fff; }
-::-webkit-scrollbar { width: 6px; }
-::-webkit-scrollbar-track { background: var(--nm-bg); }
-::-webkit-scrollbar-thumb { background: rgba(0, 200, 83, 0.2); border-radius: 3px; }
-
-/* ── Base ── */
-.nm-landing {
-  min-height: 100vh;
-  background: var(--nm-bg);
-  color: var(--nm-text);
-  font-family: var(--nm-font);
-  overflow-x: hidden;
-  transition: background 0.2s ease, color 0.2s ease;
-}
-.nm-nav-s {
-  background: var(--nm-bg) !important;
-  opacity: 0.97;
-}
-.nm-g { color: var(--nm-green); }
-.nm-gradient-text {
-  background: linear-gradient(135deg, #00C853, #69F0AE);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-}
-
-/* ── Animations ── */
-@keyframes nm-ticker-scroll {
-  0% { transform: translateX(0); }
-  100% { transform: translateX(-50%); }
-}
-@keyframes nm-pulse {
-  0%, 100% { opacity: 1; transform: scale(1); }
-  50% { opacity: 0.5; transform: scale(1.5); }
-}
-@keyframes nm-fade-up {
-  from { opacity: 0; transform: translateY(16px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-@keyframes nm-spin {
-  to { transform: rotate(360deg); }
-}
-.nm-fade-in { animation: nm-fade-up 0.5s ease both; }
-
-/* ── Ticker ── */
-.nm-tk {
-  background: rgba(0, 0, 0, 0.5);
-  border-bottom: 1px solid rgba(0, 200, 83, 0.1);
-  height: 34px;
-  display: flex;
-  align-items: center;
-  overflow: hidden;
-}
-.nm-tk-track {
-  display: flex;
-  gap: 28px;
-  animation: nm-ticker-scroll 45s linear infinite;
-  white-space: nowrap;
-}
-.nm-tk-item {
-  display: inline-flex;
-  gap: 5px;
-  align-items: center;
-  font-size: 11px;
-  font-family: var(--nm-mono);
-}
-.nm-tk-sym { color: var(--nm-text3); font-weight: 600; }
-.nm-tk-pr { color: var(--nm-text); }
-.nm-tk-up { color: #00C853; font-weight: 600; }
-.nm-tk-dn { color: #FF5252; font-weight: 600; }
-
-/* ── Nav ── */
-.nm-nav {
-  position: fixed;
-  top: 0; left: 0; right: 0;
-  z-index: 100;
-  transition: all 0.3s ease;
-}
-.nm-nav-s {
-  background: rgba(var(--nm-bg-rgb, 10, 15, 20), 0.95);
-  backdrop-filter: blur(20px);
-  border-bottom: 1px solid rgba(0, 200, 83, 0.08);
-}
-.nm-nav-inner {
-  max-width: 1280px;
-  margin: 0 auto;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  height: 60px;
-  padding: 0 16px;
-}
-.nm-logo {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  text-decoration: none;
-}
-.nm-logo-icon {
-  width: 34px; height: 34px;
-  border-radius: 8px;
-  background: linear-gradient(135deg, #00C853, #006428);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-weight: 800;
-  font-size: 12px;
-  color: #fff;
-  font-family: var(--nm-mono);
-  box-shadow: 0 0 14px rgba(0, 200, 83, 0.25);
-}
-.nm-logo-text { font-weight: 700; font-size: 16px; color: #fff; }
-.nm-nav-links {
-  display: none;
-  align-items: center;
-  gap: 24px;
-}
-.nm-nav-links a {
-  color: var(--nm-text3);
-  font-size: 13px;
-  text-decoration: none;
-  font-weight: 500;
-  transition: color 0.2s;
-}
-.nm-nav-links a:hover { color: #fff; }
-.nm-nav-signin { color: var(--nm-green) !important; font-weight: 600 !important; }
-
-/* Hamburger */
-.nm-hamburger {
-  display: flex;
-  width: 38px; height: 38px;
-  align-items: center;
-  justify-content: center;
-  background: none;
-  border: 1px solid var(--nm-border);
-  border-radius: 8px;
-  cursor: pointer;
-  position: relative;
-}
-.nm-hamburger span,
-.nm-hamburger span::before,
-.nm-hamburger span::after {
-  display: block;
-  width: 16px; height: 2px;
-  background: var(--nm-text2);
-  border-radius: 1px;
-  transition: all 0.2s;
-}
-.nm-hamburger span::before,
-.nm-hamburger span::after {
-  content: '';
-  position: absolute;
-}
-.nm-hamburger span::before { transform: translateY(-5px); }
-.nm-hamburger span::after { transform: translateY(5px); }
-.nm-hb-x { background: transparent !important; }
-.nm-hb-x::before { transform: rotate(45deg) !important; }
-.nm-hb-x::after { transform: rotate(-45deg) !important; }
-
-/* Mobile Menu */
-.nm-mobile-menu {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 8px 16px 16px;
-  background: rgba(10, 15, 20, 0.98);
-  border-bottom: 1px solid var(--nm-border);
-  backdrop-filter: blur(20px);
-}
-.nm-mobile-menu a {
-  display: block;
-  padding: 12px 14px;
-  color: var(--nm-text2);
-  font-size: 15px;
-  text-decoration: none;
-  border-radius: 8px;
-  transition: background 0.2s;
-}
-.nm-mobile-menu a:hover {
-  background: rgba(255, 255, 255, 0.05);
-  color: #fff;
-}
-
-/* ── Buttons ── */
-.nm-btn-green {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  background: linear-gradient(135deg, #00C853, #00E676);
-  color: #0A0F14;
-  font-weight: 700;
-  border-radius: var(--nm-radius);
-  text-decoration: none;
-  border: none;
-  cursor: pointer;
-  box-shadow: 0 2px 16px rgba(0, 200, 83, 0.2);
-  transition: all 0.3s ease;
-  font-family: var(--nm-font);
-}
-.nm-btn-green:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 6px 28px rgba(0, 200, 83, 0.35);
-}
-.nm-btn-outline {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid var(--nm-border);
-  color: var(--nm-text);
-  font-weight: 600;
-  border-radius: var(--nm-radius);
-  text-decoration: none;
-  cursor: pointer;
-  transition: all 0.3s ease;
-  font-family: var(--nm-font);
-}
-.nm-btn-outline:hover {
-  border-color: rgba(0, 200, 83, 0.25);
-  background: rgba(255, 255, 255, 0.06);
-}
-.nm-btn-sm { padding: 9px 18px; font-size: 12px; }
-.nm-btn-lg { padding: 14px 24px; font-size: 14px; }
-.nm-arrow { font-size: 18px; }
-
-/* ── Hero ── */
-.nm-hero {
-  min-height: 100vh;
-  display: flex;
-  align-items: center;
-  position: relative;
-  overflow: hidden;
-  padding: 145px 16px 24px;
-}
-.nm-hero-grid-bg {
-  position: absolute;
-  inset: 0;
-  background-image:
-    linear-gradient(rgba(0, 200, 83, 0.02) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(0, 200, 83, 0.02) 1px, transparent 1px);
-  background-size: 50px 50px;
-}
-.nm-hero-glow {
-  position: absolute;
-  top: 15%; left: 50%;
-  transform: translateX(-50%);
-  width: 500px; height: 500px;
-  border-radius: 50%;
-  background: radial-gradient(circle, rgba(0, 200, 83, 0.06) 0%, transparent 70%);
-  filter: blur(80px);
-}
-.nm-hero-inner {
-  max-width: 1280px;
-  margin: 0 auto;
-  width: 100%;
-  display: flex;
-  flex-direction: column;
-  gap: 40px;
-  position: relative;
-  z-index: 2;
-  opacity: 0;
-  transform: translateY(20px);
-  transition: all 0.8s cubic-bezier(0.16, 1, 0.3, 1);
-}
-.nm-hero-inner.nm-visible {
-  opacity: 1;
-  transform: translateY(0);
-}
-.nm-hero-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  width: fit-content;
-  background: var(--nm-green-dim);
-  border: 1px solid rgba(0, 200, 83, 0.2);
-  border-radius: 100px;
-  padding: 5px 12px;
-  margin-bottom: 16px;
-  font-size: 11px;
-  color: var(--nm-green);
-  font-weight: 600;
-  font-family: var(--nm-mono);
-}
-.nm-pulse-dot {
-  width: 7px; height: 7px;
-  border-radius: 50%;
-  background: var(--nm-green);
-  animation: nm-pulse 2s infinite;
-}
-.nm-hero-title {
-  font-size: clamp(30px, 7vw, 54px);
-  font-weight: 800;
-  line-height: 1.08;
-  color: var(--nm-text);
-  letter-spacing: -1.5px;
-  margin-bottom: 16px;
-}
-.nm-hero-subtitle {
-  font-size: clamp(14px, 2.5vw, 17px);
-  color: var(--nm-text2);
-  line-height: 1.7;
-  max-width: 500px;
-  margin-bottom: 28px;
-}
-.nm-hero-ctas {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  margin-bottom: 32px;
-}
-.nm-hero-stats {
-  display: grid;
-  grid-template-columns: repeat(2, auto);
-  gap: 20px;
-  width: fit-content;
-}
-.nm-stat-val {
-  font-size: 22px;
-  font-weight: 800;
-  color: var(--nm-text);
-  font-family: var(--nm-mono);
-  line-height: 1;
-}
-.nm-stat-label {
-  font-size: 11px;
-  color: var(--nm-text3);
-  margin-top: 3px;
-}
-.nm-hero-demo { width: 100%; }
-
-/* ── Demo Card ── */
-.nm-demo-card {
-  background: var(--nm-bg2);
-  border: 1px solid var(--nm-border);
-  border-radius: 14px;
-  overflow: hidden;
-  box-shadow: 0 16px 50px rgba(0, 0, 0, 0.35), 0 0 24px rgba(0, 200, 83, 0.03);
-}
-.nm-demo-tabs {
-  display: flex;
-  border-bottom: 1px solid var(--nm-border);
-}
-.nm-demo-tab {
-  flex: 1;
-  padding: 11px;
-  text-align: center;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--nm-text3);
-  background: none;
-  border: none;
-  cursor: pointer;
-  border-bottom: 2px solid transparent;
-  transition: all 0.2s;
-  font-family: var(--nm-font);
-}
-.nm-demo-tab-active {
-  color: var(--nm-green);
-  border-bottom-color: var(--nm-green);
-  background: rgba(0, 200, 83, 0.04);
-}
-
-/* ── Price Checker ── */
-.nm-ck { padding: 14px; }
-.nm-ck-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 10px;
-}
-.nm-ck-live {
-  font-size: 10px;
-  color: var(--nm-green);
-  font-family: var(--nm-mono);
-  font-weight: 600;
-  background: var(--nm-green-dim);
-  padding: 2px 7px;
-  border-radius: 4px;
-}
-.nm-ck-title { font-size: 12px; color: var(--nm-text2); font-weight: 500; }
-.nm-ck-search {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid var(--nm-border);
-  border-radius: 10px;
-  padding: 9px 12px;
-  margin-bottom: 8px;
-  transition: border-color 0.2s;
-}
-.nm-ck-search:focus-within { border-color: rgba(0, 200, 83, 0.3); }
-.nm-ck-input {
-  flex: 1;
-  background: none;
-  border: none;
-  color: var(--nm-text);
-  font-size: 13px;
-  font-family: var(--nm-font);
-  outline: none;
-}
-.nm-ck-input::placeholder { color: var(--nm-text4); }
-.nm-ck-chips { display: flex; gap: 5px; flex-wrap: wrap; margin-bottom: 12px; }
-.nm-chip {
-  padding: 4px 10px;
-  font-size: 11px;
-  font-weight: 600;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid var(--nm-border);
-  border-radius: 100px;
-  color: var(--nm-text3);
-  cursor: pointer;
-  transition: all 0.2s;
-  font-family: var(--nm-font);
-}
-.nm-chip:hover, .nm-chip-active {
-  background: var(--nm-green-dim);
-  border-color: rgba(0, 200, 83, 0.3);
-  color: var(--nm-green);
-}
-.nm-ck-loading {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 16px 0;
-  font-size: 12px;
-  color: var(--nm-text3);
-}
-.nm-spinner {
-  width: 14px; height: 14px;
-  border: 2px solid var(--nm-border);
-  border-top-color: var(--nm-green);
-  border-radius: 50%;
-  animation: nm-spin 0.6s linear infinite;
-}
-.nm-ck-results { animation: nm-fade-up 0.4s ease; }
-.nm-ck-item-name { font-size: 13px; font-weight: 700; color: var(--nm-text); margin-bottom: 8px; }
-.nm-ck-table { font-family: var(--nm-mono); font-size: 11px; }
-.nm-ck-row {
-  display: grid;
-  grid-template-columns: 2fr 1fr 1.2fr 0.8fr;
-  padding: 7px 0;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.03);
-  animation: nm-fade-up 0.3s ease both;
-  align-items: center;
-}
-.nm-ck-row-h {
-  color: var(--nm-text4);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  font-size: 9px;
-  border-bottom-color: var(--nm-border);
-  animation: none;
-}
-.nm-ck-row-h span:nth-child(3),
-.nm-ck-row-h span:nth-child(4) { text-align: right; }
-.nm-ck-mkt { color: var(--nm-text); font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.nm-ck-state { color: var(--nm-text3); }
-.nm-ck-price { color: var(--nm-text); font-weight: 600; text-align: right; }
-.nm-ck-up { color: #00C853; font-weight: 600; text-align: right; }
-.nm-ck-down { color: #FF5252; font-weight: 600; text-align: right; }
-.nm-ck-footer {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-top: 10px;
-  padding-top: 8px;
-  border-top: 1px solid var(--nm-border);
-  font-size: 10px;
-  color: var(--nm-text3);
-}
-.nm-ck-footer strong { color: var(--nm-green); }
-.nm-ck-cta {
-  color: var(--nm-green);
-  font-weight: 600;
-  text-decoration: none;
-  font-size: 11px;
-  font-family: var(--nm-font);
-}
-.nm-ck-empty { padding: 16px 0; font-size: 12px; color: var(--nm-text3); text-align: center; }
-.nm-ck-empty a { color: var(--nm-green); }
-
-/* ── WhatsApp Demo ── */
-.nm-wa-head {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 14px;
-  background: #075E54;
-}
-.nm-wa-avatar {
-  width: 32px; height: 32px;
-  border-radius: 50%;
-  background: linear-gradient(135deg, #00C853, #006428);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 11px;
-  font-weight: 800;
-  color: var(--nm-text);
-  font-family: var(--nm-mono);
-}
-.nm-wa-name { font-size: 13px; font-weight: 700; color: var(--nm-text); }
-.nm-wa-status { font-size: 10px; color: rgba(255, 255, 255, 0.6); }
-.nm-wa-body {
-  padding: 14px;
-  min-height: 180px;
-  background: #0B1118;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-.nm-wa-msg {
-  max-width: 88%;
-  padding: 7px 10px;
-  border-radius: 8px;
-  font-size: 12px;
-  line-height: 1.5;
-  white-space: pre-line;
-}
-.nm-wa-user {
-  align-self: flex-end;
-  background: #005C4B;
-  color: var(--nm-text);
-  border-bottom-right-radius: 2px;
-  font-family: var(--nm-mono);
-  font-weight: 600;
-}
-.nm-wa-bot {
-  align-self: flex-start;
-  background: #1F2937;
-  color: var(--nm-text);
-  border-bottom-left-radius: 2px;
-  font-family: var(--nm-mono);
-  font-size: 11px;
-}
-.nm-wa-try {
-  display: block;
-  text-align: center;
-  padding: 12px;
-  background: #25D366;
-  color: var(--nm-text);
-  font-weight: 700;
-  font-size: 13px;
-  text-decoration: none;
-  transition: background 0.2s;
-  font-family: var(--nm-font);
-}
-.nm-wa-try:hover { background: #20BD5A; }
-
-/* ── Trust Bar (inside fixed nav, below logo row) ── */
-.nm-trust-bar {
-  border-top: 1px solid rgba(0, 200, 83, 0.12);
-  background: rgba(0, 0, 0, 0.35);
-  padding: 7px 16px;
-}
-.nm-trust-bar-inner {
-  max-width: 1280px;
-  margin: 0 auto;
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  align-items: center;
-  gap: 6px 20px;
-}
-.nm-trust-bar-item {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 11px;
-  color: var(--nm-text3);
-  font-weight: 500;
-  font-family: var(--nm-mono);
-  white-space: nowrap;
-}
-.nm-trust-dot {
-  width: 6px; height: 6px;
-  border-radius: 50%;
-  flex-shrink: 0;
-}
-.nm-trust-dot-green { background: #00C853; animation: nm-pulse 2.5s infinite; }
-.nm-trust-dot-blue  { background: #00B0FF; }
-.nm-trust-dot-amber { background: #FFB300; animation: nm-pulse 2.5s infinite; }
-
-/* ── Sections ── */
-.nm-section { padding: 64px 16px; }
-.nm-section-accent {
-  background: linear-gradient(180deg, transparent, rgba(0, 200, 83, 0.012), transparent);
-}
-.nm-section-inner { max-width: 1280px; margin: 0 auto; }
-.nm-section-header { text-align: center; margin-bottom: 48px; }
-.nm-section-tag {
-  font-size: 11px;
-  font-weight: 700;
-  color: var(--nm-green);
-  letter-spacing: 3px;
-  text-transform: uppercase;
-  font-family: var(--nm-mono);
-}
-.nm-section-title {
-  font-size: clamp(24px, 5vw, 40px);
-  font-weight: 800;
-  color: var(--nm-text);
-  margin-top: 10px;
-  letter-spacing: -1px;
-  line-height: 1.15;
-}
-.nm-section-desc {
-  font-size: 15px;
-  color: var(--nm-text3);
-  max-width: 500px;
-  margin: 10px auto 0;
-  line-height: 1.6;
-}
-
-/* ── Features Grid ── */
-.nm-features-grid { display: grid; grid-template-columns: 1fr; gap: 14px; }
-.nm-features-grid.nm-visible .nm-feature-card { animation: nm-fade-up 0.5s ease both; }
-.nm-feature-card {
-  background: var(--nm-card);
-  border: 1px solid var(--nm-border);
-  border-radius: 14px;
-  padding: 24px;
-  position: relative;
-  overflow: hidden;
-  transition: all 0.3s ease;
-  opacity: 0;
-}
-.nm-feature-card:hover {
-  border-color: color-mix(in srgb, var(--nm-accent, #00C853) 40%, transparent);
-  transform: translateY(-3px);
-  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.2);
-}
-.nm-feature-glow {
-  position: absolute;
-  top: -24px; right: -24px;
-  width: 70px; height: 70px;
-  border-radius: 50%;
-  background: var(--nm-accent, #00C853);
-  opacity: 0.04;
-  filter: blur(28px);
-}
-.nm-feature-icon { font-size: 28px; margin-bottom: 12px; }
-.nm-feature-title { font-size: 16px; font-weight: 700; color: var(--nm-text); margin-bottom: 6px; }
-.nm-feature-desc { font-size: 13px; color: var(--nm-text3); line-height: 1.6; }
-
-/* ── Steps ── */
-.nm-steps { display: flex; flex-direction: column; gap: 20px; }
-.nm-steps.nm-visible .nm-step { animation: nm-fade-up 0.5s ease both; }
-.nm-step {
-  text-align: center;
-  position: relative;
-  opacity: 0;
-  background: var(--nm-card);
-  border: 1px solid var(--nm-border);
-  border-radius: 14px;
-  padding: 28px 20px;
-}
-.nm-step-num {
-  font-size: 32px;
-  font-weight: 900;
-  color: rgba(0, 200, 83, 0.07);
-  font-family: var(--nm-mono);
-  position: absolute;
-  top: 10px; left: 16px;
-}
-.nm-step-icon {
-  width: 56px; height: 56px;
-  border-radius: 14px;
-  margin: 0 auto 14px;
-  background: var(--nm-green-dim);
-  border: 1px solid rgba(0, 200, 83, 0.1);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 24px;
-}
-.nm-step-title { font-size: 16px; font-weight: 700; color: var(--nm-text); margin-bottom: 8px; }
-.nm-step-desc {
-  font-size: 13px;
-  color: var(--nm-text3);
-  line-height: 1.6;
-  max-width: 320px;
-  margin: 0 auto;
-}
-.nm-step-connector { display: none; }
-
-/* ── Pricing ── */
-.nm-pricing-grid { display: grid; grid-template-columns: 1fr; gap: 16px; }
-.nm-pricing-grid.nm-visible .nm-price-card { animation: nm-fade-up 0.5s ease both; }
-.nm-price-card {
-  background: var(--nm-card);
-  border: 1px solid var(--nm-border);
-  border-radius: 14px;
-  padding: 24px;
-  position: relative;
-  opacity: 0;
-  transition: all 0.3s ease;
-}
-.nm-price-card:hover:not(.nm-price-card-hl) {
-  border-color: color-mix(in srgb, var(--nm-accent, #64FFDA) 40%, transparent);
-  transform: translateY(-3px);
-}
-.nm-price-card-hl {
-  background: rgba(0, 200, 83, 0.04);
-  border-color: rgba(0, 200, 83, 0.22);
-  box-shadow: 0 0 32px rgba(0, 200, 83, 0.05);
-}
-.nm-price-tag {
-  position: absolute;
-  top: -10px; left: 50%;
-  transform: translateX(-50%);
-  background: linear-gradient(135deg, #FFD740, #FFC107);
-  color: #0A0F14;
-  font-size: 9px;
-  font-weight: 800;
-  padding: 3px 12px;
-  border-radius: 100px;
-  font-family: var(--nm-mono);
-  letter-spacing: 0.5px;
-  white-space: nowrap;
-}
-.nm-price-name {
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 2px;
-  color: var(--nm-accent, #64FFDA);
-  font-family: var(--nm-mono);
-  margin-bottom: 6px;
-}
-.nm-price-amount { margin-bottom: 18px; }
-.nm-price-num { font-size: 28px; font-weight: 800; color: var(--nm-text); }
-.nm-price-period { font-size: 13px; color: var(--nm-text3); }
-.nm-price-features { list-style: none; margin-bottom: 20px; }
-.nm-price-features li {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 4px 0;
-  font-size: 12px;
-  color: var(--nm-text2);
-}
-.nm-check { color: var(--nm-green); font-size: 12px; }
-.nm-price-cta {
-  display: block;
-  text-align: center;
-  width: 100%;
-  padding: 11px;
-  border-radius: 10px;
-  font-size: 13px;
-}
-
-/* ── Testimonials ── */
-.nm-testimonials { display: grid; grid-template-columns: 1fr; gap: 16px; }
-.nm-testimonials.nm-visible .nm-testimonial { animation: nm-fade-up 0.5s ease both; }
-.nm-testimonial {
-  background: var(--nm-card);
-  border: 1px solid var(--nm-border);
-  border-radius: 14px;
-  padding: 24px;
-  transition: all 0.3s ease;
-  opacity: 0;
-}
-.nm-testimonial:hover {
-  border-color: rgba(0, 200, 83, 0.12);
-  transform: translateY(-3px);
-}
-.nm-test-quote {
-  font-size: 24px;
-  color: rgba(0, 200, 83, 0.12);
-  font-family: Georgia, serif;
-  line-height: 1;
-}
-.nm-test-text {
-  font-size: 13px;
-  color: var(--nm-text2);
-  line-height: 1.7;
-  font-style: italic;
-  margin: 6px 0 16px;
-}
-.nm-test-author { display: flex; align-items: center; gap: 10px; }
-.nm-test-avatar {
-  width: 36px; height: 36px;
-  border-radius: 9px;
-  background: linear-gradient(135deg, #00C853, #006428);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 12px;
-  font-weight: 700;
-  color: var(--nm-text);
-  font-family: var(--nm-mono);
-}
-.nm-test-name { font-size: 13px; font-weight: 700; color: var(--nm-text); }
-.nm-test-role { font-size: 11px; color: var(--nm-text3); }
-
-/* ── CTA ── */
-.nm-cta-box {
-  max-width: 780px;
-  margin: 0 auto;
-  text-align: center;
-  background: linear-gradient(135deg, rgba(0, 200, 83, 0.05), rgba(0, 100, 40, 0.05));
-  border: 1px solid rgba(0, 200, 83, 0.1);
-  border-radius: 18px;
-  padding: 52px 24px;
-  position: relative;
-  overflow: hidden;
-}
-.nm-cta-glow-1, .nm-cta-glow-2 {
-  position: absolute;
-  border-radius: 50%;
-  filter: blur(50px);
-}
-.nm-cta-glow-1 {
-  top: -36px; right: -36px;
-  width: 140px; height: 140px;
-  background: rgba(0, 200, 83, 0.04);
-}
-.nm-cta-glow-2 {
-  bottom: -28px; left: -28px;
-  width: 110px; height: 110px;
-  background: rgba(0, 200, 83, 0.03);
-}
-.nm-cta-title {
-  font-size: clamp(26px, 5vw, 38px);
-  font-weight: 800;
-  color: var(--nm-text);
-  letter-spacing: -1px;
-  margin-bottom: 12px;
-  position: relative;
-}
-.nm-cta-desc {
-  font-size: 15px;
-  color: var(--nm-text2);
-  max-width: 420px;
-  margin: 0 auto 28px;
-  line-height: 1.6;
-}
-.nm-cta-buttons {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 10px;
-}
-
-/* ── Footer ── */
-.nm-footer {
-  border-top: 1px solid var(--nm-border);
-  padding: 40px 16px 20px;
-}
-.nm-footer-inner {
-  max-width: 1280px;
-  margin: 0 auto;
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 28px;
-  margin-bottom: 28px;
-}
-.nm-footer-tagline {
-  font-size: 13px;
-  color: var(--nm-text3);
-  line-height: 1.6;
-  max-width: 280px;
-}
-.nm-footer-col-title {
-  font-size: 11px;
-  font-weight: 700;
-  color: var(--nm-text2);
-  letter-spacing: 1px;
-  text-transform: uppercase;
-  font-family: var(--nm-mono);
-  margin-bottom: 12px;
-}
-.nm-footer-link {
-  display: block;
-  font-size: 13px;
-  color: var(--nm-text3);
-  text-decoration: none;
-  padding: 3px 0;
-  transition: color 0.2s;
-}
-.nm-footer-link:hover { color: var(--nm-green); }
-.nm-footer-bottom {
-  max-width: 1280px;
-  margin: 0 auto;
-  border-top: 1px solid var(--nm-border);
-  padding-top: 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  font-size: 11px;
-  color: var(--nm-text4);
-}
-
-/* ── Email Signup ── */
-.nm-hero-signup {
-  margin-top: 28px;
-}
-.nm-cta-signup {
-  margin-top: 28px;
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 16px;
-}
-.nm-cta-divider {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  width: 100%;
-  max-width: 400px;
-}
-.nm-cta-divider-line {
-  flex: 1;
-  height: 1px;
-  background: rgba(255,255,255,0.08);
-}
-.nm-cta-divider-text {
-  font-size: 11px;
-  color: var(--nm-text3);
-  white-space: nowrap;
-  font-family: var(--nm-mono);
-  letter-spacing: 0.3px;
-}
-.nm-footer-signup {
-  margin-top: 16px;
-}
-
-/* ── App Download ── */
-.nm-appdl { text-align: center; }
-.nm-appdl-title { font-size: 32px; font-weight: 800; margin-bottom: 8px; }
-.nm-appdl-desc { color: var(--nm-text3); margin-bottom: 32px; }
-.nm-appdl-grid { display: flex; flex-wrap: wrap; justify-content: center; gap: 28px; }
-.nm-appdl-card {
-  display: flex; flex-direction: column; align-items: center; gap: 16px;
-  background: rgba(255,255,255,0.03);
-  border: 1px solid rgba(255,255,255,0.08);
-  border-radius: 20px; padding: 28px 32px;
-}
-.nm-appdl-card-title { font-size: 14px; font-weight: 600; color: var(--nm-text3); }
-.nm-appdl-qr { border-radius: 12px; background: #fff; padding: 8px; display: block; }
-.nm-appdl-badge { height: auto; display: block; }
-
-/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-   TABLET — 640px+
-   â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
-/* ── Tiny screens < 400px: hide State column in price table ── */
-@media (max-width: 399px) {
-  .nm-ck-row { grid-template-columns: 2fr 1.4fr 0.9fr; }
-  .nm-ck-state { display: none; }
-  .nm-ck-row-h span:nth-child(2) { display: none; }
-  .nm-hero-stats { gap: 12px; }
-}
-
-@media (min-width: 640px) {
-  .nm-features-grid { grid-template-columns: repeat(2, 1fr); }
-  .nm-steps { flex-direction: row; }
-  .nm-step { flex: 1; }
-  .nm-pricing-grid { grid-template-columns: repeat(3, 1fr); }
-  .nm-testimonials { grid-template-columns: repeat(3, 1fr); }
-  .nm-footer-inner { grid-template-columns: 2fr 1fr 1fr 1fr; }
-  .nm-footer-bottom { flex-direction: row; justify-content: space-between; }
-  .nm-hero-stats { gap: 32px; grid-template-columns: repeat(4, auto); }
-  .nm-stat-val { font-size: 26px; }
-}
-
-/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-   DESKTOP — 1024px+
-   â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
-@media (min-width: 1024px) {
-  .nm-nav-inner { padding: 0 40px; height: 68px; }
-  .nm-nav-links { display: flex; }
-  .nm-hamburger { display: none; }
-  .nm-mobile-menu { display: none !important; }
-
-  .nm-hero { padding: 120px 40px 80px; }
-  .nm-hero-inner {
-    flex-direction: row;
-    gap: 56px;
-    align-items: center;
-  }
-  .nm-hero-copy { flex: 1; }
-  .nm-hero-demo { flex: 1; max-width: 500px; }
-
-  .nm-section { padding: 90px 40px; }
-  .nm-features-grid { grid-template-columns: repeat(3, 1fr); }
-
-  .nm-step-connector {
-    display: block;
-    position: absolute;
-    top: 50%; right: -18px;
-    width: 36px; height: 2px;
-    background: linear-gradient(90deg, rgba(0, 200, 83, 0.2), transparent);
-  }
-
-  .nm-pricing-grid { gap: 20px; }
-  .nm-price-card-hl { transform: scale(1.03); }
-
-  .nm-footer { padding: 56px 40px 28px; }
-}
-/* ── Landscape phones (rotated) ── */
-@media (max-height: 500px) and (orientation: landscape) {
-  .nm-hero { min-height: auto; padding: 100px 16px 40px; }
-  .nm-hero-title { font-size: clamp(22px, 5vw, 36px); }
-  .nm-hero-inner { gap: 24px; }
-}
-
-`;
-
-
-
