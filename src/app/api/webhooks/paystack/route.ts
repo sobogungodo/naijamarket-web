@@ -147,7 +147,23 @@ async function activateSubscription(
 ): Promise<{ success: boolean; error?: string }> {
   try {
     const days = DURATION_DAYS[billingCycle] || 30;
-    const endDate = new Date(Date.now() + days * 86400000);
+
+    // --- Referral credit redemption (wa-v139) ---
+    // Referrer earns 7 bonus days per pending credit when they subscribe.
+    let bonusDays = 0;
+    let pendingCreditIds: string[] = [];
+    try {
+      const creditRows = await prisma.$queryRaw<Array<{ credit_id: string }>>`
+        SELECT credit_id FROM dbo.Referral_Credits
+        WHERE phone_number = ${phone} AND status = 'PENDING'
+      `;
+      pendingCreditIds = creditRows.map((r) => r.credit_id);
+      bonusDays = pendingCreditIds.length * 7;
+    } catch (rcLookupErr: any) {
+      console.error("[PS] Referral credit lookup failed (non-blocking):", rcLookupErr?.message || rcLookupErr);
+    }
+    const totalDays = days + bonusDays;
+    const endDate = new Date(Date.now() + totalDays * 86400000);
     const graceEnd = new Date(endDate.getTime() + GRACE_PERIOD_DAYS * 86400000);
     const subId = genId("SUB");
     const txnId = genId("TXN");
@@ -213,6 +229,48 @@ async function activateSubscription(
       `;
     } catch (ledgerErr: any) {
       console.error(`[PS] Ledger write failed (non-blocking) ref=${ref}:`, ledgerErr?.message || ledgerErr);
+    }
+
+    // Mark referral credits APPLIED (non-blocking, after activation succeeds)
+    if (pendingCreditIds.length > 0) {
+      try {
+        for (const cid of pendingCreditIds) {
+          await prisma.$executeRaw`
+            UPDATE dbo.Referral_Credits
+            SET status = 'APPLIED',
+                applied_at = GETUTCDATE(),
+                applied_to_ref = ${ref}
+            WHERE credit_id = ${cid}
+              AND status = 'PENDING'
+          `;
+        }
+        console.log(`[PS] ${pendingCreditIds.length} referral credit(s) applied (+${bonusDays} days) for ${phone}`);
+
+        // WA notification to the referrer via Meta (the channel with working
+        // creds in Vercel; the webhook's Twilio helper lacks TWILIO_AUTH_TOKEN there).
+        try {
+          const metaUrl = `https://graph.facebook.com/v18.0/${process.env.META_PHONE_NUMBER_ID}/messages`;
+          await fetch(metaUrl, {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${process.env.META_ACCESS_TOKEN}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              messaging_product: "whatsapp",
+              to: phone.replace(/\D/g, ""),
+              type: "text",
+              text: {
+                body: `Your NaijaMarket Intel referral credit has been applied - we've added ${bonusDays} extra day${bonusDays === 1 ? "" : "s"} to your subscription. Thanks for spreading the word!`,
+              },
+            }),
+          });
+        } catch (waMsgErr: any) {
+          console.error("[PS] Referral WA notification failed (non-blocking):", waMsgErr?.message || waMsgErr);
+        }
+      } catch (rcUpdateErr: any) {
+        console.error("[PS] Referral credit update failed (non-blocking):", rcUpdateErr?.message || rcUpdateErr);
+      }
     }
 
     console.log(`[PS] âœ… ${tierCode} activated for ${phone} until ${endISO}`);
