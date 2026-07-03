@@ -92,6 +92,7 @@ export async function middleware(request: NextRequest) {
     pathname.startsWith("/_next") ||
     pathname.startsWith("/static") ||
     pathname.startsWith("/api/auth") ||
+    pathname.startsWith("/auth/kicked") ||
     pathname.startsWith("/api/health") ||
     pathname.startsWith("/api/public") ||
     pathname.startsWith("/api/inflation") ||
@@ -189,14 +190,12 @@ export async function middleware(request: NextRequest) {
               { status: 401 }
             );
           }
-          const loginUrl = new URL("/login", request.url);
-          loginUrl.searchParams.set("error", validationResult.error_code);
-          loginUrl.searchParams.set("callbackUrl", pathname);
-          const response = NextResponse.redirect(loginUrl);
-          response.cookies.delete("next-auth.session-token");
-          response.cookies.delete("__Secure-next-auth.session-token");
-          response.cookies.delete("session_validated");
-          return response;
+          const kickUrl = new URL("/auth/kicked", request.url);
+          kickUrl.searchParams.set("reason", validationResult.error_code);
+          const response1 = NextResponse.redirect(kickUrl);
+          response1.cookies.delete("next-auth.session-token");
+          response1.cookies.delete("__Secure-next-auth.session-token");
+          return response1;
         }
 
         const response = NextResponse.next();
@@ -213,15 +212,12 @@ export async function middleware(request: NextRequest) {
             { status: 401 }
           );
         }
-        const loginUrl = new URL("/login", request.url);
-        loginUrl.searchParams.set("error", "SESSION_INVALID");
-        loginUrl.searchParams.set("callbackUrl", pathname);
-        const response = NextResponse.redirect(loginUrl);
-        // Clear NextAuth session cookies to break redirect loop
-        response.cookies.delete("next-auth.session-token");
-        response.cookies.delete("__Secure-next-auth.session-token");
-        response.cookies.delete("session_validated");
-        return response;
+        const kickUrl2 = new URL("/auth/kicked", request.url);
+        kickUrl2.searchParams.set("reason", "SESSION_INVALID");
+        const response2 = NextResponse.redirect(kickUrl2);
+        response2.cookies.delete("next-auth.session-token");
+        response2.cookies.delete("__Secure-next-auth.session-token");
+        return response2;
       }
     } catch (error) {
       console.error("[MIDDLEWARE] Validation error:", error);
