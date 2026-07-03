@@ -7,12 +7,12 @@ import PublicPageShell from "@/components/PublicPageShell";
 export const metadata = {
   title: "How We Verify Prices | NaijaMarket Intel",
   description:
-    "NaijaMarket Intel's price verification methodology: GPS-confirmed traders, 3-validator consensus, confidence scoring, and 3× daily generation across 282 Nigerian markets.",
+    "NaijaMarket Intel's price verification methodology: GPS-confirmed traders, 3-validator consensus, confidence scoring, and 3× daily generation across 226 Nigerian markets.",
 };
 
 // ─── Stat card data ───────────────────────────────────────────────────────────
 const STATS = [
-  { value: "282", label: "Markets covered" },
+  { value: "226", label: "Markets covered" },
   { value: "610", label: "Tracked commodities" },
   { value: "37", label: "States + FCT" },
   { value: "3×", label: "Daily price updates" },
@@ -51,7 +51,7 @@ see this score alongside every price so they can weight their decisions accordin
     step: "04",
     title: "3× Daily Generation",
     body: `Verified submissions feed a three-slot daily price generation pipeline running
-at 08:30, 11:30, and 14:30 WAT (West Africa Time). Each slot generates 172,020 price
+at 08:30, 11:30, and 14:30 WAT (West Africa Time). Each slot generates 137,860 price
 points across all item-market combinations. Markets with verified submissions for a given
 slot use REAL_ANCHORED pricing. Markets without a fresh submission carry forward a
 simulated estimate (SIM_TRACKED) anchored to the last verified price, clearly flagged in
@@ -71,7 +71,7 @@ the April 2026 CPI rebase (NBS inflation rate: 16.06%).`,
 
 // ─── Coverage table ───────────────────────────────────────────────────────────
 const CATEGORIES = [
-  { cat: "Grains & Cereals", items: "Rice, Maize, Millet, Sorghum, Wheat flour", markets: 282 },
+  { cat: "Grains & Cereals", items: "Rice, Maize, Millet, Sorghum, Wheat flour", markets: 226 },
   { cat: "Tubers & Roots", items: "Yam, Cassava, Sweet potato, Cocoyam", markets: 267 },
   { cat: "Vegetables & Tomatoes", items: "Tomatoes, Onions, Pepper, Spinach", markets: 254 },
   { cat: "Proteins", items: "Beans, Fish, Chicken, Beef, Eggs", markets: 231 },
@@ -83,7 +83,7 @@ export default function MethodologyPage() {
   return (
     <PublicPageShell
       title="How We Verify Prices"
-      subtitle="GPS-confirmed traders. Consensus validation. 3× daily generation across 282 Nigerian markets."
+      subtitle="GPS-confirmed traders. Consensus validation. 3× daily generation across 226 Nigerian markets."
     >
       <style>{STYLES}</style>
 
@@ -138,7 +138,7 @@ export default function MethodologyPage() {
       </div>
       <p>
         Prices are generated three times daily. Each generation slot produces{" "}
-        <strong>172,020 price points</strong> (610 items × 282 markets). The{" "}
+        <strong>137,860 price points</strong> (610 items × 226 markets). The{" "}
         <code>price_date</code> field on every record reflects the date of generation.
         Consumer-facing APIs always serve the most recent slot. Our{" "}
         <code>Latest_Prices_Summary</code> view is refreshed before each morning slot and
@@ -149,7 +149,7 @@ export default function MethodologyPage() {
       <h2>Coverage</h2>
       <p>
         We track <strong>610 commodity items</strong> across{" "}
-        <strong>282 markets in 37 states and the FCT</strong>. Coverage spans the six
+        <strong>226 markets in 37 states and the FCT</strong>. Coverage spans the six
         geopolitical zones with market density proportional to trading volume. Below is
         the breakdown by category:
       </p>

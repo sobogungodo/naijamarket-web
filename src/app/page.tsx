@@ -98,7 +98,7 @@ const DEMO_PRICES: Record<string, PriceResult> = {
 };
 
 const FEATURES = [
-  { icon: "📡", title: "Real-Time Prices", desc: "Live GPS-verified prices from 282 markets across 36 states + FCT. Updated 3× daily by on-ground traders.", accent: "#00C853" },
+  { icon: "📡", title: "Real-Time Prices", desc: "Live GPS-verified prices from 226 markets across 36 states + FCT. Updated 3× daily by on-ground traders.", accent: "#00C853" },
   { icon: "🔔", title: "Smart Price Alerts", desc: "Set thresholds. Get WhatsApp notifications when prices cross your targets.", accent: "#FF5252" },
   { icon: "🌍", title: "Regional Comparison", desc: "Compare prices across states. Spot arbitrage opportunities before competitors.", accent: "#26A69A" },
 ];
@@ -106,7 +106,7 @@ const FEATURES = [
 const TIERS = [
   {
     nm: "FREE", pr: "₦0", pd: "", tg: null, ac: "#64FFDA", hl: false,
-    ft: ["5 queries/week", "3 markets", "WhatsApp access", "Basic price search", "1 free guest query"],
+    ft: ["3 queries/week", "3 markets", "WhatsApp access", "Basic price search", "1 free guest query"],
     ct: "Start Free", hr: "/register",
   },
   {
@@ -438,7 +438,7 @@ function Hero() {
         <div className="nm-hero-copy">
           <div className="nm-hero-badge">
             <span className="nm-pulse-dot" />
-            <span>LIVE — 282 Markets · 36 States + FCT</span>
+            <span>LIVE — 226 Markets · 36 States + FCT</span>
           </div>
 
           <h1 className="nm-hero-title">
@@ -448,7 +448,7 @@ function Hero() {
 
           <p className="nm-hero-subtitle">
             Tomatoes at Mile 12 today: <strong style={{color:"#00C853"}}>₦42,500</strong>. Bodija: <strong style={{color:"#00C853"}}>₦38,200</strong>. That&apos;s ₦4,300 arbitrage per basket — before you leave the house.
-            GPS-verified prices from 282 markets. Updated 3× daily.
+            GPS-verified prices from 226 markets. Updated 3× daily.
           </p>
 
           <div className="nm-hero-ctas">
@@ -467,7 +467,7 @@ function Hero() {
 
           <div className="nm-hero-stats">
             {[
-              { v: "282", l: "Markets" },
+              { v: "226", l: "Markets" },
               { v: "610+", l: "Commodities" },
               { v: "36+FCT", l: "States" },
               { v: "3×", l: "Daily" },
@@ -499,7 +499,7 @@ function VideoSection() {
         <div className="nm-section-header" style={{marginBottom: "32px"}}>
           <span className="nm-section-tag">Platform Demo</span>
           <h2 className="nm-section-title">See NaijaMarket Intel in Action</h2>
-          <p className="nm-section-desc">Real-time commodity prices across 282 Nigerian markets — updated three times daily.</p>
+          <p className="nm-section-desc">Real-time commodity prices across 226 Nigerian markets — updated three times daily.</p>
         </div>
         <div style={{position: "relative", borderRadius: "12px", overflow: "hidden", border: "1px solid rgba(0,200,83,0.2)", boxShadow: "0 8px 40px rgba(0,0,0,0.4)"}}>
           <video

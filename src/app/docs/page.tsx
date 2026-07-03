@@ -33,7 +33,7 @@ export default function DocsPage() {
           {/* Overview */}
           <section>
             <h2 className="text-xl font-semibold text-white mb-3">Overview</h2>
-            <p>The NaijaMarket Intel API provides RESTful access to verified commodity price data across 226+ Nigerian markets covering 500+ food commodities. Data is updated multiple times daily through our crowdsourced trader network with 3-validator consensus verification.</p>
+            <p>The NaijaMarket Intel API provides RESTful access to verified commodity price data across 226+ Nigerian markets covering 610+ food commodities. Data is updated multiple times daily through our crowdsourced trader network with 3-validator consensus verification.</p>
           </section>
 
           {/* Base URL */}

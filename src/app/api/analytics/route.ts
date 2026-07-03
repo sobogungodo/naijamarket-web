@@ -163,7 +163,7 @@ async function fetchPlatformStats(prisma: any) {
     };
   } catch (e: any) {
     console.warn("Stats error:", e.message?.substring(0, 150));
-    return { totalMarkets: 226, activeMarkets: 0, totalItems: 274, activeItems: 0, totalCategories: 15, priceUpdates24h: 0, totalPrices: 0 };
+    return { totalMarkets: 226, activeMarkets: 0, totalItems: 610, activeItems: 0, totalCategories: 15, priceUpdates24h: 0, totalPrices: 0 };
   }
 }
 
