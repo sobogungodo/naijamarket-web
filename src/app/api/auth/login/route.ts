@@ -1,6 +1,7 @@
 // src/app/api/auth/login/route.ts
 // Proxies to func-naijamarket-api/login, then rotates session_token in DB
 // to enforce single-session across web, mobile, and WA.
+export const runtime = "nodejs";
 import { NextRequest, NextResponse } from "next/server";
 import sql from "mssql";
 
@@ -80,7 +81,7 @@ export async function POST(request: NextRequest) {
         console.log(`[login] session rotated for ${consumerId} from ${clientIp}`);
       } catch (dbErr: any) {
         // Non-fatal — log but don't block login
-        console.error("[login] session rotation failed:", dbErr?.message || dbErr);
+        console.error("[login] session rotation FAILED — consumer:", consumerId, "error:", dbErr?.message || dbErr, "code:", (dbErr as any)?.code, "server:", process.env.AZURE_SQL_SERVER ? "SET" : "MISSING", "user:", process.env.AZURE_SQL_USER ? "SET" : "MISSING");
       } finally {
         try { await pool2?.close(); } catch { /* ignore */ }
       }
