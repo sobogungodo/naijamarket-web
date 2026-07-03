@@ -59,6 +59,12 @@ const dbConfig: sql.config = {
 const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY || "";
 const FLUTTERWAVE_SECRET_KEY = process.env.FLUTTERWAVE_SECRET_KEY || "";
 
+// Higher number = higher tier (matches /api/subscribe/verify). Requesting a tier
+// with a LOWER rank than the caller's active tier is a downgrade.
+const TIER_RANK: Record<string, number> = {
+  FREE: 0, SILVER: 1, GOLD: 2, BUSINESS: 3, CORPORATE: 4, ENTERPRISE: 5,
+};
+
 // Base URL for callbacks
 const BASE_URL = process.env.NEXTAUTH_URL || "https://naijamarket-web.vercel.app";
 
@@ -401,6 +407,22 @@ export async function POST(request: NextRequest) {
         { error: "Cannot process payment for FREE tier" },
         { status: 400 }
       );
+    }
+
+    // Downgrade guard: don't charge for a tier LOWER than the caller's active one —
+    // verify would refuse to apply it, leaving the user charged with no refund.
+    if (phone) {
+      try {
+        const status = await getSubscriptionStatus(phone);
+        const curTier = (status?.tier || "FREE").toUpperCase();
+        const stillValid = !status?.endDate || new Date(status.endDate) >= new Date();
+        if (curTier !== "FREE" && stillValid && (TIER_RANK[tierKey] ?? 0) < (TIER_RANK[curTier] ?? 0)) {
+          return NextResponse.json(
+            { error: `You're already on the ${curTier} plan — a lower plan can't be applied while it's active, so you won't be charged.` },
+            { status: 409 }
+          );
+        }
+      } catch { /* status lookup failed — allow the payment rather than block it */ }
     }
 
     // Validate provider

@@ -15,6 +15,12 @@ export const dynamic = "force-dynamic";
 const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY || "";
 const BASE_URL = process.env.NEXTAUTH_URL || "https://naijamarket-web.vercel.app";
 
+// Higher number = higher tier (matches /api/subscribe/verify). A requested tier
+// with a LOWER rank than the caller's active tier is a downgrade.
+const TIER_RANK: Record<string, number> = {
+  FREE: 0, SILVER: 1, GOLD: 2, BUSINESS: 3, CORPORATE: 4, ENTERPRISE: 5,
+};
+
 interface ConsumerClaims { consumer_id?: string; phone_number?: string }
 
 async function verifyConsumer(req: NextRequest): Promise<ConsumerClaims | null> {
@@ -70,6 +76,23 @@ export async function POST(req: NextRequest) {
     const amount = Number(tier.price_ngn) || 0;
     if (amount <= 0) {
       return NextResponse.json({ success: false, error: "Cannot pay for the FREE tier" }, { status: 400 });
+    }
+
+    // Downgrade guard: don't charge for a tier LOWER than the caller's active
+    // one — verify would refuse to apply it, leaving the user charged with no
+    // refund. Downgrades happen automatically (a plan lapses at its end date).
+    const curRows = (await prisma.$queryRaw`
+      SELECT subscription_tier, subscription_end_date
+      FROM dbo.Consumers WHERE consumer_id = ${consumer.consumer_id}
+    `) as Array<{ subscription_tier: string | null; subscription_end_date: Date | string | null }>;
+    const curTier = String(curRows?.[0]?.subscription_tier || "FREE").toUpperCase();
+    const curEnd = curRows?.[0]?.subscription_end_date;
+    const stillValid = !curEnd || new Date(curEnd as any) >= new Date();
+    if (curTier !== "FREE" && stillValid && (TIER_RANK[tierKey] ?? 0) < (TIER_RANK[curTier] ?? 0)) {
+      return NextResponse.json(
+        { success: false, error: `You're already on the ${curTier} plan — a lower plan can't be applied while it's active, so you won't be charged.` },
+        { status: 409 }
+      );
     }
 
     // Identity comes from the verified token, not the client body.
