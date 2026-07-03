@@ -239,7 +239,7 @@ function LoginForm() {
       document.cookie = "session_validated=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT";
 
       // Step 2: Sign in with NextAuth using session token
-      const result = await signIn("credentials", {
+      const result = await signIn("email-otp", {
         session_token: loginData.session_token,
         consumer_id: loginData.consumer.id,
         redirect: false,

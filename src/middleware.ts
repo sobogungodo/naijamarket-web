@@ -202,9 +202,25 @@ export async function middleware(request: NextRequest) {
         response.headers.set("Pragma", "no-cache");
         response.headers.set("Expires", "0");
         return response;
+      } else {
+        // validate-session returned non-ok (401/500) — treat as invalid session
+        console.log("[MIDDLEWARE] Validation returned non-ok status:", validationResponse.status);
+        if (isProtectedApiRoute) {
+          return NextResponse.json(
+            { success: false, error: "SESSION_INVALID", message: "Session invalid" },
+            { status: 401 }
+          );
+        }
+        const loginUrl = new URL("/login", request.url);
+        loginUrl.searchParams.set("error", "SESSION_INVALID");
+        loginUrl.searchParams.set("callbackUrl", pathname);
+        const response = NextResponse.redirect(loginUrl);
+        response.cookies.delete("session_validated");
+        return response;
       }
     } catch (error) {
       console.error("[MIDDLEWARE] Validation error:", error);
+      // Fail-open only on network errors, not on auth failures
     }
 
     const response = NextResponse.next();
