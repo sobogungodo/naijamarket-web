@@ -45,7 +45,7 @@ interface TierData {
 
 const TIER_FEATURES: Record<string, string[]> = {
   FREE: [
-    "5 price queries per week",
+    "3 price queries per week",
     "3 markets access",
     "Basic price data",
     "WhatsApp support",

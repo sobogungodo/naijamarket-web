@@ -1,7 +1,7 @@
 // src/lib/query-gate.ts
 // NaijaMarket Intel — cross-platform query gate (WEB + MOBILE), at parity with the
 // WhatsApp engine (shared/query_limit.py). Single source of truth per tier:
-//   FREE       5 / WEEK  → Consumers.queries_remaining (resets Monday 00:00 UTC)
+//   FREE       3 / WEEK  → Consumers.queries_remaining (resets Monday 00:00 UTC)
 //   SILVER    10 / DAY  ─┐
 //   GOLD      25 / DAY   ├ counted from Query_Log rows (counted_against_limit = 'Y')
 //   BUSINESS 100 / DAY  ─┘
@@ -20,13 +20,13 @@
 import { prisma } from "@/lib/prisma";
 import { randomUUID } from "crypto";
 
-const FREE_WEEKLY_LIMIT = 5;
+const FREE_WEEKLY_LIMIT = 3;
 const UNLIMITED = -1;
 
 export type QuerySource = "WEB" | "MOBILE";
 
 export const UPSELL_MESSAGE =
-  "You've used your 5 free price checks this week.\n\n" +
+  "You've used your 3 free price checks this week.\n\n" +
   "SILVER — ₦500/week unlocks:\n" +
   "✅ 10 price checks/day\n" +
   "✅ Price alerts on any item\n" +

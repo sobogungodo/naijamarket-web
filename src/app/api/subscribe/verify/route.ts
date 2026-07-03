@@ -68,9 +68,9 @@ const DEFAULT_TIER_CONFIG: TierConfig = {
 // Subscription tier configurations
 const TIER_CONFIG: Record<string, TierConfig> = {
   FREE: { tierName: "Free", queryLimit: 3, maxMarkets: 3, duration: 0, billingCycle: "forever" },
-  SILVER: { tierName: "Silver", queryLimit: 5, maxMarkets: 3, duration: 7, billingCycle: "weekly" },
-  GOLD: { tierName: "Gold", queryLimit: 15, maxMarkets: 3, duration: 30, billingCycle: "monthly" },
-  BUSINESS: { tierName: "Business", queryLimit: 30, maxMarkets: 5, duration: 30, billingCycle: "monthly" },
+  SILVER: { tierName: "Silver", queryLimit: 10, maxMarkets: 3, duration: 7, billingCycle: "weekly" },
+  GOLD: { tierName: "Gold", queryLimit: 25, maxMarkets: 3, duration: 30, billingCycle: "monthly" },
+  BUSINESS: { tierName: "Business", queryLimit: 100, maxMarkets: 5, duration: 30, billingCycle: "monthly" },
   CORPORATE: { tierName: "Corporate", queryLimit: null, maxMarkets: 6, duration: 30, billingCycle: "monthly" },
   ENTERPRISE: { tierName: "Enterprise", queryLimit: null, maxMarkets: 226, duration: 30, billingCycle: "monthly" },
 };
