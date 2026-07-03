@@ -34,7 +34,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
-import { sendPaymentConfirmed } from "@/lib/whatsapp";
+import { sendPaymentConfirmed, sendReferralCreditApplied } from "@/lib/whatsapp";
 
 // ============================================================================
 // PRISMA (singleton)
@@ -247,25 +247,16 @@ async function activateSubscription(
         }
         console.log(`[PS] ${pendingCreditIds.length} referral credit(s) applied (+${bonusDays} days) for ${phone}`);
 
-        // WA notification to the referrer via Meta (the channel with working
-        // creds in Vercel; the webhook's Twilio helper lacks TWILIO_AUTH_TOKEN there).
+        // WA notification to the referrer via the approved Meta UTILITY template
+        // `referral_credit_notice` (free-form text only delivers inside the 24h
+        // window; an approved template reaches referrers regardless).
         try {
-          const metaUrl = `https://graph.facebook.com/v18.0/${process.env.META_PHONE_NUMBER_ID}/messages`;
-          await fetch(metaUrl, {
-            method: "POST",
-            headers: {
-              Authorization: `Bearer ${process.env.META_ACCESS_TOKEN}`,
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              messaging_product: "whatsapp",
-              to: phone.replace(/\D/g, ""),
-              type: "text",
-              text: {
-                body: `Your NaijaMarket Intel referral credit has been applied - we've added ${bonusDays} extra day${bonusDays === 1 ? "" : "s"} to your subscription. Thanks for spreading the word!`,
-              },
-            }),
-          });
+          await sendReferralCreditApplied(
+            phone,
+            `₦${pendingCreditIds.length * 150}`,
+            bonusDays,
+            endDate.toLocaleDateString("en-NG", { day: "numeric", month: "short", year: "numeric" })
+          );
         } catch (waMsgErr: any) {
           console.error("[PS] Referral WA notification failed (non-blocking):", waMsgErr?.message || waMsgErr);
         }

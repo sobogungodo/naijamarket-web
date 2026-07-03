@@ -61,8 +61,8 @@ export async function sendMetaTemplate(
 }
 
 // Convenience wrappers — one per approved template
-export const sendReferralCreditApplied = (phone: string, bonusDays: number) =>
-  sendMetaTemplate(phone, 'referral_credit_applied', ['₦150', String(bonusDays)]);
+export const sendReferralCreditApplied = (phone: string, creditNaira: string, bonusDays: number, newEndDate: string) =>
+  sendMetaTemplate(phone, 'referral_credit_notice', [creditNaira, String(bonusDays), newEndDate]);
 
 export const sendPaymentConfirmed = (phone: string, tier: string, expiryDate: string) =>
   sendMetaTemplate(phone, 'subscription_payment_confirmed', [tier, expiryDate]);
