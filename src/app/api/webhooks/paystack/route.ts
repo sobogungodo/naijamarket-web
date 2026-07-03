@@ -34,7 +34,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
-import { sendPaymentConfirmed, sendReferralCreditApplied } from "@/lib/whatsapp";
+import { sendPaymentConfirmed, sendReferralCreditApplied, sendAddOnActivated } from "@/lib/whatsapp";
 
 // ============================================================================
 // PRISMA (singleton)
@@ -121,6 +121,7 @@ interface Meta {
   billing_cycle: string;
   addon_code: string;
   product_type: string;
+  purchase_type: string;
 }
 
 function extractMeta(data: any): Meta {
@@ -140,6 +141,7 @@ function extractMeta(data: any): Meta {
     billing_cycle:m.billing_cycle|| m.billingCycle|| cf.billing_cycle|| cf.billingCycle|| "MONTHLY",
     addon_code:   m.addon_code   || cf.addon_code   || "",
     product_type: m.product_type || cf.product_type || "SUBSCRIPTION",
+    purchase_type: m.purchase_type || cf.purchase_type || "",
   };
 }
 
@@ -386,6 +388,35 @@ async function onChargeSuccess(data: any): Promise<string> {
       `âœ… *Morning Brief Activated!*\n\nYou'll receive daily prices at 5:30 AM.\nPayment: ${naira(amount)}\nValid until: ${endDate.toLocaleDateString("en-NG")}\n\nðŸŒ… See you tomorrow morning!`
     );
     return `Morning Brief for ${phone}`;
+  }
+
+  // TOKEN_PACK purchase
+  if (meta.purchase_type === "TOKEN_PACK") {
+    // Idempotency: check Token_Transactions instead of Subscription_Transactions
+    const tokenExisting = await prisma.$queryRaw`
+      SELECT TOP 1 payment_status FROM dbo.Token_Transactions
+      WHERE payment_reference = ${ref}
+    ` as any[];
+    if (tokenExisting.length > 0 && tokenExisting[0].payment_status === "COMPLETED") {
+      console.log(`[PS] TOKEN_PACK duplicate ref ${ref} — skipping`);
+      return `Token duplicate ignored: ${ref}`;
+    }
+    // Credit via verify route logic — atomic PENDING→COMPLETED flip
+    const verifyRes = await fetch(`${process.env.NEXTAUTH_URL}/api/tokens/verify`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ reference: ref }),
+    });
+    const verifyData = await verifyRes.json();
+    if (verifyData.success) {
+      const totalTokens = verifyData.tokensAdded || 0;
+      const packName = verifyData.packName || "Token Pack";
+      await sendAddOnActivated(phone, packName, naira(amount));
+      console.log(`[PS] TOKEN_PACK credited: ${phone} +${totalTokens} tokens ref=${ref}`);
+    } else {
+      console.error(`[PS] TOKEN_PACK verify failed ref=${ref}:`, verifyData.error);
+    }
+    return `TOKEN_PACK for ${phone}`;
   }
 
   // Default: subscription

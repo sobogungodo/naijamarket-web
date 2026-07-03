@@ -60,7 +60,7 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json();
-    const { consumerId, packId } = body;
+    const { consumerId, packId, source } = body;
 
     if (!consumerId || !packId) {
       return NextResponse.json(
@@ -197,7 +197,9 @@ export async function POST(request: NextRequest) {
         email,
         amount: Math.round(amountNgn * 100), // kobo
         reference,
-        callback_url: `${BASE_URL}/dashboard/tokens/callback?ref=${reference}`,
+        callback_url: source === 'app'
+          ? `${BASE_URL}/api/tokens/app-callback?ref=${reference}`
+          : `${BASE_URL}/dashboard/tokens/callback?ref=${reference}`,
         channels: ["card", "bank", "ussd", "bank_transfer"],
         metadata: {
           consumer_id: consumerId,
