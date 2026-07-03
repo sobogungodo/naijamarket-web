@@ -158,7 +158,7 @@ export async function POST(request: NextRequest) {
     await db.request()
       .input("consumer_id", sql.NVarChar(50), consumer_id)
       .input("phone_number", sql.NVarChar(20), phone_number)
-      .input("phone", sql.NVarChar(20), phone_number)
+      .input("phone", sql.NVarChar(20), phone_number.replace(/^\+/, ""))
       .input("preferred_language", sql.NVarChar(50), preferred_language || "EN")
       .input("first_name", sql.NVarChar(50), first_name || null)
       .input("last_name", sql.NVarChar(50), last_name || null)
