@@ -7,6 +7,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import sql from "mssql";
+import { sendPaymentConfirmed } from "@/lib/whatsapp";
 
 // ============================================================================
 // TYPE DEFINITIONS
@@ -433,6 +434,20 @@ async function upgradeSubscription(
             GETUTCDATE(), GETUTCDATE(), GETUTCDATE()
           )
         `);
+
+      // First activation only (deduped by the payment_reference check above) → send
+      // the payment-confirmation WhatsApp. The Paystack webhook also sends this, but
+      // it is not currently firing (0 'WEBHOOK' rows), so the verify path is the
+      // reliable channel; if the webhook is later fixed the ref-check prevents a dup.
+      try {
+        await sendPaymentConfirmed(
+          phone,
+          `${config.tierName} (${String(config.billingCycle).toUpperCase()})`,
+          endDate.toLocaleDateString("en-NG", { day: "numeric", month: "short", year: "numeric" })
+        );
+      } catch (waErr) {
+        console.error(`[subscribe/verify] payment-confirm WhatsApp failed (non-blocking) ref=${reference}:`, waErr);
+      }
     } catch (ledgerErr) {
       console.error(`[subscribe/verify] Subscription_Transactions ledger write failed (non-blocking) ref=${reference}:`, ledgerErr);
     }
