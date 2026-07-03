@@ -158,6 +158,7 @@ export async function POST(request: NextRequest) {
     await db.request()
       .input("consumer_id", sql.NVarChar(50), consumer_id)
       .input("phone_number", sql.NVarChar(20), phone_number)
+      .input("phone", sql.NVarChar(20), phone_number)
       .input("preferred_language", sql.NVarChar(50), preferred_language || "EN")
       .input("first_name", sql.NVarChar(50), first_name || null)
       .input("last_name", sql.NVarChar(50), last_name || null)
@@ -186,7 +187,7 @@ export async function POST(request: NextRequest) {
       .input("updated_at", sql.DateTime2, now)
       .query(`
         INSERT INTO Consumers (
-          consumer_id, phone_number, preferred_language,
+          consumer_id, phone_number, phone, preferred_language,
           first_name, last_name, full_name,
           gender, age_range,
           registration_date, registration_source,
@@ -196,7 +197,7 @@ export async function POST(request: NextRequest) {
           total_queries, queries_remaining, daily_abandon_count, failed_login_attempts,
           created_at, updated_at
         ) VALUES (
-          @consumer_id, @phone_number, @preferred_language,
+          @consumer_id, @phone_number, @phone, @preferred_language,
           @first_name, @last_name, @full_name,
           @gender, @age_range,
           @registration_date, @registration_source,
