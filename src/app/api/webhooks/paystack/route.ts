@@ -34,6 +34,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
+import { sendPaymentConfirmed } from "@/lib/whatsapp";
 
 // ============================================================================
 // PRISMA (singleton)
@@ -372,13 +373,10 @@ async function onChargeSuccess(data: any): Promise<string> {
   if (result.success) {
     const days = DURATION_DAYS[billing] || 30;
     const endDate = new Date(Date.now() + days * 86400000);
-    await sendWhatsApp(phone,
-      `âœ… *Payment Confirmed!*\n\n` +
-      `Your payment of ${naira(amount)} has been received.\n\n` +
-      `ðŸ“¦ *Plan:* ${tierName} (${billing})\n` +
-      `ðŸ“… *Valid Until:* ${endDate.toLocaleDateString("en-NG", { day: "numeric", month: "short", year: "numeric" })}\n` +
-      `ðŸ”“ *Status:* ACTIVE\n\n` +
-      `Type *mystatus* to view details.\nType *price* to start checking prices.`
+    await sendPaymentConfirmed(
+      phone,
+      `${tierName} (${billing})`,
+      endDate.toLocaleDateString("en-NG", { day: "numeric", month: "short", year: "numeric" })
     );
   }
 
