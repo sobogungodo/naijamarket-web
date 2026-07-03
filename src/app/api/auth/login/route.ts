@@ -8,11 +8,17 @@ export async function POST(request: NextRequest) {
     const rawPhone   = String(body.phone   || "").replace(/\D/g, "");
     const rawCountry = String(body.countryCode || "234").replace(/\D/g, "");
     const fullPhone  = rawPhone.startsWith(rawCountry) ? rawPhone : rawCountry + rawPhone;
-    const forwardBody = { ...body, phone: fullPhone };
+    const clientIp = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim()
+      || request.headers.get("x-real-ip")
+      || "";
+    const userAgent = request.headers.get("user-agent") || "";
+    const forwardBody = { ...body, phone: fullPhone, client_ip: clientIp, user_agent: userAgent };
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
-      "x-forwarded-for": request.headers.get("x-forwarded-for") || "",
-      "user-agent": request.headers.get("user-agent") || "",
+      "x-forwarded-for": clientIp,
+      "user-agent": userAgent,
+      "x-client-ip": clientIp,
+      "x-client-ua": userAgent,
     };
     if (FUNC_KEY) headers["x-functions-key"] = FUNC_KEY;
     const resp = await fetch(`${FUNC_BASE}/login`, {

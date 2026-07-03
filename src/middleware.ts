@@ -177,7 +177,7 @@ export async function middleware(request: NextRequest) {
     if (lastValidated) {
       const lastValidatedTime = parseInt(lastValidated, 10);
       const timeSinceValidation = now - lastValidatedTime;
-      if (timeSinceValidation < 5 * 60 * 1000) {
+      if (timeSinceValidation < 30 * 1000) { // 30 seconds — forces re-validation within 30s of a new login on another device
         const response = NextResponse.next();
         response.headers.set("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0");
         response.headers.set("Pragma", "no-cache");
@@ -217,7 +217,7 @@ export async function middleware(request: NextRequest) {
           httpOnly: true,
           secure: process.env.NODE_ENV === "production",
           sameSite: "lax",
-          maxAge: 5 * 60,
+          maxAge: 30, // 30 seconds — matches the validation window above
           path: "/",
         });
         response.headers.set("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0");
