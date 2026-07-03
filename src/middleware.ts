@@ -100,6 +100,7 @@ export async function middleware(request: NextRequest) {
     pathname.startsWith("/api/waitlist") ||
     pathname.startsWith("/api/mobile") ||
     pathname.startsWith("/api/push") ||        // PWA push notification APIs
+    pathname.startsWith("/subscribe/callback") || // post-payment landing: verifies ref + deep-links to app (no session; reached from Paystack redirect in a cookieless browser)
     pathname === "/sw.js" ||                   // Service worker
     pathname === "/manifest.json" ||           // PWA manifest
     pathname.includes(".") ||
