@@ -127,12 +127,17 @@ function extractMeta(data: any): Meta {
   const m = data.metadata || {};
   const cf: Record<string, string> = {};
   for (const f of m.custom_fields || []) cf[f.variable_name] = f.value;
+  // Accept BOTH key styles: snake_case (NMI-* / WA-engine inits) AND the
+  // /api/subscribe + /api/mobile/consumer/subscribe camelCase keys
+  // (phone/tier/tierName/billingCycle/consumerId). A mismatch here made the
+  // webhook bail ("No phone in metadata") on app/web /plans payments, so the
+  // subscription_payment_confirmed WhatsApp never sent.
   return {
-    phone_number: m.phone_number || cf.phone_number || data.customer?.phone || "",
-    consumer_id:  m.consumer_id  || cf.consumer_id  || "",
-    tier_code:    m.tier_code    || cf.tier_code    || "",
-    tier_name:    m.tier_name    || cf.tier_name    || "",
-    billing_cycle:m.billing_cycle|| cf.billing_cycle|| "MONTHLY",
+    phone_number: m.phone_number || m.phone || cf.phone_number || cf.phone || data.customer?.phone || "",
+    consumer_id:  m.consumer_id  || m.consumerId  || cf.consumer_id  || cf.consumerId || "",
+    tier_code:    m.tier_code    || m.tier        || cf.tier_code    || cf.tier       || "",
+    tier_name:    m.tier_name    || m.tierName    || cf.tier_name    || cf.tierName   || "",
+    billing_cycle:m.billing_cycle|| m.billingCycle|| cf.billing_cycle|| cf.billingCycle|| "MONTHLY",
     addon_code:   m.addon_code   || cf.addon_code   || "",
     product_type: m.product_type || cf.product_type || "SUBSCRIPTION",
   };
