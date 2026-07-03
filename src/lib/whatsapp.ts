@@ -75,3 +75,33 @@ export const sendExpiryReminder = (phone: string, tier: string, daysLeft: string
 
 export const sendMorningBrief = (phone: string, marketCount: string, topItem: string, changePct: string) =>
   sendMetaTemplate(phone, 'morning_brief_ready', [marketCount, topItem, changePct]);
+
+export const sendAddOnActivated = (phone: string, name: string, amount: string) =>
+  sendMetaTemplate(phone, 'add_on_activated', [name, amount]);
+
+export const sendMorningBriefActivated = (phone: string, amount: string, validUntil: string) =>
+  sendMetaTemplate(phone, 'morning_brief_activated', [amount, validUntil]);
+
+export const sendPaymentFailed = (phone: string, amount: string, reason: string) =>
+  sendMetaTemplate(phone, 'payment_failed', [amount, reason]);
+
+export const sendRenewalFailed = (phone: string, graceDays: string) =>
+  sendMetaTemplate(phone, 'renewal_failed', [graceDays]);
+
+export const sendRefundProcessed = (phone: string, amount: string) =>
+  sendMetaTemplate(phone, 'refund_processed', [amount]);
+
+export const sendGracePeriodStarted = (phone: string, tier: string, graceEnd: string) =>
+  sendMetaTemplate(phone, 'subscription_expired_grace', [tier, graceEnd]);
+
+export const sendDowngradedToFree = (phone: string, tier: string) =>
+  sendMetaTemplate(phone, 'subscription_downgraded', [tier]);
+
+export const sendPriceAlertV2 = (phone: string, item: string, direction: string, market: string, target: string, current: string) =>
+  sendMetaTemplate(phone, 'price_alert_v2', [item, direction, market, target, current]);
+
+export const sendNfpiWeeklySummary = (phone: string, index: string, change: string, topMovers: string) =>
+  sendMetaTemplate(phone, 'nfpi_weekly_summary', [index, change, topMovers]);
+
+export const sendFmcgAlert = (phone: string, item: string, direction: string, market: string, newPrice: string, changePct: string) =>
+  sendMetaTemplate(phone, 'fmcg_alert', [item, direction, market, newPrice, changePct]);
