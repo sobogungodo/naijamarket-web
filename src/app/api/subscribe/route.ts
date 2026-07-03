@@ -422,7 +422,23 @@ export async function POST(request: NextRequest) {
             { status: 409 }
           );
         }
-      } catch { /* status lookup failed — allow the payment rather than block it */ }
+      } catch (guardErr) {
+        // Transient lookup failure — retry once before giving up, so a DB blip
+        // doesn't silently drop downgrade protection. If the retry also fails,
+        // allow the payment: the webhook + verify guards still protect the tier.
+        console.error("[downgrade-guard] status lookup failed, retrying once:", guardErr);
+        try {
+          const retry = await getSubscriptionStatus(phone);
+          const retryTier = (retry?.tier || "FREE").toUpperCase();
+          const retryValid = !retry?.endDate || new Date(retry.endDate) >= new Date();
+          if (retryTier !== "FREE" && retryValid && (TIER_RANK[tierKey] ?? 0) < (TIER_RANK[retryTier] ?? 0)) {
+            return NextResponse.json(
+              { error: `You're already on the ${retryTier} plan — a lower plan can't be applied while it's active, so you won't be charged.` },
+              { status: 409 }
+            );
+          }
+        } catch { /* still failing — allow; webhook + verify guards protect the tier */ }
+      }
     }
 
     // Validate provider
