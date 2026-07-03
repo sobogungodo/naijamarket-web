@@ -177,7 +177,8 @@ export async function POST(request: NextRequest) {
     const consumer = await prisma.consumers.create({
       data: {
         consumer_id: consumerId,
-        phone_number: formattedPhone,
+        phone_number: `+${formattedPhone}`,
+        phone: formattedPhone,
         email: formattedEmail,
         full_name: cleanFullName || null,
         first_name: firstName || null,
