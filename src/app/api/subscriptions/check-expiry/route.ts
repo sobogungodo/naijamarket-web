@@ -30,6 +30,7 @@ import { NextRequest, NextResponse } from "next/server";
 // ============================================================================
 
 import { PrismaClient } from "@prisma/client";
+import { sendExpiryReminder } from "@/lib/whatsapp";
 const globalForPrisma = globalThis as unknown as { prisma: PrismaClient };
 const prisma = globalForPrisma.prisma || new PrismaClient();
 if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = prisma;
@@ -119,12 +120,8 @@ export async function GET(request: NextRequest) {
         const endStr = new Date(sub.end_date).toLocaleDateString("en-NG", {
           day: "numeric", month: "short", year: "numeric",
         });
-        const sent = await sendWhatsApp(sub.phone_number,
-          `⏰ *Subscription Expiring Soon*\n\n` +
-          `Your *${sub.tier_name || sub.tier_code}* plan expires in *3 days* (${endStr}).\n\n` +
-          `Renew now to keep your access!\n\n` +
-          `Type *upgrade* to renew.`
-        );
+        // Migrated Twilio → Meta: subscription_expiry_reminder template.
+        const sent = await sendExpiryReminder(sub.phone_number, sub.tier_name || sub.tier_code, "3", endStr);
         if (sent) stats.whatsappSent++; else stats.whatsappFailed++;
         stats.reminders3day++;
       } catch (e: any) {
@@ -148,12 +145,9 @@ export async function GET(request: NextRequest) {
 
     for (const sub of expiring1day) {
       try {
-        const sent = await sendWhatsApp(sub.phone_number,
-          `⚠️ *Subscription Expires TOMORROW*\n\n` +
-          `Your *${sub.tier_name || sub.tier_code}* plan expires tomorrow!\n\n` +
-          `After expiry, you'll have a 3-day grace period before downgrade to FREE.\n\n` +
-          `Type *upgrade* to renew NOW.`
-        );
+        // Migrated Twilio → Meta: subscription_expiry_reminder template (1 day left).
+        const endStr = new Date(sub.end_date).toLocaleDateString("en-NG", { day: "numeric", month: "short", year: "numeric" });
+        const sent = await sendExpiryReminder(sub.phone_number, sub.tier_name || sub.tier_code, "1", endStr);
         if (sent) stats.whatsappSent++; else stats.whatsappFailed++;
         stats.reminders1day++;
       } catch (e: any) {

@@ -24,6 +24,7 @@ import { NextRequest, NextResponse } from "next/server";
 // ============================================================================
 
 import { PrismaClient } from "@prisma/client";
+import { sendPaymentConfirmed } from "@/lib/whatsapp";
 const globalForPrisma = globalThis as unknown as { prisma: PrismaClient };
 const prisma = globalForPrisma.prisma || new PrismaClient();
 if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = prisma;
@@ -328,13 +329,13 @@ export async function POST(request: NextRequest) {
       if (r.success) {
         const days = DURATION_DAYS[billing] || 30;
         const endDate = new Date(Date.now() + days * 86400000);
-        await sendWhatsApp(phone,
-          `✅ *Payment Confirmed!*\n\n` +
-          `Payment of ${naira(amount)} received.\n\n` +
-          `📦 *Plan:* ${tierName} (${billing})\n` +
-          `📅 *Valid Until:* ${endDate.toLocaleDateString("en-NG", { day: "numeric", month: "short", year: "numeric" })}\n` +
-          `🔓 *Status:* ACTIVE\n\n` +
-          `Type *mystatus* for details.\nType *price* to check prices.`
+        // Migrated Twilio → Meta: proven subscription_payment_confirmed template
+        // (mirrors the Paystack webhook). Other FLW notifications below have no
+        // approved template yet and remain on the dead Twilio path.
+        await sendPaymentConfirmed(
+          phone,
+          `${tierName} (${billing})`,
+          endDate.toLocaleDateString("en-NG", { day: "numeric", month: "short", year: "numeric" })
         );
       }
 
