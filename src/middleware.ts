@@ -193,6 +193,8 @@ export async function middleware(request: NextRequest) {
           loginUrl.searchParams.set("error", validationResult.error_code);
           loginUrl.searchParams.set("callbackUrl", pathname);
           const response = NextResponse.redirect(loginUrl);
+          response.cookies.delete("next-auth.session-token");
+          response.cookies.delete("__Secure-next-auth.session-token");
           response.cookies.delete("session_validated");
           return response;
         }
@@ -215,6 +217,9 @@ export async function middleware(request: NextRequest) {
         loginUrl.searchParams.set("error", "SESSION_INVALID");
         loginUrl.searchParams.set("callbackUrl", pathname);
         const response = NextResponse.redirect(loginUrl);
+        // Clear NextAuth session cookies to break redirect loop
+        response.cookies.delete("next-auth.session-token");
+        response.cookies.delete("__Secure-next-auth.session-token");
         response.cookies.delete("session_validated");
         return response;
       }
