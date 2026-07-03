@@ -147,6 +147,11 @@ function extractMeta(data: any): Meta {
 // ACTIVATE SUBSCRIPTION
 // ============================================================================
 
+// Higher number = higher tier (matches /api/subscribe/verify + the init guards).
+const TIER_RANK: Record<string, number> = {
+  FREE: 0, SILVER: 1, GOLD: 2, BUSINESS: 3, CORPORATE: 4, ENTERPRISE: 5,
+};
+
 async function activateSubscription(
   phone: string, tierCode: string, tierName: string,
   billingCycle: string, amount: number, ref: string, provider: string
@@ -175,6 +180,30 @@ async function activateSubscription(
     const txnId = genId("TXN");
     const endISO = endDate.toISOString();
     const graceISO = graceEnd.toISOString();
+
+    // Downgrade guard (mirrors /api/subscribe/verify): the webhook is now the
+    // primary activation path, so without this a lower-tier payment would clobber
+    // an active higher tier. If the caller has an active, unexpired higher tier,
+    // acknowledge the payment but DON'T supersede/insert — keep the higher tier.
+    try {
+      const activeRows = await prisma.$queryRaw<Array<{ tier_code: string; end_date: any }>>`
+        SELECT tier_code, end_date FROM Consumer_Active_Subscriptions
+        WHERE phone_number = ${phone} AND status = 'ACTIVE'
+      `;
+      const cur = activeRows[0];
+      if (cur) {
+        const curRank = TIER_RANK[String(cur.tier_code || "").toUpperCase()] ?? 0;
+        const newRank = TIER_RANK[String(tierCode || "").toUpperCase()] ?? 0;
+        const curEnd = cur.end_date ? new Date(cur.end_date) : null;
+        const stillValid = curEnd ? curEnd >= new Date() : true;
+        if (newRank < curRank && stillValid) {
+          console.warn(`[PS] DOWNGRADE BLOCKED: active ${cur.tier_code} (rank ${curRank}) — refusing lower ${tierCode} (rank ${newRank}) ref=${ref}`);
+          return { success: true }; // payment acknowledged; keep the higher active tier
+        }
+      }
+    } catch (dgErr: any) {
+      console.error("[PS] downgrade check failed (proceeding with activation):", dgErr?.message || dgErr);
+    }
 
     // Deactivate existing
     await prisma.$executeRaw`
