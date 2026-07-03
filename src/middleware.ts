@@ -171,21 +171,6 @@ export async function middleware(request: NextRequest) {
 
   // CASE 4: Authenticated → protected route → validate session + no-cache
   if (isAuthenticated && (isProtectedRoute || isProtectedApiRoute)) {
-    const lastValidated = request.cookies.get("session_validated")?.value;
-    const now = Date.now();
-
-    if (lastValidated) {
-      const lastValidatedTime = parseInt(lastValidated, 10);
-      const timeSinceValidation = now - lastValidatedTime;
-      if (timeSinceValidation < 30 * 1000) { // 30 seconds — forces re-validation within 30s of a new login on another device
-        const response = NextResponse.next();
-        response.headers.set("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0");
-        response.headers.set("Pragma", "no-cache");
-        response.headers.set("Expires", "0");
-        return response;
-      }
-    }
-
     try {
       const validationUrl = new URL("/api/auth/validate-session", request.url);
       const validationResponse = await fetch(validationUrl.toString(), {
@@ -213,13 +198,6 @@ export async function middleware(request: NextRequest) {
         }
 
         const response = NextResponse.next();
-        response.cookies.set("session_validated", now.toString(), {
-          httpOnly: true,
-          secure: process.env.NODE_ENV === "production",
-          sameSite: "lax",
-          maxAge: 30, // 30 seconds — matches the validation window above
-          path: "/",
-        });
         response.headers.set("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0");
         response.headers.set("Pragma", "no-cache");
         response.headers.set("Expires", "0");
