@@ -20,6 +20,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { getToken } from "next-auth/jwt";
+import { jwtVerify } from "jose";
 
 // Routes that require authentication
 const PROTECTED_ROUTES = [
@@ -62,6 +63,24 @@ const PUBLIC_CONTENT_ROUTES = [
   "/pricing",      // Pricing page
 ];
 
+// Verify a mobile consumer Bearer JWT (jose is Edge-runtime safe). Returns true
+// only for a valid, unexpired token signed with CONSUMER_JWT_SECRET. Used to let
+// the consumer app reach /api/subscribe (it carries a Bearer, not a NextAuth cookie).
+async function hasConsumerBearer(request: NextRequest): Promise<boolean> {
+  const auth = request.headers.get("authorization") || "";
+  if (!auth.startsWith("Bearer ")) return false;
+  // Same secret the mobile query-gate uses to verify these tokens.
+  // (CONSUMER_JWT_SECRET is set in Vercel prod; verified 2026-07-03.)
+  const secret = process.env.CONSUMER_JWT_SECRET;
+  if (!secret) return false;
+  try {
+    await jwtVerify(auth.slice(7), new TextEncoder().encode(secret));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
@@ -88,6 +107,15 @@ export async function middleware(request: NextRequest) {
     pathname.startsWith("/icons") ||
     PUBLIC_CONTENT_ROUTES.some((route) => pathname.startsWith(route))
   ) {
+    return NextResponse.next();
+  }
+
+  // Mobile app lane: the consumer app hits /api/subscribe (tiers + payment init)
+  // with a CONSUMER_JWT_SECRET Bearer token — it has no NextAuth cookie, so it
+  // would otherwise 401 here and the app's global 401 handler would log the user
+  // out (login loop on the /plans screen). Let a VERIFIED consumer token through;
+  // the public still can't reach the phone-status lookup.
+  if (pathname.startsWith("/api/subscribe") && (await hasConsumerBearer(request))) {
     return NextResponse.next();
   }
 
