@@ -3,6 +3,7 @@
 // to enforce single-session across web, mobile, and WA.
 export const runtime = "nodejs";
 import { NextRequest, NextResponse } from "next/server";
+import { randomUUID } from "crypto";
 import sql from "mssql";
 
 const FUNC_BASE = process.env.FUNC_API_BASE_URL || "https://func-naijamarket-api.azurewebsites.net/api";
@@ -16,8 +17,10 @@ const sqlConfig: sql.config = {
   options: { encrypt: true, trustServerCertificate: false },
 };
 
+// CSPRNG token (two UUIDs, dashes stripped → 64 hex chars, same shape as the
+// func-api tokens). Replaces the old Date.now/Math.random generator.
 function generateSessionToken(): string {
-  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;
+  return `${randomUUID()}${randomUUID()}`.replace(/-/g, "");
 }
 
 export async function POST(request: NextRequest) {
@@ -58,27 +61,47 @@ export async function POST(request: NextRequest) {
     // Only rotate session on successful login
     if (resp.ok && data.consumer && (data.consumer as any).id) {
       const consumerId = (data.consumer as any).id as string;
-      const newToken = generateSessionToken();
+      // Tier-exempt session reuse: CORPORATE/ENTERPRISE keep the token the
+      // func-api login returned (it reuses the row's active token), so a
+      // re-login doesn't kick their other devices. Everyone else rotates.
+      const tier = String((data.consumer as any).subscription_tier || "").toUpperCase();
+      const funcToken = typeof data.session_token === "string" ? (data.session_token as string) : "";
+      const exempt = (tier === "CORPORATE" || tier === "ENTERPRISE") && !!funcToken;
+      const newToken = exempt ? funcToken : generateSessionToken();
 
       let pool2: sql.ConnectionPool | null = null;
       try {
         pool2 = await sql.connect(sqlConfig);
-        await pool2.request()
-          .input("consumer_id", sql.NVarChar(50), consumerId)
-          .input("session_token", sql.NVarChar(200), newToken)
-          .input("session_ip", sql.NVarChar(100), clientIp || null)
-          .input("session_ua", sql.NVarChar(500), userAgent || null)
-          .query(`
-            UPDATE dbo.Consumers
-            SET session_token      = @session_token,
-                session_created_at = GETUTCDATE(),
-                session_ip_address = @session_ip,
-                session_user_agent = @session_ua
-            WHERE consumer_id = @consumer_id
-          `);
-        // Return the new token so NextAuth can store it in the JWT
+        if (exempt) {
+          await pool2.request()
+            .input("consumer_id", sql.NVarChar(50), consumerId)
+            .input("session_ip", sql.NVarChar(100), clientIp || null)
+            .input("session_ua", sql.NVarChar(500), userAgent || null)
+            .query(`
+              UPDATE dbo.Consumers
+              SET session_created_at = GETUTCDATE(),
+                  session_ip_address = @session_ip,
+                  session_user_agent = @session_ua
+              WHERE consumer_id = @consumer_id
+            `);
+        } else {
+          await pool2.request()
+            .input("consumer_id", sql.NVarChar(50), consumerId)
+            .input("session_token", sql.NVarChar(200), newToken)
+            .input("session_ip", sql.NVarChar(100), clientIp || null)
+            .input("session_ua", sql.NVarChar(500), userAgent || null)
+            .query(`
+              UPDATE dbo.Consumers
+              SET session_token      = @session_token,
+                  session_created_at = GETUTCDATE(),
+                  session_ip_address = @session_ip,
+                  session_user_agent = @session_ua
+              WHERE consumer_id = @consumer_id
+            `);
+        }
+        // Return the effective token so NextAuth can store it in the JWT
         data = { ...data, session_token: newToken };
-        console.log(`[login] session rotated for ${consumerId} from ${clientIp}`);
+        console.log(`[login] session ${exempt ? "reused (tier-exempt)" : "rotated"} for ${consumerId} from ${clientIp}`);
       } catch (dbErr: any) {
         // Non-fatal — log but don't block login
         console.error("[login] session rotation FAILED — consumer:", consumerId, "error:", dbErr?.message || dbErr, "code:", (dbErr as any)?.code, "server:", process.env.AZURE_SQL_SERVER ? "SET" : "MISSING", "user:", process.env.AZURE_SQL_USER ? "SET" : "MISSING");

@@ -21,7 +21,7 @@ const TIER_RANK: Record<string, number> = {
   FREE: 0, SILVER: 1, GOLD: 2, BUSINESS: 3, CORPORATE: 4, ENTERPRISE: 5,
 };
 
-interface ConsumerClaims { consumer_id?: string; phone_number?: string }
+interface ConsumerClaims { consumer_id?: string; phone_number?: string; session_token?: string }
 
 async function verifyConsumer(req: NextRequest): Promise<ConsumerClaims | null> {
   const auth = req.headers.get("authorization") || "";
@@ -48,6 +48,26 @@ export async function POST(req: NextRequest) {
   const consumer = await verifyConsumer(req);
   if (!consumer?.consumer_id) {
     return NextResponse.json({ success: false, error: "UNAUTHORIZED" }, { status: 401 });
+  }
+
+  // Single-session check: a payment init must come from the CURRENT session.
+  // The 30-day mobile JWT stays signature-valid after a login elsewhere rotates
+  // Consumers.session_token — compare the claim against the row and reject
+  // stale/absent tokens (closes the mobile-lane hole for subscribe).
+  try {
+    const sessRows = (await prisma.$queryRaw`
+      SELECT session_token FROM dbo.Consumers WHERE consumer_id = ${consumer.consumer_id}
+    `) as Array<{ session_token: string | null }>;
+    const dbToken = sessRows?.[0]?.session_token ?? null;
+    if (!consumer.session_token || !dbToken || consumer.session_token !== dbToken) {
+      return NextResponse.json(
+        { success: false, error: "SESSION_INVALIDATED", message: "Please log in again to continue." },
+        { status: 401 }
+      );
+    }
+  } catch (error: any) {
+    console.error("[mobile/consumer/subscribe] session check failed", error?.message);
+    return NextResponse.json({ success: false, error: "Payment init failed" }, { status: 500 });
   }
 
   let body: any = {};
