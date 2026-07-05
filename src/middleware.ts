@@ -94,6 +94,8 @@ export async function middleware(request: NextRequest) {
     pathname.startsWith("/api/auth") ||
     pathname.startsWith("/auth/kicked") ||
     pathname.startsWith("/api/health") ||
+    pathname === "/api/alerts/process" || // cron target — carries its own fail-closed CRON_SECRET auth
+
     pathname.startsWith("/api/public") ||
     pathname.startsWith("/api/inflation") ||
     pathname.startsWith("/api/subscribe-email") ||
