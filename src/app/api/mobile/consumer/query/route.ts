@@ -11,15 +11,14 @@ import { checkQuery, logQuery } from "@/lib/query-gate";
 
 export const dynamic = "force-dynamic";
 
-const SECRET = new TextEncoder().encode(
-  process.env.CONSUMER_JWT_SECRET || "NaijaMarketConsumer2026SecureJWT!X#$"
-);
-
 async function verifyConsumer(request: NextRequest) {
   const auth = request.headers.get("authorization") || "";
   if (!auth.startsWith("Bearer ")) return null;
+  // Fail-closed: no hardcoded fallback secret — unset env means 401.
+  const secret = process.env.CONSUMER_JWT_SECRET;
+  if (!secret) return null;
   try {
-    const { payload } = await jwtVerify(auth.slice(7), SECRET);
+    const { payload } = await jwtVerify(auth.slice(7), new TextEncoder().encode(secret));
     return payload as { consumer_id?: string; phone_number?: string; subscription_tier?: string };
   } catch {
     return null;

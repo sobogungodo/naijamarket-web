@@ -1,13 +1,26 @@
 // src/app/api/alerts/process/route.ts
-// NaijaFood Intel - Alert Processing Engine v3.1
-// Checks active alerts against current prices and sends WhatsApp notifications
-// Called by Vercel Cron every 15 minutes
-// Updated: 2026-02-19 - PRIMARY: Daily_Prices (143M rows) | FALLBACK: Approved_Prices
+// NaijaMarket Intel - Alert Processing Engine v4.0 (consolidated sender)
+// Checks active alerts against current prices and notifies via PUSH + EMAIL.
+// Called by Vercel Cron every 15 minutes (GET, Authorization: Bearer CRON_SECRET).
 //
-// Endpoints:
-//   GET /api/alerts/process?test=true          → Live run (manual)
-//   GET /api/alerts/process?test=true&dry=true → Dry run (no sends)
-//   GET /api/alerts/process?diagnose=true      → Full system diagnostics
+// v4.0 (2026-07-06):
+//   - CRON_SECRET required for ALL invocations (no test/diagnose bypass,
+//     no hardcoded fallback; unset secret = 401 fail-closed).
+//   - Twilio/WhatsApp REMOVED — the WHATSAPP channel is parked until alert
+//     sends move to the Meta WA engine. No WhatsApp sends from here.
+//   - PUSH channel: Expo push via Consumer_Push_Tokens (self-cleaning on
+//     DeviceNotRegistered tickets).
+//   - EMAIL channel: Resend primary / SendGrid fallback (from the retired
+//     /api/alerts/check route), links point at www.naijamarketintel.ng.
+//   - Preserved semantics: 6h cooldown via Alert_Notifications.sent_at,
+//     send-then-TRIGGERED (failed send leaves alert ACTIVE for retry),
+//     MAX_ALERTS_PER_RUN=50, maxDuration=60, 5-strategy price fallback,
+//     ?dry=true mode, degraded-insert logging fallback.
+//
+// Endpoints (all require Bearer CRON_SECRET):
+//   GET  /api/alerts/process                → live run
+//   GET  /api/alerts/process?dry=true       → dry run (no sends)
+//   GET  /api/alerts/process?diagnose=true  → system diagnostics
 
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
@@ -16,9 +29,13 @@ import { prisma } from "@/lib/prisma";
 // CONFIGURATION
 // ============================================================================
 
-const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID;
-const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN;
-const TWILIO_WHATSAPP_NUMBER = process.env.TWILIO_WHATSAPP_NUMBER || "whatsapp:+14155238886";
+const RESEND_API_KEY = process.env.RESEND_API_KEY;
+const SENDGRID_API_KEY = process.env.SENDGRID_API_KEY;
+const EMAIL_FROM = process.env.EMAIL_FROM || "alerts@naijamarket.com";
+
+const SITE_URL = "https://www.naijamarketintel.ng";
+const EXPO_PUSH_URL = "https://exp.host/--/api/v2/push/send";
+const EXPO_CHUNK_SIZE = 100; // Expo hard limit per request
 
 // Cooldown period - don't send same alert type within this period (in hours)
 const ALERT_COOLDOWN_HOURS = 6;
@@ -34,106 +51,264 @@ function formatPrice(price: number): string {
   return `₦${price.toLocaleString("en-NG", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
-function formatPhoneForWhatsApp(phone: string): string {
-  // Remove any non-digit characters
-  let cleaned = phone.replace(/\D/g, "");
-  
-  // Ensure it starts with country code (default to Nigeria 234)
-  if (cleaned.startsWith("0")) {
-    cleaned = "234" + cleaned.substring(1);
-  } else if (!cleaned.startsWith("234") && cleaned.length === 10) {
-    cleaned = "234" + cleaned;
-  }
-  
-  return `whatsapp:+${cleaned}`;
-}
-
-function generateNotificationId(): string {
-  return `NTF${Date.now()}${Math.random().toString(36).substr(2, 4).toUpperCase()}`;
+// Phone formats vary across writers (+234..., 234..., 0...): match all forms.
+function phoneVariants(phone: string): { plain: string; plus: string } {
+  const digits = String(phone || "").replace(/\D/g, "");
+  const normalized = digits.startsWith("0") ? "234" + digits.substring(1) : digits;
+  return { plain: normalized, plus: "+" + normalized };
 }
 
 // ============================================================================
-// WHATSAPP SENDER
+// PUSH SENDER (Expo)
 // ============================================================================
 
-async function sendWhatsAppAlert(
-  phone: string,
-  alertData: {
-    itemName: string;
-    marketName: string;
-    alertType: string;
-    targetPrice: number;
-    currentPrice: number;
-    priceChange: number;
-    priceChangePercent: number;
-    unit?: string;
+type AlertPayload = {
+  alertId: string;
+  itemId: string | null;
+  marketId: string | null;
+  itemName: string;
+  marketName: string;
+  alertType: string;
+  targetPrice: number;
+  currentPrice: number;
+  unit?: string;
+};
+
+async function sendExpoPush(
+  tokens: string[],
+  a: AlertPayload
+): Promise<{ delivered: boolean; deadTokens: string[]; error?: string; firstTicketId?: string }> {
+  const emoji = a.alertType === "ABOVE" ? "📈" : "📉";
+  const direction = a.alertType === "ABOVE" ? "risen above" : "dropped below";
+  const title = `${emoji} ${a.itemName} price alert`;
+  const body = `${a.itemName}${a.unit ? ` (${a.unit})` : ""} at ${a.marketName} has ${direction} your target: now ${formatPrice(a.currentPrice)} (target ${formatPrice(a.targetPrice)}).`;
+
+  const deadTokens: string[] = [];
+  let delivered = false;
+  let firstTicketId: string | undefined;
+  let lastError: string | undefined;
+
+  for (let i = 0; i < tokens.length; i += EXPO_CHUNK_SIZE) {
+    const chunk = tokens.slice(i, i + EXPO_CHUNK_SIZE);
+    const messages = chunk.map((to) => ({
+      to,
+      title,
+      body,
+      data: { alert_id: a.alertId, item_id: a.itemId, market_id: a.marketId },
+    }));
+
+    try {
+      const resp = await fetch(EXPO_PUSH_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify(messages),
+      });
+      const result = await resp.json();
+
+      if (!resp.ok) {
+        lastError = `Expo HTTP ${resp.status}: ${JSON.stringify(result).substring(0, 200)}`;
+        console.error("   ❌ Expo push failed:", lastError);
+        continue;
+      }
+
+      // result.data is an array of tickets in the same order as the messages
+      const tickets: any[] = Array.isArray(result?.data) ? result.data : [];
+      tickets.forEach((ticket, idx) => {
+        if (ticket?.status === "ok") {
+          delivered = true;
+          if (!firstTicketId && ticket.id) firstTicketId = String(ticket.id);
+        } else {
+          const errCode = ticket?.details?.error;
+          lastError = errCode || ticket?.message || "unknown ticket error";
+          if (errCode === "DeviceNotRegistered" && chunk[idx]) {
+            deadTokens.push(chunk[idx]);
+          }
+        }
+      });
+    } catch (e: any) {
+      lastError = e.message;
+      console.error("   ❌ Expo push error:", e);
+    }
   }
-): Promise<{ success: boolean; messageSid?: string; error?: string }> {
-  
-  if (!TWILIO_ACCOUNT_SID || !TWILIO_AUTH_TOKEN) {
-    console.error("❌ Twilio not configured - TWILIO_ACCOUNT_SID or TWILIO_AUTH_TOKEN missing");
-    return { success: false, error: "Twilio credentials not set in environment variables" };
-  }
 
-  const formattedPhone = formatPhoneForWhatsApp(phone);
-  const { itemName, marketName, alertType, targetPrice, currentPrice, priceChange, priceChangePercent, unit } = alertData;
-  
-  // Determine emoji and direction
-  const emoji = alertType === "ABOVE" ? "📈" : "📉";
-  const direction = alertType === "ABOVE" ? "risen above" : "dropped below";
-  const changeEmoji = priceChange > 0 ? "🔺" : "🔻";
-  const unitDisplay = unit ? ` (${unit})` : "";
-  
-  // Create message
-  const message = `🔔 *PRICE ALERT TRIGGERED*
+  return { delivered, deadTokens, error: delivered ? undefined : lastError, firstTicketId };
+}
 
-${emoji} *${itemName}*${unitDisplay}
-📍 *${marketName}*
+// ============================================================================
+// EMAIL SENDER (Resend primary, SendGrid fallback — from retired /alerts/check)
+// ============================================================================
 
-The price has ${direction} your target!
+async function sendEmail(
+  to: string,
+  a: AlertPayload,
+  priceSource: string
+): Promise<{ success: boolean; error?: string }> {
+  const direction = a.alertType === "ABOVE" ? "risen above" : "fallen below";
+  const emoji = a.alertType === "ABOVE" ? "📈" : "📉";
+  const diff = Math.abs(a.currentPrice - a.targetPrice);
+  const diffPercent = ((diff / a.targetPrice) * 100).toFixed(1);
 
-┌─────────────────────────
-│ 🎯 Your Target: ${formatPrice(targetPrice)}
-│ 💰 Current Price: ${formatPrice(currentPrice)}
-│ ${changeEmoji} Change: ${formatPrice(Math.abs(priceChange))} (${priceChangePercent > 0 ? "+" : ""}${priceChangePercent.toFixed(1)}%)
-└─────────────────────────
+  const subject = `${emoji} Price Alert: ${a.itemName} has ${direction} ₦${a.targetPrice.toLocaleString()}`;
 
-⏰ ${new Date().toLocaleString("en-NG", { timeZone: "Africa/Lagos", dateStyle: "medium", timeStyle: "short" })}
+  const html = `
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
+<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background: #f5f5f5;">
+  <div style="background: linear-gradient(135deg, #00a651, #008c44); color: white; padding: 30px; border-radius: 12px 12px 0 0; text-align: center;">
+    <h1 style="margin: 0; font-size: 28px;">${emoji} Price Alert</h1>
+    <p style="margin: 10px 0 0 0; opacity: 0.9;">Your target has been reached!</p>
+  </div>
 
-📊 View more: naijamarket-web.vercel.app/dashboard/prices
+  <div style="background: white; padding: 30px; border: 1px solid #e0e0e0; border-top: none;">
+    <div style="background: #f8f9fa; padding: 20px; border-radius: 8px; border-left: 4px solid #00a651; margin-bottom: 25px;">
+      <h2 style="margin: 0 0 8px 0; color: #00a651; font-size: 22px;">${a.itemName}</h2>
+      <p style="margin: 0; color: #666;">📍 ${a.marketName}</p>
+    </div>
 
-_Reply STOP to disable alerts_`;
+    <p style="font-size: 16px; color: #333; line-height: 1.6;">
+      The price of <strong>${a.itemName}</strong> has <strong>${direction}</strong> your target price.
+    </p>
 
-  try {
-    const response = await fetch(
-      `https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/Messages.json`,
-      {
+    <div style="display: flex; gap: 15px; margin: 25px 0;">
+      <div style="flex: 1; background: #e8f5e9; padding: 20px; border-radius: 12px; text-align: center;">
+        <div style="color: #666; font-size: 11px; text-transform: uppercase; letter-spacing: 1px;">Current Price</div>
+        <div style="color: #00a651; font-size: 32px; font-weight: bold; margin-top: 5px;">₦${a.currentPrice.toLocaleString()}</div>
+      </div>
+      <div style="flex: 1; background: #f5f5f5; padding: 20px; border-radius: 12px; text-align: center;">
+        <div style="color: #666; font-size: 11px; text-transform: uppercase; letter-spacing: 1px;">Your Target</div>
+        <div style="color: #333; font-size: 32px; font-weight: bold; margin-top: 5px;">₦${a.targetPrice.toLocaleString()}</div>
+      </div>
+    </div>
+
+    <div style="background: ${a.alertType === "ABOVE" ? "#fff3e0" : "#e3f2fd"}; padding: 15px; border-radius: 8px; text-align: center; margin-bottom: 25px;">
+      <span style="font-size: 14px; color: #666;">${a.alertType === "ABOVE" ? "Above" : "Below"} target by</span>
+      <span style="font-size: 20px; font-weight: bold; color: ${a.alertType === "ABOVE" ? "#e65100" : "#1565c0"}; margin-left: 10px;">
+        ₦${diff.toLocaleString()} (${diffPercent}%)
+      </span>
+    </div>
+
+    <div style="text-align: center;">
+      <a href="${SITE_URL}/dashboard/prices"
+         style="display: inline-block; background: #00a651; color: white; padding: 16px 32px; text-decoration: none; border-radius: 8px; font-weight: 600; font-size: 16px;">
+        View Live Prices →
+      </a>
+    </div>
+  </div>
+
+  <div style="padding: 20px; text-align: center; font-size: 12px; color: #999;">
+    <p style="margin: 0 0 10px 0;">NaijaMarket Intel - The Bloomberg of Nigerian Commodities</p>
+    <p style="margin: 0;">
+      <a href="${SITE_URL}/dashboard/settings" style="color: #00a651;">Manage Alerts</a>
+      &nbsp;•&nbsp;
+      <span style="color: #ccc;">Data: ${priceSource}</span>
+    </p>
+  </div>
+</body>
+</html>`;
+
+  // Try Resend first
+  if (RESEND_API_KEY) {
+    try {
+      const response = await fetch("https://api.resend.com/emails", {
         method: "POST",
         headers: {
-          "Authorization": `Basic ${Buffer.from(`${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}`).toString("base64")}`,
-          "Content-Type": "application/x-www-form-urlencoded",
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${RESEND_API_KEY}`,
         },
-        body: new URLSearchParams({
-          To: formattedPhone,
-          From: TWILIO_WHATSAPP_NUMBER,
-          Body: message,
-        }),
+        body: JSON.stringify({ from: EMAIL_FROM, to: [to], subject, html }),
+      });
+
+      if (response.ok) {
+        console.log(`   ✅ [Email/Resend] Sent to ${to}`);
+        return { success: true };
       }
-    );
-
-    const result = await response.json();
-
-    if (!response.ok) {
-      console.error("❌ WhatsApp send failed:", result);
-      return { success: false, error: result.message || "Failed to send" };
+      console.error("   ❌ [Email/Resend] Failed:", await response.text());
+    } catch (error: any) {
+      console.error("   ❌ [Email/Resend] Error:", error);
     }
+  }
 
-    console.log(`✅ Alert sent to ${formattedPhone}. SID: ${result.sid}`);
-    return { success: true, messageSid: result.sid };
-    
-  } catch (error: any) {
-    console.error("❌ WhatsApp send error:", error);
-    return { success: false, error: error.message };
+  // Fallback to SendGrid
+  if (SENDGRID_API_KEY) {
+    try {
+      const response = await fetch("https://api.sendgrid.com/v3/mail/send", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${SENDGRID_API_KEY}`,
+        },
+        body: JSON.stringify({
+          personalizations: [{ to: [{ email: to }] }],
+          from: { email: EMAIL_FROM, name: "NaijaMarket Alerts" },
+          subject,
+          content: [{ type: "text/html", value: html }],
+        }),
+      });
+
+      if (response.ok) {
+        console.log(`   ✅ [Email/SendGrid] Sent to ${to}`);
+        return { success: true };
+      }
+      console.error("   ❌ [Email/SendGrid] Failed:", await response.text());
+    } catch (error: any) {
+      console.error("   ❌ [Email/SendGrid] Error:", error);
+    }
+  }
+
+  return { success: false, error: "No email provider configured" };
+}
+
+// ============================================================================
+// NOTIFICATION LOGGING (full insert, degraded fallback)
+// ============================================================================
+
+async function logNotification(opts: {
+  alertId: string;
+  phone: string;
+  itemName: string;
+  marketName: string;
+  targetPrice: number;
+  currentPrice: number;
+  alertType: string;
+  priceSource: string;
+  channel: "PUSH" | "EMAIL";
+  recipient: string;
+  messageSid: string | null;
+  status: "SENT" | "FAILED";
+  errorMessage?: string | null;
+}) {
+  const now = new Date().toISOString();
+  try {
+    await prisma.$executeRaw`
+      INSERT INTO Alert_Notifications (
+        alert_id, phone_number, item_name, market_name,
+        target_price, triggered_price, alert_type, price_source,
+        channel, recipient, message_sid, status, sent_at, error_message, created_at
+      ) VALUES (
+        ${opts.alertId}, ${opts.phone}, ${opts.itemName}, ${opts.marketName},
+        ${opts.targetPrice}, ${opts.currentPrice}, ${opts.alertType}, ${opts.priceSource},
+        ${opts.channel}, ${opts.recipient}, ${opts.messageSid},
+        ${opts.status}, ${opts.status === "SENT" ? now : null}, ${opts.errorMessage || null}, ${now}
+      )`;
+  } catch (logError: any) {
+    // If INSERT fails (missing columns), try minimal insert
+    console.log("   ⚠️ Full insert failed, trying minimal:", logError.message?.substring(0, 80));
+    try {
+      await prisma.$executeRaw`
+        INSERT INTO Alert_Notifications (
+          alert_id, phone_number, item_name, market_name,
+          target_price, triggered_price, alert_type,
+          channel, recipient, status, sent_at, created_at
+        ) VALUES (
+          ${opts.alertId}, ${opts.phone}, ${opts.itemName}, ${opts.marketName},
+          ${opts.targetPrice}, ${opts.currentPrice}, ${opts.alertType},
+          ${opts.channel}, ${opts.recipient},
+          ${opts.status}, ${opts.status === "SENT" ? now : null}, ${now}
+        )`;
+    } catch (minError) {
+      console.log("   ⚠️ Minimal insert also failed:", minError);
+    }
   }
 }
 
@@ -142,152 +317,89 @@ _Reply STOP to disable alerts_`;
 // ============================================================================
 
 export async function GET(request: NextRequest) {
-  // Verify cron secret (optional security)
-  const authHeader = request.headers.get("authorization");
+  // Fail-closed auth: CRON_SECRET is required for EVERY invocation, including
+  // dry runs and diagnostics. Unset secret = 401 (never fail open).
   const cronSecret = process.env.CRON_SECRET;
-  
-  if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
-    // Allow manual trigger for testing without secret
-    const { searchParams } = new URL(request.url);
-    if (!searchParams.get("test") && !searchParams.get("diagnose")) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+  const authHeader = request.headers.get("authorization");
+  if (!cronSecret || authHeader !== `Bearer ${cronSecret}`) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   console.log("🔔 ═══════════════════════════════════════════════════════════");
   console.log("🔔 ALERT PROCESSOR STARTED:", new Date().toISOString());
   console.log("🔔 ═══════════════════════════════════════════════════════════");
 
-  // ========================================================================
-  // DIAGNOSTICS MODE: /api/alerts/process?diagnose=true
-  // ========================================================================
-  
   const { searchParams: params } = new URL(request.url);
   const isDiagnose = params.get("diagnose") === "true";
   const isDryRun = params.get("dry") === "true";
 
+  // ========================================================================
+  // DIAGNOSTICS MODE (authenticated): /api/alerts/process?diagnose=true
+  // ========================================================================
+
   if (isDiagnose) {
     const checks: Record<string, any> = {};
 
-    // Check environment variables
     checks.env = {
-      TWILIO_ACCOUNT_SID: TWILIO_ACCOUNT_SID ? `✅ Set (${TWILIO_ACCOUNT_SID.substring(0, 10)}...)` : "❌ MISSING",
-      TWILIO_AUTH_TOKEN: TWILIO_AUTH_TOKEN ? "✅ Set (hidden)" : "❌ MISSING",
-      TWILIO_WHATSAPP_NUMBER: TWILIO_WHATSAPP_NUMBER,
-      CRON_SECRET: cronSecret ? "✅ Set" : "⚠️ Not set (optional)",
+      RESEND_API_KEY: RESEND_API_KEY ? "✅ Set (hidden)" : "❌ MISSING",
+      SENDGRID_API_KEY: SENDGRID_API_KEY ? "✅ Set (hidden)" : "⚠️ Not set (fallback unavailable)",
+      EMAIL_FROM,
+      CRON_SECRET: "✅ Set (required to reach this endpoint)",
     };
 
-    // Check Price_Alerts table
     try {
-      const rows = await prisma.$queryRaw`
-        SELECT 
+      const rows = (await prisma.$queryRaw`
+        SELECT
           COUNT(*) AS total,
           SUM(CASE WHEN status = 'ACTIVE' THEN 1 ELSE 0 END) AS active,
           SUM(CASE WHEN status = 'TRIGGERED' THEN 1 ELSE 0 END) AS triggered
         FROM Price_Alerts
-      ` as any[];
+      `) as any[];
       checks.price_alerts = { status: "✅ Table exists", ...rows[0] };
     } catch (e: any) {
       checks.price_alerts = { status: "❌ " + e.message?.substring(0, 100) };
     }
 
-    // Check Daily_Prices (PRIMARY - should have 143M+ rows)
     try {
-      const rows = await prisma.$queryRaw`
-        SELECT COUNT(*) AS total_rows,
-          MAX(price_date) AS latest_date,
-          COUNT(DISTINCT item_name) AS unique_items,
-          COUNT(DISTINCT market_name) AS unique_markets
+      const rows = (await prisma.$queryRaw`
+        SELECT COUNT(*) AS total_tokens, COUNT(DISTINCT phone_number) AS distinct_phones
+        FROM Consumer_Push_Tokens
+      `) as any[];
+      checks.consumer_push_tokens = { status: "✅ Table exists", ...rows[0] };
+    } catch (e: any) {
+      checks.consumer_push_tokens = { status: "❌ " + e.message?.substring(0, 100) };
+    }
+
+    try {
+      const rows = (await prisma.$queryRaw`
+        SELECT COUNT(*) AS total_rows, MAX(price_date) AS latest_date
         FROM Daily_Prices WHERE price_naira > 0
-      ` as any[];
+      `) as any[];
       checks.daily_prices = { status: "✅ PRIMARY data source", ...rows[0] };
     } catch (e: any) {
       checks.daily_prices = { status: "❌ " + e.message?.substring(0, 100) };
     }
 
-    // Check Approved_Prices (FALLBACK)
     try {
-      const rows = await prisma.$queryRaw`
+      const rows = (await prisma.$queryRaw`
         SELECT COUNT(*) AS total_rows FROM Approved_Prices WHERE validation_status = 'APPROVED'
-      ` as any[];
+      `) as any[];
       checks.approved_prices = { status: "⚠️ FALLBACK only", ...rows[0] };
     } catch (e: any) {
       checks.approved_prices = { status: "⚠️ " + e.message?.substring(0, 80) };
     }
 
-    // Check Alert_Notifications table
     try {
-      const rows = await prisma.$queryRaw`
+      const rows = (await prisma.$queryRaw`
         SELECT COUNT(*) AS total,
           SUM(CASE WHEN status = 'SENT' THEN 1 ELSE 0 END) AS sent,
           SUM(CASE WHEN status = 'FAILED' THEN 1 ELSE 0 END) AS failed,
           MAX(sent_at) AS last_sent
         FROM Alert_Notifications
-      ` as any[];
+      `) as any[];
       checks.alert_notifications = { status: "✅ Table exists", ...rows[0] };
     } catch {
       checks.alert_notifications = { status: "⚠️ Table missing (notifications will still be logged on first send)" };
-    }
-
-    // Sample: check price lookup for first 3 active alerts
-    try {
-      const sampleAlerts = await prisma.$queryRaw`
-        SELECT TOP 3 alert_id, item_id, item_name, market_id, market_name, 
-          target_price, alert_type, phone_number
-        FROM Price_Alerts WHERE status = 'ACTIVE'
-      ` as any[];
-
-      const samples = [];
-      for (const alert of sampleAlerts) {
-        // Try Daily_Prices first
-        let priceRows: any[] = [];
-        let source = "NOT FOUND";
-        
-        if (alert.item_id && alert.market_id) {
-          priceRows = await prisma.$queryRaw`
-            SELECT TOP 1 price_naira AS price, price_date FROM Daily_Prices
-            WHERE item_id = ${alert.item_id} AND market_id = ${alert.market_id} AND price_naira > 0
-            ORDER BY price_date DESC, time_slot DESC
-          ` as any[];
-          if (priceRows.length > 0) source = "Daily_Prices (by ID)";
-        }
-        if (priceRows.length === 0 && alert.item_name) {
-          priceRows = await prisma.$queryRaw`
-            SELECT TOP 1 price_naira AS price, price_date FROM Daily_Prices
-            WHERE item_name = ${alert.item_name} AND price_naira > 0
-            ORDER BY price_date DESC, time_slot DESC
-          ` as any[];
-          if (priceRows.length > 0) source = "Daily_Prices (by name)";
-        }
-        if (priceRows.length === 0 && alert.item_name) {
-          priceRows = await prisma.$queryRaw`
-            SELECT TOP 1 price FROM Approved_Prices
-            WHERE item_name = ${alert.item_name} AND validation_status = 'APPROVED'
-            ORDER BY validated_at DESC
-          ` as any[];
-          if (priceRows.length > 0) source = "Approved_Prices (fallback)";
-        }
-
-        const currentPrice = priceRows.length > 0 ? parseFloat(priceRows[0].price) : null;
-        const targetPrice = parseFloat(alert.target_price);
-        const alertType = (alert.alert_type || "").toUpperCase();
-        
-        samples.push({
-          alert_id: alert.alert_id,
-          item: `${alert.item_name} @ ${alert.market_name}`,
-          target: targetPrice,
-          alert_type: alertType,
-          current_price: currentPrice ?? "NO DATA",
-          price_source: source,
-          would_trigger: currentPrice !== null && (
-            (alertType === "ABOVE" && currentPrice >= targetPrice) ||
-            (alertType === "BELOW" && currentPrice <= targetPrice)
-          ),
-        });
-      }
-      checks.sample_alert_checks = samples.length > 0 ? samples : "No active alerts found";
-    } catch (e: any) {
-      checks.sample_alert_checks = "Error: " + e.message?.substring(0, 100);
     }
 
     return NextResponse.json({
@@ -303,11 +415,13 @@ export async function GET(request: NextRequest) {
     dryRun: isDryRun,
     alertsChecked: 0,
     alertsTriggered: 0,
-    notificationsSent: 0,
+    pushSent: 0,
+    emailsSent: 0,
     notificationsFailed: 0,
     alertsSkippedCooldown: 0,
     alertsNoPriceData: 0,
     priceDataFound: 0,
+    deadTokensRemoved: 0,
     errors: [] as string[],
   };
 
@@ -315,9 +429,9 @@ export async function GET(request: NextRequest) {
     // ========================================================================
     // STEP 1: Get all ACTIVE alerts
     // ========================================================================
-    
-    const activeAlerts = await prisma.$queryRaw`
-      SELECT 
+
+    const activeAlerts = (await prisma.$queryRaw`
+      SELECT
         pa.alert_id,
         pa.consumer_id,
         pa.phone_number,
@@ -332,7 +446,7 @@ export async function GET(request: NextRequest) {
       FROM Price_Alerts pa
       WHERE pa.status = 'ACTIVE'
       ORDER BY pa.created_at ASC
-    ` as any[];
+    `) as any[];
 
     stats.alertsChecked = activeAlerts.length;
     console.log(`📋 Found ${activeAlerts.length} active alerts to check`);
@@ -355,15 +469,15 @@ export async function GET(request: NextRequest) {
     for (const alert of alertsToProcess) {
       try {
         console.log(`\n🔍 Checking alert ${alert.alert_id}: ${alert.item_name} @ ${alert.market_name}`);
-        
-        // Get current price: Daily_Prices FIRST (143M rows), Approved_Prices FALLBACK
+
+        // Get current price: Daily_Prices FIRST, Approved_Prices FALLBACK
         let currentPriceResult: any[] = [];
         let priceSource = "";
-        
+
         // ---- Strategy 1: Daily_Prices by item_id + market_id (fastest) ----
         if (alert.item_id && alert.market_id) {
           try {
-            currentPriceResult = await prisma.$queryRaw`
+            currentPriceResult = (await prisma.$queryRaw`
               SELECT TOP 1
                 price_naira AS price,
                 price_date AS validated_at,
@@ -375,17 +489,17 @@ export async function GET(request: NextRequest) {
                 AND market_id = ${alert.market_id}
                 AND price_naira > 0
               ORDER BY price_date DESC, time_slot DESC
-            ` as any[];
+            `) as any[];
             if (currentPriceResult.length > 0) priceSource = "Daily_Prices (by ID)";
           } catch (e: any) {
             console.log(`   ⚠️ Daily_Prices ID lookup: ${e.message?.substring(0, 60)}`);
           }
         }
-        
+
         // ---- Strategy 2: Daily_Prices by item_name + market_name ----
         if (currentPriceResult.length === 0 && alert.item_name && alert.market_name) {
           try {
-            currentPriceResult = await prisma.$queryRaw`
+            currentPriceResult = (await prisma.$queryRaw`
               SELECT TOP 1
                 price_naira AS price,
                 price_date AS validated_at,
@@ -397,17 +511,17 @@ export async function GET(request: NextRequest) {
                 AND market_name = ${alert.market_name}
                 AND price_naira > 0
               ORDER BY price_date DESC, time_slot DESC
-            ` as any[];
+            `) as any[];
             if (currentPriceResult.length > 0) priceSource = "Daily_Prices (by name)";
           } catch (e: any) {
             console.log(`   ⚠️ Daily_Prices name lookup: ${e.message?.substring(0, 60)}`);
           }
         }
-        
+
         // ---- Strategy 3: Daily_Prices by item_name only (any market) ----
         if (currentPriceResult.length === 0 && alert.item_name) {
           try {
-            currentPriceResult = await prisma.$queryRaw`
+            currentPriceResult = (await prisma.$queryRaw`
               SELECT TOP 1
                 price_naira AS price,
                 price_date AS validated_at,
@@ -418,7 +532,7 @@ export async function GET(request: NextRequest) {
               WHERE item_name = ${alert.item_name}
                 AND price_naira > 0
               ORDER BY price_date DESC, time_slot DESC
-            ` as any[];
+            `) as any[];
             if (currentPriceResult.length > 0) priceSource = `Daily_Prices (any market: ${currentPriceResult[0].market_name})`;
           } catch (e: any) {
             console.log(`   ⚠️ Daily_Prices item-only: ${e.message?.substring(0, 60)}`);
@@ -428,7 +542,7 @@ export async function GET(request: NextRequest) {
         // ---- Strategy 4: Approved_Prices by ID (fallback) ----
         if (currentPriceResult.length === 0 && alert.item_id && alert.market_id) {
           try {
-            currentPriceResult = await prisma.$queryRaw`
+            currentPriceResult = (await prisma.$queryRaw`
               SELECT TOP 1
                 price,
                 validated_at,
@@ -440,17 +554,17 @@ export async function GET(request: NextRequest) {
                 AND market_id = ${alert.market_id}
                 AND validation_status = 'APPROVED'
               ORDER BY validated_at DESC
-            ` as any[];
+            `) as any[];
             if (currentPriceResult.length > 0) priceSource = "Approved_Prices (fallback by ID)";
           } catch (e: any) {
             console.log(`   ⚠️ Approved_Prices fallback: ${e.message?.substring(0, 60)}`);
           }
         }
-        
+
         // ---- Strategy 5: Approved_Prices by name (last resort) ----
         if (currentPriceResult.length === 0 && alert.item_name) {
           try {
-            currentPriceResult = await prisma.$queryRaw`
+            currentPriceResult = (await prisma.$queryRaw`
               SELECT TOP 1
                 price,
                 validated_at,
@@ -458,10 +572,10 @@ export async function GET(request: NextRequest) {
                 item_name,
                 market_name
               FROM Approved_Prices
-              WHERE item_name LIKE ${'%' + alert.item_name + '%'}
+              WHERE item_name LIKE ${"%" + alert.item_name + "%"}
                 AND validation_status = 'APPROVED'
               ORDER BY validated_at DESC
-            ` as any[];
+            `) as any[];
             if (currentPriceResult.length > 0) priceSource = "Approved_Prices (fallback by name)";
           } catch (e: any) {
             console.log(`   ⚠️ Approved_Prices name fallback: ${e.message?.substring(0, 60)}`);
@@ -484,7 +598,7 @@ export async function GET(request: NextRequest) {
 
         // Check if alert should trigger
         let shouldTrigger = false;
-        
+
         if (alertType === "ABOVE" && currentPrice >= targetPrice) {
           shouldTrigger = true;
           console.log(`   🎯 ABOVE trigger: ${currentPrice} >= ${targetPrice}`);
@@ -501,21 +615,20 @@ export async function GET(request: NextRequest) {
         // ====================================================================
         // STEP 3: Check cooldown (don't spam users)
         // ====================================================================
-        
+
         const cooldownTime = new Date();
         cooldownTime.setHours(cooldownTime.getHours() - ALERT_COOLDOWN_HOURS);
 
         let recentNotification: any[] = [];
         try {
-          recentNotification = await prisma.$queryRaw`
+          recentNotification = (await prisma.$queryRaw`
             SELECT notification_id, sent_at
             FROM Alert_Notifications
             WHERE alert_id = ${alert.alert_id}
               AND sent_at > ${cooldownTime.toISOString()}
             ORDER BY sent_at DESC
-          ` as any[];
+          `) as any[];
         } catch (e) {
-          // Table might not have sent_at column yet
           console.log("   ⚠️ Cooldown check skipped - column may not exist");
         }
 
@@ -526,99 +639,132 @@ export async function GET(request: NextRequest) {
         }
 
         // ====================================================================
-        // STEP 4: Send WhatsApp notification (skip if dry run)
+        // STEP 4: Send via PUSH + EMAIL (skip if dry run).
+        // WHATSAPP is parked — no sends until alerts move to the Meta engine.
         // ====================================================================
 
         if (isDryRun) {
           stats.alertsTriggered++;
-          console.log(`   🧪 DRY RUN — would send WhatsApp to ${alert.phone_number} | Source: ${priceSource}`);
+          console.log(`   🧪 DRY RUN — would send push/email for ${alert.phone_number} | Source: ${priceSource}`);
           continue;
         }
 
-        const priceChange = currentPrice - targetPrice;
-        const priceChangePercent = (priceChange / targetPrice) * 100;
-
-        const sendResult = await sendWhatsAppAlert(alert.phone_number, {
+        const payload: AlertPayload = {
+          alertId: alert.alert_id,
+          itemId: alert.item_id ?? null,
+          marketId: alert.market_id ?? null,
           itemName: priceData.item_name || alert.item_name || "Item",
           marketName: priceData.market_name || alert.market_name || "Market",
-          alertType: alertType,
-          targetPrice: targetPrice,
-          currentPrice: currentPrice,
-          priceChange: priceChange,
-          priceChangePercent: priceChangePercent,
+          alertType,
+          targetPrice,
+          currentPrice,
           unit: priceData.unit,
-        });
+        };
 
-        if (sendResult.success) {
-          stats.notificationsSent++;
-          stats.alertsTriggered++;
+        let anyChannelDelivered = false;
 
-          // ==================================================================
-          // STEP 5: Log notification
-          // ==================================================================
-          
-          const now = new Date().toISOString();
+        // ---- Channel 1: PUSH (Expo) ----
+        const { plain, plus } = phoneVariants(alert.phone_number || "");
+        let tokens: string[] = [];
+        try {
+          const tokenRows = (await prisma.$queryRaw`
+            SELECT expo_push_token FROM Consumer_Push_Tokens
+            WHERE phone_number IN (${plain}, ${plus})
+          `) as any[];
+          tokens = tokenRows.map((r) => String(r.expo_push_token)).filter(Boolean);
+        } catch (e: any) {
+          console.log(`   ⚠️ Push token lookup failed: ${e.message?.substring(0, 60)}`);
+        }
 
-          try {
-            await prisma.$executeRaw`
-              INSERT INTO Alert_Notifications (
-                alert_id,
-                phone_number,
-                item_name,
-                market_name,
-                target_price,
-                triggered_price,
-                alert_type,
-                price_source,
-                channel,
-                recipient,
-                message_sid,
-                status,
-                sent_at,
-                created_at
-              ) VALUES (
-                ${alert.alert_id},
-                ${alert.phone_number},
-                ${priceData.item_name || alert.item_name || 'Item'},
-                ${priceData.market_name || alert.market_name || 'Market'},
-                ${targetPrice},
-                ${currentPrice},
-                ${alertType},
-                ${priceSource},
-                'WHATSAPP',
-                ${alert.phone_number},
-                ${sendResult.messageSid || null},
-                'SENT',
-                ${now},
-                ${now}
-              )
-            `;
-          } catch (logError: any) {
-            // If INSERT fails (missing columns), try minimal insert
-            console.log("   ⚠️ Full insert failed, trying minimal:", logError.message?.substring(0, 80));
+        if (tokens.length > 0) {
+          const pushResult = await sendExpoPush(tokens, payload);
+
+          // Self-cleaning: drop tokens Expo reports as DeviceNotRegistered
+          for (const dead of pushResult.deadTokens) {
             try {
               await prisma.$executeRaw`
-                INSERT INTO Alert_Notifications (
-                  alert_id, phone_number, item_name, market_name,
-                  target_price, triggered_price, alert_type,
-                  status, sent_at, created_at
-                ) VALUES (
-                  ${alert.alert_id}, ${alert.phone_number},
-                  ${priceData.item_name || alert.item_name || 'Item'},
-                  ${priceData.market_name || alert.market_name || 'Market'},
-                  ${targetPrice}, ${currentPrice}, ${alertType},
-                  'SENT', ${now}, ${now}
-                )
-              `;
-            } catch (minError) {
-              console.log("   ⚠️ Minimal insert also failed:", minError);
+                DELETE FROM Consumer_Push_Tokens WHERE expo_push_token = ${dead}`;
+              stats.deadTokensRemoved++;
+              console.log(`   🧹 Removed dead push token`);
+            } catch (e) {
+              console.log("   ⚠️ Dead-token cleanup failed:", e);
             }
           }
 
-          // ==================================================================
-          // STEP 6: Update alert status to TRIGGERED
-          // ==================================================================
+          await logNotification({
+            alertId: alert.alert_id,
+            phone: alert.phone_number,
+            itemName: payload.itemName,
+            marketName: payload.marketName,
+            targetPrice,
+            currentPrice,
+            alertType,
+            priceSource,
+            channel: "PUSH",
+            recipient: alert.phone_number,
+            messageSid: pushResult.firstTicketId || null,
+            status: pushResult.delivered ? "SENT" : "FAILED",
+            errorMessage: pushResult.error || null,
+          });
 
+          if (pushResult.delivered) {
+            anyChannelDelivered = true;
+            stats.pushSent++;
+            console.log(`   ✅ Push sent (${tokens.length} device(s))`);
+          }
+        } else {
+          console.log(`   ℹ️ No push tokens registered for ${alert.phone_number}`);
+        }
+
+        // ---- Channel 2: EMAIL (only when the consumer has an email) ----
+        let email: string | null = null;
+        if (alert.consumer_id) {
+          try {
+            const emailRows = (await prisma.$queryRaw`
+              SELECT email FROM Consumers WHERE consumer_id = ${alert.consumer_id}
+            `) as any[];
+            const raw = emailRows?.[0]?.email;
+            if (raw && String(raw).trim().length > 0) email = String(raw).trim();
+          } catch (e: any) {
+            console.log(`   ⚠️ Email lookup failed: ${e.message?.substring(0, 60)}`);
+          }
+        }
+
+        if (email) {
+          const emailResult = await sendEmail(email, payload, priceSource);
+
+          await logNotification({
+            alertId: alert.alert_id,
+            phone: alert.phone_number,
+            itemName: payload.itemName,
+            marketName: payload.marketName,
+            targetPrice,
+            currentPrice,
+            alertType,
+            priceSource,
+            channel: "EMAIL",
+            recipient: email,
+            messageSid: null,
+            status: emailResult.success ? "SENT" : "FAILED",
+            errorMessage: emailResult.error || null,
+          });
+
+          if (emailResult.success) {
+            anyChannelDelivered = true;
+            stats.emailsSent++;
+          }
+        } else {
+          console.log(`   ℹ️ No email on file for consumer ${alert.consumer_id || "(none)"}`);
+        }
+
+        // ====================================================================
+        // STEP 5: Send-then-TRIGGERED — only flip status if ANY channel
+        // delivered; otherwise the alert stays ACTIVE and retries next run.
+        // ====================================================================
+
+        if (anyChannelDelivered) {
+          stats.alertsTriggered++;
+          const now = new Date().toISOString();
           await prisma.$executeRaw`
             UPDATE Price_Alerts
             SET status = 'TRIGGERED',
@@ -626,15 +772,12 @@ export async function GET(request: NextRequest) {
                 updated_at = ${now}
             WHERE alert_id = ${alert.alert_id}
           `;
-
           console.log(`   ✅ Alert triggered and notification sent!`);
-
         } else {
           stats.notificationsFailed++;
-          stats.errors.push(`Alert ${alert.alert_id}: ${sendResult.error}`);
-          console.log(`   ❌ Failed to send notification: ${sendResult.error}`);
+          stats.errors.push(`Alert ${alert.alert_id}: no channel delivered`);
+          console.log(`   ❌ No channel delivered — alert stays ACTIVE for retry`);
         }
-
       } catch (alertError: any) {
         console.error(`   ❌ Error processing alert ${alert.alert_id}:`, alertError);
         stats.errors.push(`Alert ${alert.alert_id}: ${alertError.message}`);
@@ -642,15 +785,13 @@ export async function GET(request: NextRequest) {
     }
 
     // ========================================================================
-    // STEP 7: Return summary
+    // STEP 6: Return summary
     // ========================================================================
 
-    stats.startTime = new Date().toISOString();
-    
     console.log("\n🔔 ═══════════════════════════════════════════════════════════");
     console.log("🔔 ALERT PROCESSOR COMPLETED");
     console.log(`🔔 Checked: ${stats.alertsChecked} | PriceFound: ${stats.priceDataFound} | NoPriceData: ${stats.alertsNoPriceData}`);
-    console.log(`🔔 Triggered: ${stats.alertsTriggered} | Sent: ${stats.notificationsSent} | Failed: ${stats.notificationsFailed} | Cooldown: ${stats.alertsSkippedCooldown}`);
+    console.log(`🔔 Triggered: ${stats.alertsTriggered} | Push: ${stats.pushSent} | Email: ${stats.emailsSent} | Failed: ${stats.notificationsFailed} | Cooldown: ${stats.alertsSkippedCooldown}`);
     if (isDryRun) console.log(`🔔 MODE: DRY RUN (no messages sent)`);
     console.log("🔔 ═══════════════════════════════════════════════════════════\n");
 
@@ -659,145 +800,24 @@ export async function GET(request: NextRequest) {
       message: "Alert processing completed",
       stats,
     });
-
   } catch (error: any) {
     console.error("❌ Alert Processor Error:", error);
     stats.errors.push(error.message);
-    
-    return NextResponse.json({
-      success: false,
-      error: "Alert processing failed",
-      stats,
-    }, { status: 500 });
+
+    return NextResponse.json(
+      {
+        success: false,
+        error: "Alert processing failed",
+        stats,
+      },
+      { status: 500 }
+    );
   }
 }
 
-// POST - Manual trigger with options
+// POST - same processing, same auth (delegates to GET)
 export async function POST(request: NextRequest) {
-  try {
-    const body = await request.json();
-    const { alertId, testMode } = body;
-
-    if (testMode) {
-      // Test mode - just check what would trigger
-      const alerts = await prisma.$queryRaw`
-        SELECT 
-          pa.alert_id,
-          pa.item_id,
-          pa.item_name,
-          pa.market_id,
-          pa.market_name,
-          pa.target_price,
-          pa.alert_type,
-          pa.phone_number,
-          pa.status
-        FROM Price_Alerts pa
-        WHERE pa.status = 'ACTIVE'
-        ${alertId ? prisma.$queryRaw`AND pa.alert_id = ${alertId}` : prisma.$queryRaw``}
-      ` as any[];
-
-      const analysis = await Promise.all(alerts.map(async (alert: any) => {
-        // Get current price — Daily_Prices FIRST, Approved_Prices FALLBACK
-        let priceResult: any[] = [];
-        let source = "NOT FOUND";
-        
-        // Try Daily_Prices by ID
-        if (alert.item_id && alert.market_id) {
-          try {
-            priceResult = await prisma.$queryRaw`
-              SELECT TOP 1 price_naira AS price, unit, price_date AS validated_at
-              FROM Daily_Prices
-              WHERE item_id = ${alert.item_id} AND market_id = ${alert.market_id} AND price_naira > 0
-              ORDER BY price_date DESC, time_slot DESC
-            ` as any[];
-            if (priceResult.length > 0) source = "Daily_Prices (by ID)";
-          } catch { /* continue to next strategy */ }
-        }
-        
-        // Try Daily_Prices by name
-        if (priceResult.length === 0 && alert.item_name && alert.market_name) {
-          try {
-            priceResult = await prisma.$queryRaw`
-              SELECT TOP 1 price_naira AS price, unit, price_date AS validated_at
-              FROM Daily_Prices
-              WHERE item_name = ${alert.item_name} AND market_name = ${alert.market_name} AND price_naira > 0
-              ORDER BY price_date DESC, time_slot DESC
-            ` as any[];
-            if (priceResult.length > 0) source = "Daily_Prices (by name)";
-          } catch { /* continue */ }
-        }
-
-        // Try Daily_Prices item only (any market)
-        if (priceResult.length === 0 && alert.item_name) {
-          try {
-            priceResult = await prisma.$queryRaw`
-              SELECT TOP 1 price_naira AS price, unit, price_date AS validated_at
-              FROM Daily_Prices
-              WHERE item_name = ${alert.item_name} AND price_naira > 0
-              ORDER BY price_date DESC, time_slot DESC
-            ` as any[];
-            if (priceResult.length > 0) source = "Daily_Prices (any market)";
-          } catch { /* continue */ }
-        }
-        
-        // Approved_Prices fallback
-        if (priceResult.length === 0 && alert.item_name) {
-          try {
-            priceResult = await prisma.$queryRaw`
-              SELECT TOP 1 price, unit, validated_at
-              FROM Approved_Prices
-              WHERE item_name = ${alert.item_name}
-                AND validation_status = 'APPROVED'
-              ORDER BY validated_at DESC
-            ` as any[];
-            if (priceResult.length > 0) source = "Approved_Prices (fallback)";
-          } catch { /* no data */ }
-        }
-        
-        const currentPrice = priceResult.length > 0 ? parseFloat(priceResult[0].price) : null;
-        const targetPrice = parseFloat(alert.target_price || 0);
-        const alertType = alert.alert_type?.toUpperCase();
-        
-        let wouldTrigger = false;
-        if (currentPrice !== null) {
-          if (alertType === "ABOVE" && currentPrice >= targetPrice) wouldTrigger = true;
-          if (alertType === "BELOW" && currentPrice <= targetPrice) wouldTrigger = true;
-        }
-
-        return {
-          alert_id: alert.alert_id,
-          item: alert.item_name,
-          market: alert.market_name,
-          target_price: targetPrice,
-          current_price: currentPrice,
-          alert_type: alertType,
-          would_trigger: wouldTrigger,
-          price_diff: currentPrice !== null ? currentPrice - targetPrice : null,
-          phone: alert.phone_number?.slice(-4) ? `***${alert.phone_number.slice(-4)}` : 'N/A',
-          has_price_data: currentPrice !== null,
-          price_source: source,
-        };
-      }));
-
-      return NextResponse.json({
-        success: true,
-        testMode: true,
-        alerts: analysis,
-        summary: {
-          total: analysis.length,
-          wouldTrigger: analysis.filter((a: any) => a.would_trigger).length,
-          noPriceData: analysis.filter((a: any) => !a.has_price_data).length,
-        }
-      });
-    }
-
-    // Regular processing
-    return GET(request);
-
-  } catch (error: any) {
-    console.error("POST Alert Process Error:", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
-  }
+  return GET(request);
 }
 
 export const dynamic = "force-dynamic";
