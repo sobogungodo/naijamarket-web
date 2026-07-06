@@ -116,7 +116,7 @@ export async function GET(req: NextRequest) {
           feature_name,
           COUNT(*) AS uses,
           COUNT(DISTINCT consumer_id) AS unique_users
-        FROM dbo.Consumer_Analytics
+        FROM dbo.Consumer_Events
         WHERE event_type='FEATURE_USE'
           AND feature_name IS NOT NULL
           AND created_at >= DATEADD(DAY, -@days, GETUTCDATE())
@@ -132,7 +132,7 @@ export async function GET(req: NextRequest) {
           ca.item_id,
           ISNULL(ic.item_name, ca.item_id) AS item_name,
           COUNT(*) AS searches
-        FROM dbo.Consumer_Analytics ca
+        FROM dbo.Consumer_Events ca
         LEFT JOIN dbo.Items_Catalog ic ON ic.item_id = ca.item_id
         WHERE ca.event_type='SEARCH'
           AND ca.item_id IS NOT NULL
@@ -148,7 +148,7 @@ export async function GET(req: NextRequest) {
         SELECT
           subscription_tier,
           COUNT(DISTINCT consumer_id) AS active_users
-        FROM dbo.Consumer_Analytics
+        FROM dbo.Consumer_Events
         WHERE created_at >= DATEADD(DAY, -@days, GETUTCDATE())
         GROUP BY subscription_tier
         ORDER BY active_users DESC

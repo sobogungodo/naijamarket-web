@@ -1,6 +1,6 @@
 // src/app/api/analytics/track/route.ts
 // NaijaMarket Intel — Analytics tracking endpoint
-// Receives events from frontend, writes to Site_Analytics or Consumer_Analytics
+// Receives events from frontend, writes to Site_Analytics or Consumer_Events
 // No PII stored — anonymous session IDs only for site analytics
 
 import { NextRequest, NextResponse } from "next/server";
@@ -121,7 +121,7 @@ export async function POST(req: NextRequest) {
         .input("metadata",             sql.NVarChar(sql.MAX),
                metadata ? JSON.stringify(metadata).substring(0, 4000) : null)
         .query(`
-          INSERT INTO dbo.Consumer_Analytics
+          INSERT INTO dbo.Consumer_Events
             (consumer_id, event_type, feature_name, item_id, market_id,
              subscription_tier, session_duration_sec, metadata)
           VALUES
