@@ -9,10 +9,10 @@ import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import sql from "mssql";
 
 const DB_CONFIG = {
-  server:   process.env.SQL_SERVER || "naijafood.database.windows.net",
-  database: process.env.SQL_DATABASE || "naijafoodmarket-live",
-  user:     process.env.SQL_USERNAME || process.env.SQL_USER || "",
-  password: process.env.SQL_PASSWORD || "",
+  server:   process.env.AZURE_SQL_SERVER!,
+  database: process.env.AZURE_SQL_DATABASE!,
+  user:     process.env.AZURE_SQL_USER!,
+  password: process.env.AZURE_SQL_PASSWORD!,
   options:  { encrypt: true, trustServerCertificate: false },
   pool:     { max: 5, min: 0, idleTimeoutMillis: 30000 },
 };
