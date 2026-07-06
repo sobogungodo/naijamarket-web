@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { useLang } from "@/lib/lang";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
+import { useAnalytics } from "@/hooks/useAnalytics";
 import {
   Bell,
   Plus,
@@ -432,6 +433,7 @@ export default function AlertsPage() {
   const { data: session, status } = useSession();
   const router = useRouter();
   const { t } = useLang();
+  const { trackFeature } = useAnalytics();
 
   const [alerts, setAlerts] = useState<PriceAlert[]>([]);
   const [limits, setLimits] = useState<AlertLimits>({ maxAlerts: 0, canCreate: false, currentCount: 0, remaining: 0 });
@@ -511,6 +513,7 @@ export default function AlertsPage() {
       const result = await response.json();
 
       if (result.success) {
+        trackFeature("alerts", { item_id: data.item_id, market_id: data.market_id });
         setShowCreateModal(false);
         setSuccess("Price alert created successfully!");
         setTimeout(() => setSuccess(null), 3000);
