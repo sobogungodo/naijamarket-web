@@ -8,7 +8,7 @@
 "use client";
 
 import { useEffect, useRef, useCallback } from "react";
-import { usePathname, useSearchParams } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { v4 as uuidv4 } from "uuid";
 
@@ -52,7 +52,6 @@ async function fire(event_type: string, payload: Record<string, any>) {
 
 export function useAnalytics() {
   const pathname      = usePathname();
-  const searchParams  = useSearchParams();
   const { data: sess} = useSession();
   const sessionStart  = useRef<number>(Date.now());
   const scrollFired   = useRef<Set<number>>(new Set());
