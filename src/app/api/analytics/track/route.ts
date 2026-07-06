@@ -27,7 +27,8 @@ const CONSUMER_EVENTS = new Set([
 const ALLOWED_FEATURES = new Set([
   "prices","arbitrage","alerts","compare","trend","snapshot",
   "nfpi","bulk","forecast","brief","favorites","filter",
-  "export","calc","basket","invite","history","tokens","status"
+  "export","calc","basket","invite","history","tokens","status",
+  "markets","screener","heatmap","inflation","reports","settings"
 ]);
 
 export async function POST(req: NextRequest) {
