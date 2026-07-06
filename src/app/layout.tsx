@@ -208,10 +208,10 @@ export default function RootLayout({
             {/* Marketing CTAs — public pages only, hidden when authenticated or on
                 /dashboard. Inside <Providers> so useSession() resolves. */}
             <ConditionalCTA />
+            <AnalyticsProvider />
           </ThemeProvider>
         </Providers>
       <CookieBanner />
-      <AnalyticsProvider />
       </body>
     </html>
   );
