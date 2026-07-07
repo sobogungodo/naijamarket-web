@@ -34,10 +34,23 @@ export async function POST(request: NextRequest) {
   const tier = consumer.subscription_tier || "FREE";
   const gate = await checkQuery(consumer.consumer_id, tier);
 
+  // Body-tolerant: old/staged clients POST no body, so parse defensively. When the
+  // client DOES send the searched item, log it as meta so mobile Query_Log rows
+  // carry item_name (parity with web). Empty/absent item -> undefined meta ->
+  // writes blank exactly as before (no regression during staged Play rollout).
+  const body = await request.json().catch(() => ({} as any));
+  const item = typeof body?.item === "string" ? body.item.trim() : "";
+  const market = typeof body?.market === "string" ? body.market.trim() : "";
+
   // Count this query across ALL tiers (paid daily caps + Query_Log row).
   // Only when allowed; best-effort (never throws). Gate-time to match web.
   if (gate.allowed) {
-    await logQuery(consumer.consumer_id, tier, "MOBILE");
+    await logQuery(
+      consumer.consumer_id,
+      tier,
+      "MOBILE",
+      item ? { item_name: item, market_name: market || undefined } : undefined
+    );
   }
 
   return NextResponse.json(

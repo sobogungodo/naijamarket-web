@@ -68,7 +68,9 @@ function normTier(tier: string | null | undefined): string {
 }
 
 // Resolve the consumer's phone (+ FREE counters) once from consumer_id.
-async function resolveConsumer(consumerId: string): Promise<ConsumerRow | null> {
+// Exported so read-only siblings (e.g. recent-searches) reuse the SAME naked-phone
+// derivation and can't drift from the gate's Query_Log key.
+export async function resolveConsumer(consumerId: string): Promise<ConsumerRow | null> {
   const c = await prisma.consumers.findUnique({
     where: { consumer_id: consumerId },
     select: {
