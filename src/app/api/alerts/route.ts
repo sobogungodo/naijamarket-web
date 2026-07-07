@@ -6,28 +6,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma"; // Use singleton
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
-
-// Alert limits by subscription tier
-const ALERT_LIMITS: Record<string, number> = {
-  FREE: 0,
-  SILVER: 0,
-  GOLD: 5,
-  BUSINESS: 10,
-  CORPORATE: 20,
-  ENTERPRISE: -1, // Unlimited
-  OGA_BOSS: -1,
-  GOVERNMENT: -1,
-};
+import { ALERT_LIMITS, toE164 } from "@/lib/alertLimits";
 
 // Helper to generate unique ID
 function generateAlertId(): string {
   return `ALT${Date.now()}${Math.random().toString(36).substr(2, 4).toUpperCase()}`;
-}
-
-// Canonical E.164 (+<digits>) — matches the +prefixed form stored in Consumers.phone_number
-function toE164(p: string): string {
-  const d = (p || "").replace(/\D/g, "");
-  return d ? "+" + d : "";
 }
 
 // GET - List alerts for a consumer

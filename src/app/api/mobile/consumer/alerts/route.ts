@@ -6,6 +6,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { jwtVerify } from "jose";
 import { prisma } from "@/lib/db";
+import { ALERT_LIMITS, toE164 } from "@/lib/alertLimits";
 
 async function verifyConsumer(request: NextRequest) {
   const auth = request.headers.get("authorization") || "";
@@ -67,6 +68,40 @@ export async function POST(request: NextRequest) {
     const price = parseFloat(String(threshold));
     if (!price || price <= 0)
       return NextResponse.json({ success: false, error: "Invalid threshold" }, { status: 400 });
+
+    // Authoritative tier + phone from the DB row — NOT the token. Token claims
+    // (tier, phone) can be stale/empty; Consumers is the source of truth. Token
+    // phone is a last resort only if the DB row has neither format.
+    const crow = await prisma.$queryRaw`
+      SELECT subscription_tier, phone, phone_number FROM Consumers WHERE consumer_id = ${c.consumer_id}
+    ` as any[];
+    const tier = (crow[0]?.subscription_tier || "FREE").toUpperCase();
+    const canonPhone = toE164(crow[0]?.phone_number || crow[0]?.phone || c.phone_number || "");
+    const noPlus = canonPhone.replace("+", "");
+
+    // Never write an undeliverable alert — Alert_Notifications is phone-keyed.
+    if (!canonPhone)
+      return NextResponse.json({ success: false, error: "A phone number is required to create alerts. Update your profile." }, { status: 400 });
+
+    // Tier gate — identical limits to /api/alerts, counted CROSS-DOOR so web+mobile
+    // alerts share one cap (consumer_id + both phone formats).
+    const limit = ALERT_LIMITS[tier] ?? 0;
+    if (limit === 0)
+      return NextResponse.json({ success: false, error: `Price alerts are not available on the ${tier} plan. Upgrade to GOLD or higher.`, upgrade_required: true, current_tier: tier, required_tier: "GOLD" }, { status: 403 });
+    let currentCount = 0;
+    try {
+      const existingCount = await prisma.$queryRaw`
+        SELECT COUNT(*) as count FROM Price_Alerts
+        WHERE (consumer_id = ${c.consumer_id} OR phone_number = ${canonPhone} OR phone_number = ${noPlus})
+        AND status = 'ACTIVE'
+      ` as any[];
+      currentCount = parseInt(existingCount[0]?.count || "0");
+    } catch {
+      currentCount = 0;
+    }
+    if (limit !== -1 && currentCount >= limit)
+      return NextResponse.json({ success: false, error: `Alert limit reached (${currentCount}/${limit}). Upgrade your plan for more alerts.`, limit_reached: true, current_count: currentCount, limit: limit }, { status: 403 });
+
     const alertType = String(direction).toUpperCase() === "ABOVE" ? "ABOVE" : "BELOW";
     const alertId = genAlertId();
     const now = new Date();
@@ -75,7 +110,7 @@ export async function POST(request: NextRequest) {
         (alert_id, consumer_id, phone_number, item_id, item_name,
          market_id, market_name, target_price, alert_type, status, created_at, updated_at)
       VALUES
-        (${alertId}, ${c.consumer_id}, ${c.phone_number || ""}, ${item_id}, ${item_name || null},
+        (${alertId}, ${c.consumer_id}, ${canonPhone}, ${item_id}, ${item_name || null},
          ${market_id}, ${market_name || null}, ${price}, ${alertType}, 'ACTIVE', ${now}, ${now})`;
     return NextResponse.json({ success: true, alert_id: alertId });
   } catch (e: any) {
