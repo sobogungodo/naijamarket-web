@@ -165,8 +165,8 @@ function PricesPageContent() {
       const params = new URLSearchParams();
       if (searchQuery) {
         params.append("search", searchQuery);
-        // Explicit price check → counts against the FREE weekly allowance.
-        params.append("count", "1");
+        // count is NO LONGER appended here — live-typing fetches DISPLAY ONLY, never charge.
+        // The FREE-cap charge fires once per settled search (see the charge effect below).
       }
       if (categoryFilter) params.append("category", categoryFilter);
       if (stateFilter) params.append("state", stateFilter);
@@ -254,6 +254,47 @@ function PricesPageContent() {
     }, 600);
     return () => clearTimeout(debounce);
   }, [searchQuery, categoryFilter, stateFilter, marketFilter, trendFilter, sortBy]);
+
+  // Charge the FREE cap + write ONE Query_Log row per SETTLED search — decoupled
+  // from the live display fetch (which stays free per keystroke). The settle window
+  // (1500ms) exceeds observed typing gaps (~1000ms/char in the capture proof), so
+  // typing "r→i→c→e" collapses to a SINGLE charge instead of one per keystroke.
+  // Guarded by lastCharged so refresh / re-settle of the same query shape never re-charges.
+  const lastCharged = useRef<string>("");
+  useEffect(() => {
+    const q = searchQuery.trim();
+    if (!q) return;
+    const settle = setTimeout(() => {
+      const key = `${q}|${categoryFilter}|${stateFilter}|${marketFilter}`;
+      if (lastCharged.current === key) return; // already charged this settled search
+      lastCharged.current = key;
+      // ONE charged request — mirrors the display fetch's query dims so the gate logs
+      // the same item/market the user sees. limit=1 keeps it cheap (charge, not data).
+      const cp = new URLSearchParams();
+      cp.append("search", q);
+      cp.append("count", "1");
+      if (categoryFilter) cp.append("category", categoryFilter);
+      if (stateFilter) cp.append("state", stateFilter);
+      if (marketFilter) cp.append("market", marketFilter);
+      cp.append("limit", "1");
+      fetch("/api/prices?" + cp.toString())
+        .then((r) => {
+          if (r.status === 429) {
+            lastCharged.current = ""; // blocked — let a post-upgrade retype re-attempt
+            return r
+              .json()
+              .catch(() => ({} as any))
+              .then((d) =>
+                setUpsell(d.message || "You've used your free price checks for this week.")
+              );
+          }
+        })
+        .catch(() => {
+          lastCharged.current = ""; // fail-open: don't strand the guard on a transient glitch
+        });
+    }, 1500);
+    return () => clearTimeout(settle);
+  }, [searchQuery, categoryFilter, stateFilter, marketFilter]);
 
   // Auto-refresh every hour between 6AM-10PM WAT
   useEffect(() => {
