@@ -4,6 +4,8 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma"; // Use singleton
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 
 // Alert limits by subscription tier
 const ALERT_LIMITS: Record<string, number> = {
@@ -22,28 +24,28 @@ function generateAlertId(): string {
   return `ALT${Date.now()}${Math.random().toString(36).substr(2, 4).toUpperCase()}`;
 }
 
-// Helper to sanitize phone number
-function sanitizePhone(phone: string): string {
-  return phone.replace(/\D/g, "");
+// Canonical E.164 (+<digits>) — matches the +prefixed form stored in Consumers.phone_number
+function toE164(p: string): string {
+  const d = (p || "").replace(/\D/g, "");
+  return d ? "+" + d : "";
 }
 
 // GET - List alerts for a consumer
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
-    const phone = searchParams.get("phone");
-    const consumerId = searchParams.get("consumer_id");
     const status = searchParams.get("status"); // ACTIVE, TRIGGERED, DELETED
-    const tier = (searchParams.get("tier") || "FREE").toUpperCase();
 
-    if (!phone && !consumerId) {
-      return NextResponse.json(
-        { success: false, error: "Phone or consumer_id is required" },
-        { status: 400 }
-      );
+    // Identity + tier derived from the session ONLY — never trust client-supplied
+    // phone/consumer_id/tier (middleware already guarantees a valid session).
+    const session = await getServerSession(authOptions);
+    if (!(session?.user as any)?.id) {
+      return NextResponse.json({ success: false, error: "unauthorized" }, { status: 401 });
     }
-
-    const sanitizedPhone = phone ? sanitizePhone(phone) : null;
+    const consumerId = (session.user as any).id;
+    const canonPhone = toE164((session.user as any).phone);
+    const noPlus = canonPhone.replace("+", "");
+    const tier = ((session.user as any).tier || "FREE").toUpperCase();
 
     // Build query based on parameters
     let alerts: any[] = [];
@@ -52,14 +54,14 @@ export async function GET(request: NextRequest) {
       if (status) {
         alerts = await prisma.$queryRaw`
           SELECT * FROM Price_Alerts 
-          WHERE (phone_number = ${sanitizedPhone} OR consumer_id = ${consumerId})
+          WHERE (consumer_id = ${consumerId} OR phone_number = ${canonPhone} OR phone_number = ${noPlus})
           AND status = ${status}
           ORDER BY created_at DESC
         ` as any[];
       } else {
         alerts = await prisma.$queryRaw`
           SELECT * FROM Price_Alerts 
-          WHERE (phone_number = ${sanitizedPhone} OR consumer_id = ${consumerId})
+          WHERE (consumer_id = ${consumerId} OR phone_number = ${canonPhone} OR phone_number = ${noPlus})
           AND status != 'DELETED'
           ORDER BY created_at DESC
         ` as any[];
@@ -121,7 +123,7 @@ export async function GET(request: NextRequest) {
     try {
       const triggeredResult = await prisma.$queryRaw`
         SELECT COUNT(*) as count FROM Price_Alerts 
-        WHERE (phone_number = ${sanitizedPhone} OR consumer_id = ${consumerId})
+        WHERE (consumer_id = ${consumerId} OR phone_number = ${canonPhone} OR phone_number = ${noPlus})
         AND status = 'TRIGGERED'
         AND triggered_at >= ${today.toISOString()}
       ` as any[];
@@ -166,8 +168,6 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const {
-      phone,
-      consumer_id,
       item_id,
       item_name,
       market_id,
@@ -176,11 +176,41 @@ export async function POST(request: NextRequest) {
       category_name,
       target_price,
       alert_type, // "ABOVE" or "BELOW"
-      subscription_tier = "FREE",
     } = body;
 
+    // Identity + tier derived from the session ONLY (never client-supplied).
+    const session = await getServerSession(authOptions);
+    if (!(session?.user as any)?.id) {
+      return NextResponse.json({ success: false, error: "unauthorized" }, { status: 401 });
+    }
+    const consumerId = (session.user as any).id;
+    let canonPhone = toE164((session.user as any).phone);
+    let tier = ((session.user as any).tier || "").toUpperCase();
+    // One Consumers lookup backfills tier and/or phone when the session lacks them
+    // (phone cols are nullable + the func-api mobile registration path is unread).
+    let fallbackRow: any = null;
+    if (!tier || !canonPhone) {
+      const r = await prisma.$queryRaw`SELECT subscription_tier, phone, phone_number FROM Consumers WHERE consumer_id = ${consumerId}` as any[];
+      fallbackRow = r[0] || null;
+    }
+    if (!tier) tier = (fallbackRow?.subscription_tier || "FREE").toUpperCase();
+    if (!canonPhone) {
+      const cp = (fallbackRow?.phone_number || fallbackRow?.phone || "");
+      canonPhone = toE164(cp);
+    }
+    const noPlus = canonPhone.replace("+", "");
+
+    // Never write an undeliverable alert — Alert_Notifications is phone-keyed, so an
+    // empty phone_number would save an alert that silently never fires.
+    if (!canonPhone) {
+      return NextResponse.json(
+        { success: false, error: "A phone number is required to create alerts. Update your profile." },
+        { status: 400 }
+      );
+    }
+
     // Validate required fields
-    if (!phone || !item_id || !market_id || !target_price || !alert_type) {
+    if (!item_id || !market_id || !target_price || !alert_type) {
       return NextResponse.json(
         {
           success: false,
@@ -199,8 +229,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Check tier limit
-    const tier = subscription_tier.toUpperCase();
+    // Check tier limit (tier resolved from session above)
     const limit = ALERT_LIMITS[tier] ?? 0;
 
     if (limit === 0) {
@@ -216,14 +245,12 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const sanitizedPhone = sanitizePhone(phone);
-
-    // Count existing active alerts
+    // Count existing active alerts (across consumer_id + both phone formats)
     let currentCount = 0;
     try {
       const existingCount = await prisma.$queryRaw`
-        SELECT COUNT(*) as count FROM Price_Alerts 
-        WHERE phone_number = ${sanitizedPhone}
+        SELECT COUNT(*) as count FROM Price_Alerts
+        WHERE (consumer_id = ${consumerId} OR phone_number = ${canonPhone} OR phone_number = ${noPlus})
         AND status = 'ACTIVE'
       ` as any[];
       currentCount = parseInt(existingCount[0]?.count || "0");
@@ -247,8 +274,8 @@ export async function POST(request: NextRequest) {
     // Check for duplicate alert
     try {
       const duplicate = await prisma.$queryRaw`
-        SELECT alert_id FROM Price_Alerts 
-        WHERE phone_number = ${sanitizedPhone}
+        SELECT alert_id FROM Price_Alerts
+        WHERE (consumer_id = ${consumerId} OR phone_number = ${canonPhone} OR phone_number = ${noPlus})
         AND item_id = ${item_id}
         AND market_id = ${market_id}
         AND alert_type = ${normalizedAlertType}
@@ -279,7 +306,7 @@ export async function POST(request: NextRequest) {
         market_id, market_name, category_id, category_name,
         target_price, alert_type, status, created_at, updated_at
       ) VALUES (
-        ${alertId}, ${consumer_id || null}, ${sanitizedPhone}, 
+        ${alertId}, ${consumerId}, ${canonPhone},
         ${item_id}, ${item_name || null}, ${market_id}, ${market_name || null},
         ${category_id || null}, ${category_name || null}, ${parseFloat(target_price)}, 
         ${normalizedAlertType}, 'ACTIVE', ${now}, ${now}
@@ -334,7 +361,6 @@ export async function DELETE(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const alertId = searchParams.get("alert_id");
-    const phone = searchParams.get("phone");
 
     if (!alertId) {
       return NextResponse.json(
@@ -343,23 +369,30 @@ export async function DELETE(request: NextRequest) {
       );
     }
 
+    // Ownership enforced server-side — a user may only delete their own alerts.
+    const session = await getServerSession(authOptions);
+    if (!(session?.user as any)?.id) {
+      return NextResponse.json({ success: false, error: "unauthorized" }, { status: 401 });
+    }
+    const consumerId = (session.user as any).id;
+    const canonPhone = toE164((session.user as any).phone);
+    const noPlus = canonPhone.replace("+", "");
+
     const now = new Date().toISOString();
 
-    // Soft delete - set status to DELETED (use parameterized query to prevent SQL injection)
-    if (phone) {
-      const sanitizedPhone = sanitizePhone(phone);
-      await prisma.$executeRaw`
-        UPDATE Price_Alerts 
-        SET status = 'DELETED', updated_at = ${now}
-        WHERE alert_id = ${alertId}
-        AND phone_number = ${sanitizedPhone}
-      `;
-    } else {
-      await prisma.$executeRaw`
-        UPDATE Price_Alerts 
-        SET status = 'DELETED', updated_at = ${now}
-        WHERE alert_id = ${alertId}
-      `;
+    // Soft delete scoped to the caller's own alert (consumer_id + both phone forms).
+    const affected = await prisma.$executeRaw`
+      UPDATE Price_Alerts
+      SET status = 'DELETED', updated_at = ${now}
+      WHERE alert_id = ${alertId}
+      AND (consumer_id = ${consumerId} OR phone_number = ${canonPhone} OR phone_number = ${noPlus})
+    `;
+
+    if (!affected) {
+      return NextResponse.json(
+        { success: false, error: "Alert not found" },
+        { status: 404 }
+      );
     }
 
     return NextResponse.json({
@@ -380,7 +413,7 @@ export async function DELETE(request: NextRequest) {
 export async function PATCH(request: NextRequest) {
   try {
     const body = await request.json();
-    const { alert_id, phone, target_price, alert_type, status } = body;
+    const { alert_id, target_price, alert_type, status } = body;
 
     if (!alert_id) {
       return NextResponse.json(
@@ -389,8 +422,16 @@ export async function PATCH(request: NextRequest) {
       );
     }
 
+    // Ownership enforced server-side — a user may only update their own alerts.
+    const session = await getServerSession(authOptions);
+    if (!(session?.user as any)?.id) {
+      return NextResponse.json({ success: false, error: "unauthorized" }, { status: 401 });
+    }
+    const consumerId = (session.user as any).id;
+    const canonPhone = toE164((session.user as any).phone);
+    const noPlus = canonPhone.replace("+", "");
+
     const now = new Date().toISOString();
-    const sanitizedPhone = phone ? sanitizePhone(phone) : null;
 
     // Validate alert_type if provided
     if (alert_type && !["ABOVE", "BELOW"].includes(alert_type.toUpperCase())) {
@@ -408,45 +449,57 @@ export async function PATCH(request: NextRequest) {
       );
     }
 
-    // Build and execute update based on what's provided
-    // Using separate queries to avoid SQL injection while keeping flexibility
+    // Build and execute update based on what's provided.
+    // Every branch scopes the WHERE to the caller's own alert (consumer_id + both phone forms).
+    let affected = 0;
     if (target_price !== undefined && alert_type && status) {
-      await prisma.$executeRaw`
-        UPDATE Price_Alerts 
+      affected = await prisma.$executeRaw`
+        UPDATE Price_Alerts
         SET target_price = ${parseFloat(target_price)},
             alert_type = ${alert_type.toUpperCase()},
             status = ${status.toUpperCase()},
             updated_at = ${now}
         WHERE alert_id = ${alert_id}
-        ${sanitizedPhone ? prisma.$executeRaw`AND phone_number = ${sanitizedPhone}` : prisma.$executeRaw``}
+        AND (consumer_id = ${consumerId} OR phone_number = ${canonPhone} OR phone_number = ${noPlus})
       `;
     } else if (target_price !== undefined) {
-      await prisma.$executeRaw`
-        UPDATE Price_Alerts 
+      affected = await prisma.$executeRaw`
+        UPDATE Price_Alerts
         SET target_price = ${parseFloat(target_price)}, updated_at = ${now}
         WHERE alert_id = ${alert_id}
+        AND (consumer_id = ${consumerId} OR phone_number = ${canonPhone} OR phone_number = ${noPlus})
       `;
     } else if (alert_type) {
-      await prisma.$executeRaw`
-        UPDATE Price_Alerts 
+      affected = await prisma.$executeRaw`
+        UPDATE Price_Alerts
         SET alert_type = ${alert_type.toUpperCase()}, updated_at = ${now}
         WHERE alert_id = ${alert_id}
+        AND (consumer_id = ${consumerId} OR phone_number = ${canonPhone} OR phone_number = ${noPlus})
       `;
     } else if (status) {
       const triggeredAt = status.toUpperCase() === "TRIGGERED" ? now : null;
-      await prisma.$executeRaw`
-        UPDATE Price_Alerts 
-        SET status = ${status.toUpperCase()}, 
+      affected = await prisma.$executeRaw`
+        UPDATE Price_Alerts
+        SET status = ${status.toUpperCase()},
             triggered_at = ${triggeredAt},
             updated_at = ${now}
         WHERE alert_id = ${alert_id}
+        AND (consumer_id = ${consumerId} OR phone_number = ${canonPhone} OR phone_number = ${noPlus})
       `;
     } else {
-      await prisma.$executeRaw`
-        UPDATE Price_Alerts 
+      affected = await prisma.$executeRaw`
+        UPDATE Price_Alerts
         SET updated_at = ${now}
         WHERE alert_id = ${alert_id}
+        AND (consumer_id = ${consumerId} OR phone_number = ${canonPhone} OR phone_number = ${noPlus})
       `;
+    }
+
+    if (!affected) {
+      return NextResponse.json(
+        { success: false, error: "Alert not found" },
+        { status: 404 }
+      );
     }
 
     return NextResponse.json({
