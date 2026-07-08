@@ -37,6 +37,16 @@ interface CustomField {
   value: string;
 }
 
+// Result of routing an activation through usp_Set_Consumer_Tier.
+interface UpgradeResult {
+  ok: boolean;
+  action?: "ACTIVATED" | "SCHEDULED" | "IDEMPOTENT";
+  endDate?: Date | null;        // SP-returned end_date (ACTIVATED only)
+  effectiveDate?: Date | null;  // SP-returned effective_date (SCHEDULED only)
+  degraded?: boolean;           // stamp anomaly — entitlement granted but unattributed/collided
+  error?: string;
+}
+
 // ============================================================================
 // CONFIGURATION
 // ============================================================================
@@ -76,12 +86,6 @@ const TIER_CONFIG: Record<string, TierConfig> = {
   ENTERPRISE: { tierName: "Enterprise", queryLimit: null, maxMarkets: 226, duration: 30, billingCycle: "monthly" },
 };
 
-// Tier ranking — higher number = higher tier. Used to block downgrades of an
-// active, unexpired subscription.
-const TIER_RANK: Record<string, number> = {
-  FREE: 0, SILVER: 1, GOLD: 2, BUSINESS: 3, CORPORATE: 4, ENTERPRISE: 5,
-};
-
 // ============================================================================
 // HELPER FUNCTIONS
 // ============================================================================
@@ -91,33 +95,6 @@ const TIER_RANK: Record<string, number> = {
  */
 function getTierConfig(tier: string): TierConfig {
   return TIER_CONFIG[tier] || TIER_CONFIG.FREE || DEFAULT_TIER_CONFIG;
-}
-
-/**
- * Generate unique subscription ID
- * Format: SUB-TIMESTAMP-RANDOM
- */
-function generateSubscriptionId(): string {
-  const timestamp = Date.now().toString(36).toUpperCase();
-  const random = Math.random().toString(36).substring(2, 6).toUpperCase();
-  return `SUB-${timestamp}-${random}`;
-}
-
-/**
- * Calculate subscription end date based on tier
- */
-function calculateEndDate(tier: string): Date {
-  const config = getTierConfig(tier);
-  const endDate = new Date();
-
-  if (config.duration > 0) {
-    endDate.setDate(endDate.getDate() + config.duration);
-  } else {
-    // For FREE tier, set far future date
-    endDate.setFullYear(endDate.getFullYear() + 100);
-  }
-
-  return endDate;
 }
 
 /**
@@ -249,7 +226,10 @@ async function updatePaymentStatus(
 }
 
 /**
- * Upgrade consumer subscription
+ * Upgrade consumer subscription — routed through dbo.usp_Set_Consumer_Tier,
+ * the canonical atomic tier mutation (supersede + CAS insert with grace_end_date
+ * + Consumers update + audit row, all in ONE transaction inside the SP).
+ * This route no longer writes CAS/Consumers inline.
  */
 async function upgradeSubscription(
   phone: string,
@@ -257,44 +237,52 @@ async function upgradeSubscription(
   amount: number,
   reference: string,
   provider: string
-): Promise<boolean> {
+): Promise<UpgradeResult> {
   let pool: sql.ConnectionPool | null = null;
 
   try {
     pool = await sql.connect(dbConfig);
-    const config = getTierConfig(tier);
-    const subscriptionId = generateSubscriptionId();
-    const startDate = new Date();
-    const endDate = calculateEndDate(tier);
 
-    // Check if consumer already has an active subscription
-    const existingResult = await pool.request()
-      .input("phone", sql.NVarChar(20), phone)
-      .query(`
-        SELECT subscription_id, tier_code, end_date
-        FROM Consumer_Active_Subscriptions
-        WHERE phone_number = @phone AND status = 'ACTIVE'
-      `);
-
-    // Downgrade protection: never reduce an active, unexpired higher tier.
-    // (e.g. a SILVER payment must not clobber an active BUSINESS subscription.)
-    if (existingResult.recordset.length > 0) {
-      const cur = existingResult.recordset[0];
-      const curRank = TIER_RANK[String(cur.tier_code || "").toUpperCase()] ?? 0;
-      const newRank = TIER_RANK[String(tier || "").toUpperCase()] ?? 0;
-      const curEnd = cur.end_date ? new Date(cur.end_date) : null;
-      const stillValid = curEnd ? curEnd >= new Date() : true;
-      if (newRank < curRank && stillValid) {
-        console.warn(`[subscribe/verify] DOWNGRADE BLOCKED: active ${cur.tier_code} (rank ${curRank}, ends ${cur.end_date}) — refusing to apply lower tier ${tier} (rank ${newRank}) ref=${reference}`);
-        return true; // payment acknowledged; keep the higher active tier
-      }
+    // ---- Tier normalization — BEFORE the EXEC ------------------------------
+    // `tier` originates from payment-provider metadata (Paystack metadata.tier /
+    // custom_fields, Flutterwave meta.tier): free-form checkout strings, case
+    // not guaranteed. Normalize to the canonical uppercase Subscription_Tiers
+    // tier_id and refuse anything unmapped HERE — never let the SP's 50001/50005
+    // throw on an already-charged payment. FREE is refused too: a *paid* verify
+    // for FREE is an anomaly and must not strip entitlement.
+    const tierCode = String(tier || "").trim().toUpperCase();
+    if (!TIER_CONFIG[tierCode] || tierCode === "FREE") {
+      console.error(`[subscribe/verify] UNMAPPED TIER '${tier}' ref=${reference} — refusing activation pre-EXEC`);
+      return { ok: false, error: `Unrecognized subscription tier '${tier}'.` };
+    }
+    const tierRow = await pool.request()
+      .input("tier_id", sql.NVarChar(50), tierCode)
+      .query(`SELECT COUNT(*) AS cnt FROM Subscription_Tiers WHERE tier_id = @tier_id`);
+    if ((tierRow.recordset?.[0]?.cnt ?? 0) === 0) {
+      console.error(`[subscribe/verify] TIER '${tierCode}' not in Subscription_Tiers ref=${reference} — refusing activation pre-EXEC`);
+      return { ok: false, error: `Subscription tier '${tierCode}' is not available.` };
     }
 
     // Phone variants for matching across channels (rows may be stored with or
-    // without a '+' prefix). Resolve consumer_id so this row reconciles with the
-    // webhook's consumer_id-keyed MERGE.
+    // without a '+' prefix). The SP always inserts the new ACTIVE row in
+    // plus-form, so the stamp below anchors on @phonePlus.
     const cleanPhone = String(phone).replace(/^\+/, "");
     const phonePlus = "+" + cleanPhone;
+
+    // ---- Idempotency gate — BEFORE the EXEC --------------------------------
+    // verify can run more than once per payment (deep-link return + foreground
+    // refresh). If this payment_reference already stamped a CAS row, this is a
+    // replay: succeed idempotently with ZERO writes.
+    const refCheck = await pool.request()
+      .input("payment_reference", sql.NVarChar(50), reference)
+      .query(`SELECT COUNT(*) AS cnt FROM Consumer_Active_Subscriptions WHERE payment_reference = @payment_reference`);
+    if ((refCheck.recordset?.[0]?.cnt ?? 0) > 0) {
+      console.log(`[subscribe/verify] payment_reference ${reference} already recorded — idempotent success, no writes`);
+      return { ok: true, action: "IDEMPOTENT" };
+    }
+
+    // Resolve consumer_id — the SP does not write it; needed for the stamp +
+    // ledger row so this record reconciles with consumer_id-keyed readers.
     let consumerId: string | null = null;
     try {
       const cres = await pool.request()
@@ -311,155 +299,173 @@ async function upgradeSubscription(
       console.error(`[subscribe/verify] consumer_id lookup failed ref=${reference}:`, e);
     }
 
-    // Idempotency: if this payment_reference is already recorded, don't write again.
-    const refCheck = await pool.request()
-      .input("payment_reference", sql.NVarChar(50), reference)
-      .query(`SELECT COUNT(*) AS cnt FROM Consumer_Active_Subscriptions WHERE payment_reference = @payment_reference`);
-    if ((refCheck.recordset?.[0]?.cnt ?? 0) > 0) {
-      console.log(`[subscribe/verify] payment_reference ${reference} already recorded — skipping CAS write`);
-    } else {
-      // One ACTIVE row per consumer: supersede ALL existing ACTIVE rows for this
-      // consumer (any channel — matched by phone in +/non-+ form OR consumer_id)
-      // BEFORE inserting the new one. Guarantees a single ACTIVE row at all times.
-      await pool.request()
-        .input("phone", sql.NVarChar(20), phone)
-        .input("phonePlus", sql.NVarChar(20), phonePlus)
-        .input("phoneClean", sql.NVarChar(20), cleanPhone)
-        .input("consumer_id", sql.NVarChar(50), consumerId)
-        .query(`
-          UPDATE Consumer_Active_Subscriptions
-          SET status = 'SUPERSEDED', updated_at = GETUTCDATE()
-          WHERE status = 'ACTIVE'
-            AND ( phone_number IN (@phone, @phonePlus, @phoneClean)
-               OR (@consumer_id IS NOT NULL AND consumer_id = @consumer_id) )
-        `);
+    // ---- Canonical activation: EXEC the SP ---------------------------------
+    // Atomic inside the SP (XACT_ABORT + single TRAN): supersedes ACTIVE+GRACE
+    // rows (both phone forms), inserts ONE fresh ACTIVE CAS row (plus-form,
+    // grace_end_date = end+3 — the leak fix), updates Consumers (tier, dates,
+    // clears pending_downgrade_*), writes Consumer_Subscription_Audit.
+    // A genuine downgrade of a still-valid higher tier is SCHEDULED, not applied
+    // (pending_downgrade_tier + downgrade_effective_date), and returns
+    // cas_action='SCHEDULED' — replacing the old inline downgrade guard.
+    const spResult = await pool.request()
+      .input("phone", sql.NVarChar(20), phone)
+      .input("new_tier", sql.VarChar(20), tierCode)
+      .input("reason", sql.NVarChar(200), `verify:${provider}:${reference}`.slice(0, 200))
+      .input("allow_downgrade", sql.Bit, 0)
+      .execute("dbo.usp_Set_Consumer_Tier");
 
-      await pool.request()
-        .input("subscription_id", sql.NVarChar(50), subscriptionId)
-        .input("consumer_id", sql.NVarChar(50), consumerId)
-        .input("phone", sql.NVarChar(20), phone)
-        .input("tier_code", sql.NVarChar(20), tier)
-        .input("tier_name", sql.NVarChar(50), config.tierName)
-        .input("start_date", sql.Date, startDate)
-        .input("end_date", sql.Date, endDate)
-        .input("payment_reference", sql.NVarChar(50), reference)
-        .input("payment_provider", sql.NVarChar(20), provider)
-        .input("payment_amount", sql.Decimal(18, 2), amount)
-        .input("billing_cycle", sql.NVarChar(20), config.billingCycle)
-        .query(`
-          INSERT INTO Consumer_Active_Subscriptions (
-            subscription_id, consumer_id, phone_number, tier_code, tier_name, status,
-            start_date, end_date, payment_reference, payment_provider,
-            payment_amount, billing_cycle, queries_used_today, queries_used_week,
-            created_at, updated_at
-          ) VALUES (
-            @subscription_id, @consumer_id, @phone, @tier_code, @tier_name, 'ACTIVE',
-            @start_date, @end_date, @payment_reference, @payment_provider,
-            @payment_amount, @billing_cycle, 0, 0,
-            GETDATE(), GETDATE()
-          )
-        `);
+    const sp = spResult.recordset?.[0];
+    if (!sp || !sp.cas_action) {
+      console.error(`[subscribe/verify] SP returned no/unexpected result set ref=${reference}`);
+      return { ok: false, error: "Activation produced no confirmation." };
     }
 
-    // Update the Consumers table — the source of truth for tier across web/WA/app.
-    // (Column is subscription_tier, not tier; match phone in +/non-+ form on either
-    // phone_number or phone. Do NOT swallow errors — log loudly if nothing updates.)
+    // ---- SCHEDULED path: money received, higher tier stays active ----------
+    // The SP wrote pending_downgrade_* only — no CAS row exists to stamp, and
+    // no WhatsApp "payment confirmed until <end>" (wrong semantics). Ledger row
+    // is still written as COMPLETED: the charge is real.
+    if (sp.cas_action === "SCHEDULED") {
+      const effectiveDate = sp.effective_date ? new Date(sp.effective_date) : null;
+      await insertLedger(pool, {
+        consumerId, phone, tierCode, reference, provider, amount,
+        // Deferred tier change — NOT an activation; no reader filters on
+        // transaction_type (audited 2026-07-08), no CHECK constraint; keeps
+        // NEW_SUBSCRIPTION counts = actual activations.
+        transactionType: "SCHEDULED_DOWNGRADE",
+        subscriptionStartISO: effectiveDate ? effectiveDate.toISOString() : null,
+        subscriptionEndISO: null,
+      });
+      return { ok: true, action: "SCHEDULED", effectiveDate };
+    }
+
+    // ---- ACTIVATED path -----------------------------------------------------
+    // Single source of dates = the SP's returned end_date. Never recomputed here.
+    const endDate = sp.end_date ? new Date(sp.end_date) : null;
+
+    // Stamp payment metadata onto the row the SP just inserted. The SP writes
+    // exactly ONE ACTIVE row, always plus-form, always payment_reference=NULL —
+    // so this predicate must match exactly 1 row. rowsAffected 0 = unattributed
+    // entitlement; >1 = concurrent-purchase collision. Both are hard failures
+    // surfaced to the client — never a clean success.
+    const stamp = await pool.request()
+      .input("payment_reference", sql.NVarChar(50), reference)
+      .input("payment_provider", sql.NVarChar(20), provider)
+      .input("payment_amount", sql.Decimal(18, 2), amount)
+      .input("consumer_id", sql.NVarChar(50), consumerId)
+      .input("phonePlus", sql.NVarChar(20), phonePlus)
+      .query(`
+        UPDATE Consumer_Active_Subscriptions
+        SET payment_reference = @payment_reference,
+            payment_provider  = @payment_provider,
+            payment_amount    = @payment_amount,
+            consumer_id       = COALESCE(consumer_id, @consumer_id),
+            updated_at        = GETUTCDATE()
+        WHERE phone_number = @phonePlus AND status = 'ACTIVE' AND payment_reference IS NULL
+      `);
+    const stamped = stamp.rowsAffected?.[0] ?? 0;
+    if (stamped !== 1) {
+      console.error(`[subscribe/verify] STAMP ANOMALY rowsAffected=${stamped} phone=${phonePlus} ref=${reference} — ${stamped === 0 ? "unattributed entitlement" : "concurrent-purchase collision"}`);
+      return {
+        ok: false, degraded: true,
+        error: `Subscription record could not be attributed to this payment (rows=${stamped}).`,
+      };
+    }
+
+    // Ledger (non-blocking, ref-deduped inside) — dates from the SP result.
+    await insertLedger(pool, {
+      consumerId, phone, tierCode, reference, provider, amount,
+      transactionType: "NEW_SUBSCRIPTION",
+      subscriptionStartISO: new Date().toISOString(),
+      subscriptionEndISO: endDate ? endDate.toISOString() : null,
+    });
+
+    // Payment-confirmation WhatsApp — SP-returned end date, non-blocking.
+    // The Paystack webhook also sends this, but it is not currently firing
+    // (0 'WEBHOOK' rows), so the verify path is the reliable channel.
     try {
-      const upd = await pool.request()
-        .input("phone", sql.NVarChar(20), phone)
-        .input("phonePlus", sql.NVarChar(20), "+" + cleanPhone)
-        .input("phoneClean", sql.NVarChar(20), cleanPhone)
-        .input("tier", sql.NVarChar(20), tier)
-        .input("start_date", sql.Date, startDate)
-        .input("end_date", sql.Date, endDate)
-        .input("max_markets", sql.Int, config.maxMarkets)
-        .query(`
-          UPDATE Consumers
-          SET subscription_tier = @tier,
-              subscription_start_date = @start_date,
-              subscription_end_date = @end_date,
-              max_markets = @max_markets,
-              updated_at = GETDATE()
-          WHERE phone_number = @phone OR phone = @phone
-             OR phone_number = @phonePlus OR phone = @phonePlus
-             OR phone_number = @phoneClean OR phone = @phoneClean
-        `);
-      if (!upd.rowsAffected || upd.rowsAffected[0] === 0) {
-        console.error(`[subscribe/verify] Consumers tier NOT updated — no row matched phone=${phone} ref=${reference}`);
-      }
-    } catch (e) {
-      console.error(`[subscribe/verify] Consumers tier update FAILED ref=${reference}:`, e);
+      const config = getTierConfig(tierCode);
+      await sendPaymentConfirmed(
+        phone,
+        `${config.tierName} (${String(config.billingCycle).toUpperCase()})`,
+        endDate
+          ? endDate.toLocaleDateString("en-NG", { day: "numeric", month: "short", year: "numeric" })
+          : ""
+      );
+    } catch (waErr) {
+      console.error(`[subscribe/verify] payment-confirm WhatsApp failed (non-blocking) ref=${reference}:`, waErr);
     }
 
-    // Ledger entry in Subscription_Transactions — non-blocking; a failure here
-    // must not undo the activation already applied above. Mirrors the columns
-    // written by the Paystack webhook; payment_channel = 'WEB' for this path.
-    // Idempotency: verify can run more than once per payment (deep-link return +
-    // foreground refresh) — skip if this payment_reference already has a ledger row.
-    const txCheck = await pool.request()
-      .input("payment_reference", sql.NVarChar(50), reference)
-      .query(`SELECT COUNT(*) AS cnt FROM Subscription_Transactions WHERE payment_reference = @payment_reference`);
-    if ((txCheck.recordset?.[0]?.cnt ?? 0) > 0) {
-      console.log(`[subscribe/verify] Subscription_Transactions ref ${reference} already recorded — skipping ledger write`);
-    } else try {
-      const transactionId = "TXN-" + Date.now().toString(36).toUpperCase() + "-" +
-        Math.random().toString(36).substring(2, 8).toUpperCase();
-      await pool.request()
-        .input("transaction_id", sql.NVarChar(50), transactionId)
-        .input("consumer_id", sql.NVarChar(50), consumerId)
-        .input("phone", sql.NVarChar(20), phone)
-        .input("product_code", sql.NVarChar(50), tier)
-        .input("product_name", sql.NVarChar(255), config.tierName)
-        .input("billing_cycle", sql.NVarChar(50), String(config.billingCycle).toUpperCase())
-        .input("gross_amount", sql.Decimal(18, 2), amount)
-        .input("net_amount", sql.Decimal(18, 2), amount)
-        .input("payment_provider", sql.NVarChar(255), String(provider).toUpperCase())
-        .input("payment_reference", sql.NVarChar(50), reference)
-        .input("subscription_start", sql.NVarChar(50), startDate.toISOString())
-        .input("subscription_end", sql.NVarChar(50), endDate.toISOString())
-        .query(`
-          INSERT INTO Subscription_Transactions (
-            transaction_id, consumer_id, phone_number, transaction_type,
-            product_code, product_name, billing_cycle,
-            gross_amount, net_amount, currency,
-            payment_provider, payment_reference, payment_channel,
-            payment_status, subscription_start, subscription_end,
-            created_at, completed_at, verified_at
-          ) VALUES (
-            @transaction_id, @consumer_id, @phone, 'NEW_SUBSCRIPTION',
-            @product_code, @product_name, @billing_cycle,
-            @gross_amount, @net_amount, 'NGN',
-            @payment_provider, @payment_reference, 'WEB',
-            'COMPLETED', @subscription_start, @subscription_end,
-            GETUTCDATE(), GETUTCDATE(), GETUTCDATE()
-          )
-        `);
-
-      // First activation only (deduped by the payment_reference check above) → send
-      // the payment-confirmation WhatsApp. The Paystack webhook also sends this, but
-      // it is not currently firing (0 'WEBHOOK' rows), so the verify path is the
-      // reliable channel; if the webhook is later fixed the ref-check prevents a dup.
-      try {
-        await sendPaymentConfirmed(
-          phone,
-          `${config.tierName} (${String(config.billingCycle).toUpperCase()})`,
-          endDate.toLocaleDateString("en-NG", { day: "numeric", month: "short", year: "numeric" })
-        );
-      } catch (waErr) {
-        console.error(`[subscribe/verify] payment-confirm WhatsApp failed (non-blocking) ref=${reference}:`, waErr);
-      }
-    } catch (ledgerErr) {
-      console.error(`[subscribe/verify] Subscription_Transactions ledger write failed (non-blocking) ref=${reference}:`, ledgerErr);
-    }
-
-    return true;
+    return { ok: true, action: "ACTIVATED", endDate };
   } catch (error) {
-    console.error("Error upgrading subscription:", error);
-    return false;
+    // SP THROWs (50001-50006) surface here as mssql RequestError with .number.
+    const num = (error as { number?: number })?.number;
+    console.error(`[subscribe/verify] activation failed ref=${reference}${num ? ` sqlError=${num}` : ""}:`, error);
+    return { ok: false, error: num ? `Activation error ${num}.` : "Activation failed." };
   } finally {
     if (pool) {
       await pool.close();
     }
+  }
+}
+
+/**
+ * Subscription_Transactions ledger row — COMPLETED, payment_channel='WEB'.
+ * Non-blocking (a failure must not undo the SP's committed activation) and
+ * idempotent on payment_reference. Column set mirrors the pre-existing insert.
+ */
+async function insertLedger(
+  pool: sql.ConnectionPool,
+  p: {
+    consumerId: string | null; phone: string; tierCode: string;
+    reference: string; provider: string; amount: number;
+    transactionType: "NEW_SUBSCRIPTION" | "SCHEDULED_DOWNGRADE";
+    subscriptionStartISO: string | null; subscriptionEndISO: string | null;
+  }
+): Promise<void> {
+  try {
+    const txCheck = await pool.request()
+      .input("payment_reference", sql.NVarChar(50), p.reference)
+      .query(`SELECT COUNT(*) AS cnt FROM Subscription_Transactions WHERE payment_reference = @payment_reference`);
+    if ((txCheck.recordset?.[0]?.cnt ?? 0) > 0) {
+      console.log(`[subscribe/verify] Subscription_Transactions ref ${p.reference} already recorded — skipping ledger write`);
+      return;
+    }
+    const config = getTierConfig(p.tierCode);
+    const transactionId = "TXN-" + Date.now().toString(36).toUpperCase() + "-" +
+      Math.random().toString(36).substring(2, 8).toUpperCase();
+    await pool.request()
+      .input("transaction_id", sql.NVarChar(50), transactionId)
+      .input("consumer_id", sql.NVarChar(50), p.consumerId)
+      .input("phone", sql.NVarChar(20), p.phone)
+      .input("transaction_type", sql.NVarChar(50), p.transactionType)
+      .input("product_code", sql.NVarChar(50), p.tierCode)
+      .input("product_name", sql.NVarChar(255), config.tierName)
+      .input("billing_cycle", sql.NVarChar(50), String(config.billingCycle).toUpperCase())
+      .input("gross_amount", sql.Decimal(18, 2), p.amount)
+      .input("net_amount", sql.Decimal(18, 2), p.amount)
+      .input("payment_provider", sql.NVarChar(255), String(p.provider).toUpperCase())
+      .input("payment_reference", sql.NVarChar(50), p.reference)
+      .input("subscription_start", sql.NVarChar(50), p.subscriptionStartISO)
+      .input("subscription_end", sql.NVarChar(50), p.subscriptionEndISO)
+      .query(`
+        INSERT INTO Subscription_Transactions (
+          transaction_id, consumer_id, phone_number, transaction_type,
+          product_code, product_name, billing_cycle,
+          gross_amount, net_amount, currency,
+          payment_provider, payment_reference, payment_channel,
+          payment_status, subscription_start, subscription_end,
+          created_at, completed_at, verified_at
+        ) VALUES (
+          @transaction_id, @consumer_id, @phone, @transaction_type,
+          @product_code, @product_name, @billing_cycle,
+          @gross_amount, @net_amount, 'NGN',
+          @payment_provider, @payment_reference, 'WEB',
+          'COMPLETED', @subscription_start, @subscription_end,
+          GETUTCDATE(), GETUTCDATE(), GETUTCDATE()
+        )
+      `);
+  } catch (ledgerErr) {
+    console.error(`[subscribe/verify] Subscription_Transactions ledger write failed (non-blocking) ref=${p.reference}:`, ledgerErr);
   }
 }
 
@@ -508,7 +514,7 @@ export async function GET(request: NextRequest) {
     // Determine payment status
     let paymentStatus = "PENDING";
     let statusMessage = "Payment status unknown";
-    let upgraded = false;
+    let upgradeResult: UpgradeResult | null = null;
 
     const providerStatus = verificationResult.status?.toLowerCase();
 
@@ -521,7 +527,7 @@ export async function GET(request: NextRequest) {
 
       // Upgrade subscription if we have phone and tier
       if (verificationResult.phone && verificationResult.tier) {
-        upgraded = await upgradeSubscription(
+        upgradeResult = await upgradeSubscription(
           verificationResult.phone,
           verificationResult.tier,
           verificationResult.amount || 0,
@@ -529,7 +535,14 @@ export async function GET(request: NextRequest) {
           provider
         );
 
-        if (!upgraded) {
+        if (upgradeResult.ok && upgradeResult.action === "SCHEDULED") {
+          const eff = upgradeResult.effectiveDate
+            ? upgradeResult.effectiveDate.toLocaleDateString("en-NG", { day: "numeric", month: "short", year: "numeric" })
+            : "the end of your current billing period";
+          statusMessage = `Payment successful. Your current subscription stays active until ${eff}; your new plan takes effect on that date.`;
+        } else if (!upgradeResult.ok && upgradeResult.degraded) {
+          statusMessage = "Payment received, but we could not confirm your subscription record. Please contact support.";
+        } else if (!upgradeResult.ok) {
           statusMessage = "Payment successful, but subscription upgrade failed. Please contact support.";
         }
       } else {
@@ -545,11 +558,17 @@ export async function GET(request: NextRequest) {
       await updatePaymentStatus(reference, "FAILED", JSON.stringify(verificationResult));
     }
 
-    // Get tier config for response
-    const tierConfig = verificationResult.tier ? getTierConfig(verificationResult.tier) : null;
+    // Get tier config for response (normalize the raw provider-metadata tier)
+    const tierConfig = verificationResult.tier
+      ? getTierConfig(String(verificationResult.tier).trim().toUpperCase())
+      : null;
+
+    const upgraded = upgradeResult?.ok === true && upgradeResult.action !== "SCHEDULED";
+    const scheduled = upgradeResult?.ok === true && upgradeResult.action === "SCHEDULED";
+    const degraded = upgradeResult?.degraded === true;
 
     return NextResponse.json({
-      success: paymentStatus === "SUCCESS",
+      success: paymentStatus === "SUCCESS" && upgradeResult?.ok !== false,
       payment: {
         reference,
         status: paymentStatus,
@@ -568,7 +587,13 @@ export async function GET(request: NextRequest) {
         maxMarkets: tierConfig?.maxMarkets,
         queryLimit: tierConfig?.queryLimit,
         billingCycle: tierConfig?.billingCycle,
+        endDate: upgradeResult?.endDate ? upgradeResult.endDate.toISOString() : undefined,
       } : undefined,
+      scheduled: scheduled ? {
+        tier: verificationResult.tier,
+        effectiveDate: upgradeResult?.effectiveDate ? upgradeResult.effectiveDate.toISOString() : null,
+      } : undefined,
+      degraded: degraded || undefined,
       message: statusMessage,
       upgraded,
     });
