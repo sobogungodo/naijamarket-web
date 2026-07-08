@@ -159,7 +159,7 @@ async function activateSubscription(
   billingCycle: string, amount: number, ref: string, provider: string
 ): Promise<{ success: boolean; error?: string }> {
   try {
-    const days = DURATION_DAYS[billingCycle] || 30;
+    const days = DURATION_DAYS[String(billingCycle).toUpperCase()] || 30;
 
     // --- Referral credit redemption (wa-v139) ---
     // Referrer earns 7 bonus days per pending credit when they subscribe.

@@ -89,16 +89,16 @@ const TIER_PRICES: Record<string, TierInfo> = {
     maxMarkets: 3,
   },
   GOLD: {
-    price: 2000,
+    price: 800,
     tierName: "Gold",
-    duration: 30,
+    duration: 7,
     durationUnit: "days",
-    billingCycle: "monthly",
-    queryLimit: 25, // per DAY — canonical: Subscription_Tiers
+    billingCycle: "weekly",
+    queryLimit: 30, // per DAY — canonical: Subscription_Tiers
     maxMarkets: 3,
   },
   BUSINESS: {
-    price: 15000,
+    price: 5000,
     tierName: "Business",
     duration: 30,
     durationUnit: "days",
@@ -107,7 +107,7 @@ const TIER_PRICES: Record<string, TierInfo> = {
     maxMarkets: 5,
   },
   CORPORATE: {
-    price: 500000, // canonical: Subscription_Tiers (was 50000 — 10x undercharge bug)
+    price: 75000, // canonical: Subscription_Tiers
     tierName: "Corporate",
     duration: 30,
     durationUnit: "days",
@@ -116,7 +116,7 @@ const TIER_PRICES: Record<string, TierInfo> = {
     maxMarkets: 6,
   },
   ENTERPRISE: {
-    price: 1500000, // canonical: Subscription_Tiers (was 150000 — 10x undercharge bug)
+    price: 250000, // canonical: Subscription_Tiers
     tierName: "Enterprise",
     duration: 30,
     durationUnit: "days",
