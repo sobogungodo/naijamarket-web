@@ -143,12 +143,12 @@ const TIER_COLORS: Record<string, string> = {
 };
 
 const TIER_PRICES: Record<string, string> = {
-  FREE: "₦0/mo",
-  SILVER: "₦2,500/mo",
-  GOLD: "₦7,500/mo",
-  BUSINESS: "₦25,000/mo",
+  FREE: "₦0",
+  SILVER: "₦500/wk",
+  GOLD: "₦800/wk",
+  BUSINESS: "₦5,000/mo",
   CORPORATE: "₦75,000/mo",
-  ENTERPRISE: "₦150,000/mo",
+  ENTERPRISE: "₦250,000/mo",
 };
 
 // Default settings function
