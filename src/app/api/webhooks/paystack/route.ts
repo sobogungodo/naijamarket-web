@@ -207,38 +207,48 @@ async function activateSubscription(
       console.error("[PS] downgrade check failed (proceeding with activation):", dgErr?.message || dgErr);
     }
 
-    // Deactivate existing
-    await prisma.$executeRaw`
-      UPDATE Consumer_Active_Subscriptions
-      SET status = 'SUPERSEDED', updated_at = GETDATE()
-      WHERE phone_number = ${phone} AND status = 'ACTIVE'
-    `;
-
-    // Create subscription
-    await prisma.$executeRaw`
-      INSERT INTO Consumer_Active_Subscriptions (
-        subscription_id, phone_number, tier_code, tier_name,
-        status, start_date, end_date, grace_end_date,
-        payment_reference, payment_provider, payment_amount,
-        auto_renew, created_at, updated_at, notes
-      ) VALUES (
-        ${subId}, ${phone}, ${tierCode}, ${tierName},
-        'ACTIVE', GETDATE(), ${endISO}, ${graceISO},
-        ${ref}, ${provider}, ${amount},
-        0, GETDATE(), GETDATE(), ${"Activated via " + provider + " webhook"}
-      )
-    `;
-
-    // Update consumer tier
-    await prisma.$executeRaw`
-      UPDATE Consumers
-      SET subscription_tier = ${tierCode},
-          subscription_start = GETDATE(),
-          subscription_end = ${endISO},
-          grace_period_end = ${graceISO},
-          updated_at = GETDATE()
-      WHERE phone_number = ${phone}
-    `;
+    // Atomic activation: demote existing → insert new ACTIVE → update Consumers tier,
+    // all-or-nothing in ONE transaction. Without this, a crash between the demote and
+    // the insert would strand the consumer with ZERO ACTIVE rows (locked out of paid
+    // entitlement) — a window the phone-form-agnostic demote below newly makes reachable.
+    // Values (subId/endISO/graceISO/…) are all computed above, BEFORE the transaction.
+    // Both phone predicates are +/naked-agnostic (mirrors func-api): WA sends naked,
+    // web/app may send plus; normalizing prevents a demote-miss (duplicate ACTIVE) AND
+    // a Consumers-miss (paid tier not written → gate throttles a paid user).
+    // Census 2026-07-09: every Consumers row has phone_number populated, so the
+    // phone_number-normalized match is sufficient (no OR phone clause needed).
+    await prisma.$transaction([
+      // Deactivate existing (phone-form-agnostic)
+      prisma.$executeRaw`
+        UPDATE Consumer_Active_Subscriptions
+        SET status = 'SUPERSEDED', updated_at = GETDATE()
+        WHERE REPLACE(phone_number, '+', '') = REPLACE(${phone}, '+', '') AND status = 'ACTIVE'
+      `,
+      // Create subscription
+      prisma.$executeRaw`
+        INSERT INTO Consumer_Active_Subscriptions (
+          subscription_id, phone_number, tier_code, tier_name,
+          status, start_date, end_date, grace_end_date,
+          payment_reference, payment_provider, payment_amount,
+          auto_renew, created_at, updated_at, notes
+        ) VALUES (
+          ${subId}, ${phone}, ${tierCode}, ${tierName},
+          'ACTIVE', GETDATE(), ${endISO}, ${graceISO},
+          ${ref}, ${provider}, ${amount},
+          0, GETDATE(), GETDATE(), ${"Activated via " + provider + " webhook"}
+        )
+      `,
+      // Update consumer tier (phone-form-agnostic — mirrors the CAS demote)
+      prisma.$executeRaw`
+        UPDATE Consumers
+        SET subscription_tier = ${tierCode},
+            subscription_start = GETDATE(),
+            subscription_end = ${endISO},
+            grace_period_end = ${graceISO},
+            updated_at = GETDATE()
+        WHERE REPLACE(phone_number, '+', '') = REPLACE(${phone}, '+', '')
+      `,
+    ]);
 
     // Log transaction — ledger write is non-blocking: a failure here must NOT
     // fail an activation that has already been applied above.
