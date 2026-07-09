@@ -19,6 +19,7 @@ import {
   RefreshCw,
   Home,
   LayoutDashboard,
+  MessageCircle,
 } from "lucide-react";
 
 // ============================================================================
@@ -215,6 +216,15 @@ function CallbackContent() {
               View Watchlist
               <ArrowRight className="w-5 h-5" />
             </Link>
+            <a
+              href="https://wa.me/2349131095009?text=menu"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center justify-center gap-2 w-full bg-[#25D366] hover:bg-[#22c55e] text-white font-semibold py-3 px-4 rounded-lg transition-colors"
+            >
+              <MessageCircle className="w-5 h-5" />
+              Continue on WhatsApp
+            </a>
           </div>
         </div>
       </div>
