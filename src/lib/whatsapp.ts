@@ -5,10 +5,17 @@
 const META_API_URL = `https://graph.facebook.com/v22.0/${process.env.META_PHONE_NUMBER_ID}/messages`;
 
 function normalizePhone(phone: string): string {
-  let p = phone.replace(/\D/g, '');
-  if (p.startsWith('0')) p = '234' + p.substring(1);
-  if (!p.startsWith('234')) p = '234' + p;
-  return p;
+  // Capture an explicit '+' (E.164) BEFORE stripping symbols, then fall back to
+  // STRUCTURAL Nigeria detection — the number often arrives naked (the live
+  // webhook log showed "358465526959" with no '+'). Never blind-prepend 234 to
+  // a number that already carries a country code (that mangled +358 -> 234358).
+  const hadPlus = phone.trim().startsWith('+');
+  const p = phone.replace(/\D/g, '');
+  if (hadPlus) return p;                              // explicit E.164, any country → as-is
+  if (p.startsWith('234')) return p;                 // NG full country code, no '+'
+  if (p.startsWith('0')) return '234' + p.slice(1);  // NG local, 0-prefixed
+  if (p.length === 10) return '234' + p;             // NG bare 10-digit local
+  return p;                                          // already a non-234 country code → as-is
 }
 
 export async function sendMetaTemplate(
@@ -27,6 +34,12 @@ export async function sendMetaTemplate(
     parameters: parameters.map(value => ({ type: 'text', text: String(value) }))
   }] : [];
 
+  // Bound the Graph call: a non-completing request must fail loudly (logged via
+  // the catch) instead of hanging until the platform kills the function with no
+  // logged outcome — the exact silence observed. 8s stays under Vercel's default
+  // function limit so the abort fires and logs before any platform timeout.
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 8000);
   try {
     const res = await fetch(META_API_URL, {
       method: 'POST',
@@ -44,6 +57,7 @@ export async function sendMetaTemplate(
           components,
         },
       }),
+      signal: controller.signal,
     });
 
     if (!res.ok) {
@@ -55,8 +69,10 @@ export async function sendMetaTemplate(
     console.log(`[WA] Template sent: ${templateName} → ${phone}`);
     return true;
   } catch (err: any) {
-    console.error(`[WA] Template send error (${templateName}):`, err?.message || err);
+    console.error(`[WA] Template send error (${templateName}):`, err?.name === 'AbortError' ? 'timeout after 8s' : (err?.message || err));
     return false;
+  } finally {
+    clearTimeout(timeoutId);
   }
 }
 
