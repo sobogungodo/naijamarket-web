@@ -244,7 +244,10 @@ async function activateSubscription(
         SET subscription_tier = ${tierCode},
             subscription_start = GETDATE(),
             subscription_end = ${endISO},
+            subscription_end_date = ${endDate},
             grace_period_end = ${graceISO},
+            pending_downgrade_tier = NULL,
+            downgrade_effective_date = NULL,
             updated_at = GETDATE()
         WHERE REPLACE(phone_number, '+', '') = REPLACE(${phone}, '+', '')
       `,
