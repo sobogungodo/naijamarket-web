@@ -2,7 +2,7 @@
 // Shared Meta WhatsApp sender — replaces all Twilio sendWhatsApp() calls
 // Models: naijamarket-trader/src/app/api/auth/send-otp/route.ts (proven live)
 
-const META_API_URL = `https://graph.facebook.com/v18.0/${process.env.META_PHONE_NUMBER_ID}/messages`;
+const META_API_URL = `https://graph.facebook.com/v22.0/${process.env.META_PHONE_NUMBER_ID}/messages`;
 
 function normalizePhone(phone: string): string {
   let p = phone.replace(/\D/g, '');
