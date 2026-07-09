@@ -440,13 +440,23 @@ async function onChargeSuccess(data: any): Promise<string> {
   const result = await activateSubscription(phone, tierCode, tierName, billing, amount, ref, "PAYSTACK");
 
   if (result.success) {
-    const days = DURATION_DAYS[billing] || 30;
-    const endDate = new Date(Date.now() + days * 86400000);
-    await sendPaymentConfirmed(
-      phone,
-      `${tierName} (${billing})`,
-      endDate.toLocaleDateString("en-NG", { day: "numeric", month: "short", year: "numeric" })
-    );
+    // Confirmation WhatsApp — non-blocking. Activation is already durably
+    // committed (activateSubscription's $transaction, lines 220-254). A Meta
+    // send failure must NEVER bubble to the POST catch (500 -> Paystack retry)
+    // or undo the activation. Mirrors subscribe/verify, which already wraps+logs.
+    // Template subscription_payment_confirmed has EXACTLY 2 body vars:
+    //   {{1}} = plan display, {{2}} = end date.  (No amount slot — 2 args only.)
+    try {
+      const days = DURATION_DAYS[billing] || 30;
+      const endDate = new Date(Date.now() + days * 86400000);
+      await sendPaymentConfirmed(
+        phone,
+        `${tierName} (${billing})`, // {{1}} display tier (in-scope; NOT raw tierCode)
+        endDate.toLocaleDateString("en-NG", { day: "numeric", month: "short", year: "numeric" }) // {{2}} end date
+      );
+    } catch (err) {
+      console.error('[onChargeSuccess] post-activation/confirmation error:', err);
+    }
   }
 
   return result.success ? `Activated ${tierCode} for ${phone}` : `Failed: ${result.error}`;
