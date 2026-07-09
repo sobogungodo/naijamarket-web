@@ -380,8 +380,9 @@ async function upgradeSubscription(
     });
 
     // Payment-confirmation WhatsApp — SP-returned end date, non-blocking.
-    // The Paystack webhook also sends this, but it is not currently firing
-    // (0 'WEBHOOK' rows), so the verify path is the reliable channel.
+    // The Paystack webhook is now the primary activation writer (post-42e135a);
+    // both it and this verify path fire, and the payment_reference idempotency
+    // check dedupes — so the confirmation sends at most once.
     try {
       const config = getTierConfig(tierCode);
       await sendPaymentConfirmed(

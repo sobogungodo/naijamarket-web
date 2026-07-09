@@ -34,7 +34,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
-import { sendPaymentConfirmed, sendReferralCreditApplied, sendAddOnActivated } from "@/lib/whatsapp";
+import { sendPaymentConfirmed, sendReferralCreditApplied, sendAddOnActivated, sendPaymentFailed, sendRefundProcessed } from "@/lib/whatsapp";
 
 // ============================================================================
 // PRISMA (singleton)
@@ -479,9 +479,7 @@ async function onChargeFailed(data: any): Promise<string> {
     console.error(`[PS] Failed-payment ledger write failed (non-blocking) ref=${ref}:`, ledgerErr?.message || ledgerErr);
   }
 
-  await sendWhatsApp(phone,
-    `âŒ *Payment Failed*\n\nWe couldn't process your payment of ${naira(amount)}.\n\nðŸ“‹ *Reason:* ${reason}\nðŸ“Ž *Ref:* ${ref}\n\nType *upgrade* to retry.`
-  );
+  await sendPaymentFailed(phone, naira(amount), reason);
 
   return `Failed ${phone}: ${reason}`;
 }
@@ -497,6 +495,7 @@ async function onInvoicePaymentFailed(data: any): Promise<string> {
     WHERE phone_number = ${phone} AND status = 'ACTIVE'
   `;
 
+  // TODO(renewal): dead Twilio send. renewal_failed template is MARKETING (suppresses opted-out users); recreate as UTILITY under a new name (renewal_failed is category-locked ~4wk) then wire sendRenewalFailed here.
   await sendWhatsApp(phone,
     `âš ï¸ *Subscription Renewal Failed*\n\nWe couldn't renew your subscription.\n\nYou have *${GRACE_PERIOD_DAYS} days* before downgrade to FREE.\n\nType *upgrade* to renew now.`
   );
@@ -509,9 +508,7 @@ async function onRefundProcessed(data: any): Promise<string> {
   const phone = meta.phone_number;
   const amount = (data.amount || 0) / 100;
   if (phone) {
-    await sendWhatsApp(phone,
-      `ðŸ’° *Refund Processed*\n\nYour refund of ${naira(amount)} has been processed.\nPlease allow 3-5 business days to see it in your account.`
-    );
+    await sendRefundProcessed(phone, naira(amount));
   }
   return `Refund ${naira(amount)} for ${phone}`;
 }
