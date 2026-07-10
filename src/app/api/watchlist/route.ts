@@ -7,6 +7,8 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 
 // ============================================================================
 // TYPES
@@ -93,28 +95,26 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     
-    const phone = searchParams.get("phone");
-    const consumerId = searchParams.get("consumerId");
+    const session = await getServerSession(authOptions);
+    const phone = (session?.user as any)?.phone;
+    if (!phone) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
     const type = searchParams.get("type") || "all";
     const tier = (searchParams.get("tier") || "FREE").toUpperCase();
-    
-    if (!phone && !consumerId) {
-      return NextResponse.json({
-        success: false,
-        error: "missing_parameter",
-        message: "Phone number or consumerId is required",
-      }, { status: 400 });
-    }
-    
-    // Get consumer record
-    const consumer = await prisma.consumers.findFirst({
-      where: {
-        OR: [
-          ...(phone ? [{ phone_number: phone }] : []),
-          ...(consumerId ? [{ consumer_id: consumerId }] : []),
-        ],
-      },
-    });
+
+    // Get consumer record (session-derived phone, format-agnostic match)
+    const rows = await prisma.$queryRaw<Array<{
+      consumer_id: string;
+      phone_number: string | null;
+      subscription_tier: string | null;
+      favorite_markets: string | null;
+      favorite_items: string | null;
+    }>>`
+      SELECT TOP 1 consumer_id, phone_number, subscription_tier, favorite_markets, favorite_items
+      FROM Consumers
+      WHERE REPLACE(phone_number, '+', '') = REPLACE(${phone}, '+', '')
+    `;
+    const consumer = rows[0];
     
     if (!consumer) {
       return NextResponse.json({
@@ -239,15 +239,11 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { phone, consumerId, type, targetName, targetId } = body;
-    
-    if (!phone && !consumerId) {
-      return NextResponse.json({
-        success: false,
-        error: "missing_parameter",
-        message: "Phone number or consumerId is required",
-      }, { status: 400 });
-    }
+    const { type, targetName, targetId } = body;
+
+    const session = await getServerSession(authOptions);
+    const phone = (session?.user as any)?.phone;
+    if (!phone) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     
     if (!type || !["market", "item"].includes(type)) {
       return NextResponse.json({
@@ -265,15 +261,19 @@ export async function POST(request: NextRequest) {
       }, { status: 400 });
     }
     
-    // Get consumer record
-    const consumer = await prisma.consumers.findFirst({
-      where: {
-        OR: [
-          ...(phone ? [{ phone_number: phone }] : []),
-          ...(consumerId ? [{ consumer_id: consumerId }] : []),
-        ],
-      },
-    });
+    // Get consumer record (session-derived phone, format-agnostic match)
+    const rows = await prisma.$queryRaw<Array<{
+      consumer_id: string;
+      phone_number: string | null;
+      subscription_tier: string | null;
+      favorite_markets: string | null;
+      favorite_items: string | null;
+    }>>`
+      SELECT TOP 1 consumer_id, phone_number, subscription_tier, favorite_markets, favorite_items
+      FROM Consumers
+      WHERE REPLACE(phone_number, '+', '') = REPLACE(${phone}, '+', '')
+    `;
+    const consumer = rows[0];
     
     if (!consumer) {
       return NextResponse.json({
@@ -410,15 +410,11 @@ export async function POST(request: NextRequest) {
 export async function DELETE(request: NextRequest) {
   try {
     const body = await request.json();
-    const { phone, consumerId, type, targetName } = body;
-    
-    if (!phone && !consumerId) {
-      return NextResponse.json({
-        success: false,
-        error: "missing_parameter",
-        message: "Phone number or consumerId is required",
-      }, { status: 400 });
-    }
+    const { type, targetName } = body;
+
+    const session = await getServerSession(authOptions);
+    const phone = (session?.user as any)?.phone;
+    if (!phone) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     
     if (!type || !["market", "item"].includes(type)) {
       return NextResponse.json({
@@ -436,15 +432,19 @@ export async function DELETE(request: NextRequest) {
       }, { status: 400 });
     }
     
-    // Get consumer record
-    const consumer = await prisma.consumers.findFirst({
-      where: {
-        OR: [
-          ...(phone ? [{ phone_number: phone }] : []),
-          ...(consumerId ? [{ consumer_id: consumerId }] : []),
-        ],
-      },
-    });
+    // Get consumer record (session-derived phone, format-agnostic match)
+    const rows = await prisma.$queryRaw<Array<{
+      consumer_id: string;
+      phone_number: string | null;
+      subscription_tier: string | null;
+      favorite_markets: string | null;
+      favorite_items: string | null;
+    }>>`
+      SELECT TOP 1 consumer_id, phone_number, subscription_tier, favorite_markets, favorite_items
+      FROM Consumers
+      WHERE REPLACE(phone_number, '+', '') = REPLACE(${phone}, '+', '')
+    `;
+    const consumer = rows[0];
     
     if (!consumer) {
       return NextResponse.json({
