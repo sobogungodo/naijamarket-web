@@ -40,7 +40,12 @@ export interface FavoriteInput {
   /** Session-derived phone (e.g. session.user.phone). Never a client value. */
   phone: string;
   type: FavoriteType;
-  name: string;
+  /**
+   * At least one of name/id is required. When both are given, id wins (id is
+   * skipped through name resolution and used directly as the catalog id).
+   */
+  name?: string;
+  id?: string;
 }
 
 export type AddReason = "added" | "already_exists" | "unresolved";
@@ -49,12 +54,16 @@ export interface AddFavoriteResult {
   ok: boolean;
   reason: AddReason;
   favorite_id?: string;
+  /** Canonical catalog name (market_name / item_name) for the caller to echo. */
+  resolved_name?: string;
 }
 
 export interface RemoveFavoriteResult {
   ok: boolean;
   removed: number;
   reason?: "unresolved";
+  /** Canonical catalog name (market_name / item_name) for the caller to echo. */
+  resolved_name?: string;
 }
 
 /** Identity-only row (no prices — the route does the live approved_Prices join). */
@@ -154,6 +163,33 @@ export async function resolveItem(name: string): Promise<ResolvedItem | null> {
   };
 }
 
+/**
+ * Resolve a market directly by id (trusted catalog id, no name lookup). Still
+ * fetches the canonical row to populate name/state/region_id + the return name.
+ * Returns null when the id matches no catalog row (caller must reject).
+ */
+export async function resolveMarketById(id: string): Promise<ResolvedMarket | null> {
+  const m = await prisma.markets.findFirst({ where: { market_id: id } });
+  if (!m) return null;
+  return {
+    market_id: m.market_id,
+    market_name: m.market_name ?? null,
+    state: m.state ?? null,
+    region_id: m.region_id ?? null,
+  };
+}
+
+/** Resolve an item directly by id. Returns null when the id matches no row. */
+export async function resolveItemById(id: string): Promise<ResolvedItem | null> {
+  const it = await prisma.items_Catalog.findFirst({ where: { item_id: id } });
+  if (!it) return null;
+  return {
+    item_id: it.item_id,
+    item_name: it.item_name ?? null,
+    category_id: it.category_id ?? null,
+  };
+}
+
 // ----------------------------------------------------------------------------
 // ADD
 // ----------------------------------------------------------------------------
@@ -173,7 +209,8 @@ export async function resolveItem(name: string): Promise<ResolvedItem | null> {
 async function resurrectFavorite(
   phone: string,
   type: FavoriteType,
-  id: string
+  id: string,
+  resolvedName?: string
 ): Promise<AddFavoriteResult> {
   const affected =
     type === "market"
@@ -193,22 +230,31 @@ async function resurrectFavorite(
             AND item_id = ${id}
             AND is_active = 0
         `;
+  // Carry the canonical name on both branches so a resurrected OR genuinely
+  // duplicate favorite still returns resolved_name to the caller.
   return Number(affected) > 0
-    ? { ok: true, reason: "added" }
-    : { ok: true, reason: "already_exists" };
+    ? { ok: true, reason: "added", resolved_name: resolvedName }
+    : { ok: true, reason: "already_exists", resolved_name: resolvedName };
 }
 
 export async function addFavorite({
   phone,
   type,
   name,
+  id,
 }: FavoriteInput): Promise<AddFavoriteResult> {
   const consumer_id = await lookupConsumerId(phone);
-  const id = favId();
+  const favorite_id = favId();
 
   if (type === "market") {
-    const m = await resolveMarket(name);
+    // id wins over name; either path fetches the canonical catalog row.
+    const m = id
+      ? await resolveMarketById(id)
+      : name
+      ? await resolveMarket(name)
+      : null;
     if (!m) return { ok: false, reason: "unresolved" };
+    const resolved_name = m.market_name ?? undefined;
 
     try {
       // Invariant: market row -> market_* set, item_* NULL. region_code = region_id
@@ -220,21 +266,27 @@ export async function addFavorite({
            item_id, item_name, category_id,
            is_active, created_at, updated_at)
         VALUES
-          (${id}, ${phone}, ${consumer_id}, 'market',
+          (${favorite_id}, ${phone}, ${consumer_id}, 'market',
            ${m.market_id}, ${m.market_name}, ${m.state}, ${m.region_id},
            NULL, NULL, NULL,
            1, SYSUTCDATETIME(), SYSUTCDATETIME())
       `;
-      return { ok: true, reason: "added", favorite_id: id };
+      return { ok: true, reason: "added", favorite_id, resolved_name };
     } catch (e) {
-      if (isUniqueViolation(e)) return resurrectFavorite(phone, "market", m.market_id);
+      if (isUniqueViolation(e))
+        return resurrectFavorite(phone, "market", m.market_id, resolved_name);
       throw e;
     }
   }
 
   // type === "item"
-  const it = await resolveItem(name);
+  const it = id
+    ? await resolveItemById(id)
+    : name
+    ? await resolveItem(name)
+    : null;
   if (!it) return { ok: false, reason: "unresolved" };
+  const resolved_name = it.item_name ?? undefined;
 
   try {
     // Invariant: item row -> item_* set, market_* NULL.
@@ -245,14 +297,15 @@ export async function addFavorite({
          item_id, item_name, category_id,
          is_active, created_at, updated_at)
       VALUES
-        (${id}, ${phone}, ${consumer_id}, 'item',
+        (${favorite_id}, ${phone}, ${consumer_id}, 'item',
          NULL, NULL, NULL, NULL,
          ${it.item_id}, ${it.item_name}, ${it.category_id},
          1, SYSUTCDATETIME(), SYSUTCDATETIME())
     `;
-    return { ok: true, reason: "added", favorite_id: id };
+    return { ok: true, reason: "added", favorite_id, resolved_name };
   } catch (e) {
-    if (isUniqueViolation(e)) return resurrectFavorite(phone, "item", it.item_id);
+    if (isUniqueViolation(e))
+      return resurrectFavorite(phone, "item", it.item_id, resolved_name);
     throw e;
   }
 }
@@ -265,9 +318,14 @@ export async function removeFavorite({
   phone,
   type,
   name,
+  id,
 }: FavoriteInput): Promise<RemoveFavoriteResult> {
   if (type === "market") {
-    const m = await resolveMarket(name);
+    const m = id
+      ? await resolveMarketById(id)
+      : name
+      ? await resolveMarket(name)
+      : null;
     if (!m) return { ok: false, removed: 0, reason: "unresolved" };
 
     const removed = await prisma.$executeRaw`
@@ -278,10 +336,14 @@ export async function removeFavorite({
         AND market_id = ${m.market_id}
         AND is_active = 1
     `;
-    return { ok: true, removed: Number(removed) };
+    return { ok: true, removed: Number(removed), resolved_name: m.market_name ?? undefined };
   }
 
-  const it = await resolveItem(name);
+  const it = id
+    ? await resolveItemById(id)
+    : name
+    ? await resolveItem(name)
+    : null;
   if (!it) return { ok: false, removed: 0, reason: "unresolved" };
 
   const removed = await prisma.$executeRaw`
@@ -292,7 +354,7 @@ export async function removeFavorite({
       AND item_id = ${it.item_id}
       AND is_active = 1
   `;
-  return { ok: true, removed: Number(removed) };
+  return { ok: true, removed: Number(removed), resolved_name: it.item_name ?? undefined };
 }
 
 // ----------------------------------------------------------------------------
