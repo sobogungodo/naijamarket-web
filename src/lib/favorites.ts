@@ -243,7 +243,11 @@ export async function addFavorite({
   name,
   id,
 }: FavoriteInput): Promise<AddFavoriteResult> {
-  const consumer_id = await lookupConsumerId(phone);
+  // Canonical cross-surface key is the NAKED phone (no '+'), regardless of the
+  // session.user.phone format the caller passes. Normalize once here and use
+  // nakedPhone for every write in this function (INSERT, lookup, resurrect).
+  const nakedPhone = phone.replace(/\+/g, "");
+  const consumer_id = await lookupConsumerId(nakedPhone);
   const favorite_id = favId();
 
   if (type === "market") {
@@ -266,7 +270,7 @@ export async function addFavorite({
            item_id, item_name, category_id,
            is_active, created_at, updated_at)
         VALUES
-          (${favorite_id}, ${phone}, ${consumer_id}, 'market',
+          (${favorite_id}, ${nakedPhone}, ${consumer_id}, 'market',
            ${m.market_id}, ${m.market_name}, ${m.state}, ${m.region_id},
            NULL, NULL, NULL,
            1, SYSUTCDATETIME(), SYSUTCDATETIME())
@@ -274,7 +278,7 @@ export async function addFavorite({
       return { ok: true, reason: "added", favorite_id, resolved_name };
     } catch (e) {
       if (isUniqueViolation(e))
-        return resurrectFavorite(phone, "market", m.market_id, resolved_name);
+        return resurrectFavorite(nakedPhone, "market", m.market_id, resolved_name);
       throw e;
     }
   }
@@ -297,7 +301,7 @@ export async function addFavorite({
          item_id, item_name, category_id,
          is_active, created_at, updated_at)
       VALUES
-        (${favorite_id}, ${phone}, ${consumer_id}, 'item',
+        (${favorite_id}, ${nakedPhone}, ${consumer_id}, 'item',
          NULL, NULL, NULL, NULL,
          ${it.item_id}, ${it.item_name}, ${it.category_id},
          1, SYSUTCDATETIME(), SYSUTCDATETIME())
@@ -305,7 +309,7 @@ export async function addFavorite({
     return { ok: true, reason: "added", favorite_id, resolved_name };
   } catch (e) {
     if (isUniqueViolation(e))
-      return resurrectFavorite(phone, "item", it.item_id, resolved_name);
+      return resurrectFavorite(nakedPhone, "item", it.item_id, resolved_name);
     throw e;
   }
 }
