@@ -158,6 +158,46 @@ export async function resolveItem(name: string): Promise<ResolvedItem | null> {
 // ADD
 // ----------------------------------------------------------------------------
 
+// ----------------------------------------------------------------------------
+// RESURRECTION (idempotent re-add over a soft-deleted / duplicate identity)
+// On a UX_ConsFav_Identity collision the row already exists. Flip ONLY a
+// soft-deleted row (is_active = 0) back to active; the affected-row count then
+// tells us which case we were in:
+//   1 affected -> a soft-deleted favorite was resurrected     => reason "added"
+//   0 affected -> row was already active (genuine duplicate)  => "already_exists"
+// Either branch ends with the row is_active = 1, so a re-add NEVER leaves a
+// soft-deleted row inactive. Uses UPDATE only (no DELETE) — matches naijaapp's
+// UPDATE-not-DELETE grant posture.
+// ----------------------------------------------------------------------------
+
+async function resurrectFavorite(
+  phone: string,
+  type: FavoriteType,
+  id: string
+): Promise<AddFavoriteResult> {
+  const affected =
+    type === "market"
+      ? await prisma.$executeRaw`
+          UPDATE Consumer_Favorites
+          SET is_active = 1, updated_at = SYSUTCDATETIME()
+          WHERE REPLACE(phone_number, '+', '') = REPLACE(${phone}, '+', '')
+            AND favorite_type = 'market'
+            AND market_id = ${id}
+            AND is_active = 0
+        `
+      : await prisma.$executeRaw`
+          UPDATE Consumer_Favorites
+          SET is_active = 1, updated_at = SYSUTCDATETIME()
+          WHERE REPLACE(phone_number, '+', '') = REPLACE(${phone}, '+', '')
+            AND favorite_type = 'item'
+            AND item_id = ${id}
+            AND is_active = 0
+        `;
+  return Number(affected) > 0
+    ? { ok: true, reason: "added" }
+    : { ok: true, reason: "already_exists" };
+}
+
 export async function addFavorite({
   phone,
   type,
@@ -187,7 +227,7 @@ export async function addFavorite({
       `;
       return { ok: true, reason: "added", favorite_id: id };
     } catch (e) {
-      if (isUniqueViolation(e)) return { ok: true, reason: "already_exists" };
+      if (isUniqueViolation(e)) return resurrectFavorite(phone, "market", m.market_id);
       throw e;
     }
   }
@@ -212,7 +252,7 @@ export async function addFavorite({
     `;
     return { ok: true, reason: "added", favorite_id: id };
   } catch (e) {
-    if (isUniqueViolation(e)) return { ok: true, reason: "already_exists" };
+    if (isUniqueViolation(e)) return resurrectFavorite(phone, "item", it.item_id);
     throw e;
   }
 }
@@ -231,10 +271,12 @@ export async function removeFavorite({
     if (!m) return { ok: false, removed: 0, reason: "unresolved" };
 
     const removed = await prisma.$executeRaw`
-      DELETE FROM Consumer_Favorites
+      UPDATE Consumer_Favorites
+      SET is_active = 0, updated_at = SYSUTCDATETIME()
       WHERE REPLACE(phone_number, '+', '') = REPLACE(${phone}, '+', '')
         AND favorite_type = 'market'
         AND market_id = ${m.market_id}
+        AND is_active = 1
     `;
     return { ok: true, removed: Number(removed) };
   }
@@ -243,10 +285,12 @@ export async function removeFavorite({
   if (!it) return { ok: false, removed: 0, reason: "unresolved" };
 
   const removed = await prisma.$executeRaw`
-    DELETE FROM Consumer_Favorites
+    UPDATE Consumer_Favorites
+    SET is_active = 0, updated_at = SYSUTCDATETIME()
     WHERE REPLACE(phone_number, '+', '') = REPLACE(${phone}, '+', '')
       AND favorite_type = 'item'
       AND item_id = ${it.item_id}
+      AND is_active = 1
   `;
   return { ok: true, removed: Number(removed) };
 }
