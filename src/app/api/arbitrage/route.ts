@@ -547,7 +547,11 @@ export async function GET(request: NextRequest) {
     const prisma = null;  // v11: mssql used internally, prisma arg kept for compat
     const url = new URL(request.url);
 
-    const tier = (url.searchParams.get("tier") || "BUSINESS").toUpperCase();
+    const session = await getServerSession(authOptions);
+    if (!session?.user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    const tier = ((session.user as any).tier || "FREE").toUpperCase();
     const page = Math.max(1, parseInt(url.searchParams.get("page") || "1"));
     const limit = Math.min(50, Math.max(1, parseInt(url.searchParams.get("limit") || "20")));
     const item = url.searchParams.get("item") || undefined;

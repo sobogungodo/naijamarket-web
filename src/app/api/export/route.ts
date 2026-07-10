@@ -3,6 +3,8 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 
 // ============================================================================
 // TIER ACCESS CONTROL
@@ -260,7 +262,11 @@ export async function GET(request: NextRequest) {
     const exportType = searchParams.get("type") || "markets";
     const format = (searchParams.get("format") || "CSV").toUpperCase();
     const dateRange = searchParams.get("range") || "30d";
-    const tier = (searchParams.get("tier") || "FREE").toUpperCase();
+    const session = await getServerSession(authOptions);
+    if (!session?.user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    const tier = ((session.user as any).tier || "FREE").toUpperCase();
 
     // Check access
     if (!hasTierAccess(tier, exportType)) {
@@ -357,7 +363,12 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { type, tier } = body;
+    const session = await getServerSession(authOptions);
+    if (!session?.user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    const { type } = body;
+    const tier = ((session.user as any).tier || "FREE").toUpperCase();
 
     if (!hasTierAccess(tier || "FREE", type || "markets")) {
       return NextResponse.json(

@@ -5,7 +5,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
-import { authOptions } from '@/lib/auth'
+import { authOptions } from '@/app/api/auth/[...nextauth]/route'
 import sql from 'mssql'
 
 const sqlConfig: sql.config = {
@@ -30,7 +30,7 @@ export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url)
   const view    = searchParams.get('view') || 'headline'   // headline | trend | basket | divergence
   const months  = Math.min(parseInt(searchParams.get('months') || '24'), 120)
-  const tier    = (session.user as any).subscription_tier || 'FREE'
+  const tier    = (session.user as any).tier || 'FREE'
 
   const silverTiers = new Set(['SILVER', 'GOLD', 'BUSINESS', 'CORPORATE', 'ENTERPRISE'])
   const isSilver    = silverTiers.has(tier.toUpperCase())

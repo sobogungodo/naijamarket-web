@@ -5,6 +5,8 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { PrismaClient } from "@prisma/client";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 
 const prisma = new PrismaClient();
 
@@ -14,7 +16,11 @@ const PDF_TIERS = ["BUSINESS", "CORPORATE", "ENTERPRISE"];
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
-    const tier = (searchParams.get("tier") || "FREE").toUpperCase();
+    const session = await getServerSession(authOptions);
+    if (!session?.user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    const tier = ((session.user as any).tier || "FREE").toUpperCase();
     
     // Check access
     if (!PDF_TIERS.includes(tier)) {

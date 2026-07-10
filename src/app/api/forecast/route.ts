@@ -7,6 +7,8 @@
 // ============================================================================
 
 import { NextRequest, NextResponse } from "next/server";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 
 // ============================================================================
 // CONFIGURATION
@@ -650,7 +652,11 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const item = searchParams.get("item") || "Rice (50kg)";
     const market = searchParams.get("market") || "All Markets";
-    const tier = (searchParams.get("tier") || "FREE").toUpperCase();
+    const session = await getServerSession(authOptions);
+    if (!session?.user) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    const tier = ((session.user as any).tier || "FREE").toUpperCase();
     
     const defaultLimits = { monthsBack: 12, predictionMonths: 1, canExport: false, showConfidence: false };
     const limits = TIER_LIMITS[tier] ?? defaultLimits;
