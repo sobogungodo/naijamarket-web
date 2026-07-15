@@ -42,6 +42,7 @@ interface AvailableItem {
 }
 
 interface CartItem {
+  item_id: string;
   item: string;
   quantity: number;
   unit: string;
@@ -164,6 +165,27 @@ export default function BulkBuyerPage() {
           setAvailableItems(data.items);
           setTierLimits(data.tierLimits);
         }
+
+        // Hydrate the cart from the persisted basket (same Consumer_Basket rows
+        // WA writes). Runs inside the existing mount effect so the page's
+        // `loading` state covers it — no new race with user interaction.
+        const bRes = await fetch("/api/consumer/basket");
+        if (bRes.ok) {
+          const bData = await bRes.json();
+          if (Array.isArray(bData.items)) {
+            setCart(
+              bData.items.map((b: { item_id: string; item_name: string | null; quantity: number; unit: string | null }) => ({
+                item_id: b.item_id,
+                item: b.item_name ?? "",
+                quantity: Number(b.quantity),
+                unit: b.unit ?? "",
+              }))
+            );
+          }
+        } else {
+          // Never leave a silent empty cart — the user would think their basket vanished.
+          setError("Could not load your saved basket");
+        }
       } catch (err) {
         console.error(err);
         setError("Failed to load items");
@@ -191,7 +213,7 @@ export default function BulkBuyerPage() {
         setError(`Maximum ${tierLimits.maxItems} items allowed for ${tierLimits.tier} tier`);
         return;
       }
-      setCart([...cart, { item: item.name, quantity: 1, unit: item.unit }]);
+      setCart([...cart, { item_id: item.id, item: item.name, quantity: 1, unit: item.unit }]);
     }
     setResults(null);
   };
