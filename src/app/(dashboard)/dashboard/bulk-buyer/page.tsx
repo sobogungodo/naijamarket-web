@@ -146,6 +146,7 @@ export default function BulkBuyerPage() {
   const [selectedCategory, setSelectedCategory] = useState("All");
   const [activeTab, setActiveTab] = useState<"breakdown" | "optimal" | "compare">("breakdown");
   const [busyIds, setBusyIds] = useState<Set<string>>(new Set());
+  const [confirmClear, setConfirmClear] = useState(false);
   
   const userTier = "GOLD"; // Would come from session
   
@@ -241,24 +242,60 @@ export default function BulkBuyerPage() {
     }
   };
   
-  const updateQuantity = (index: number, delta: number) => {
-    const newCart = [...cart];
-    const item = newCart[index];
-    if (item) {
-      item.quantity = Math.max(1, item.quantity + delta);
-      setCart(newCart);
+  const updateQuantity = async (item_id: string, delta: number) => {
+    const line = cart.find((c) => c.item_id === item_id);
+    if (!line) return;
+    if (busyIds.has(item_id)) return;
+    const next = Math.max(1, line.quantity + delta); // clamp retained: "-" never deletes
+    if (next === line.quantity) return;
+
+    setBusyIds((prev) => new Set(prev).add(item_id));
+    setError("");
+    try {
+      const res = await fetch("/api/consumer/basket", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ item_id, quantity: next }),
+      });
+      if (!res.ok) { setError("Could not update quantity. Please try again."); return; }
+      setCart((prev) => prev.map((c) => (c.item_id === item_id ? { ...c, quantity: next } : c)));
       setResults(null);
+    } catch {
+      setError("Could not update quantity. Please try again.");
+    } finally {
+      setBusyIds((prev) => { const n = new Set(prev); n.delete(item_id); return n; });
     }
   };
-  
-  const removeFromCart = (index: number) => {
-    setCart(cart.filter((_, i) => i !== index));
-    setResults(null);
+
+  const removeFromCart = async (item_id: string) => {
+    if (busyIds.has(item_id)) return;
+    setBusyIds((prev) => new Set(prev).add(item_id));
+    setError("");
+    try {
+      const res = await fetch(`/api/consumer/basket?item_id=${encodeURIComponent(item_id)}`, { method: "DELETE" });
+      if (!res.ok) { setError("Could not remove item. Please try again."); return; }
+      setCart((prev) => prev.filter((c) => c.item_id !== item_id));
+      setResults(null);
+    } catch {
+      setError("Could not remove item. Please try again.");
+    } finally {
+      setBusyIds((prev) => { const n = new Set(prev); n.delete(item_id); return n; });
+    }
   };
-  
-  const clearCart = () => {
-    setCart([]);
-    setResults(null);
+
+  const clearCart = async () => {
+    if (!confirmClear) { setConfirmClear(true); return; }
+    setError("");
+    try {
+      const res = await fetch("/api/consumer/basket?all=1", { method: "DELETE" });
+      if (!res.ok) { setError("Could not clear basket. Please try again."); return; }
+      setCart([]);
+      setResults(null);
+    } catch {
+      setError("Could not clear basket. Please try again.");
+    } finally {
+      setConfirmClear(false);
+    }
   };
   
   const calculateBulk = useCallback(async () => {
@@ -698,7 +735,7 @@ export default function BulkBuyerPage() {
               </h3>
               {cart.length > 0 && (
                 <button onClick={clearCart} className="text-xs text-red-400 hover:text-red-300">
-                  Clear All
+                  {confirmClear ? "Sure?" : "Clear All"}
                 </button>
               )}
             </div>
@@ -711,15 +748,16 @@ export default function BulkBuyerPage() {
               </div>
             ) : (
               <div className="space-y-3">
-                {cart.map((item, idx) => (
-                  <div key={idx} className="p-3 bg-[#252525] rounded-lg">
+                {cart.map((item) => (
+                  <div key={item.item_id} className="p-3 bg-[#252525] rounded-lg">
                     <div className="flex items-start justify-between mb-2">
                       <div>
                         <p className="font-medium text-sm">{item.item}</p>
                         <p className="text-xs text-gray-500">{item.unit}</p>
                       </div>
                       <button
-                        onClick={() => removeFromCart(idx)}
+                        onClick={() => removeFromCart(item.item_id)}
+                        disabled={busyIds.has(item.item_id)}
                         className="text-red-400 hover:text-red-300 p-1"
                       >
                         <Trash2 className="w-4 h-4" />
@@ -728,14 +766,16 @@ export default function BulkBuyerPage() {
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
                         <button
-                          onClick={() => updateQuantity(idx, -1)}
+                          onClick={() => updateQuantity(item.item_id, -1)}
+                          disabled={busyIds.has(item.item_id)}
                           className="w-8 h-8 flex items-center justify-center bg-[#1a1a1a] rounded-lg hover:bg-[#333]"
                         >
                           <Minus className="w-4 h-4" />
                         </button>
                         <span className="w-12 text-center font-medium">{item.quantity}</span>
                         <button
-                          onClick={() => updateQuantity(idx, 1)}
+                          onClick={() => updateQuantity(item.item_id, 1)}
+                          disabled={busyIds.has(item.item_id)}
                           className="w-8 h-8 flex items-center justify-center bg-[#1a1a1a] rounded-lg hover:bg-[#333]"
                         >
                           <Plus className="w-4 h-4" />
