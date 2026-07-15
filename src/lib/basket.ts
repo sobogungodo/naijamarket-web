@@ -118,6 +118,25 @@ export function genId(prefix: string): string {
 }
 
 // ----------------------------------------------------------------------------
+// TIER CAPS — single source of truth for the per-tier basket item cap. Numbers
+// mirror the LIVE Azure Function (func-naijamarket-api / bulk_calculator's
+// get_tier_limits): FREE 3 / SILVER 5 / GOLD 10 / BUSINESS 20 / CORPORATE+ 999.
+// Exported so route handlers share ONE set of numbers; lifting the cap into the
+// web basket route later is an import of this const, not a rewrite.
+// ----------------------------------------------------------------------------
+
+export const BASKET_TIER_LIMITS: { FREE: number } & Record<string, number> = {
+  FREE: 3,
+  SILVER: 5,
+  GOLD: 10,
+  BUSINESS: 20,
+  CORPORATE: 999,
+  ENTERPRISE: 999,
+  OGA_BOSS: 999,
+  GOVERNMENT: 999,
+};
+
+// ----------------------------------------------------------------------------
 // UNIQUE-VIOLATION DETECTION
 // A re-add of the same (phone_number, item_id) trips UX_ConsBasket_Identity.
 // Via $executeRaw, Prisma surfaces the underlying SQL Server error number 2601
