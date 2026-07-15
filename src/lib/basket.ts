@@ -214,11 +214,20 @@ export async function addToBasket({
   } catch (e) {
     if (!isUniqueViolation(e)) throw e;
 
-    // COLLISION: already in basket. Increment + resurrect; price_at_add / date
-    // are deliberately UNTOUCHED (set-once). OUTPUT gives the new quantity.
+    // COLLISION: row exists for (phone, item_id). Port of WA v147's three-way
+    // semantics, expressed as ONE atomic UPDATE (no read-then-write race):
+    //   is_active=1 (LIVE)    -> increment; price_at_add/date UNTOUCHED (set-once
+    //                            within an active basket life)
+    //   is_active=0 (CLEARED) -> RESURRECT as a FRESH add: quantity reset to qty,
+    //                            price RE-CAPTURED now (new basket life), same
+    //                            basket_id, created_at preserved.
+    // price_at_add/priceDate are the values already computed above, kept paired:
+    // null price -> NULL date. CASE predicates read the PRE-update is_active.
     const rows = await prisma.$queryRaw<Array<{ quantity: number | bigint }>>`
       UPDATE Consumer_Basket
-      SET quantity = quantity + ${qty},
+      SET quantity = CASE WHEN is_active = 0 THEN ${qty} ELSE quantity + ${qty} END,
+          price_at_add = CASE WHEN is_active = 0 THEN ${price_at_add} ELSE price_at_add END,
+          price_at_add_date = CASE WHEN is_active = 0 THEN ${priceDate} ELSE price_at_add_date END,
           is_active = 1,
           updated_at = SYSUTCDATETIME()
       OUTPUT inserted.quantity AS quantity

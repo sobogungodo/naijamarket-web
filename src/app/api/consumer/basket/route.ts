@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import { prisma } from "@/lib/prisma";
-import { listBasket } from "@/lib/basket";
+import { listBasket, addToBasket } from "@/lib/basket";
 
 export const runtime = "nodejs";
 
@@ -41,6 +41,50 @@ export async function GET(req: NextRequest) {
     });
   } catch (e) {
     console.error("[GET /api/consumer/basket]", e);
+    return NextResponse.json({ error: "internal error" }, { status: 500 });
+  }
+}
+
+export async function POST(req: NextRequest) {
+  try {
+    const id = await resolvePhoneFromSession();
+    if (!id.ok) return NextResponse.json({ error: id.error }, { status: id.status });
+
+    let body: { item_id?: unknown; quantity?: unknown };
+    try {
+      body = await req.json();
+    } catch {
+      return NextResponse.json({ error: "invalid json" }, { status: 400 });
+    }
+
+    const item_id = typeof body.item_id === "string" ? body.item_id.trim() : "";
+    if (!item_id) return NextResponse.json({ error: "item_id required" }, { status: 400 });
+
+    const qRaw = Number(body.quantity ?? 1);
+    const quantity = Number.isFinite(qRaw) && qRaw > 0 ? Math.floor(qRaw) : 1;
+
+    // Validate item_id against the consumer-visible catalog and derive name/unit
+    // server-side — never trust client name/unit (currentPriceFor keys price on name).
+    const rows = await prisma.$queryRaw<Array<{ item_id: string; item_name: string; unit: string | null }>>`
+      SELECT TOP 1 item_id, item_name, unit
+      FROM Latest_Prices_Summary
+      WHERE item_id = ${item_id}
+        AND is_nbs_ref = 0 AND is_food = 1 AND price_naira > 0
+    `;
+    const row = rows[0];
+    if (!row) return NextResponse.json({ error: "unknown item" }, { status: 404 });
+
+    const result = await addToBasket({
+      phone: id.phone,
+      item_id: row.item_id,
+      item_name: row.item_name,
+      unit: row.unit,
+      quantity,
+    });
+
+    return NextResponse.json(result, { status: 200 });
+  } catch (e) {
+    console.error("[POST /api/consumer/basket]", e);
     return NextResponse.json({ error: "internal error" }, { status: 500 });
   }
 }
