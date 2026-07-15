@@ -285,7 +285,7 @@ export default function BulkBuyerPage() {
       return;
     }
     
-    let csv = "BULK BUYER CALCULATOR - NAIJAMARKET INTEL\n";
+    let csv = "BASKET - NAIJAMARKET INTEL\n";
     csv += `Generated: ${new Date().toLocaleString()}\n\n`;
     
     csv += "CART SUMMARY\n";
@@ -329,7 +329,7 @@ export default function BulkBuyerPage() {
       <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center">
         <div className="text-center">
           <RefreshCw className="w-12 h-12 text-emerald-500 animate-spin mx-auto mb-4" />
-          <p className="text-gray-400">Loading bulk buyer tool...</p>
+          <p className="text-gray-400">Loading basket...</p>
         </div>
       </div>
     );
@@ -343,11 +343,11 @@ export default function BulkBuyerPage() {
           <div>
             <div className="flex items-center gap-2 mb-1">
               <ShoppingCart className="w-6 h-6 text-emerald-400" />
-              <h1 className="text-2xl md:text-3xl font-bold">Bulk Buyer Tool</h1>
+              <h1 className="text-2xl md:text-3xl font-bold">Basket</h1>
               <span className="px-2 py-0.5 bg-emerald-500/20 text-emerald-400 text-xs rounded-full">PMON</span>
             </div>
             <p className="text-gray-400 text-sm">
-              Calculate optimal bulk purchase costs across markets
+              Your shopping list — with cost breakdown across markets
             </p>
           </div>
           

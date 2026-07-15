@@ -179,7 +179,7 @@ export default function MethodologyPage() {
       <div className="meth-tier-grid">
         {[
           { tier: "FREE",       color: "#6b7280", items: ["Live prices", "7-day history", "All markets"] },
-          { tier: "SILVER",     color: "#94a3b8", items: ["+ NFPI access", "Bulk buyer tool", "Price alerts"] },
+          { tier: "SILVER",     color: "#94a3b8", items: ["+ NFPI access", "Basket tool", "Price alerts"] },
           { tier: "GOLD",       color: "#f59e0b", items: ["+ Price forecast", "Market snapshot", "Full history"] },
           { tier: "BUSINESS",   color: "#3b82f6", items: ["+ Cross-state arbitrage", "CSV/Excel export", "Full analytics"] },
           { tier: "CORPORATE",  color: "#8b5cf6", items: ["+ Multi-user access", "API access", "Confidence scores"] },

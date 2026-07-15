@@ -107,7 +107,7 @@ export const NAV_LABELS: Record<string, { en: string; pcm: string }> = {
   "/dashboard/screener":      { en: "Screener",       pcm: "Screener" },
   "/dashboard/heatmap":       { en: "Heatmap",        pcm: "Heatmap" },
   "/dashboard/morning-brief": { en: "Morning Brief",  pcm: "Morning Gist" },
-  "/dashboard/bulk-buyer":    { en: "Bulk Buyer",     pcm: "Big Buy" },
+  "/dashboard/bulk-buyer":    { en: "Basket",         pcm: "Basket" },
   "/dashboard/analytics":     { en: "Analytics",      pcm: "Analytics" },
   "/dashboard/forecast":      { en: "Forecast",       pcm: "Price Guess" },
   "/dashboard/reports":       { en: "Reports",        pcm: "Reports" },

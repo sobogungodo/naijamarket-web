@@ -268,7 +268,7 @@ export default function DashboardLayout({
 
             {/* ---- BUSINESS+ ---- */}
             <NavLink href="/dashboard/morning-brief" icon={Sun} label="Morning Brief" currentPath={pathname} userTier={userTier} onClose={() => setSidebarOpen(false)} minTier="BUSINESS" onLocked={setUpgradeToast} />
-            <NavLink href="/dashboard/bulk-buyer" icon={ShoppingCart} label="Bulk Buyer" currentPath={pathname} userTier={userTier} onClose={() => setSidebarOpen(false)} minTier="BUSINESS" onLocked={setUpgradeToast} />
+            <NavLink href="/dashboard/bulk-buyer" icon={ShoppingCart} label="Basket" currentPath={pathname} userTier={userTier} onClose={() => setSidebarOpen(false)} minTier="BUSINESS" onLocked={setUpgradeToast} />
             <NavLink href="/dashboard/analytics" icon={BarChart3} label="Analytics" currentPath={pathname} userTier={userTier} onClose={() => setSidebarOpen(false)} minTier="BUSINESS" onLocked={setUpgradeToast} />
             <NavLink href="/dashboard/forecast" icon={Sparkles} label="Forecast" currentPath={pathname} userTier={userTier} onClose={() => setSidebarOpen(false)} minTier="BUSINESS" onLocked={setUpgradeToast} />
             <NavLink href="/dashboard/reports" icon={FileText} label="Reports" currentPath={pathname} userTier={userTier} onClose={() => setSidebarOpen(false)} minTier="BUSINESS" onLocked={setUpgradeToast} />
