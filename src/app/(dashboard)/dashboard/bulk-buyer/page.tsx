@@ -145,6 +145,7 @@ export default function BulkBuyerPage() {
   const [tierLimits, setTierLimits] = useState<TierLimits | null>(null);
   const [selectedCategory, setSelectedCategory] = useState("All");
   const [activeTab, setActiveTab] = useState<"breakdown" | "optimal" | "compare">("breakdown");
+  const [busyIds, setBusyIds] = useState<Set<string>>(new Set());
   
   const userTier = "GOLD"; // Would come from session
   
@@ -199,23 +200,45 @@ export default function BulkBuyerPage() {
     }
   }, [status, userTier]);
   
-  const addToCart = (item: AvailableItem) => {
-    const existingIdx = cart.findIndex(c => c.item === item.name);
-    if (existingIdx >= 0) {
-      const newCart = [...cart];
-      const existing = newCart[existingIdx];
-      if (existing) {
-        existing.quantity += 1;
-      }
-      setCart(newCart);
-    } else {
-      if (tierLimits && cart.length >= tierLimits.maxItems) {
-        setError(`Maximum ${tierLimits.maxItems} items allowed for ${tierLimits.tier} tier`);
+  const addToCart = async (item: AvailableItem) => {
+    // Dedup by item_id, not name: item_name is not unique across the catalog
+    // (Palm Oil 25L vs 4L) and the hydrated cart's name comes from basket.ts
+    // while the picker's comes from the AF.
+    if (cart.some((c) => c.item_id === item.id)) return;
+    if (busyIds.has(item.id)) return;
+
+    // Tier cap retained — enforcement is real (AF derives tier server-side).
+    if (tierLimits && cart.length >= tierLimits.maxItems) {
+      setError(`Maximum ${tierLimits.maxItems} items allowed for ${tierLimits.tier} tier`);
+      return;
+    }
+
+    setBusyIds((prev) => new Set(prev).add(item.id));
+    setError("");
+    try {
+      // Await-then-update: never show an item as added if the write failed.
+      const res = await fetch("/api/consumer/basket", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ item_id: item.id }),
+      });
+      if (!res.ok) {
+        setError("Could not add to your basket. Please try again.");
         return;
       }
-      setCart([...cart, { item_id: item.id, item: item.name, quantity: 1, unit: item.unit }]);
+      setCart((prev) => [
+        ...prev,
+        { item_id: item.id, item: item.name, quantity: 1, unit: item.unit },
+      ]);
+    } catch {
+      setError("Could not add to your basket. Please try again.");
+    } finally {
+      setBusyIds((prev) => {
+        const next = new Set(prev);
+        next.delete(item.id);
+        return next;
+      });
     }
-    setResults(null);
   };
   
   const updateQuantity = (index: number, delta: number) => {
@@ -422,11 +445,12 @@ export default function BulkBuyerPage() {
             </h3>
             <div className="grid grid-cols-1 md:grid-cols-2 md:grid-cols-3 gap-3">
               {filteredItems.map(item => {
-                const inCart = cart.some(c => c.item === item.name);
+                const inCart = cart.some((c) => c.item_id === item.id);
                 return (
                   <button
                     key={item.id}
                     onClick={() => addToCart(item)}
+                    disabled={inCart || busyIds.has(item.id)}
                     className={`p-3 rounded-lg text-left transition-all ${
                       inCart
                         ? "bg-emerald-900/30 border-2 border-emerald-500"
