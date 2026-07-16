@@ -55,7 +55,7 @@ export async function POST(request: NextRequest) {
   } catch (error: any) {
     console.error("[verify-email-otp] error:", error?.message || error);
     return NextResponse.json(
-      { error: "Verification failed", detail: error?.message },
+      { error: "Verification failed" },
       { status: 500 }
     );
   }

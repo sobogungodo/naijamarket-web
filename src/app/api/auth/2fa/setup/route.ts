@@ -156,7 +156,7 @@ export async function GET(_request: NextRequest) {
     console.error("[2FA Setup] Error:", error);
     return NextResponse.json({
       success: false,
-      error: error.message || "Internal server error",
+      error: "Internal server error",
     }, { status: 500 });
   }
 }
@@ -271,7 +271,7 @@ export async function POST(request: NextRequest) {
     console.error("[2FA Setup] Error:", error);
     return NextResponse.json({
       success: false,
-      error: error.message || "Internal server error",
+      error: "Internal server error",
     }, { status: 500 });
   }
 }

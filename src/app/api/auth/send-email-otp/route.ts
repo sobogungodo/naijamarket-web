@@ -101,8 +101,7 @@ export async function POST(request: NextRequest) {
   } catch (error: any) {
     console.error("[send-email-otp] error:", error?.message || error);
     return NextResponse.json(
-      { error: "Failed to send verification email",
-        detail: error?.message },
+      { error: "Failed to send verification email" },
       { status: 500 }
     );
   }
