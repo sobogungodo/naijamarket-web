@@ -7,6 +7,35 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import sql from "mssql";
+import { jwtVerify } from "jose";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/app/api/auth/[...nextauth]/route";
+
+// SECURITY: derive the caller's consumer_id from the authenticated principal —
+// the mobile Bearer JWT or the web NextAuth session — NOT from a client-supplied
+// body field. A user only ever purchases for their own wallet, so trusting the
+// authenticated identity closes the unauthenticated resource-creation +
+// consumer-enumeration IDOR that trusting the client `consumerId` opened.
+// Returns null if unauthenticated. Mirrors /api/tokens/wallet.
+async function resolveConsumerId(request: NextRequest): Promise<string | null> {
+  const auth = request.headers.get("authorization") || "";
+  if (auth.startsWith("Bearer ")) {
+    const secret = process.env.CONSUMER_JWT_SECRET;
+    if (secret) {
+      try {
+        const { payload } = await jwtVerify(auth.slice(7), new TextEncoder().encode(secret));
+        const cid = (payload as { consumer_id?: string }).consumer_id;
+        if (cid) return String(cid);
+      } catch { /* fall through to session */ }
+    }
+  }
+  try {
+    const session = await getServerSession(authOptions);
+    const cid = (session?.user as { id?: string } | undefined)?.id;
+    if (cid) return String(cid);
+  } catch { /* unauthenticated */ }
+  return null;
+}
 
 // Paystack config
 const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY || "";
@@ -59,12 +88,21 @@ export async function POST(request: NextRequest) {
   let pool: sql.ConnectionPool | null = null;
 
   try {
-    const body = await request.json();
-    const { consumerId, packId, source } = body;
-
-    if (!consumerId || !packId) {
+    // Identity from the authenticated principal only — never a client field.
+    const consumerId = await resolveConsumerId(request);
+    if (!consumerId) {
       return NextResponse.json(
-        { success: false, error: "Consumer ID and pack ID are required" },
+        { success: false, error: "UNAUTHORIZED" },
+        { status: 401 }
+      );
+    }
+
+    const body = await request.json();
+    const { packId, source } = body;
+
+    if (!packId) {
+      return NextResponse.json(
+        { success: false, error: "Pack ID is required" },
         { status: 400 }
       );
     }
