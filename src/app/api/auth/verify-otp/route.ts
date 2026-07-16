@@ -24,21 +24,28 @@ export async function POST(request: NextRequest) {
     const phonePlus  = "+" + phoneWithCountry;
     const phoneNaked = phoneWithCountry;
 
-    // Find valid unverified OTP — check all phone formats
-    const record = await prisma.oTP_Sessions.findFirst({
-      where: {
-        OR: [
-          { phone_number: phonePlus },
-          { phone_number: phoneNaked },
-          { phone_number: phone_raw },
-        ],
-        otp_code:   otp,
-        verified:   false,
-        expires_at: { gt: new Date() },
-      },
-      orderBy: { created_at: "desc" },
-    });
+    // SECURITY: rate-limit OTP guessing. Fetch the LATEST active (unverified,
+    // unexpired) session for this phone regardless of the submitted code, then
+    // compare + count attempts — so an attacker can't brute-force a short numeric
+    // OTP (previously there was no attempt cap). Uses the existing
+    // OTP_Sessions.attempt_count / locked_until columns. All params are bound.
+    const MAX_ATTEMPTS = 5;
 
+    const rows = (await prisma.$queryRaw`
+      SELECT TOP 1 otp_session_id, otp_code, attempt_count, locked_until
+      FROM dbo.OTP_Sessions
+      WHERE phone_number IN (${phonePlus}, ${phoneNaked}, ${phone_raw})
+        AND verified = 0
+        AND expires_at > SYSUTCDATETIME()
+      ORDER BY created_at DESC
+    `) as Array<{
+      otp_session_id: number;
+      otp_code: string | null;
+      attempt_count: number | null;
+      locked_until: Date | null;
+    }>;
+
+    const record = rows[0];
     if (!record) {
       return NextResponse.json(
         { error: "Invalid or expired OTP. Please request a new code." },
@@ -46,13 +53,52 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Mark as verified
-    await prisma.oTP_Sessions.update({
-      where: { otp_session_id: record.otp_session_id },
-      data:  { verified: true },
-    });
+    // Locked out from earlier wrong guesses?
+    if (record.locked_until && new Date(record.locked_until) > new Date()) {
+      return NextResponse.json(
+        { error: "Too many attempts. Please request a new code." },
+        { status: 429 }
+      );
+    }
 
-    console.log(`[verify-otp] Verified phone ${record.phone_number}`);
+    const attempts = record.attempt_count ?? 0;
+    if (attempts >= MAX_ATTEMPTS) {
+      // Consume the session so it can't be probed further.
+      await prisma.$executeRaw`
+        UPDATE dbo.OTP_Sessions SET verified = 1 WHERE otp_session_id = ${record.otp_session_id}`;
+      return NextResponse.json(
+        { error: "Too many attempts. Please request a new code." },
+        { status: 429 }
+      );
+    }
+
+    // Wrong code — count the failed attempt; lock for 15 min on hitting the cap.
+    if (record.otp_code !== otp) {
+      if (attempts + 1 >= MAX_ATTEMPTS) {
+        await prisma.$executeRaw`
+          UPDATE dbo.OTP_Sessions
+          SET attempt_count = ISNULL(attempt_count, 0) + 1,
+              locked_until  = DATEADD(minute, 15, SYSUTCDATETIME())
+          WHERE otp_session_id = ${record.otp_session_id}`;
+      } else {
+        await prisma.$executeRaw`
+          UPDATE dbo.OTP_Sessions
+          SET attempt_count = ISNULL(attempt_count, 0) + 1
+          WHERE otp_session_id = ${record.otp_session_id}`;
+      }
+      return NextResponse.json(
+        { error: "Invalid or expired OTP. Please request a new code." },
+        { status: 400 }
+      );
+    }
+
+    // Correct code — mark verified.
+    await prisma.$executeRaw`
+      UPDATE dbo.OTP_Sessions
+      SET verified = 1, verified_at = SYSUTCDATETIME()
+      WHERE otp_session_id = ${record.otp_session_id}`;
+
+    console.log(`[verify-otp] Verified session ${record.otp_session_id}`);
     return NextResponse.json({ valid: true });
 
   } catch (error: any) {
