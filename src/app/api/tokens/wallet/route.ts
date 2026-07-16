@@ -5,6 +5,34 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import sql from "mssql";
+import { jwtVerify } from "jose";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/app/api/auth/[...nextauth]/route";
+
+// SECURITY: derive the caller's consumer_id from the authenticated principal —
+// the mobile Bearer JWT or the web NextAuth session — NOT from a client-supplied
+// query param. Both legitimate callers already authenticate as this same
+// consumer_id (web passes session.user.id; mobile attaches the Bearer), so the
+// wallet returned can only ever be the caller's own. Returns null if unauthenticated.
+async function resolveConsumerId(request: NextRequest): Promise<string | null> {
+  const auth = request.headers.get("authorization") || "";
+  if (auth.startsWith("Bearer ")) {
+    const secret = process.env.CONSUMER_JWT_SECRET;
+    if (secret) {
+      try {
+        const { payload } = await jwtVerify(auth.slice(7), new TextEncoder().encode(secret));
+        const cid = (payload as { consumer_id?: string }).consumer_id;
+        if (cid) return String(cid);
+      } catch { /* fall through to session */ }
+    }
+  }
+  try {
+    const session = await getServerSession(authOptions);
+    const cid = (session?.user as { id?: string } | undefined)?.id;
+    if (cid) return String(cid);
+  } catch { /* unauthenticated */ }
+  return null;
+}
 
 // Azure SQL config
 const sqlConfig: sql.config = {
@@ -20,14 +48,12 @@ const sqlConfig: sql.config = {
 
 export async function GET(request: NextRequest) {
   try {
-    const { searchParams } = new URL(request.url);
-    const consumerId = searchParams.get("consumerId");
-    const phoneParam = searchParams.get("phone"); // optional direct phone
-
-    if (!consumerId && !phoneParam) {
+    // Identity from the authenticated principal only — never a client param.
+    const consumerId = await resolveConsumerId(request);
+    if (!consumerId) {
       return NextResponse.json(
-        { success: false, error: "consumerId or phone is required" },
-        { status: 400 }
+        { success: false, error: "UNAUTHORIZED" },
+        { status: 401 }
       );
     }
 
@@ -37,14 +63,11 @@ export async function GET(request: NextRequest) {
       pool = await sql.connect(sqlConfig);
 
       // Resolve the wallet key — Token_* tables are keyed by consumer_phone.
-      let phone = (phoneParam || "").replace(/\D/g, "");
-      if (!phone && consumerId) {
-        const cr = await pool.request()
-          .input("cid", sql.NVarChar(50), consumerId)
-          .query(`SELECT TOP 1 phone_number, phone FROM dbo.Consumers WHERE consumer_id = @cid`);
-        const raw = cr.recordset[0]?.phone_number || cr.recordset[0]?.phone || "";
-        phone = String(raw).replace(/\D/g, "");
-      }
+      const cr = await pool.request()
+        .input("cid", sql.NVarChar(50), consumerId)
+        .query(`SELECT TOP 1 phone_number, phone FROM dbo.Consumers WHERE consumer_id = @cid`);
+      const raw = cr.recordset[0]?.phone_number || cr.recordset[0]?.phone || "";
+      const phone = String(raw).replace(/\D/g, "");
       const p1 = phone;
       const p2 = "+" + phone;
 
