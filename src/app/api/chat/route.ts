@@ -6,6 +6,38 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import Anthropic from "@anthropic-ai/sdk";
+import { jwtVerify } from "jose";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/app/api/auth/[...nextauth]/route";
+
+// SECURITY: the chatbot is authenticated-only. It calls the Anthropic API and can
+// scrape live price data, so leaving it public was an unmetered cost-DoS + free
+// data-scrape surface. Require a real principal — the web NextAuth session or a
+// mobile consumer Bearer — and derive identity/tier from it, never from the client
+// body. Returns null if unauthenticated.
+async function resolveAuth(
+  request: NextRequest
+): Promise<{ consumerId: string; tier: string } | null> {
+  const auth = request.headers.get("authorization") || "";
+  if (auth.startsWith("Bearer ")) {
+    const secret = process.env.CONSUMER_JWT_SECRET;
+    if (secret) {
+      try {
+        const { payload } = await jwtVerify(auth.slice(7), new TextEncoder().encode(secret));
+        const p = payload as { consumer_id?: string; subscription_tier?: string };
+        if (p.consumer_id) {
+          return { consumerId: String(p.consumer_id), tier: (p.subscription_tier || "FREE").toUpperCase() };
+        }
+      } catch { /* fall through to session */ }
+    }
+  }
+  try {
+    const session = await getServerSession(authOptions);
+    const u = session?.user as { id?: string; tier?: string } | undefined;
+    if (u?.id) return { consumerId: String(u.id), tier: (u.tier || "FREE").toUpperCase() };
+  } catch { /* unauthenticated */ }
+  return null;
+}
 
 // ============================================================================
 // CONFIGURATION
@@ -392,16 +424,23 @@ async function handleToolCall(toolName: string, toolInput: any): Promise<string>
 
 export async function POST(request: NextRequest) {
   try {
+    // Authenticated-only — identity + tier from the verified principal, not the body.
+    const authed = await resolveAuth(request);
+    if (!authed) {
+      return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
+    }
+    const tier = authed.tier;
+
     const body = await request.json();
-    const { message, history = [], consumerId, tier = "FREE" } = body;
-    
+    const { message, history = [] } = body;
+
     if (!message) {
       return NextResponse.json(
         { error: "Message is required" },
         { status: 400 }
       );
     }
-    
+
     // Check API key
     if (!process.env.ANTHROPIC_API_KEY) {
       return NextResponse.json(
@@ -409,9 +448,11 @@ export async function POST(request: NextRequest) {
         { status: 500 }
       );
     }
-    
-    // TODO: Implement rate limiting based on tier
-    // const limit = CHAT_LIMITS[tier.toUpperCase()] || 5;
+
+    // TODO: Implement per-request rate limiting. Tier is now the authenticated
+    // tier (authed.tier), so CHAT_LIMITS[tier] can be enforced safely.
+    // const limit = CHAT_LIMITS[tier] || 5;
+    void [tier, CHAT_LIMITS];
     
     // Build messages array
     const messages: Anthropic.MessageParam[] = [
