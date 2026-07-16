@@ -79,6 +79,26 @@ export default function ChatBot() {
   const sendMessage = async (content: string) => {
     if (!content.trim() || isLoading) return;
 
+    // Chat is authenticated-only (the /api/chat endpoint requires a session).
+    // For anonymous visitors, prompt login instead of firing a request that 401s.
+    if (!session?.user) {
+      const uMsg: Message = {
+        id: `user-${Date.now()}`,
+        role: "user",
+        content: content.trim(),
+        timestamp: new Date(),
+      };
+      const aMsg: Message = {
+        id: `login-${Date.now()}`,
+        role: "assistant",
+        content: "Please log in to chat with the NaijaMarket assistant. Once you're signed in I can help with prices, markets, and alerts.",
+        timestamp: new Date(),
+      };
+      setInput("");
+      setMessages((prev) => [...prev, uMsg, aMsg]);
+      return;
+    }
+
     setError(null);
     const userMessage: Message = {
       id: `user-${Date.now()}`,
