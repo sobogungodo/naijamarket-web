@@ -1,11 +1,19 @@
-﻿// src/app/api/keys/route.ts
+// src/app/api/keys/route.ts
 // NaijaMarket Intel - API Key Management
+//
+// SECURITY: every handler derives BOTH identity (phone) and entitlement (tier)
+// from the authenticated NextAuth session — NEVER from client-supplied `phone`
+// or `tier`. `/api/keys` is not covered by the route-protection middleware, so
+// this route-level auth is the only gate. Trusting the client here previously
+// allowed (a) listing/creating/revoking any user's API keys by passing another
+// phone (IDOR on issued credentials), and (b) any user forging `tier:"ENTERPRISE"`
+// to bypass the BUSINESS+ paywall and mint high-limit keys (privilege escalation).
 
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import crypto from "crypto";
 import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
+import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 
 // ============================================================================
 // HELPERS
@@ -21,36 +29,41 @@ function hashAPIKey(key: string): string {
   return crypto.createHash("sha256").update(key).digest("hex");
 }
 
+// Resolve the caller's own phone + tier from the authenticated session.
+// Returns a 401 response object if unauthenticated.
+async function requireSession(): Promise<
+  { phone: string; tier: string } | { response: NextResponse }
+> {
+  const session = await getServerSession(authOptions);
+  const user = session?.user as { phone?: string; tier?: string } | undefined;
+  const phone = user?.phone || "";
+  if (!phone) {
+    return {
+      response: NextResponse.json(
+        { success: false, error: "Authentication required" },
+        { status: 401 }
+      ),
+    };
+  }
+  return { phone, tier: (user?.tier || "FREE").toUpperCase() };
+}
+
 // ============================================================================
-// GET: List API Keys for a user
+// GET: List API Keys for the authenticated user
 // ============================================================================
 
-export async function GET(request: NextRequest) {
+export async function GET() {
   try {
-    const { searchParams } = new URL(request.url);
-    const phone = searchParams.get("phone");
+    const auth = await requireSession();
+    if ("response" in auth) return auth.response;
+    const phone = auth.phone;
 
-    if (!phone) {
-      return NextResponse.json(
-        { success: false, error: "Phone number required" },
-        { status: 400 }
-      );
-    }
-
-    // Fetch user's API keys (don't return the full key, just prefix + last 4)
-    const keys = await prisma.$queryRaw`
-      SELECT 
+    // Fetch the caller's own API keys (prefix only — never the full key).
+    const keys = (await prisma.$queryRaw`
+      SELECT
         key_id,
         key_name,
         key_prefix,
-    const session = await getServerSession(authOptions);
-    if (!session?.user) {
-      return NextResponse.json(
-        { success: false, error: "Authentication required" },
-        { status: 401 }
-      );
-    }
-    const sessionPhone = (session.user as any)?.phone || "";
         created_at,
         last_used_at,
         request_count,
@@ -58,7 +71,7 @@ export async function GET(request: NextRequest) {
       FROM API_Keys
       WHERE phone_number = ${phone}
       ORDER BY created_at DESC
-    ` as any[];
+    `) as any[];
 
     return NextResponse.json({
       success: true,
@@ -75,7 +88,6 @@ export async function GET(request: NextRequest) {
         count: keys.length,
       },
     });
-
   } catch (error) {
     console.error("List Keys Error:", error);
     return NextResponse.json(
@@ -86,32 +98,29 @@ export async function GET(request: NextRequest) {
 }
 
 // ============================================================================
-// POST: Create new API Key
+// POST: Create new API Key for the authenticated user
 // ============================================================================
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
-    const { phone, name, tier } = body;
+    const auth = await requireSession();
+    if ("response" in auth) return auth.response;
+    const phone = auth.phone;
+    const tier = auth.tier;
 
-    if (!phone || !name) {
+    const body = await request.json();
+    const { name } = body;
+
+    if (!name) {
       return NextResponse.json(
-        { success: false, error: "Phone and name required" },
+        { success: false, error: "Key name required" },
         { status: 400 }
       );
-    const session = await getServerSession(authOptions);
-    if (!session?.user) {
-      return NextResponse.json(
-        { success: false, error: "Authentication required" },
-        { status: 401 }
-      );
-    }
-    const sessionPhone = (session.user as any)?.phone || "";
     }
 
-    // Check tier access (BUSINESS+ required)
+    // Check tier access (BUSINESS+ required) — tier is from the session, not the client.
     const tierHierarchy = ["FREE", "SILVER", "GOLD", "BUSINESS", "CORPORATE", "ENTERPRISE", "OGA_BOSS", "GOVERNMENT"];
-    const userTierIndex = tierHierarchy.indexOf((tier || "FREE").toUpperCase());
+    const userTierIndex = tierHierarchy.indexOf(tier);
     if (userTierIndex < tierHierarchy.indexOf("BUSINESS")) {
       return NextResponse.json(
         { success: false, error: "BUSINESS tier or higher required for API access" },
@@ -128,13 +137,13 @@ export async function POST(request: NextRequest) {
       GOVERNMENT: 50,
     };
 
-    const existingKeys = await prisma.$queryRaw`
-      SELECT COUNT(*) as count FROM API_Keys 
+    const existingKeys = (await prisma.$queryRaw`
+      SELECT COUNT(*) as count FROM API_Keys
       WHERE phone_number = ${phone} AND status = 'active'
-    ` as any[];
+    `) as any[];
 
     const currentCount = parseInt(existingKeys[0]?.count || "0");
-    const maxKeys = keyLimits[(tier || "BUSINESS").toUpperCase()] || 3;
+    const maxKeys = keyLimits[tier] || 3;
 
     if (currentCount >= maxKeys) {
       return NextResponse.json(
@@ -185,7 +194,6 @@ export async function POST(request: NextRequest) {
         message: "Save this key now - it won't be shown again!",
       },
     });
-
   } catch (error) {
     console.error("Create Key Error:", error);
     return NextResponse.json(
@@ -196,33 +204,28 @@ export async function POST(request: NextRequest) {
 }
 
 // ============================================================================
-// DELETE: Revoke API Key
+// DELETE: Revoke an API Key owned by the authenticated user
 // ============================================================================
 
 export async function DELETE(request: NextRequest) {
-    const session = await getServerSession(authOptions);
-    if (!session?.user) {
-      return NextResponse.json(
-        { success: false, error: "Authentication required" },
-        { status: 401 }
-      );
-    }
-    const sessionPhone = (session.user as any)?.phone || "";
   try {
+    const auth = await requireSession();
+    if ("response" in auth) return auth.response;
+    const phone = auth.phone;
+
     const { searchParams } = new URL(request.url);
     const keyId = searchParams.get("keyId");
-    const phone = searchParams.get("phone");
 
-    if (!keyId || !phone) {
+    if (!keyId) {
       return NextResponse.json(
-        { success: false, error: "Key ID and phone required" },
+        { success: false, error: "Key ID required" },
         { status: 400 }
       );
     }
 
-    // Verify ownership and revoke
+    // Revoke only if the key belongs to the caller (ownership scoped to session phone).
     await prisma.$executeRaw`
-      UPDATE API_Keys 
+      UPDATE API_Keys
       SET status = 'revoked', updated_at = GETDATE()
       WHERE key_id = ${keyId} AND phone_number = ${phone}
     `;
@@ -231,7 +234,6 @@ export async function DELETE(request: NextRequest) {
       success: true,
       message: "API key revoked successfully",
     });
-
   } catch (error) {
     console.error("Revoke Key Error:", error);
     return NextResponse.json(
