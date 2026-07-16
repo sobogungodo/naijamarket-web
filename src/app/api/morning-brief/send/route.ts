@@ -243,10 +243,14 @@ async function generatePersonalizedBrief(
 export async function GET(request: NextRequest) {
   const auth = request.headers.get("authorization");
   const { searchParams } = new URL(request.url);
-  const isTest    = searchParams.get("test") === "1";
   const testPhone = searchParams.get("phone");
 
-  if (!isTest && CRON_SECRET && auth !== `Bearer ${CRON_SECRET}`) {
+  // SECURITY: auth is required unconditionally. Previously a `!isTest` clause let
+  // anyone call ?test=1&phone=<any> with no CRON_SECRET, triggering a brief SEND
+  // to an arbitrary phone (spam / messaging-cost abuse) plus a per-phone
+  // subscription read. A caller holding the CRON_SECRET can still pass ?phone= to
+  // target a single subscriber for a legitimate test.
+  if (CRON_SECRET && auth !== `Bearer ${CRON_SECRET}`) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
