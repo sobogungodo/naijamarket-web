@@ -63,9 +63,12 @@ export async function POST(request: NextRequest) {
 
     const attempts = record.attempt_count ?? 0;
     if (attempts >= MAX_ATTEMPTS) {
-      // Consume the session so it can't be probed further.
+      // EXPIRE (do NOT verify) the session so it can't be probed further AND can't
+      // be treated as a verified phone by /register. Setting verified=1 here would
+      // let a locked-out session (5 wrong guesses on a phone the caller doesn't own)
+      // pass the register "phone_verified" check — an account-takeover hole.
       await prisma.$executeRaw`
-        UPDATE dbo.OTP_Sessions SET verified = 1 WHERE otp_session_id = ${record.otp_session_id}`;
+        UPDATE dbo.OTP_Sessions SET expires_at = DATEADD(MINUTE, -1, SYSUTCDATETIME()) WHERE otp_session_id = ${record.otp_session_id}`;
       return NextResponse.json(
         { error: "Too many attempts. Please request a new code." },
         { status: 429 }
