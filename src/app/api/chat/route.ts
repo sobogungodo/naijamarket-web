@@ -173,6 +173,15 @@ const tools: Anthropic.Tool[] = [
 // TOOL HANDLERS
 // ============================================================================
 
+// Neutralize SQL string-literal breakout for values interpolated into the
+// LIKE '%...%' patterns below. Mirrors the esc() used by the mobile compare/
+// prices routes (double single-quotes traps the value inside the literal);
+// length-cap bounds pathological inputs. Values here originate from LLM tool
+// arguments derived from user chat text, so they are untrusted.
+function esc(v: unknown): string {
+  return String(v ?? "").slice(0, 100).replace(/'/g, "''");
+}
+
 async function handleToolCall(toolName: string, toolInput: any): Promise<string> {
   try {
     switch (toolName) {
@@ -190,11 +199,11 @@ async function handleToolCall(toolName: string, toolInput: any): Promise<string>
             validated_at
           FROM Approved_Prices
           WHERE validation_status = 'APPROVED'
-            AND item_name LIKE '%${item_name}%'
+            AND item_name LIKE '%${esc(item_name)}%'
         `;
         
         if (market_name) {
-          query += ` AND market_name LIKE '%${market_name}%'`;
+          query += ` AND market_name LIKE '%${esc(market_name)}%'`;
         }
         
         query += ` ORDER BY validated_at DESC`;
@@ -238,7 +247,7 @@ async function handleToolCall(toolName: string, toolInput: any): Promise<string>
             MAX(validated_at) as last_updated
           FROM Approved_Prices
           WHERE validation_status = 'APPROVED'
-            AND item_name LIKE '%${item_name}%'
+            AND item_name LIKE '%${esc(item_name)}%'
           GROUP BY item_name, market_name, state
           ORDER BY min_price ASC
         `) as any[];
@@ -283,7 +292,7 @@ async function handleToolCall(toolName: string, toolInput: any): Promise<string>
         `;
         
         if (category) {
-          query += ` AND category_name LIKE '%${category}%'`;
+          query += ` AND category_name LIKE '%${esc(category)}%'`;
         }
         
         query += ` ORDER BY category_name, item_name`;
@@ -316,7 +325,7 @@ async function handleToolCall(toolName: string, toolInput: any): Promise<string>
         `;
         
         if (state) {
-          query += ` AND state LIKE '%${state}%'`;
+          query += ` AND state LIKE '%${esc(state)}%'`;
         }
         
         query += ` ORDER BY state, market_name`;
@@ -347,8 +356,8 @@ async function handleToolCall(toolName: string, toolInput: any): Promise<string>
         if (market_name) {
           const priceResult = await prisma.$queryRawUnsafe(`
             SELECT TOP 1 price FROM Approved_Prices
-            WHERE item_name LIKE '%${item_name}%'
-              AND market_name LIKE '%${market_name}%'
+            WHERE item_name LIKE '%${esc(item_name)}%'
+              AND market_name LIKE '%${esc(market_name)}%'
               AND validation_status = 'APPROVED'
             ORDER BY validated_at DESC
           `) as any[];
