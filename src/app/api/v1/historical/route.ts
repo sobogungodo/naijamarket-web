@@ -41,9 +41,13 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Date range (max 365 days)
-    let dateFrom = from || new Date(Date.now() - 90 * 86400000).toISOString().split("T")[0];
-    let dateTo = to || new Date().toISOString().split("T")[0];
+    // Date range (max 365 days). Validate the caller-supplied dates strictly as
+    // YYYY-MM-DD before they reach the SQL string literal below — anything else
+    // (incl. injection payloads) is rejected and the default is used.
+    const okDate = (s: unknown): string | null =>
+      typeof s === "string" && /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : null;
+    let dateFrom = okDate(from) || new Date(Date.now() - 90 * 86400000).toISOString().split("T")[0];
+    let dateTo = okDate(to) || new Date().toISOString().split("T")[0];
 
     let where = `WHERE dp.item_name LIKE '%${item.replace(/'/g, "''")}%'
       AND dp.price_date >= '${dateFrom}' AND dp.price_date <= '${dateTo}'
