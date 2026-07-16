@@ -95,10 +95,11 @@ async function getPool(): Promise<sql.ConnectionPool | null> {
 const GOOGLE_SHEETS_ID = "1n-7MXdoqvIoSHteBJaUYBmIPLjJBNtrE_jVuUxO5kr8";
 const GOOGLE_API_KEY   = process.env.GOOGLE_SHEETS_API_KEY || "";
 
-// Emergency fallback ONLY — used when DB is completely unreachable.
-// This is the latest known NBS food inflation (Feb 2026 official release).
-// Update this value whenever NBS publishes a new report AND the DB update fails.
-const NBS_FALLBACK_RATE = 12.12;
+// Emergency fallback — used when the DB has no current NBS rate for a period
+// (the NBS feed has been stale since Jan 2026, so recent periods hit this).
+// Latest known NBS food inflation: 17.52% YoY (June 2026 official release).
+// Update this value whenever NBS publishes a new report.
+const NBS_FALLBACK_RATE = 17.52;
 
 const TIME_PERIODS: Record<string, { months: number; label: string }> = {
   "1m":  { months: 1,  label: "1 Month"   },
