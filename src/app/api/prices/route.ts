@@ -637,7 +637,7 @@ export async function GET(request: NextRequest) {
         stateMarkets: {},
       },
       source:    "Error",
-      error:     error.message,
+      error:     "Failed to load prices",
       timestamp: new Date().toISOString(),
     });
   }

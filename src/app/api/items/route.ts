@@ -104,7 +104,7 @@ export async function GET(request: NextRequest) {
   } catch (error: any) {
     console.error("Items API Error:", error);
     return NextResponse.json(
-      { success: false, error: error.message?.substring(0, 200), data: [] },
+      { success: false, error: "Failed to load items", data: [] },
       { status: 500 }
     );
   }

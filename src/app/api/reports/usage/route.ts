@@ -122,7 +122,7 @@ export async function GET(request: NextRequest) {
   } catch (error: any) {
     console.error("[Reports Usage] Error:", error.message);
     return NextResponse.json(
-      { success: false, error: error.message, used: 0, limit: 20, remaining: 20, tier: "FREE", resetsAt: "" },
+      { success: false, error: "Failed to load usage", used: 0, limit: 20, remaining: 20, tier: "FREE", resetsAt: "" },
       { status: 500 }
     );
   }

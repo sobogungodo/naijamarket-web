@@ -233,7 +233,7 @@ export async function GET(request: NextRequest) {
   } catch (error: any) {
     console.error("Markets API Error:", error);
     return NextResponse.json(
-      { success: false, error: error.message?.substring(0, 300) || "Internal server error", data: [] },
+      { success: false, error: "Internal server error", data: [] },
       { status: 500 }
     );
   }

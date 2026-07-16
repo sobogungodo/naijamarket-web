@@ -131,7 +131,7 @@ export async function GET(request: NextRequest) {
   } catch (error: any) {
     console.error("Analytics API Error:", error);
     return NextResponse.json(
-      { success: false, error: "Failed to fetch analytics", detail: error.message?.substring(0, 200) },
+      { success: false, error: "Failed to fetch analytics" },
       { status: 500 }
     );
   }

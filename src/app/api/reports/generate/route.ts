@@ -205,7 +205,7 @@ async function fetchReportData(reportType: string, params?: any): Promise<any> {
     };
   } catch (error: any) {
     console.error("[Reports Generate] DB error:", error.message);
-    return { prices: [], summary: getEmptySummary(), isEmpty: true, error: error.message };
+    return { prices: [], summary: getEmptySummary(), isEmpty: true, error: "Failed to load report data" };
   }
 }
 
@@ -1051,7 +1051,7 @@ export async function POST(request: NextRequest) {
   } catch (error: any) {
     console.error("[Reports Generate] Error:", error);
     return NextResponse.json(
-      { success: false, error: error.message || "Report generation failed" },
+      { success: false, error: "Report generation failed" },
       { status: 500 }
     );
   }

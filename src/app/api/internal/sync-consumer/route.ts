@@ -245,7 +245,7 @@ export async function POST(request: NextRequest) {
   } catch (error: any) {
     console.error("[SYNC-CONSUMER] Error:", error);
     return NextResponse.json(
-      { success: false, error: "SERVER_ERROR", message: error.message },
+      { success: false, error: "SERVER_ERROR", message: "Internal server error" },
       { status: 500 }
     );
   }

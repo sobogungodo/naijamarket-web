@@ -350,7 +350,7 @@ export async function GET(request: NextRequest) {
   } catch (error: any) {
     console.error("Export API Error:", error);
     return NextResponse.json(
-      { success: false, error: error.message || "Failed to generate export" },
+      { success: false, error: "Failed to generate export" },
       { status: 500 }
     );
   }
@@ -440,7 +440,7 @@ export async function POST(request: NextRequest) {
   } catch (error: any) {
     console.error("Export Preview Error:", error);
     return NextResponse.json(
-      { success: false, error: error.message || "Failed to get preview" },
+      { success: false, error: "Failed to get preview" },
       { status: 500 }
     );
   }

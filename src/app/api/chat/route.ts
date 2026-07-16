@@ -382,7 +382,7 @@ async function handleToolCall(toolName: string, toolInput: any): Promise<string>
     }
   } catch (error: any) {
     console.error(`Tool error (${toolName}):`, error);
-    return JSON.stringify({ error: error.message });
+    return JSON.stringify({ error: "Tool execution failed" });
   }
 }
 
