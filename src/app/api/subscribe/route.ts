@@ -7,6 +7,8 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import sql from "mssql";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 
 // ============================================================================
 // TYPE DEFINITIONS
@@ -559,16 +561,27 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // If phone provided, get subscription status
+    // If phone provided, get subscription status.
+    // SECURITY: subscription status is per-user PII (tier, billing dates, daily
+    // usage). Require an authenticated session and only ever return the caller's
+    // OWN status — the client-supplied `phone` is ignored. Previously this was an
+    // unauthenticated IDOR that leaked any phone's tier/billing by number, enabling
+    // subscriber enumeration. The only caller (subscribe page) already passes the
+    // session's own phone. Tiers/no-param branches stay public (no PII).
     if (phone) {
-      const status = await getSubscriptionStatus(phone);
+      const session = await getServerSession(authOptions);
+      const sessionPhone = (session?.user as { phone?: string } | undefined)?.phone;
+      if (!sessionPhone) {
+        return NextResponse.json({ success: false, error: "UNAUTHORIZED" }, { status: 401 });
+      }
+      const status = await getSubscriptionStatus(sessionPhone);
 
       if (!status) {
         // Return default FREE tier status
         return NextResponse.json({
           success: true,
           subscription: {
-            phone,
+            phone: sessionPhone,
             tier: "FREE",
             tierName: "Free",
             status: "ACTIVE",
