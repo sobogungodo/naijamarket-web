@@ -173,15 +173,6 @@ export default function LoginPage() {
               </Button>
             </form>
 
-            {/* Demo credentials */}
-            <div className="mt-6 p-4 rounded-lg bg-dash-bg border border-dash-border">
-              <p className="text-xs text-dash-muted text-center mb-2">Demo Credentials</p>
-              <div className="text-xs text-center space-y-1">
-                <p className="text-dash-text font-mono">olawale.sobogungod@giggabytes.eu</p>
-                <p className="text-dash-muted">Password: NaijaAdmin2024!</p>
-              </div>
-            </div>
-
             {/* Security notice */}
             <div className="mt-6 flex items-center justify-center gap-2 text-xs text-dash-muted">
               <Shield className="w-4 h-4" />

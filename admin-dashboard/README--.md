@@ -66,11 +66,10 @@ nano .env.local
 npm run dev
 ```
 
-### Default Login Credentials
-```
-Email: olawale.sobogungod@giggabytes.eu
-Password: NaijaAdmin2024!
-```
+### Login Credentials
+Admin credentials are provisioned via environment variables (see deployment
+config). Never commit real credentials to this repo — anything committed lives
+in git history permanently and must be rotated, not just deleted.
 
 ---
 
