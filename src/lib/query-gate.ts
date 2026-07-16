@@ -115,12 +115,19 @@ export async function checkQuery(
   tier: string | null | undefined
 ): Promise<QueryGateResult> {
   if (!consumerId) return { allowed: true, remaining: UNLIMITED };
-  const t = normTier(tier);
   try {
+    // SECURITY: tier is authoritative from the DB (Consumers.subscription_tier),
+    // NOT the caller-passed value. A 30-day mobile JWT (and a cached web session)
+    // keeps asserting a paid tier for up to a month after a downgrade/lapse, which
+    // would let a lapsed user retain elevated daily caps (or UNLIMITED). resolveConsumer
+    // reads the same column the token snapshotted, but live. `tier` is a dead
+    // fallback (c.tier is always ≥ "FREE") kept only for signature compatibility.
+    const c = await resolveConsumer(consumerId);
+    if (!c) return { allowed: true, remaining: UNLIMITED }; // unknown — fail open
+    const t = c.tier || normTier(tier);
+
     // FREE — weekly counter on Consumers.
     if (t === "FREE") {
-      const c = await resolveConsumer(consumerId);
-      if (!c) return { allowed: true, remaining: UNLIMITED }; // unknown — fail open
       const needsReset = !c.last_query_date || c.last_query_date < startOfWeekUTC();
       const remaining = needsReset
         ? FREE_WEEKLY_LIMIT
@@ -134,7 +141,6 @@ export async function checkQuery(
     if (!tl || tl.limit === UNLIMITED) return { allowed: true, remaining: UNLIMITED };
 
     // DAY tiers — count today's counted rows for this consumer's phone.
-    const c = await resolveConsumer(consumerId);
     if (!c?.phone) return { allowed: true, remaining: UNLIMITED }; // no phone key — fail open
     const rows = (await prisma.$queryRaw`
       SELECT COUNT(*) AS cnt
@@ -172,10 +178,13 @@ export async function logQuery(
   meta?: QueryMeta
 ): Promise<void> {
   if (!consumerId) return;
-  const t = normTier(tier);
   try {
     const c = await resolveConsumer(consumerId);
     if (!c) return;
+    // SECURITY: count against the authoritative DB tier, not the caller-passed
+    // (possibly stale) value — see checkQuery. Keeps FREE decrement + counted
+    // flag honest when a 30-day token still asserts an old paid tier.
+    const t = c.tier || normTier(tier);
 
     // Does this tier count against a limit?
     let counted = "N";
