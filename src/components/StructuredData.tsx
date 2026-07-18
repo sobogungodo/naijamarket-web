@@ -28,14 +28,6 @@ export default function StructuredData() {
         addressLocality: "Lahti",
       },
     },
-    aggregateRating: {
-      "@type": "AggregateRating",
-      ratingValue: "4.8",
-      ratingCount: "12",
-    },
-    sameAs: [
-      "https://wefunder.com/gigabytes.soft.ltd",
-    ],
   };
 
   return (
