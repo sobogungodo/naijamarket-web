@@ -10,7 +10,7 @@ export default function StructuredData() {
     operatingSystem: "Web, Android",
     url: "https://www.naijamarketintel.com",
     description:
-      "Real-time food price intelligence for Nigeria. Track 610 commodities across 226 markets in 36 states + FCT. Updated 3× daily by GPS-verified traders.",
+      "Real-time food price intelligence for Nigeria. Track 610 commodities across 282 markets in 36 states + FCT. Updated 3× daily by GPS-verified traders.",
     offers: {
       "@type": "AggregateOffer",
       lowPrice: "0",
