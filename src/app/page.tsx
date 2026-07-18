@@ -1480,7 +1480,7 @@ html { scroll-behavior: smooth; }
 .nm-trust-dot-amber { background: #FFB300; animation: nm-pulse 2.5s infinite; }
 
 /* ── Sections ── */
-.nm-section { padding: 64px 16px; }
+.nm-section { padding: 44px 16px; }
 .nm-section-accent {
   background: linear-gradient(180deg, transparent, rgba(0, 200, 83, 0.012), transparent);
 }
@@ -1880,7 +1880,7 @@ html { scroll-behavior: smooth; }
   .nm-hero-copy { flex: 1; }
   .nm-hero-demo { flex: 1; max-width: 500px; }
 
-  .nm-section { padding: 90px 40px; }
+  .nm-section { padding: 60px 40px; }
   .nm-features-grid { grid-template-columns: repeat(3, 1fr); }
 
   .nm-step-connector {
