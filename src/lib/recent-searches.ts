@@ -16,9 +16,16 @@
 //   - Provenance preserved: `sources` is STRING_AGG over an inner GROUP BY
 //     (item_name, query_source), so it lists the DISTINCT surfaces a term was
 //     seen on (e.g. "WEB,WHATSAPP") — one chip per term, continuity still provable.
-//   - item_name <> '' drops the blank rows the mobile /query gate currently writes
-//     (owed-cleanup: mobile logs at gate-time with no item). Until that's fixed,
-//     mobile-ORIGIN searches don't appear here; WEB + WhatsApp history does.
+//   - item_name <> '' drops blank rows. This USED TO black out mobile entirely:
+//     the mobile /query gate logged at gate-time with no item, so mobile-ORIGIN
+//     searches never surfaced here. FIXED 2026-07-08; re-verified against
+//     Query_Log on 2026-07-17 — all 7 blank MOBILE rows are a single tester on
+//     2026-07-07 (last 13:27:22), and every MOBILE row from 2026-07-08 08:16:32
+//     onward carries a real item_name (30 of 37 MOBILE rows, 2 phones, through
+//     2026-07-16). Mobile-ORIGIN searches DO appear, so the cross-surface chip
+//     renders for real (e.g. phone 358417203868 logged "Yam" on WEB and MOBILE).
+//     The guard now only drops genuinely item-less rows (1 WEB, 2 WHATSAPP, and
+//     9 rows written with no query_source — those remain unexplained).
 //   - Prisma-only (vercel_web), same as the gate — which already SELECTs Query_Log
 //     in prod, so no new grant is required for this read.
 
