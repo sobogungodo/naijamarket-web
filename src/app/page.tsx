@@ -492,29 +492,6 @@ function Hero() {
 }
 
 /* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• Features â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */
-function VideoSection() {
-  return (
-    <section className="nm-section nm-section-accent" style={{padding: "24px 24px 60px"}}>
-      <div className="nm-section-inner" style={{maxWidth: "900px", margin: "0 auto"}}>
-        <div className="nm-section-header" style={{marginBottom: "32px"}}>
-          <span className="nm-section-tag">Platform Demo</span>
-          <h2 className="nm-section-title">See NaijaMarket Intel in Action</h2>
-          <p className="nm-section-desc">Real-time commodity prices across 226 Nigerian markets — updated three times daily.</p>
-        </div>
-        <div style={{position: "relative", borderRadius: "12px", overflow: "hidden", border: "1px solid rgba(0,200,83,0.2)", boxShadow: "0 8px 40px rgba(0,0,0,0.4)"}}>
-          <video
-            src="/videos/hero.mp4"
-            controls
-            playsInline
-            poster=""
-            style={{width: "100%", display: "block", maxHeight: "500px", objectFit: "cover", background: "#0a0a0a"}}
-          />
-        </div>
-      </div>
-    </section>
-  )
-}
-
 function FeaturesSection() {
   const { ref, visible } = useInView();
   return (
@@ -850,7 +827,6 @@ export default function LandingPage() {
       <div className="nm-landing">
         <Nav />
         <Hero />
-        <VideoSection />
         <FeaturesSection />
         <HowItWorksSection />
         {/* <WaitlistSection /> — hidden; /api/waitlist route kept live for any direct submissions */}
