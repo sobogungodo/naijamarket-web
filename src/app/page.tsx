@@ -784,14 +784,16 @@ function Footer() {
         ))}
         <div className="nm-footer-apps">
           <div className="nm-footer-col-title">Get the app</div>
-          <a href={CONSUMER_APP_URL} target="_blank" rel="noopener noreferrer" className="nm-footer-app">
-            <Image src="/google-play-badge.png" alt="Get NaijaMarket Intel on Google Play" width={140} height={42} className="nm-footer-badge" />
-            <span className="nm-footer-app-label">Buyers &amp; Businesses</span>
-          </a>
-          <a href={REPORTER_APP_URL} target="_blank" rel="noopener noreferrer" className="nm-footer-app">
-            <Image src="/google-play-badge.png" alt="Get NaijaMarket Reporter on Google Play" width={140} height={42} className="nm-footer-badge" />
-            <span className="nm-footer-app-label">Price Reporters</span>
-          </a>
+          <div className="nm-footer-apps-row">
+            <a href={CONSUMER_APP_URL} target="_blank" rel="noopener noreferrer" className="nm-footer-app">
+              <Image src="/google-play-badge.png" alt="Get NaijaMarket Intel on Google Play" width={140} height={42} className="nm-footer-badge" />
+              <span className="nm-footer-app-label">Buyers &amp; Businesses</span>
+            </a>
+            <a href={REPORTER_APP_URL} target="_blank" rel="noopener noreferrer" className="nm-footer-app">
+              <Image src="/google-play-badge.png" alt="Get NaijaMarket Reporter on Google Play" width={140} height={42} className="nm-footer-badge" />
+              <span className="nm-footer-app-label">Price Reporters</span>
+            </a>
+          </div>
         </div>
       </div>
       <div className="nm-footer-bottom">
@@ -1811,6 +1813,7 @@ html { scroll-behavior: smooth; }
 
 /* ── Footer app badges ── */
 .nm-footer-apps { display: flex; flex-direction: column; gap: 12px; }
+.nm-footer-apps-row { display: flex; flex-direction: row; flex-wrap: wrap; gap: 16px; }
 .nm-footer-app { display: flex; flex-direction: column; gap: 4px; text-decoration: none; }
 .nm-footer-badge { height: auto; display: block; }
 .nm-footer-app-label { font-size: 11px; color: var(--nm-text4); }
