@@ -48,6 +48,13 @@ const fmt = (iso: string) => {
   });
 };
 
+// Percentages arrive from cached JSON / SQL and may be null, undefined or a
+// numeric string. Render an em-dash rather than a bare "%" when there's no value.
+const fmtPct = (v: unknown, digits = 1) => {
+  const n = typeof v === 'number' ? v : parseFloat(String(v ?? ''));
+  return Number.isFinite(n) ? `${n.toFixed(digits)}%` : '—';
+};
+
 const fmtDuration = (sec: number) => {
   if (!sec) return '—';
   if (sec < 60) return `${sec}s`;
@@ -85,7 +92,11 @@ function SlotCard({ slot, data, onTrigger, triggering }: {
   triggering: boolean;
 }) {
   const pct = data ? Math.round((data.rows_generated / EXPECTED_ROWS) * 100) : 0;
-  const realPct = data ? Math.round((data.real_anchored / data.rows_generated) * 100) : 0;
+  // A slot row can exist with 0 rows_generated — guard the division so the card
+  // shows 0% rather than NaN%.
+  const realPct = data && data.rows_generated > 0
+    ? Math.round((data.real_anchored / data.rows_generated) * 100)
+    : 0;
   const isComplete = data && data.rows_generated >= EXPECTED_ROWS * 0.9;
 
   return (
@@ -148,7 +159,7 @@ function SlotCard({ slot, data, onTrigger, triggering }: {
               </div>
               <div className="bg-black/20 rounded p-2">
                 <div className="text-gray-500">Confidence</div>
-                <div className="font-mono text-white">{data.avg_confidence?.toFixed(1)}%</div>
+                <div className="font-mono text-white">{fmtPct(data.avg_confidence)}</div>
               </div>
               <div className="bg-black/20 rounded p-2">
                 <div className="text-gray-500">Real anchored</div>
@@ -172,10 +183,10 @@ function SlotCard({ slot, data, onTrigger, triggering }: {
                   <div className="flex-1 h-1.5 bg-gray-800 rounded-full overflow-hidden">
                     <div
                       className={`h-full rounded-full ${s.color}`}
-                      style={{ width: `${(s.val / data.rows_generated * 100).toFixed(1)}%` }}
+                      style={{ width: `${data.rows_generated > 0 ? ((s.val || 0) / data.rows_generated * 100).toFixed(1) : '0'}%` }}
                     />
                   </div>
-                  <span className="font-mono text-gray-400 w-14 text-right">{s.val.toLocaleString()}</span>
+                  <span className="font-mono text-gray-400 w-14 text-right">{(s.val ?? 0).toLocaleString()}</span>
                 </div>
               ))}
             </div>
@@ -199,6 +210,7 @@ export default function PriceGenerationPage() {
   const [triggering, setTriggering] = useState<string | null>(null);
   const [showMissing, setShowMissing] = useState(false);
   const [triggerMsg, setTriggerMsg] = useState('');
+  const [triggerOk, setTriggerOk] = useState(true);
 
   const fetchData = useCallback(async () => {
     try {
@@ -226,9 +238,11 @@ export default function PriceGenerationPage() {
         body: JSON.stringify({ slot }),
       });
       const json = await res.json();
-      setTriggerMsg(json.message || (json.success ? 'Triggered' : json.error));
-      setTimeout(fetchData, 5000);
+      setTriggerOk(!!json.success);
+      setTriggerMsg(json.success ? (json.message || 'Triggered') : (json.error || 'Trigger failed'));
+      if (json.success) setTimeout(fetchData, 5000);
     } catch (e: any) {
+      setTriggerOk(false);
       setTriggerMsg(e.message);
     } finally {
       setTriggering(null);
@@ -252,7 +266,11 @@ export default function PriceGenerationPage() {
             </div>
             <h1 className="text-2xl font-bold text-white tracking-tight">Price Generation Monitor</h1>
           </div>
-          <p className="text-gray-500 text-sm ml-11">172,020 rows × 3 daily slots × 282 markets × 610 items</p>
+          <p className="text-gray-500 text-sm ml-11">
+            {EXPECTED_ROWS.toLocaleString()} rows × 3 daily slots
+            {data?.stats?.unique_markets ? ` × ${data.stats.unique_markets.toLocaleString()} markets` : ''}
+            {data?.stats?.unique_items ? ` × ${data.stats.unique_items.toLocaleString()} items` : ''}
+          </p>
         </div>
         <div className="flex items-center gap-3">
           <StatusBadge status={status} />
@@ -271,7 +289,11 @@ export default function PriceGenerationPage() {
       </div>
 
       {triggerMsg && (
-        <div className="p-3 bg-green-900/20 border border-green-700/30 rounded-lg text-green-400 text-sm">
+        <div className={`p-3 rounded-lg text-sm border ${
+          triggerOk
+            ? 'bg-green-900/20 border-green-700/30 text-green-400'
+            : 'bg-red-900/20 border-red-700/30 text-red-400'
+        }`}>
           {triggerMsg}
         </div>
       )}
@@ -284,9 +306,9 @@ export default function PriceGenerationPage() {
         {[
           { label: "Today's Rows", value: data?.today_slots?.reduce((a: number, s: SlotStatus) => a + s.rows_generated, 0)?.toLocaleString() || '0', icon: Database, color: 'text-blue-400' },
           { label: 'Slots Today', value: `${data?.today_slots?.length || 0}/3`, icon: Zap, color: data?.today_slots?.length === 3 ? 'text-emerald-400' : 'text-amber-400' },
-          { label: 'Summary Fresh', value: `${data?.summary_freshness?.minutes_stale || '?'}m ago`, icon: Clock, color: (data?.summary_freshness?.minutes_stale || 999) > 180 ? 'text-red-400' : 'text-emerald-400' },
+          { label: 'Summary Fresh', value: Number.isFinite(data?.summary_freshness?.minutes_stale) ? `${data.summary_freshness.minutes_stale}m ago` : '—', icon: Clock, color: (data?.summary_freshness?.minutes_stale ?? 999) > 180 ? 'text-red-400' : 'text-emerald-400' },
           { label: 'Markets', value: data?.stats?.unique_markets?.toLocaleString() || '—', icon: Globe, color: 'text-purple-400' },
-          { label: 'Avg Confidence', value: `${data?.stats?.avg_confidence_overall?.toFixed(1) || '—'}%`, icon: TrendingUp, color: 'text-green-400' },
+          { label: 'Avg Confidence', value: fmtPct(data?.stats?.avg_confidence_overall), icon: TrendingUp, color: 'text-green-400' },
         ].map(s => (
           <div key={s.label} className="bg-[#0f1623] border border-gray-800 rounded-lg p-4">
             <div className="flex items-center justify-between mb-2">
@@ -426,8 +448,8 @@ export default function PriceGenerationPage() {
                   <td className="px-4 py-2 text-gray-400">{m.state}</td>
                   <td className="px-4 py-2 text-center text-gray-300">{m.active_days}</td>
                   <td className="px-4 py-2 text-center text-gray-300">{m.items_tracked}</td>
-                  <td className="px-4 py-2 text-right font-mono text-blue-400">{m.avg_confidence?.toFixed(1)}%</td>
-                  <td className="px-4 py-2 text-right font-mono text-emerald-400">{m.real_anchor_pct?.toFixed(1)}%</td>
+                  <td className="px-4 py-2 text-right font-mono text-blue-400">{fmtPct(m.avg_confidence)}</td>
+                  <td className="px-4 py-2 text-right font-mono text-emerald-400">{fmtPct(m.real_anchor_pct)}</td>
                 </tr>
               ))}
             </tbody>

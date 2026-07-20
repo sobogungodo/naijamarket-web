@@ -6,7 +6,12 @@ export const maxDuration = 30;
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
-  const days = Math.min(14, parseInt(searchParams.get('days') || '7'));
+  // Clamp to the range the UI offers. parseInt can yield NaN on junk input,
+  // which would interpolate into `SELECT TOP NaN` and fail — fall back to 7.
+  const requestedDays = parseInt(searchParams.get('days') || '7', 10);
+  const days = Number.isFinite(requestedDays)
+    ? Math.min(30, Math.max(1, requestedDays))
+    : 7;
 
   try {
     // 1. Read last N days from cache — sub-millisecond, no scan
@@ -91,14 +96,28 @@ export async function GET(request: NextRequest) {
       `),
     ]);
 
-    // 4. Missing slots — derived from cache
+    // 4. Missing slots — derived from cache. The UI shows which slots DID run,
+    //    so unpack slot_detail (already selected above) for that list.
     const missingSlots = history
       .filter((h: any) => h.slots_generated < 3)
-      .map((h: any) => ({
-        price_date: h.price_date,
-        slots_present: h.slots_generated,
-        slots_missing: 3 - h.slots_generated,
-      }));
+      .map((h: any) => {
+        let presentSlots = '';
+        if (h.slot_detail) {
+          try {
+            presentSlots = (JSON.parse(h.slot_detail) as any[])
+              .map(s => s.time_slot)
+              .filter(Boolean)
+              .sort()
+              .join(', ');
+          } catch { presentSlots = ''; }
+        }
+        return {
+          price_date: h.price_date,
+          slots_present: h.slots_generated,
+          slots_missing: 3 - h.slots_generated,
+          present_slots: presentSlots,
+        };
+      });
 
     // 5. Aggregate stats from cache
     const statsFromCache = history.reduce(
@@ -202,17 +221,39 @@ export async function POST(request: NextRequest) {
       '11:30': 'generate_midday_prices',
       '14:30': 'generate_afternoon_prices',
     };
-    const res = await fetch(`${funcUrl}/api/${slotMap[slot]}?code=${key}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ target_date: targetDate }),
-      signal: AbortSignal.timeout(10000),
-    }).catch(() => null);
+    let res: Response | null = null;
+    let fetchError = '';
+    try {
+      res = await fetch(`${funcUrl}/api/${slotMap[slot]}?code=${key}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ target_date: targetDate }),
+        signal: AbortSignal.timeout(10000),
+      });
+    } catch (e: any) {
+      fetchError = e?.name === 'TimeoutError' ? 'request timed out after 10s' : (e?.message || 'request failed');
+    }
+
+    // Don't claim success when the generation function never accepted the call —
+    // a silent "Triggered" here reads as a working pipeline when nothing ran.
+    if (!res) {
+      return NextResponse.json({
+        success: false,
+        error: `Could not reach generation function for ${slot}: ${fetchError}`,
+      }, { status: 502 });
+    }
+    if (!res.ok) {
+      const body = await res.text().catch(() => '');
+      return NextResponse.json({
+        success: false,
+        error: `Generation function returned ${res.status} for ${slot}${body ? `: ${body.slice(0, 300)}` : ''}`,
+      }, { status: 502 });
+    }
 
     return NextResponse.json({
       success: true,
       message: `Triggered ${slot} generation for ${targetDate}`,
-      function_responded: res?.ok ?? false,
+      function_responded: true,
     });
   } catch (error: any) {
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
