@@ -4,6 +4,26 @@ import { query } from '@/lib/db';
 export const revalidate = 60;
 export const maxDuration = 30;
 
+// The DB sits at 20 DTU outside its scale-up windows (07:10-11:10 and
+// 13:10-17:10 UTC), where these queries can take longer than this function is
+// allowed to live. lib/db.ts allows a request 60s — twice our maxDuration — so
+// without a bound of our own the platform kills the function mid-query and
+// serves an HTML error page. The client then fails on JSON.parse with a
+// message that says nothing useful. Bound each query below the function budget
+// so a slow DB surfaces as a real JSON error instead.
+const HISTORY_TIMEOUT_MS = 8000;
+const LIVE_TIMEOUT_MS = 7000;
+const FRESHNESS_TIMEOUT_MS = 7000;
+
+function withTimeout<T>(work: Promise<T>, ms: number, label: string): Promise<T> {
+  return Promise.race([
+    work,
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms)
+    ),
+  ]);
+}
+
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   // Clamp to the range the UI offers. parseInt can yield NaN on junk input,
@@ -13,9 +33,15 @@ export async function GET(request: NextRequest) {
     ? Math.min(30, Math.max(1, requestedDays))
     : 7;
 
+  // Parts of the response that could not be produced this request. Anything
+  // listed here is missing from the payload rather than silently zeroed, so the
+  // dashboard can say so instead of rendering an empty page that looks like a
+  // dead pipeline.
+  const degraded: string[] = [];
+
   try {
     // 1. Read last N days from cache — sub-millisecond, no scan
-    const history = await query<any>(`
+    const history = await withTimeout(query<any>(`
       SELECT TOP ${days}
         price_date,
         slots_generated,
@@ -32,7 +58,7 @@ export async function GET(request: NextRequest) {
         refreshed_at
       FROM dbo.Generation_Stats_Cache
       ORDER BY price_date DESC
-    `);
+    `), HISTORY_TIMEOUT_MS, 'generation history query');
 
     // 2. Today's slot detail — sourced LIVE from Daily_Prices so a stale
     //    generation cache never zeroes out the dashboard. price_date is stored
@@ -42,22 +68,31 @@ export async function GET(request: NextRequest) {
       new Date(h.price_date).toISOString().slice(0, 10) === today
     );
 
-    const todayLive = await query<any>(`
-      SELECT
-        time_slot,
-        MAX(time_slot_name) AS time_slot_name,
-        COUNT(*)            AS rows_generated,
-        MIN(generated_at)   AS started_at,
-        MAX(generated_at)   AS completed_at,
-        SUM(CASE WHEN data_source = 'REAL_ANCHORED' THEN 1 ELSE 0 END) AS real_anchored,
-        SUM(CASE WHEN data_source = 'SIM_TRACKED'   THEN 1 ELSE 0 END) AS sim_tracked,
-        SUM(CASE WHEN data_source = 'SIM_BASELINE'  THEN 1 ELSE 0 END) AS sim_baseline,
-        AVG(CAST(confidence_score AS FLOAT))                           AS avg_confidence
-      FROM dbo.Daily_Prices
-      WHERE price_date = CAST(DATEADD(HOUR, 1, GETUTCDATE()) AS DATE)
-      GROUP BY time_slot
-      ORDER BY time_slot
-    `);
+    // Daily_Prices is ~52M rows; this aggregate is the most expensive query
+    // here. If it can't finish in budget, fall through to the cached
+    // slot_detail below rather than failing the whole response.
+    let todayLive: any[] = [];
+    try {
+      todayLive = await withTimeout(query<any>(`
+        SELECT
+          time_slot,
+          MAX(time_slot_name) AS time_slot_name,
+          COUNT(*)            AS rows_generated,
+          MIN(generated_at)   AS started_at,
+          MAX(generated_at)   AS completed_at,
+          SUM(CASE WHEN data_source = 'REAL_ANCHORED' THEN 1 ELSE 0 END) AS real_anchored,
+          SUM(CASE WHEN data_source = 'SIM_TRACKED'   THEN 1 ELSE 0 END) AS sim_tracked,
+          SUM(CASE WHEN data_source = 'SIM_BASELINE'  THEN 1 ELSE 0 END) AS sim_baseline,
+          AVG(CAST(confidence_score AS FLOAT))                           AS avg_confidence
+        FROM dbo.Daily_Prices
+        WHERE price_date = CAST(DATEADD(HOUR, 1, GETUTCDATE()) AS DATE)
+        GROUP BY time_slot
+        ORDER BY time_slot
+      `), LIVE_TIMEOUT_MS, "today's live slot query");
+    } catch (e: any) {
+      console.error('[PriceGeneration API] live slot query failed:', e?.message);
+      degraded.push(`live slot detail (${e?.message || 'query failed'}) — showing cached values`);
+    }
     let todaySlots: any[] = todayLive.map((r: any) => ({
       time_slot: r.time_slot,
       time_slot_name: r.time_slot_name,
@@ -81,9 +116,11 @@ export async function GET(request: NextRequest) {
       try { topMarkets = JSON.parse(history[0].top_markets); } catch { topMarkets = []; }
     }
 
-    // 3. Summary freshness — lightweight, not Daily_Prices
-    const [summaryFreshness] = await Promise.all([
-      query<any>(`
+    // 3. Summary freshness. Not Daily_Prices, but the two COUNT(DISTINCT)s
+    //    still scan Latest_Prices_Summary, so bound it like the rest.
+    let summaryFreshness: any[] = [];
+    try {
+      summaryFreshness = await withTimeout(query<any>(`
         SELECT
           MAX(last_updated)  AS last_refreshed,
           MAX(price_date)    AS latest_price_date,
@@ -93,8 +130,11 @@ export async function GET(request: NextRequest) {
           COUNT(DISTINCT item_id)   AS items
         FROM dbo.Latest_Prices_Summary
         WHERE is_nbs_ref = 0 AND is_food = 1
-      `),
-    ]);
+      `), FRESHNESS_TIMEOUT_MS, 'summary freshness query');
+    } catch (e: any) {
+      console.error('[PriceGeneration API] freshness query failed:', e?.message);
+      degraded.push(`summary freshness (${e?.message || 'query failed'})`);
+    }
 
     // 4. Missing slots — derived from cache. The UI shows which slots DID run,
     //    so unpack slot_detail (already selected above) for that list.
@@ -140,7 +180,13 @@ export async function GET(request: NextRequest) {
 
     // 6. Pipeline health
     const expectedRows = 172020;
-    const staleMinutes = summaryFreshness[0]?.minutes_stale || 9999;
+    // Only a value we actually read counts as a staleness signal. Defaulting a
+    // failed query to 9999 would report the summary as stale by ~7 days when
+    // the truth is that we never managed to ask.
+    const staleMinutes: number | null =
+      typeof summaryFreshness[0]?.minutes_stale === 'number'
+        ? summaryFreshness[0].minutes_stale
+        : null;
     // Prefer LIVE today data (from Daily_Prices) over the possibly-stale cache.
     const todayLiveTotal = todaySlots.reduce((a: number, s: any) => a + (s.rows_generated || 0), 0);
     const todayData = todaySlots.length > 0
@@ -150,7 +196,15 @@ export async function GET(request: NextRequest) {
     let pipelineStatus: 'healthy' | 'degraded' | 'critical' | 'unknown' = 'unknown';
     let statusReason = '';
 
-    if (!todayData || todayData.total_rows === 0) {
+    // "We couldn't read it" is not the same as "the pipeline produced nothing".
+    // Reporting CRITICAL on a timed-out query sends people hunting a dead
+    // pipeline that is actually fine.
+    const todayUnknown = !todayData && degraded.length > 0;
+
+    if (todayUnknown) {
+      pipelineStatus = 'unknown';
+      statusReason = 'Could not read today\'s generation data — see warnings';
+    } else if (!todayData || todayData.total_rows === 0) {
       pipelineStatus = 'critical';
       statusReason = 'No generation data for today';
     } else if (todayData.slots_generated < 3) {
@@ -159,9 +213,12 @@ export async function GET(request: NextRequest) {
     } else if (todayData.total_rows < expectedRows * 0.9) {
       pipelineStatus = 'degraded';
       statusReason = `Row count below expected (${todayData.total_rows.toLocaleString()} vs ${expectedRows.toLocaleString()})`;
-    } else if (staleMinutes > 120) {
+    } else if (staleMinutes !== null && staleMinutes > 120) {
       pipelineStatus = 'degraded';
       statusReason = `Latest_Prices_Summary stale by ${staleMinutes} minutes`;
+    } else if (staleMinutes === null) {
+      pipelineStatus = 'degraded';
+      statusReason = 'All slots generated; summary freshness unavailable';
     } else {
       pipelineStatus = 'healthy';
       statusReason = 'All slots generated, summary fresh';
@@ -195,13 +252,23 @@ export async function GET(request: NextRequest) {
         expected_rows_per_slot: expectedRows,
         expected_slots_per_day: 3,
         cache_refreshed_at: todayCache?.refreshed_at || null,
+        degraded,
       },
       timestamp: new Date().toISOString(),
     });
 
   } catch (error: any) {
     console.error('[PriceGeneration API]', error);
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    // The history read is the one query we can't do without. Return a real
+    // JSON body so the client shows the reason rather than choking on an HTML
+    // platform error page.
+    return NextResponse.json(
+      {
+        success: false,
+        error: `Could not load generation stats: ${error?.message || 'unknown error'}`,
+      },
+      { status: 503 }
+    );
   }
 }
 

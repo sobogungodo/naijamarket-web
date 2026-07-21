@@ -215,9 +215,33 @@ export default function PriceGenerationPage() {
   const fetchData = useCallback(async () => {
     try {
       const res = await fetch(`/api/price-generation?days=${days}`);
-      const json = await res.json();
-      if (!json.success) throw new Error(json.error);
+
+      // Don't call res.json() blind. When the platform kills the function
+      // (the DB runs at 20 DTU outside its scale-up windows and these queries
+      // can outlive the 30s function budget) the body is an HTML error page,
+      // and res.json() then reports "JSON.parse: unexpected character at line 1
+      // column 1" — which tells nobody anything. Read the text and say what
+      // actually happened.
+      const raw = await res.text();
+      let json: any;
+      try {
+        json = JSON.parse(raw);
+      } catch {
+        const looksLikeHtml = raw.trimStart().startsWith('<');
+        throw new Error(
+          looksLikeHtml || !raw
+            ? `Server returned ${res.status} ${res.statusText || ''} instead of data. `
+              + `This usually means the request timed out — the database is scaled down `
+              + `outside 07:10-11:10 and 13:10-17:10 UTC. Try again shortly.`
+            : `Unreadable response (${res.status}): ${raw.slice(0, 200)}`
+        );
+      }
+
+      if (!json.success) {
+        throw new Error(json.error || `Request failed (${res.status})`);
+      }
       setData(json.data);
+      setError('');
     } catch (e: any) {
       setError(e.message);
     } finally {
@@ -299,6 +323,20 @@ export default function PriceGenerationPage() {
       )}
       {error && (
         <div className="p-3 bg-red-900/20 border border-red-700/30 rounded-lg text-red-400 text-sm">{error}</div>
+      )}
+
+      {/* Parts the API couldn't read this time. Without this the page renders
+          zeroes and reads as a dead pipeline when it's really a slow query. */}
+      {(data?.degraded?.length || 0) > 0 && (
+        <div className="p-3 bg-amber-900/20 border border-amber-700/30 rounded-lg text-amber-400 text-sm">
+          <div className="flex items-center gap-2 font-bold mb-1">
+            <AlertTriangle className="w-4 h-4" />
+            Partial data — some values could not be read
+          </div>
+          <ul className="list-disc ml-6 space-y-0.5">
+            {data.degraded.map((d: string, i: number) => <li key={i}>{d}</li>)}
+          </ul>
+        </div>
       )}
 
       {/* Status bar */}
