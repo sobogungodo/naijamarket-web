@@ -74,7 +74,9 @@ export default function PriceHistoryModal({
   state,
   category,
 }: PriceHistoryModalProps) {
-  const [period, setPeriod] = useState<"7d" | "30d" | "90d">("30d");
+  const [period, setPeriod] = useState<"1y" | "3y" | "5y" | "10y" | "all">(
+    "1y"
+  );
   const [data, setData] = useState<PriceHistoryPoint[]>([]);
   const [statistics, setStatistics] = useState<PriceStatistics | null>(null);
   const [loading, setLoading] = useState(false);
@@ -151,12 +153,18 @@ export default function PriceHistoryModal({
     return "\u20A6" + value.toLocaleString();
   };
 
-  // Format date for chart
+  // Format date for chart.
+  // PHN data is monthly (observation_date is always day-01), so the day part is
+  // always "1" and carries no information. Long ranges need the year, or every
+  // label repeats identically across a decade.
   const formatChartDate = (dateStr: string): string => {
     const date = new Date(dateStr);
+    if (period === "5y" || period === "10y" || period === "all") {
+      return date.toLocaleDateString("en-NG", { year: "numeric" });
+    }
     return date.toLocaleDateString("en-NG", {
       month: "short",
-      day: "numeric",
+      year: "2-digit",
     });
   };
 
@@ -262,7 +270,7 @@ export default function PriceHistoryModal({
               Historical Price Data
             </h3>
             <div className="flex gap-1 bg-gray-800/50 rounded-lg p-1">
-              {(["7d", "30d", "90d"] as const).map((p) => (
+              {(["1y", "3y", "5y", "10y", "all"] as const).map((p) => (
                 <button
                   key={p}
                   onClick={() => setPeriod(p)}
@@ -405,6 +413,8 @@ export default function PriceHistoryModal({
                       tick={{ fill: "#888", fontSize: 12 }}
                       axisLine={{ stroke: "#333" }}
                       tickLine={{ stroke: "#333" }}
+                      minTickGap={40}
+                      interval="preserveStartEnd"
                     />
                     <YAxis
                       tickFormatter={formatPrice}
@@ -441,6 +451,16 @@ export default function PriceHistoryModal({
                 <span className="font-mono">Bloomberg: HP &lt;GO&gt;</span>
               </div>
             </>
+          )}
+
+          {/* Empty State */}
+          {!loading && !error && data.length === 0 && (
+            <div className="flex flex-col items-center justify-center py-20">
+              <BarChart3 className="w-10 h-10 text-gray-600 mb-4" />
+              <p className="text-gray-400">
+                No historical data for this item and market.
+              </p>
+            </div>
           )}
         </div>
       </div>
