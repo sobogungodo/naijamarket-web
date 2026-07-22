@@ -167,6 +167,20 @@ export async function GET(request: NextRequest) {
     );
   }
 
+  // TEMPORARY GATE (2026-07-22): PHN history withdrawn from all callers.
+  // Synthetic 2016-2019 backfill + 2026 forecast contradict published NBS data.
+  // Serving it on this unauthenticated public route is a false claim. REVERT: delete this block.
+  return NextResponse.json({
+    success: true,
+    item,
+    market,
+    period,
+    data: [],
+    statistics: null,
+    source: "none",
+    note: undefined,
+  });
+
   const months = getMonthsFromPeriod(period);
 
   console.log(`\n📈 History v7: ${item} @ ${market} (${period})`);
