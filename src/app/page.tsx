@@ -1467,12 +1467,12 @@ html { scroll-behavior: smooth; }
 .nm-trust-dot-amber { background: #FFB300; animation: nm-pulse 2.5s infinite; }
 
 /* ── Sections ── */
-.nm-section { padding: 52px 16px; }
+.nm-section { padding: 34px 16px; }
 .nm-section-accent {
   background: linear-gradient(180deg, transparent, rgba(0, 200, 83, 0.012), transparent);
 }
 .nm-section-inner { max-width: 1280px; margin: 0 auto; }
-.nm-section-header { text-align: center; margin-bottom: 48px; }
+.nm-section-header { text-align: center; margin-bottom: 26px; }
 .nm-section-tag {
   font-size: 11px;
   font-weight: 700;
@@ -1860,7 +1860,7 @@ html { scroll-behavior: smooth; }
   .nm-hero-copy { flex: 1; }
   .nm-hero-demo { flex: 1; max-width: 500px; }
 
-  .nm-section { padding: 72px 40px; }
+  .nm-section { padding: 44px 40px; }
   .nm-features-grid { grid-template-columns: repeat(3, 1fr); }
 
   .nm-step-connector {
