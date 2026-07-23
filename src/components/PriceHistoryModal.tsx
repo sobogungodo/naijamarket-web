@@ -198,21 +198,20 @@ export default function PriceHistoryModal({
   // Don't render if not open
   if (!isOpen) return null;
 
-  // Format price for axis
-  const formatPrice = (value: number): string => {
-    if (value >= 1000000) {
-      return "\u20A6" + (value / 1000000).toFixed(1) + "M";
-    }
-    if (value >= 1000) {
-      return "\u20A6" + (value / 1000).toFixed(0) + "K";
-    }
-    return "\u20A6" + value.toLocaleString();
-  };
-
-  // Format full price
-  const formatFullPrice = (value: number): string => {
-    return "\u20A6" + value.toLocaleString();
-  };
+  // Full naira with thousands separators, everywhere.
+  //
+  // The previous version abbreviated anything over 1,000 as
+  // "\u20A6" + (value / 1000).toFixed(0) + "K", which rounded distinct prices
+  // onto the same label: 1,795 and 2,342 BOTH rendered as "\u20A62K". That made
+  // the four stat cards (current / high / low / average) look identical and
+  // collapsed the Y-axis to a couple of repeated ticks. Food prices here sit in
+  // the hundreds-to-low-thousands, so the abbreviation destroyed exactly the
+  // resolution that matters.
+  //
+  // Locale is pinned to en-NG rather than left to the runtime default, so the
+  // separator does not vary between environments.
+  const formatPrice = (value: number): string =>
+    "\u20A6" + Math.round(value).toLocaleString("en-NG", { maximumFractionDigits: 0 });
 
   // Format date for chart.
   // PHN data is monthly (observation_date is always day-01), so the day part is
@@ -257,7 +256,7 @@ export default function PriceHistoryModal({
         <div className="bg-[#1a1a1a] border border-gray-700 rounded-lg p-3 shadow-xl">
           {place && <p className="text-gray-500 text-xs mb-1">{place}</p>}
           <p className="text-white font-bold text-lg">
-            {formatFullPrice(priceValue)}
+            {formatPrice(priceValue)}
             <span className="text-gray-400 font-normal text-sm">
               {" · "}
               {when}
@@ -525,7 +524,9 @@ export default function PriceHistoryModal({
                       tick={{ fill: "#888", fontSize: 12 }}
                       axisLine={{ stroke: "#333" }}
                       tickLine={{ stroke: "#333" }}
-                      width={70}
+                      // 70 fitted the old "₦2K"; unabbreviated labels such as
+                      // "₦2,342" need the extra room or Recharts clips them.
+                      width={88}
                     />
                     <Tooltip content={<CustomTooltip />} />
                     <Area
