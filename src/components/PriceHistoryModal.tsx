@@ -36,6 +36,61 @@ interface PriceHistoryPoint {
   price: number;
   trend: string;
   source: string;
+  // PHN v2 provenance. All optional: the gated response returns data: [] with
+  // none of these, and older cached payloads will not carry them either.
+  temporal_source?: string;   // NBS_ANCHOR | NBS_INTERP | NBS_PROXY
+  spatial_source?: string;    // NBS_STATE_BOUND | MODELED_STATE[_CLAMPED|_UNBOUNDED]
+  state?: string;
+  zone?: string;
+}
+
+// Series-level counts from the route. Field names match the API exactly
+// (snake_case, printed_both_pct) — see src/app/api/prices/history/route.ts.
+interface ProvenanceSummary {
+  printed_both: number;
+  printed_month: number;
+  printed_state: number;
+  modeled: number;
+  total: number;
+  printed_both_pct: number;
+}
+
+interface ProvenanceTier {
+  label: string;
+  glyph: string;
+  className: string;
+}
+
+// SPATIAL TAKES PRECEDENCE. NBS_STATE_BOUND means NBS printed a figure for this
+// state in this month, so it is a published number whatever the national layer
+// did — including the 2 rows that are NBS_STATE_BOUND inside an NBS_INTERP
+// month. Testing temporal first (as the original spec did) labelled those
+// "Estimated between NBS months", which under-claims a real published figure.
+//
+// Returns null when provenance is absent, so the gated response renders with no
+// badge rather than an empty one.
+function getProvenanceTier(
+  temporal?: string,
+  spatial?: string
+): ProvenanceTier | null {
+  if (!temporal) return null;
+  if (spatial === "NBS_STATE_BOUND") {
+    return { label: "NBS published", glyph: "●", className: "text-emerald-400" };
+  }
+  if (temporal === "NBS_ANCHOR") {
+    return {
+      label: "NBS month · state estimated",
+      glyph: "◐",
+      className: "text-amber-400",
+    };
+  }
+  if (temporal === "NBS_INTERP") {
+    return { label: "Estimated between NBS months", glyph: "○", className: "text-gray-400" };
+  }
+  if (temporal === "NBS_PROXY") {
+    return { label: "Trended from related item", glyph: "○", className: "text-blue-400" };
+  }
+  return null;
 }
 
 interface PriceStatistics {
@@ -79,6 +134,9 @@ export default function PriceHistoryModal({
   );
   const [data, setData] = useState<PriceHistoryPoint[]>([]);
   const [statistics, setStatistics] = useState<PriceStatistics | null>(null);
+  // null whenever the route omits the block — which is exactly the gated
+  // response, so every provenance affordance below stays hidden while gated.
+  const [provenance, setProvenance] = useState<ProvenanceSummary | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -102,12 +160,15 @@ export default function PriceHistoryModal({
       if (result.success && result.data) {
         setData(result.data);
         setStatistics(result.statistics);
+        setProvenance(result.provenance ?? null);
       } else {
         setError(result.error || "Failed to load price history");
+        setProvenance(null);
       }
     } catch (err) {
       console.error("Error fetching price history:", err);
       setError("Failed to load data. Please try again.");
+      setProvenance(null);
     } finally {
       setLoading(false);
     }
@@ -168,31 +229,47 @@ export default function PriceHistoryModal({
     });
   };
 
-  // Custom tooltip component
+  // Custom tooltip component.
+  // payload[0].payload is the full datum — the previous signature typed payload
+  // as Array<{ value: number }>, which discarded it and made per-point
+  // provenance unreachable.
   const CustomTooltip = ({
     active,
     payload,
     label,
   }: {
     active?: boolean;
-    payload?: Array<{ value: number }>;
+    payload?: Array<{ value: number; payload: PriceHistoryPoint }>;
     label?: string;
   }) => {
     if (active && payload && payload.length > 0 && payload[0] && label) {
       const priceValue = payload[0].value;
+      const point = payload[0].payload;
+      const tier = getProvenanceTier(point?.temporal_source, point?.spatial_source);
+      // PHN is monthly — the day part is always 1, so it is left out here.
+      const when = new Date(label).toLocaleDateString("en-NG", {
+        month: "short",
+        year: "numeric",
+      });
+      const place = [market, point?.state].filter(Boolean).join(" · ");
+
       return (
         <div className="bg-[#1a1a1a] border border-gray-700 rounded-lg p-3 shadow-xl">
-          <p className="text-gray-400 text-xs mb-1">
-            {new Date(label).toLocaleDateString("en-NG", {
-              weekday: "short",
-              month: "short",
-              day: "numeric",
-              year: "numeric",
-            })}
-          </p>
+          {place && <p className="text-gray-500 text-xs mb-1">{place}</p>}
           <p className="text-white font-bold text-lg">
             {formatFullPrice(priceValue)}
+            <span className="text-gray-400 font-normal text-sm">
+              {" · "}
+              {when}
+            </span>
           </p>
+          {/* No provenance on the gated response — render price + date only. */}
+          {tier && (
+            <p className={"flex items-center gap-1.5 text-xs mt-1.5 " + tier.className}>
+              <span aria-hidden="true">{tier.glyph}</span>
+              <span>{tier.label}</span>
+            </p>
+          )}
         </div>
       );
     }
@@ -209,6 +286,32 @@ export default function PriceHistoryModal({
   // Get chart color based on trend
   const chartColor =
     statistics && statistics.changePercent >= 0 ? "#ef4444" : "#10b981";
+
+  // ── Derived provenance affordances ──────────────────────────────────────
+  // Each is inert unless the route supplied the data, so the gated response
+  // (data: [], no provenance) renders exactly as it did before this change.
+
+  // ISO YYYY-MM-DD sorts lexically, so min/max need no Date parsing.
+  const earliestDate = data.reduce<string | null>(
+    (min, p) => (p.date && (min === null || p.date < min) ? p.date : min),
+    null
+  );
+  const latestDate = data.reduce<string | null>(
+    (max, p) => (p.date && (max === null || p.date > max) ? p.date : max),
+    null
+  );
+
+  const seriesState = data.find((p) => p.state)?.state ?? null;
+
+  // NBS published no state or zone breakdown before 2022-06.
+  const showPre2022Note = earliestDate !== null && earliestDate < "2022-06-01";
+
+  // The Tier-3 five stop at 2024-12; NBS stopped publishing them.
+  const showDiscontinuedNote = latestDate === "2024-12-01";
+
+  // ITM01018 is deliberately absent from PHN v2 — NBS prices it per unit, which
+  // will not convert to the per-kg basis the rest of the series uses.
+  const isExcludedItem = item === "Chicken - Frozen (per kg)";
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -443,6 +546,31 @@ export default function PriceHistoryModal({
                 </ResponsiveContainer>
               </div>
 
+              {/* Series-level provenance. Omitted entirely when the route did
+                  not send the block (i.e. while the gate is on). */}
+              {provenance && provenance.total > 0 && (
+                <p className="mt-3 text-xs text-gray-500 leading-relaxed">
+                  Data provenance: {provenance.printed_both} of {provenance.total}{" "}
+                  months are published NBS figures
+                  {seriesState ? ` for ${seriesState}` : ""}. The remainder are
+                  estimated from published national and regional data.
+                </p>
+              )}
+
+              {showPre2022Note && (
+                <p className="mt-2 text-xs text-gray-600 leading-relaxed">
+                  Before 2022, NBS did not publish state or regional breakdowns.
+                  Regional lines converge in this period because the data does
+                  not exist — not because prices were uniform.
+                </p>
+              )}
+
+              {showDiscontinuedNote && (
+                <p className="mt-2 text-xs text-amber-500/80 leading-relaxed">
+                  NBS discontinued publishing this item after December 2024.
+                </p>
+              )}
+
               {/* Footer Info */}
               <div className="mt-4 flex items-center justify-between text-xs text-gray-500">
                 <span>
@@ -450,16 +578,31 @@ export default function PriceHistoryModal({
                 </span>
                 <span className="font-mono">Bloomberg: HP &lt;GO&gt;</span>
               </div>
+              <p className="mt-2 text-xs text-gray-600 leading-relaxed">
+                Prices are anchored to National Bureau of Statistics published
+                figures (2018–2026). Every point is labelled by source.
+              </p>
             </>
           )}
 
-          {/* Empty State */}
+          {/* Empty State.
+              The excluded-item wording is shown ONLY when the route sent a
+              provenance block, i.e. when the gate is off. While gated,
+              provenance is null and this falls through to the original generic
+              message, byte-for-byte unchanged. */}
           {!loading && !error && data.length === 0 && (
             <div className="flex flex-col items-center justify-center py-20">
               <BarChart3 className="w-10 h-10 text-gray-600 mb-4" />
-              <p className="text-gray-400">
-                No historical data for this item and market.
-              </p>
+              {provenance && isExcludedItem ? (
+                <p className="text-gray-400 text-center max-w-sm leading-relaxed">
+                  No history available. NBS prices this item by unit, which
+                  cannot be converted to a per-kg series.
+                </p>
+              ) : (
+                <p className="text-gray-400">
+                  No historical data for this item and market.
+                </p>
+              )}
             </div>
           )}
         </div>
