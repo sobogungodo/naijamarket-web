@@ -1,13 +1,26 @@
 // ============================================================================
 // src/app/api/prices/history/route.ts
 // NaijaMarket Intel - Price History API
-// Version: 7.0.0 - OPTIMIZED for 143M+ row database
+// Version: 8.0.0 - reads the NBS-anchored PHN v2 rebuild
 // ============================================================================
-// FIXES from v6.0:
-//   1. Singleton PrismaClient (was creating new instance per request)
-//   2. Exact match (=) instead of LIKE for item_name/market_name
-//   3. Skip Google Sheets when database returns data
-//   4. Added timeout protection (10 second limit)
+// SOURCE OF TRUTH: the PHN v2 layers, 170,192 rows in total —
+//   Price_History_NBS_v2_national     3,868
+//   Price_History_NBS_v2_zone        23,208
+//   Price_History_NBS_v2_state      143,116   <- this route reads the state layer
+// The v7 header claimed "OPTIMIZED for 143M+ row database". That was wrong by a
+// factor of 1,000: 143,116 is the state layer's row count, not 143 million.
+//
+// CHANGES from v7.0:
+//   1. Reads Price_History_NBS_v2_state. Price_History_NBS (v1) is the
+//      fabricated series and is no longer referenced by this route at all.
+//   2. market NAME -> state resolves through dbo.Markets (226 markets covering
+//      all six zones) instead of v1's 50 markets, which left NORTH EAST and
+//      SOUTH SOUTH with no markets at all.
+//   3. Every point carries TWO provenance dimensions — temporal (was this month
+//      a printed NBS figure?) and spatial (is this state's value a printed
+//      bound?). Only ~4% of v2 rows are printed in both. Never render as
+//      observation without the badge.
+//   4. The withdrawal gate is now the PHN_V2_ENABLED env flag, fail-closed.
 // ============================================================================
 
 import { NextRequest, NextResponse } from "next/server";
@@ -20,7 +33,27 @@ interface PriceHistoryPoint {
   date: string;
   price: number;
   trend: string;
+  /** "PHNv2:<temporal>/<spatial>" — kept as the existing single-string field. */
   source: string;
+  /** National-layer provenance for this month: NBS_ANCHOR | NBS_INTERP | NBS_PROXY */
+  temporal_source: string;
+  /** State-layer provenance: NBS_STATE_BOUND | MODELED_STATE[_CLAMPED|_UNBOUNDED] */
+  spatial_source: string;
+  state: string;
+  zone: string;
+}
+
+/** Only NBS_ANCHOR + NBS_STATE_BOUND is a figure NBS actually printed for this
+ *  state in this month. Everything else is modelled to some degree. */
+type ProvenanceClass = "printed_both" | "printed_month" | "printed_state" | "modeled";
+
+interface ProvenanceSummary {
+  printed_both: number;
+  printed_month: number;
+  printed_state: number;
+  modeled: number;
+  total: number;
+  printed_both_pct: number;
 }
 
 interface PriceStatistics {
@@ -73,12 +106,56 @@ function getMonthsFromPeriod(period: string): number {
   }
 }
 
+function classifyProvenance(temporal: string, spatial: string): ProvenanceClass {
+  const monthPrinted = temporal === "NBS_ANCHOR";
+  const statePrinted = spatial === "NBS_STATE_BOUND";
+  if (monthPrinted && statePrinted) return "printed_both";
+  if (monthPrinted) return "printed_month";
+  if (statePrinted) return "printed_state";
+  return "modeled";
+}
+
+function summariseProvenance(history: PriceHistoryPoint[]): ProvenanceSummary {
+  const s: ProvenanceSummary = {
+    printed_both: 0, printed_month: 0, printed_state: 0, modeled: 0,
+    total: history.length, printed_both_pct: 0,
+  };
+  for (const p of history) {
+    s[classifyProvenance(p.temporal_source, p.spatial_source)]++;
+  }
+  s.printed_both_pct = s.total > 0
+    ? Number(((s.printed_both / s.total) * 100).toFixed(1))
+    : 0;
+  return s;
+}
+
 // ============================================================================
-// PRIMARY: FETCH FROM DATABASE (OPTIMIZED)
+// PRIMARY: FETCH FROM PHN v2 (state layer)
 // ============================================================================
-// Key optimization: uses EXACT MATCH (=) instead of LIKE
-// The modal sends the full item_name and market_name, so no wildcard needed
-// With IX_DailyPrices_ItemMarketDate index → instant seek on 143M rows
+// Resolution:
+//   market NAME -> state   via dbo.Markets, DISTINCT. Two market names map to
+//                          more than one market_id ("Kurmi Market" -> 2 ids,
+//                          both Kano; "Wuse Market" -> 2 ids, both FCT), so
+//                          without DISTINCT those series would double. No
+//                          market name resolves to more than one STATE.
+//   item NAME   -> item_id via v2_national, DISTINCT. An item absent from v2
+//                          (ITM01018 "Chicken - Frozen (per kg)") resolves to
+//                          nothing and the series is honestly empty.
+//
+// Access path: PK_PHN_v2_state (item_id, observation_month, state_name,
+// segment) — seek on the item_id + observation_month prefix, at most
+// 96 months x 37 states = 3,552 rows per item, state_name as a residual
+// predicate. dbo.Markets is a 226-row scan (its PK is market_id, not
+// market_name); free at that size. The v7 comment here cited
+// IX_DailyPrices_ItemMarketDate, which is an index on Daily_Prices and never
+// applied to this query at all.
+//
+// No GROUP BY / AVG: v2_state holds exactly one row per
+// (item, month, state, segment). v1 needed the average only because it carried
+// several market rows per state-month.
+//
+// The join to v2_national is segment-exact — ITM01010 is split SEG_A/SEG_B at
+// the 2025-01 rebase, and joining on (item, month) alone would fan out.
 // ============================================================================
 
 async function fetchFromDatabase(
@@ -89,31 +166,55 @@ async function fetchFromDatabase(
   try {
     const prisma = await getPrisma();
 
-    // Price_History_NBS is the single source: monthly (observation_date is
-    // always day-01) and spans 2016-01 -> 2026-07.
     const results = await prisma.$queryRaw`
+      WITH mkt AS (
+        SELECT DISTINCT m.state AS state_name
+          FROM dbo.Markets m
+         WHERE m.market_name = ${market}
+      ),
+      itm AS (
+        SELECT DISTINCT n.item_id
+          FROM dbo.Price_History_NBS_v2_national n
+         WHERE n.item_name_standard = ${item}
+      )
       SELECT
-        CONVERT(VARCHAR(10), observation_date, 23) AS date,
-        AVG(CAST(price_naira AS FLOAT))            AS price,
-        MIN(data_source)                           AS data_source
-      FROM Price_History_NBS WITH (NOLOCK)
-      WHERE item_name_standard = ${item}
-        AND market_name        = ${market}
-        AND price_naira > 0
-        AND (${months} = 0 OR observation_date >= DATEADD(month, -${months},
+        CONVERT(VARCHAR(10), s.observation_month, 23) AS [date],
+        CAST(s.price_naira AS FLOAT)                  AS price,
+        s.state_name                                  AS state_name,
+        s.zone_name                                   AS zone_name,
+        n.data_source                                 AS temporal_source,
+        s.data_source                                 AS spatial_source
+      FROM dbo.Price_History_NBS_v2_state s
+      JOIN itm i ON i.item_id = s.item_id
+      JOIN mkt k ON k.state_name = s.state_name
+      JOIN dbo.Price_History_NBS_v2_national n
+        ON n.item_id           = s.item_id
+       AND n.observation_month = s.observation_month
+       AND n.segment           = s.segment
+      WHERE (${months} = 0 OR s.observation_month >= DATEADD(month, -${months},
               DATEFROMPARTS(YEAR(GETUTCDATE()), MONTH(GETUTCDATE()), 1)))
-      GROUP BY observation_date
-      ORDER BY observation_date ASC
-    ` as Array<{ date: string; price: number; data_source: string }>;
+      ORDER BY s.observation_month ASC
+    ` as Array<{
+      date: string;
+      price: number;
+      state_name: string;
+      zone_name: string;
+      temporal_source: string;
+      spatial_source: string;
+    }>;
 
     return results.map((r) => ({
       date: String(r.date).substring(0, 10),
       price: Math.round(Number(r.price)),
       trend: "stable",
-      source: `PHN:${r.data_source}`,
+      source: `PHNv2:${r.temporal_source}/${r.spatial_source}`,
+      temporal_source: r.temporal_source,
+      spatial_source: r.spatial_source,
+      state: r.state_name,
+      zone: r.zone_name,
     }));
   } catch (error: any) {
-    console.error("PHN history error:", error.message?.substring(0, 200));
+    console.error("PHN v2 history error:", error.message?.substring(0, 200));
     return [];
   }
 }
@@ -167,27 +268,43 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  // TEMPORARY GATE (2026-07-22): PHN history withdrawn from all callers.
-  // Synthetic 2016-2019 backfill + 2026 forecast contradict published NBS data.
-  // Serving it on this unauthenticated public route is a false claim. REVERT: delete this block.
-  return NextResponse.json({
-    success: true,
-    item,
-    market,
-    period,
-    data: [],
-    statistics: null,
-    source: "none",
-    note: undefined,
-  });
+  // WITHDRAWAL GATE — an env flag now, not an unconditional return.
+  // FAIL-CLOSED: history is served only when PHN_V2_ENABLED is exactly "true".
+  // Absent, empty, or any other value keeps it withheld, so the safe state
+  // needs no deploy-time action. PHN_V2_ENABLED is NOT set in Vercel today,
+  // which means this route stays gated on merge.
+  //
+  // History was withdrawn 2026-07-22 because the v1 series (synthetic 2016-2019
+  // backfill + a 2026 forecast) contradicted published NBS data in level and in
+  // direction. The v2 rebuild above addresses that, but the flag stays off
+  // until the per-point provenance badge ships: only ~4% of v2 points are
+  // printed NBS figures in both dimensions, and the rest must not render as
+  // observation.
+  //
+  // The v7 comment here called this "this unauthenticated public route". That
+  // was inaccurate — src/middleware.ts lists /api/prices in
+  // PROTECTED_API_ROUTES, so unauthenticated callers already receive a 401.
+  //
+  // The payload below is byte-identical to the existing no-data shape.
+  if (process.env.PHN_V2_ENABLED !== "true") {
+    return NextResponse.json({
+      success: true,
+      item,
+      market,
+      period,
+      data: [],
+      statistics: null,
+      source: "none",
+      note: undefined,
+    });
+  }
 
   const months = getMonthsFromPeriod(period);
 
-  console.log(`\n📈 History v7: ${item} @ ${market} (${period})`);
+  console.log(`\n📈 History v8 (PHN v2): ${item} @ ${market} (${period})`);
 
-  // Fetch from database (primary & only source needed with 143M rows)
-  let history = await fetchFromDatabase(item, market, months);
-  let source = history.length > 0 ? "database" : "none";
+  const history = await fetchFromDatabase(item, market, months);
+  const source = history.length > 0 ? "phn_v2" : "none";
 
   // No fabricated fallback: an empty series renders an honest empty state.
 
@@ -201,9 +318,13 @@ export async function GET(request: NextRequest) {
   }
 
   const statistics = calculateStatistics(history);
+  const provenance = summariseProvenance(history);
   const responseTime = Date.now() - startTime;
 
-  console.log(`📊 ${history.length} points in ${responseTime}ms (${source})`);
+  console.log(
+    `📊 ${history.length} points in ${responseTime}ms (${source}) — ` +
+    `${provenance.printed_both}/${provenance.total} printed NBS`
+  );
 
   return NextResponse.json({
     success: true,
@@ -212,6 +333,9 @@ export async function GET(request: NextRequest) {
     period,
     data: history,
     statistics,
+    // Series-level counts for the disclosure legend. printed_both is the only
+    // class NBS actually printed for this state in this month.
+    provenance,
     source,
     responseTime: `${responseTime}ms`,
     note: source === "none"
