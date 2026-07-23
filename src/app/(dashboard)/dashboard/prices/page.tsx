@@ -30,6 +30,7 @@ import {
 import PriceHistoryModal from "@/components/PriceHistoryModal";
 import { FreshnessIndicator } from "@/components/FreshnessIndicator";
 import { PriceDisclaimer } from "@/components/PriceDisclaimer";
+import { isExcludedItemLabel } from "@/lib/phnV2Items";
 
 // ============================================================================
 // HELPERS
@@ -113,6 +114,11 @@ function PricesPageContent() {
 
   // NBS reference prices: item_name → national NBS avg price
   const [nbsRefs, setNbsRefs] = useState<Record<string, number>>({});
+
+  // Item names that resolve to a PHN v2 history series. Empty while the feature
+  // is gated (endpoint returns []), so no row advertises a chart. A non-empty
+  // set is the client's proxy for "feature on".
+  const [historyItems, setHistoryItems] = useState<Set<string>>(new Set());
 
   // Filter options from database
   const [filterOptions, setFilterOptions] = useState<FilterOptions>({
@@ -233,6 +239,17 @@ function PricesPageContent() {
       .then(r => r.json())
       .then(d => { if (d.refs) setNbsRefs(d.refs); })
       .catch(() => {/* non-blocking — NBS column simply won't show */});
+  }, []);
+
+  // Fetch, once, the set of item names that have a PHN v2 history series.
+  // FAIL-SAFE: any error leaves the set empty, so no row claims a chart it
+  // cannot deliver — better to hide a working affordance than to promise a
+  // broken one.
+  useEffect(() => {
+    fetch('/api/prices/history/items')
+      .then(r => r.json())
+      .then(d => { if (Array.isArray(d.items)) setHistoryItems(new Set<string>(d.items)); })
+      .catch(() => {/* non-blocking — chart affordance simply stays hidden */});
   }, []);
 
   // Sync URL params when navigating from other pages
@@ -688,11 +705,21 @@ function PricesPageContent() {
                     ? ((item.price_naira - nbsPrice) / nbsPrice) * 100
                     : null;
 
+                  // Only rows with a PHN v2 series (or an excluded item with a
+                  // dedicated empty state) get the chart affordance. historyItems
+                  // is empty while gated, so nothing is clickable then.
+                  const canChart =
+                    historyItems.size > 0 &&
+                    (historyItems.has(item.item_name) || isExcludedItemLabel(item.item_name));
+
                   return (
-                    <tr 
-                      key={item.id} 
-                      className="group cursor-pointer hover:bg-terminal-muted/40 transition-colors"
-                      onClick={() => handleRowClick(item)}
+                    <tr
+                      key={item.id}
+                      className={
+                        "group transition-colors hover:bg-terminal-muted/40" +
+                        (canChart ? " cursor-pointer" : "")
+                      }
+                      onClick={canChart ? () => handleRowClick(item) : undefined}
                     >
                       {/* Star */}
                       <td className="py-3 text-center">
@@ -704,9 +731,11 @@ function PricesPageContent() {
                       {/* Item Name */}
                       <td className="px-3 py-3">
                         <div className="flex items-center justify-center gap-2 min-w-0">
-                          <div className="shrink-0 p-1.5 bg-emerald-500/10 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity">
-                            <BarChart3 className="w-3.5 h-3.5 text-emerald-400" />
-                          </div>
+                          {canChart && (
+                            <div className="shrink-0 p-1.5 bg-emerald-500/10 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity">
+                              <BarChart3 className="w-3.5 h-3.5 text-emerald-400" />
+                            </div>
+                          )}
                           <div className="min-w-0 text-center">
                             <div className="font-medium text-sm text-white group-hover:text-naija-green transition-colors truncate" title={item.item_name}>{item.item_name}</div>
                             {item.item_variant && <div className="text-xs text-gray-500 truncate">{item.item_variant}</div>}

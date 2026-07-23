@@ -24,6 +24,7 @@
 // ============================================================================
 
 import { NextRequest, NextResponse } from "next/server";
+import { resolveV2ItemName } from "@/lib/phnV2Items";
 
 // ============================================================================
 // TYPE DEFINITIONS
@@ -301,9 +302,19 @@ export async function GET(request: NextRequest) {
 
   const months = getMonthsFromPeriod(period);
 
-  console.log(`\n📈 History v8 (PHN v2): ${item} @ ${market} (${period})`);
+  // Resolve the dashboard item name to a v2 item_name_standard. The 42 v2 names
+  // map to themselves; 37 hand-verified relabel aliases map to their canonical
+  // (e.g. "Beans - Brown (NBS per kg)" -> "Beans - Brown (per kg)"); everything
+  // else — including the two excluded frozen-chicken labels — resolves to null.
+  // A null resolution skips the query and yields an honest empty series, which
+  // the modal renders as the excluded-item state for the frozen-chicken labels.
+  const resolvedItem = resolveV2ItemName(item);
 
-  const history = await fetchFromDatabase(item, market, months);
+  console.log(`\n📈 History v8 (PHN v2): ${item} -> ${resolvedItem ?? "(no v2 match)"} @ ${market} (${period})`);
+
+  const history = resolvedItem
+    ? await fetchFromDatabase(resolvedItem, market, months)
+    : [];
   const source = history.length > 0 ? "phn_v2" : "none";
 
   // No fabricated fallback: an empty series renders an honest empty state.

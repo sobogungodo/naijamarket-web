@@ -26,6 +26,7 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from "recharts";
+import { isExcludedItemLabel } from "@/lib/phnV2Items";
 
 // ============================================================================
 // TYPE DEFINITIONS
@@ -309,8 +310,10 @@ export default function PriceHistoryModal({
   const showDiscontinuedNote = latestDate === "2024-12-01";
 
   // ITM01018 is deliberately absent from PHN v2 — NBS prices it per unit, which
-  // will not convert to the per-kg basis the rest of the series uses.
-  const isExcludedItem = item === "Chicken - Frozen (per kg)";
+  // will not convert to the per-kg basis the rest of the series uses. Both
+  // dashboard labels for it ("Chicken - Frozen (per kg)" and "Frozen Chicken
+  // (NBS per unit)") resolve to no series and keep this excluded-item state.
+  const isExcludedItem = isExcludedItemLabel(item);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
