@@ -92,15 +92,120 @@ def scan_pages(pdf, max_scan=45):
 
 _NUM_RE = re.compile(r"^-?\d[\d,]*(?:\.\d+)?$")
 
+# A Lowest/Highest state annotation such as "Yobe (41.05)" or bare "(2212.42)":
+# any text followed by a parenthesised PURE number. This distinguishes state
+# cells from label fragments that merely contain parentheses or units
+# ("(peak)", "(epiya)", "500g", "2kg)") -- those keep letters inside/around.
+_STATE_CELL_RE = re.compile(r"\([\d.,]+\)")
+
+# The NBS national table carries ~43 physical food rows (41 of which are the
+# tracked anchors). A healthy parse yields ~43; anything materially short means
+# rows were silently dropped (the worst failure mode) -> flag as INCOMPLETE.
+EXPECTED_MIN_ROWS = 40
+
+# Label-plausibility gate. A row whose label is truncated (unclosed '(' or a
+# trailing hyphen from a wrap) or that fails to match any known NBS commodity
+# label after normalisation is counted as an "unmatched label", SEPARATELY from
+# usable rows -- so a month with unrecoverable text-layer dropout announces
+# itself, e.g. "rows (43, usable=38, unmatched_labels=5)", instead of passing
+# the row-count gate. More than UNMATCHED_MAX unmatched labels -> INCOMPLETE.
+UNMATCHED_MAX = 2
+
+# Normalised roster of every NBS national-table commodity label seen across the
+# z_nbs_anchor vintages (81 raw spellings -> 67 normalised forms: comma/space
+# drift collapses, but Gari/Garri, unit changes 500g/450g/75cl and item-roster
+# changes remain), PLUS the two legit non-anchored rows every report prints
+# ('Agric eggs medium size' whole tray, 'Frozen chicken'). Used only to FLAG
+# truncated/unknown labels, never to filter data. Regenerate from
+#   SELECT DISTINCT nbs_label FROM dbo.z_nbs_anchor  (normalised via normalize_label)
+# if the roster changes.
+KNOWN_NBS_LABELS_NORM = frozenset({
+    'agriceggsmediumsize', 'agriceggsmediumsizepriceofone', 'agricheneggs',
+    'agricheneggsacrateof30pieces', 'beansbrown', 'beansbrownsoldloose',
+    'beanswhite', 'beanswhiteblackeyesoldloose', 'beefbonein', 'beefboneless',
+    'breadsliced450g', 'breadsliced500g', 'breadunsliced450g', 'breadunsliced500g',
+    'brokenriceofada', 'catfishdried', 'catfishobokunfresh', 'catfishsmoked',
+    'catfreshfish', 'chickenfeet', 'chickenwings', 'driedfishsardine',
+    'evaporatedtinnedmilkcarnation170g', 'evaporatedtinnedmilkpeak170g',
+    'frozenchicken', 'gariwhitesoldloose', 'gariyellowsoldloose', 'garriwhite',
+    'garriyellow', 'groundnutoil1bottle', 'groundnutoil1bottlespecifybottle',
+    'groundnutoil75cl', 'icedsardine', 'irishpotato', 'irishpotatoe',
+    'localricebroken', 'mackerelfrozen', 'maizecorngrainswhitesoldloose',
+    'maizegrainwhitesoldloose', 'maizegrainyellowsoldloose', 'mudfisharofresh',
+    'mudfishdried', 'onionbulb', 'onionsfresh', 'palmoil1bottlespecifybottle',
+    'palmoil75cl', 'plantainripe', 'plantainunripe', 'riceagricsoldloose',
+    'riceimportedhighqualitysoldloose', 'ricelocalshortgrained', 'ricelocalsoldloose',
+    'ricelonggrainedimported', 'ricemediumgrained', 'sweetpotato', 'sweetpotatoes',
+    'tilapiafishepiyafresh', 'tilapiafreshfishepiya', 'tinmilkevaporatedpeakmilk150g',
+    'titusfrozen', 'tomato', 'tomatoesfresh', 'vegetableoil1bottlespecifybottle',
+    'vegetableoil75cl', 'wheatflourprepacked2kg', 'wheatflourprepackedgoldenpenny2kg',
+    'yamtuber',
+})
+
 
 def is_number(s):
     return bool(_NUM_RE.match(s.strip()))
+
+
+def looks_like_state_cell(field):
+    """True for a Lowest/Highest state annotation like 'Yobe (41.05)'."""
+    return bool(_STATE_CELL_RE.search(field))
+
+
+def leading_numbers(rest):
+    """
+    The leading run of numeric fields from ``rest`` (the post-label fields).
+
+    Crucially, this also expands fields that pdftotext -table glued together
+    with a SINGLE space when two adjacent average columns render close, e.g.
+    the field '2,158.12 2,174.24' is split back into two numbers. Without this,
+    such a merged field is non-numeric, the leading numeric run stops at 1, the
+    row fails the ">=3 averages" test and is silently dropped (root cause of the
+    2023-09 8/9-row loss). Stops at the first field that is neither a number nor
+    a pure run of space-separated numbers (e.g. a state cell 'Edo (2644.9)').
+    """
+    nums = []
+    for fv in rest:
+        fv = fv.strip()
+        if is_number(fv):
+            nums.append(fv)
+            continue
+        parts = fv.split()
+        if len(parts) >= 2 and all(is_number(p) for p in parts):
+            nums.extend(parts)
+            continue
+        break
+    return nums
 
 
 def normalize_label(s):
     """Lowercase and strip everything that is not a-z/0-9 (spaces, punctuation,
     hyphens from line-wrap hyphenation, etc.)."""
     return re.sub(r"[^a-z0-9]", "", s.lower())
+
+
+def label_implausible(raw_label):
+    """
+    Return a short reason string if the row's label looks truncated or unknown,
+    else None. Three signals:
+      * 'open-paren'      -- an unclosed '(' (e.g. 'Wheat flour: prepacked (golden').
+                             A complete label balances its parens ('(peak)',
+                             '(golden penny 2kg)'), so only a wrap-truncated one trips.
+      * 'trailing-hyphen' -- ends with '-' (a hyphenated wrap, e.g. 'specify bot-').
+      * 'unmatched'       -- normalises to something absent from KNOWN_NBS_LABELS_NORM.
+                             Catches mid-word cuts with no structural marker, e.g.
+                             '...carnation' missing '170g', or '...sold' missing 'loose'.
+    """
+    s = raw_label.strip()
+    if not s:
+        return "empty"
+    if s.count("(") > s.count(")"):
+        return "open-paren"
+    if s.endswith("-"):
+        return "trailing-hyphen"
+    if normalize_label(s) not in KNOWN_NBS_LABELS_NORM:
+        return "unmatched"
+    return None
 
 
 def parse_price(s):
@@ -165,12 +270,24 @@ def detect_current_column(header_context, year, month):
 def parse_national_rows(page_text, header_idx, current_idx):
     """
     Parse the national table body. Returns list of dicts:
-       {raw_label, current_price, all_averages}
-    Multi-line labels are stitched via a pending-fragment accumulator.
+       {raw_label, current_price, averages}
+
+    Wrapped labels are stitched two ways:
+      * PRE  -- a bare label fragment on a line with no numbers, belonging to
+                the NEXT row (numbers are on the following line), e.g.
+                "Evaporated tinned milk carnation" + "170g  251.65 ...".
+                Accumulated in ``pending`` and prepended to the next data row.
+      * POST -- a label tail that belongs to the PREVIOUS data row, appearing
+                on the line AFTER it because that row's state cell wrapped. In
+                the compact "C1" layout Lowest/Highest come BEFORE MoM/YoY, so
+                a wrapped row leaves its tail plus the bled state cells on the
+                next line, e.g. "one)  Yobe (41.05)  Lagos (68)". We append the
+                label tail ("one)") to the previous row and DROP the state cells
+                (rather than letting them bleed into the next row's label).
     """
     lines = page_text.split("\n")
     rows = []
-    pending = []  # accumulated leading label fragments from prior lines
+    pending = []  # accumulated PRE label fragments from prior lines
 
     for raw in lines[header_idx + 1:]:
         raw = raw.rstrip("\n").rstrip()
@@ -194,14 +311,9 @@ def parse_national_rows(page_text, header_idx, current_idx):
         rest = fields[li:]
 
         # Leading run of numeric fields = the three averages (+MoM/YoY when they
-        # precede the state cells; the state cells like "Delta (N1321.86)" are
-        # non-numeric and terminate the run).
-        nums = []
-        for fv in rest:
-            if is_number(fv):
-                nums.append(fv)
-            else:
-                break
+        # precede the state cells). Single-space-merged average columns are
+        # expanded here so the run reaches 3 (see leading_numbers()).
+        nums = leading_numbers(rest)
 
         if len(nums) >= 3:
             # Data row.
@@ -214,15 +326,28 @@ def parse_national_rows(page_text, header_idx, current_idx):
                 "averages": [parse_price(a) for a in averages],
             })
             pending = []
-        else:
-            # Not a data row.
-            if leading_ws == 0 and label_fields and len(nums) == 0:
-                # Left-margin text with no numbers -> a wrapped label fragment
-                # continued on the next line (e.g. "Agric eggs(medium size
-                # price of" -> "one)").
-                pending.append(" ".join(label_fields))
-            # else: indented phantom (a wrapped state cell such as "Akwa Ibom"),
-            #       page number, etc. -> ignore; leave the accumulator intact.
+            continue
+
+        # ---- Not a data row: a wrapped-label continuation fragment. ----
+        if leading_ws != 0 or not label_fields:
+            # Indented overflow (a wrapped state name such as "Akwa Ibom"),
+            # page number, etc. -> ignore; leave the accumulators intact.
+            continue
+
+        # Separate the label tail (left, in the label column) from any bled
+        # state cells (Lowest/Highest annotations that wrapped onto this line).
+        frag_fields = [f for f in label_fields if not looks_like_state_cell(f)]
+        has_state = any(looks_like_state_cell(f) for f in fields)
+        tail = " ".join(frag_fields).strip()
+
+        if has_state and tail and rows:
+            # POST continuation: complete the PREVIOUS row's (possibly empty)
+            # label and discard the bled state cells.
+            rows[-1]["raw_label"] = (rows[-1]["raw_label"] + " " + tail).strip()
+        elif tail:
+            # PRE fragment: a bare label wrap belonging to the NEXT row.
+            pending.append(tail)
+        # else: nothing usable -> ignore, leave accumulators intact.
     return rows
 
 
@@ -230,32 +355,43 @@ def parse_national_rows(page_text, header_idx, current_idx):
 # zone appendix status
 # --------------------------------------------------------------------------- #
 
+_DECIMAL_RE = re.compile(r"\d[\d,]*\.\d+")
+
+
 def zone_status(pages, national_page):
     """
     Report the zone-appendix status:
-      table@pN   -- a zone table (6 geopolitical zones as columns) is
-                    text-extractable on page N.
+      table@pN   -- a zone DATA table (the 6 geopolitical zones as columns/
+                    sections, WITH a numeric price grid) is text-extractable on
+                    page N.
       image-only -- no extractable zone table, but there are near-empty
                     (image-only) pages in the zone/appendix region.
       absent     -- neither.
+
+    A page qualifies as the zone data table only if it carries BOTH a strong
+    zone signal (>=2 NORTH and >=2 SOUTH mentions -- the six zone names) AND an
+    actual numeric grid. The grid requirement is what rejects a table-of-
+    contents / summary page: those name the zones and even the word "APPENDIX"
+    but contain no price numbers (root cause of 2021-10 mis-selecting the p2
+    contents page over the real p15 zone table). The literal word "APPENDIX" is
+    only a weak hint now, never a requirement -- the real zone table
+    ("Selected Food Prices - All Zone") often omits it. Ties break toward the
+    page nearest the national table.
     """
-    zone_pages = []
+    def grid_count(text):
+        return len(_DECIMAL_RE.findall(text))
+
+    candidates = []
     for p in sorted(pages):
         up = pages[p].upper()
         strong_zone = up.count("NORTH") >= 2 and up.count("SOUTH") >= 2
-        if strong_zone and "APPENDIX" in up:
-            zone_pages.append(p)
-    if not zone_pages:
-        # secondary: strong zone signal without the literal APPENDIX word,
-        # near the national table (excludes the page-2 summary infographic)
-        for p in sorted(pages):
-            up = pages[p].upper()
-            if up.count("NORTH") >= 3 and up.count("SOUTH") >= 3 and abs(p - national_page) <= 3:
-                zone_pages.append(p)
-    if zone_pages:
-        # The real zone data table sits adjacent to the national table; a
-        # contents/summary page may also mention "APPENDIX" + zones far away.
-        best = min(zone_pages, key=lambda p: abs(p - national_page))
+        has_grid = grid_count(pages[p]) >= 10
+        if strong_zone and has_grid:
+            candidates.append(p)
+    if candidates:
+        # The real zone data table sits adjacent to the national table; prefer
+        # the nearest qualifying page, then earliest.
+        best = min(candidates, key=lambda p: (abs(p - national_page), p))
         return f"table@p{best}"
     near_empty = [p for p in pages if p > national_page and len(pages[p].strip()) < 40]
     if near_empty:
@@ -293,17 +429,31 @@ def extract(pdf_path, month_arg=None):
         return {
             "pdf": pdf_path, "year": year, "month": month,
             "national_page": None, "current_label": None, "current_matched": False,
-            "rows": [], "zone": zone_status(pages, 9999),
+            "rows": [], "row_count": 0, "usable_count": 0, "price_rows": 0,
+            "unmatched_count": 0, "unmatched_labels": [], "incomplete": True,
+            "zone": zone_status(pages, 9999),
             "error": "national header (MoM/YoY/Highest/Lowest) not found",
         }
     lines = nat_text.split("\n")
     header_context = " ".join(lines[max(0, hdr_idx - 2): hdr_idx + 1])
     current_idx, current_label, matched = detect_current_column(header_context, year, month)
     rows = parse_national_rows(nat_text, hdr_idx, current_idx)
+    # Gate 1 (row-count / silent-drop): rows that yielded a price. A short list
+    # means rows were dropped -- never return that quietly.
+    price_rows = sum(1 for r in rows if r["current_price"] is not None)
+    # Gate 2 (label plausibility): flag truncated/unknown labels SEPARATELY, so a
+    # text-layer dropout (prices present, labels cut) can't slip past the count.
+    unmatched = [(r["raw_label"], label_implausible(r["raw_label"])) for r in rows]
+    unmatched = [(lbl, why) for lbl, why in unmatched if why]
+    usable = sum(1 for r in rows
+                 if r["current_price"] is not None and not label_implausible(r["raw_label"]))
     return {
         "pdf": pdf_path, "year": year, "month": month,
         "national_page": nat_page, "current_label": current_label,
         "current_matched": matched, "rows": rows,
+        "row_count": len(rows), "usable_count": usable, "price_rows": price_rows,
+        "unmatched_count": len(unmatched), "unmatched_labels": unmatched,
+        "incomplete": price_rows < EXPECTED_MIN_ROWS or len(unmatched) > UNMATCHED_MAX,
         "zone": zone_status(pages, nat_page),
     }
 
@@ -357,7 +507,20 @@ def verify(targets_path, pdf_dir):
         print(f"  detected current-month column: {res['current_label']}"
               f"   (month-matched={res['current_matched']})")
         print(f"  zone status: {res['zone']}")
-        print(f"  extracted data rows: {len(res['rows'])}")
+        print(f"  extracted data rows: {len(res['rows'])}"
+              f"  (usable={res['usable_count']}, unmatched_labels={res['unmatched_count']})")
+        for lbl, why in res["unmatched_labels"]:
+            print(f"    [unmatched-label:{why}] {lbl!r}")
+
+        if res.get("incomplete"):
+            # Silent short lists / label dropout are the worst failure modes:
+            # fail the whole month rather than partially trust it.
+            print(f"  !! INCOMPLETE (rows={res['price_rows']} < {EXPECTED_MIN_ROWS}? "
+                  f"or unmatched_labels={res['unmatched_count']} > {UNMATCHED_MAX}?) -- "
+                  f"counting all {len(tlist)} targets as FAILED.")
+            per_month_summary.append((ym, 0, 0, len(tlist), len(tlist)))
+            grand_missing += len(tlist); grand_total += len(tlist)
+            continue
 
         # Build normalized-label -> price map (note collisions if any).
         ext = {}
@@ -440,10 +603,29 @@ def main():
     print(f"zone status: {res['zone']}")
     if res.get("error"):
         print(f"ERROR: {res['error']}")
-        return
-    print(f"rows ({len(res['rows'])}):")
+        sys.stderr.write(f"\nINCOMPLETE: {res['error']}\n")
+        sys.exit(2)
+    print(f"rows ({len(res['rows'])}, usable={res['usable_count']}, "
+          f"unmatched_labels={res['unmatched_count']}):")
     for r in res["rows"]:
         print(f"  {r['current_price']:>12}   {r['raw_label']}")
+    if res["unmatched_labels"]:
+        print("  -- truncated / unknown labels (excluded from usable):")
+        for lbl, why in res["unmatched_labels"]:
+            print(f"       [{why}] {lbl!r}")
+    if res.get("incomplete"):
+        # Fail loudly (non-zero exit + stderr) rather than returning a bad list
+        # quietly: either rows were dropped, or labels are truncated/unknown.
+        reasons = []
+        if res["price_rows"] < EXPECTED_MIN_ROWS:
+            reasons.append(f"only {res['price_rows']} data rows (< {EXPECTED_MIN_ROWS}) "
+                           f"-- rows were dropped")
+        if res["unmatched_count"] > UNMATCHED_MAX:
+            reasons.append(f"{res['unmatched_count']} unmatched/truncated labels "
+                           f"(> {UNMATCHED_MAX}) -- text-layer dropout")
+        sys.stderr.write("\nINCOMPLETE: " + "; ".join(reasons or ["failed a completeness gate"])
+                         + " -- do NOT trust this extraction.\n")
+        sys.exit(2)
 
 
 if __name__ == "__main__":

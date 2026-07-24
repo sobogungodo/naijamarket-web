@@ -71,3 +71,6 @@ __tests__/
 xcopy
 
 admin-dashboard/.next/
+
+# NBS extractor bytecode cache
+scripts/nbs/__pycache__/
