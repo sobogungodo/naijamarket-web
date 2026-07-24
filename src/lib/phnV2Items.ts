@@ -12,13 +12,17 @@
 //
 // MAINTENANCE: V2_ITEM_NAMES is a snapshot of
 //   SELECT DISTINCT item_name_standard FROM dbo.Price_History_NBS_v2_national
-// (42 rows, verified live 2026-07-23). Regenerate it whenever PHN v2 is rebuilt
+// (53 rows: 42 base + 11 DERIVED_PACK bag SKUs, verified live 2026-07-24).
+// Regenerate it whenever PHN v2 is rebuilt
 // with a changed item roster. A name that drifts out of sync fails safe: it
 // simply resolves to null and renders the honest empty state, never a wrong
 // series.
 // ============================================================================
 
-// The 42 canonical v2 item_name_standard values.
+// The 53 canonical v2 item_name_standard values: 42 per-unit base items, plus
+// the 11 DERIVED_PACK bag SKUs added 2026-07-24. Each is its OWN DISTINCT
+// item_name_standard in Price_History_NBS_v2_national (the bag names carry their
+// own PACK_* item_id), so each is a canonical name here — not a RELABEL_ALIAS.
 export const V2_ITEM_NAMES: readonly string[] = [
   "Beans - Brown (per kg)",
   "Beans - White Black Eye (per kg)",
@@ -62,11 +66,28 @@ export const V2_ITEM_NAMES: readonly string[] = [
   "Vegetable Oil - 1 Litre Bottle",
   "Wheat Flour - Golden Penny 2kg",
   "Yam Tuber (per kg)",
+  // -- 11 DERIVED_PACK bag SKUs (bag = the per-kg series x pack size; each has
+  //    its own PACK_* item_id and its own item_name_standard in v2_national).
+  //    These are NEW v2 names, not aliases: a bag is its own series, so it lives
+  //    here. It must NOT go in RELABEL_ALIASES, whose values must be an existing
+  //    per-unit canonical — a bag has none, and aliasing a bag to its per-kg
+  //    name would resolve the click to the wrong (per-kg) item_id. --
+  "Beans - Brown (100kg)",
+  "Beans - White Black Eye (100kg)",
+  "Garri - White (50kg)",
+  "Garri - Yellow (50kg)",
+  "Maize - White (100kg)",
+  "Maize - Yellow (100kg)",
+  "Rice - Agric/Local (50kg)",
+  "Rice - Local Long Grain (50kg)",
+  "Rice - Ofada/Broken (50kg)",
+  "Rice - Imported Premium (50kg)",
+  "Wheat Flour - Golden Penny (50kg)",
 ];
 
 // 37 hand-verified relabel aliases: dashboard item_name -> v2 item_name_standard.
 // Every key exists verbatim in Latest_Prices_Summary; every value is one of the
-// 42 above; every pair is the same commodity at the same unit (verified live
+// 42 base names above (never a bag SKU); every pair is the same commodity at the same unit (verified live
 // 2026-07-23). 32 are exact same-unit relabels; the final 5 (bread, milk,
 // wheat flour) carry a cosmetic unit-string difference (loaf/piece, unit/tin,
 // 2kg/pack) that denotes the identical physical pack — accepted by Prof.
@@ -128,7 +149,7 @@ export const EXCLUDED_ITEM_LABELS: readonly string[] = [
 ];
 
 // The names the client gates row-clickability on when the feature is enabled:
-// the 42 v2 names plus the 37 relabel keys. Excluded items are intentionally
+// the 53 v2 names plus the 37 relabel keys. Excluded items are intentionally
 // NOT here — they are handled separately so their row opens the excluded state.
 export const HISTORY_ITEM_NAMES: readonly string[] = [
   ...V2_ITEM_NAMES,

@@ -183,7 +183,15 @@ async function fetchFromDatabase(
         CAST(s.price_naira AS FLOAT)                  AS price,
         s.state_name                                  AS state_name,
         s.zone_name                                   AS zone_name,
-        n.data_source                                 AS temporal_source,
+        -- DERIVED_PACK rows carry a flat 'DERIVED_PACK' in data_source; their
+        -- real month provenance (NBS_ANCHOR|NBS_INTERP|NBS_PROXY) is in
+        -- derived_from_source. Base rows have derived_from_source NULL, so this
+        -- COALESCE is a no-op for them and every existing series is unchanged.
+        COALESCE(n.derived_from_source, n.data_source) AS temporal_source,
+        -- spatial_source is left flat for DERIVED_PACK on purpose: a bag price is
+        -- never an observed NBS figure, so it must never surface NBS_STATE_BOUND
+        -- (which the modal renders as "NBS published"). It stays 'DERIVED_PACK'
+        -- and the tier mapping falls through to the temporal class.
         s.data_source                                 AS spatial_source
       FROM dbo.Price_History_NBS_v2_state s
       JOIN itm i ON i.item_id = s.item_id
@@ -302,7 +310,7 @@ export async function GET(request: NextRequest) {
 
   const months = getMonthsFromPeriod(period);
 
-  // Resolve the dashboard item name to a v2 item_name_standard. The 42 v2 names
+  // Resolve the dashboard item name to a v2 item_name_standard. The 53 v2 names
   // map to themselves; 37 hand-verified relabel aliases map to their canonical
   // (e.g. "Beans - Brown (NBS per kg)" -> "Beans - Brown (per kg)"); everything
   // else — including the two excluded frozen-chicken labels — resolves to null.
