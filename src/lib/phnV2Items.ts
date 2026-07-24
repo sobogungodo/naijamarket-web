@@ -85,12 +85,14 @@ export const V2_ITEM_NAMES: readonly string[] = [
   "Wheat Flour - Golden Penny (50kg)",
 ];
 
-// 37 hand-verified relabel aliases: dashboard item_name -> v2 item_name_standard.
+// 39 hand-verified relabel aliases: dashboard item_name -> v2 item_name_standard.
 // Every key exists verbatim in Latest_Prices_Summary; every value is one of the
-// 42 base names above (never a bag SKU); every pair is the same commodity at the same unit (verified live
-// 2026-07-23). 32 are exact same-unit relabels; the final 5 (bread, milk,
-// wheat flour) carry a cosmetic unit-string difference (loaf/piece, unit/tin,
-// 2kg/pack) that denotes the identical physical pack — accepted by Prof.
+// 53 v2 names above; every pair is the same commodity at the same pack (verified
+// live 2026-07-23; the 2 bag aliases 2026-07-24). 32 are exact same-unit per-kg
+// relabels; 5 (bread, milk, wheat flour) carry a cosmetic unit-string difference
+// (loaf/piece, unit/tin, 2kg/pack) for the identical physical pack; the final 2
+// map an LPS bag row to its DERIVED_PACK 50kg SKU (same commodity, same 50kg
+// pack) — all accepted by Prof.
 //
 // EXCLUDED, deliberately absent: pack-size variants (Beans 100kg, Garri 50kg —
 // unit mismatch, the ITM01018 trap), different cut/variety/species (Beef
@@ -137,6 +139,12 @@ export const RELABEL_ALIASES: Readonly<Record<string, string>> = {
   "Evaporated Milk Carnation 170g (NBS)": "Evaporated Milk - Carnation 170g",
   "Evaporated Milk Peak 170g (NBS)": "Evaporated Milk - Peak 170g",
   "Wheat Flour Golden Penny 2kg (NBS)": "Wheat Flour - Golden Penny 2kg",
+  // -- 2 bag-SKU aliases: an LPS bag row -> its DERIVED_PACK 50kg v2 SKU; same
+  //    commodity, same 50kg pack. (Beans-White(100kg), Local-Ofada(50kg), and
+  //    Maize/Corn(100kg) are withheld: the first two rest on inference not
+  //    demonstrated identity, and Maize/Corn cannot alias to both white+yellow.)
+  "Rice (50kg) - Local Long Grain": "Rice - Local Long Grain (50kg)",
+  "Wheat Flour (50kg)": "Wheat Flour - Golden Penny (50kg)",
 };
 
 // Both frozen-chicken labels are ITM01018 — excluded from PHN v2 by design
@@ -149,7 +157,7 @@ export const EXCLUDED_ITEM_LABELS: readonly string[] = [
 ];
 
 // The names the client gates row-clickability on when the feature is enabled:
-// the 53 v2 names plus the 37 relabel keys. Excluded items are intentionally
+// the 53 v2 names plus the 39 relabel keys. Excluded items are intentionally
 // NOT here — they are handled separately so their row opens the excluded state.
 export const HISTORY_ITEM_NAMES: readonly string[] = [
   ...V2_ITEM_NAMES,

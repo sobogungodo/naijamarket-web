@@ -280,15 +280,16 @@ export async function GET(request: NextRequest) {
   // WITHDRAWAL GATE — an env flag now, not an unconditional return.
   // FAIL-CLOSED: history is served only when PHN_V2_ENABLED is exactly "true".
   // Absent, empty, or any other value keeps it withheld, so the safe state
-  // needs no deploy-time action. PHN_V2_ENABLED is NOT set in Vercel today,
-  // which means this route stays gated on merge.
+  // needs no deploy-time action. PHN_V2_ENABLED reads "true" in Vercel today
+  // (Production scope, plain; set 2026-07-24), so this route is live in
+  // production — gated only by the auth check in middleware, not by this flag.
   //
   // History was withdrawn 2026-07-22 because the v1 series (synthetic 2016-2019
   // backfill + a 2026 forecast) contradicted published NBS data in level and in
-  // direction. The v2 rebuild above addresses that, but the flag stays off
-  // until the per-point provenance badge ships: only ~4% of v2 points are
-  // printed NBS figures in both dimensions, and the rest must not render as
-  // observation.
+  // direction. The v2 rebuild above addresses that, and the flag was turned on
+  // once the per-point provenance badge shipped: only ~4% of v2 points are
+  // printed NBS figures in both dimensions, and the rest render with the badge
+  // rather than as bare observation.
   //
   // The v7 comment here called this "this unauthenticated public route". That
   // was inaccurate — src/middleware.ts lists /api/prices in
