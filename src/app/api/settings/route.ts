@@ -474,11 +474,20 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           );
         }
 
-        await writeSettings({ deleted: true, deletedAt: new Date().toISOString() });
+        // Real soft-delete: stamp the erasure flag on the authenticated consumer's row
+        // (keyed on the session-derived user.consumer_id, NOT request input). deleted_at
+        // starts the 90-day grace and is the flag every login gate now reads. Prisma
+        // connects as vercel_web, which holds table UPDATE on Consumers (confirmed live).
+        // This intentionally REPLACES the old settings_json={deleted:true} write — that
+        // flag was read by nothing (inert) and overwrote the whole settings blob; leaving
+        // settings_json untouched means a within-grace reactivation keeps the user's prefs.
+        await prisma.$executeRaw`
+          UPDATE Consumers SET deleted_at = GETUTCDATE() WHERE consumer_id = ${user.consumer_id}
+        `;
 
         return NextResponse.json({
           success: true,
-          message: "Account scheduled for deletion",
+          message: "Your account has been deleted. You can restore it by signing in again within 90 days.",
         });
       }
 

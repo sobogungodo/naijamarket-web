@@ -52,8 +52,9 @@ export async function GET(request: NextRequest) {
         session_token,
         session_created_at,
         account_status,
+        deleted_at,
         DATEDIFF(MINUTE, session_created_at, GETDATE()) AS session_age_minutes
-      FROM Consumers 
+      FROM Consumers
       WHERE consumer_id = ${consumerId}
     ` as any[];
 
@@ -77,6 +78,16 @@ export async function GET(request: NextRequest) {
         valid: false,
         error_code: "ACCOUNT_BLOCKED",
         message: "Your account has been suspended",
+      }, { status: 401 });
+    }
+
+    // Deletion arc: a soft-deleted account evicts the active session (401).
+    if (consumer.deleted_at) {
+      console.log("[VALIDATE-SESSION] ❌ Account deleted:", consumerId);
+      return NextResponse.json({
+        valid: false,
+        error_code: "ACCOUNT_DELETED",
+        message: "Your account has been deleted. You can restore it by signing in again within 90 days.",
       }, { status: 401 });
     }
 
@@ -162,8 +173,9 @@ export async function POST(request: NextRequest) {
         session_token,
         session_created_at,
         account_status,
+        deleted_at,
         DATEDIFF(MINUTE, session_created_at, GETDATE()) AS session_age_minutes
-      FROM Consumers 
+      FROM Consumers
       WHERE consumer_id = ${consumer_id}
     ` as any[];
 
@@ -176,6 +188,15 @@ export async function POST(request: NextRequest) {
     }
 
     const consumer = consumers[0];
+
+    // Deletion arc: a soft-deleted account evicts the active session (401).
+    if (consumer.deleted_at) {
+      return NextResponse.json({
+        valid: false,
+        error_code: "ACCOUNT_DELETED",
+        message: "Your account has been deleted. You can restore it by signing in again within 90 days.",
+      }, { status: 401 });
+    }
 
     if (!consumer.session_token || consumer.session_token !== session_token) {
       return NextResponse.json({
