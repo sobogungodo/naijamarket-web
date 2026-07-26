@@ -304,21 +304,10 @@ function LoginForm() {
           <PhoneIcon />
           Phone + OTP
         </button>
-        <button
-          onClick={() => {
-            setAuthMethod("email");
-            setError("");
-            setSuccess("");
-          }}
-          className={`flex-1 py-4 px-6 flex items-center justify-center gap-2 text-sm font-medium transition-colors ${
-            authMethod === "email"
-              ? "bg-naija-green/10 text-naija-green border-b-2 border-naija-green"
-              : "text-gray-400 hover:text-white hover:bg-white/5"
-          }`}
-        >
-          <MailIcon />
-          Email Login
-        </button>
+        {/* Email login tab removed (api-v20): email-only /login has no server-side
+            OTP verification — see functions/func-naijamarket-api/login/__init__.py.
+            Phone + OTP is the only supported sign-in. handleVerifyEmailOtp and the
+            NextAuth email-otp provider are retained (inert) for a future email-OTP fix. */}
       </div>
 
       <div className="p-6">

@@ -63,8 +63,18 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
                     json.dumps({"error": "OTP verification required"}),
                     status_code=401, headers=headers
                 )
-        # Email login: email OTP verification checked via otp_verify_email table
-        # (existing flow — otp_verify_email sets verified flag same pattern)
+        # SECURITY (api-v20): email login has NO server-side OTP verification. The
+        # otp_verify_email table named in the prior comment has never existed, and
+        # /login performs no email-OTP check — so an email-only login would mint a
+        # session on email match alone (bypass). Fail closed: reject email-only
+        # logins. Phone login (OTP-gated above) is the supported path.
+        if email and not phone:
+            conn.close()
+            logging.warning("[login] email-only login rejected — no email-OTP gate (api-v20)")
+            return func.HttpResponse(
+                json.dumps({"error": "Please sign in with your phone number to verify your identity."}),
+                status_code=401, headers=headers
+            )
         # ─────────────────────────────────────────────────────────────────────
 
         # Find consumer
