@@ -510,7 +510,7 @@ export default function SettingsPage() {
       const result = await response.json();
 
       if (result.success) {
-        setMessage({ type: "success", text: "Account deletion scheduled. Logging out..." });
+        setMessage({ type: "success", text: "Account deleted. Signing you out…" });
         setTimeout(() => signOut({ callbackUrl: "/" }), 2000);
       } else {
         setMessage({ type: "error", text: result.error });
@@ -1398,7 +1398,7 @@ export default function SettingsPage() {
                     Delete Account
                   </h3>
                   <p className="text-gray-400 text-sm mb-4">
-                    Permanently delete your account and all associated data. This action cannot be undone.
+                    Delete your account. Your access is revoked immediately and you'll be signed out. You can restore it later by signing in again.
                   </p>
                   
                   {!showDeleteConfirm ? (
@@ -1428,7 +1428,7 @@ export default function SettingsPage() {
                           className="px-4 py-2 bg-red-600 hover:bg-red-700 disabled:bg-gray-700 disabled:text-gray-500 rounded-lg flex items-center gap-2"
                         >
                           {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
-                          Permanently Delete
+                          Delete Account
                         </button>
                         <button
                           onClick={() => {

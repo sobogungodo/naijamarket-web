@@ -102,6 +102,31 @@ export async function POST(request: NextRequest) {
         // Return the effective token so NextAuth can store it in the JWT
         data = { ...data, session_token: newToken };
         console.log(`[login] session ${exempt ? "reused (tier-exempt)" : "rotated"} for ${consumerId} from ${clientIp}`);
+
+        // Reactivation: a successful login clears a prior soft-delete so signing in
+        // restores the account — UNLESS it is an admin hold (BLOCKED/SUSPENDED/BANNED),
+        // which is not user-reversible. Runs for both the exempt-reuse and rotate
+        // branches. Phone ownership was proven upstream by func-api's single-use OTP
+        // check. NOT placed in validate-session (runs on every request — a stale
+        // second-device token there could silently undo a deletion).
+        //
+        // Own try/catch: it must not jeopardize the token propagation above, and a
+        // failure needs its own signal. If it throws, login still proceeds but deleted_at
+        // is NOT cleared, so the next validate-session request 401s (ACCOUNT_DELETED) —
+        // an eviction loop with no other symptom. Log it loudly so that's diagnosable.
+        try {
+          await pool2.request()
+            .input("consumer_id", sql.NVarChar(50), consumerId)
+            .query(`
+              UPDATE dbo.Consumers
+              SET deleted_at = NULL
+              WHERE consumer_id = @consumer_id
+                AND deleted_at IS NOT NULL
+                AND (account_status IS NULL OR UPPER(account_status) NOT IN ('BLOCKED','SUSPENDED','BANNED'))
+            `);
+        } catch (reactErr: any) {
+          console.error("[login] reactivation FAILED (soft-delete NOT cleared; user will be 401'd on next request) — consumer:", consumerId, "error:", reactErr?.message || reactErr, "code:", reactErr?.code);
+        }
       } catch (dbErr: any) {
         // Non-fatal — log but don't block login
         console.error("[login] session rotation FAILED — consumer:", consumerId, "error:", dbErr?.message || dbErr, "code:", (dbErr as any)?.code, "server:", process.env.AZURE_SQL_SERVER ? "SET" : "MISSING", "user:", process.env.AZURE_SQL_USER ? "SET" : "MISSING");

@@ -87,7 +87,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({
         valid: false,
         error_code: "ACCOUNT_DELETED",
-        message: "Your account has been deleted. You can restore it by signing in again within 90 days.",
+        message: "This account is deactivated and your access has been revoked. You can restore it by signing in again.",
       }, { status: 401 });
     }
 
@@ -194,7 +194,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({
         valid: false,
         error_code: "ACCOUNT_DELETED",
-        message: "Your account has been deleted. You can restore it by signing in again within 90 days.",
+        message: "This account is deactivated and your access has been revoked. You can restore it by signing in again.",
       }, { status: 401 });
     }
 
