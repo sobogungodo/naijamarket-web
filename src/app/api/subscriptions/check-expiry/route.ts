@@ -19,8 +19,8 @@
 //   }
 //   Runs daily at 6:00 AM UTC (7:00 AM WAT)
 //
-// MANUAL TRIGGER:
-//   GET /api/subscriptions/check-expiry?test=1
+// MANUAL TRIGGER (auth required):
+//   GET /api/subscriptions/check-expiry  with  Authorization: Bearer $CRON_SECRET
 // ============================================================================
 
 import { NextRequest, NextResponse } from "next/server";
@@ -80,12 +80,12 @@ async function sendWhatsApp(phone: string, message: string): Promise<boolean> {
 // ============================================================================
 
 export async function GET(request: NextRequest) {
-  // Auth check
+  // Fail-closed auth: CRON_SECRET must be set AND match the Bearer on EVERY
+  // invocation — no ?test=1 bypass, and 401 (not open) when CRON_SECRET is unset.
+  // Mirrors alerts/process; Vercel Cron sends Authorization: Bearer $CRON_SECRET
+  // automatically when CRON_SECRET is configured.
   const auth = request.headers.get("authorization");
-  const { searchParams } = new URL(request.url);
-  const isTest = searchParams.get("test") === "1";
-
-  if (!isTest && CRON_SECRET && auth !== `Bearer ${CRON_SECRET}`) {
+  if (!CRON_SECRET || auth !== `Bearer ${CRON_SECRET}`) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
