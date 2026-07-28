@@ -12,9 +12,6 @@ import { useState, useEffect, useCallback } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import {
-  TrendingUp,
-  TrendingDown,
-  Minus,
   RefreshCw,
   AlertTriangle,
   ArrowUp,
@@ -24,9 +21,7 @@ import {
   Activity,
   Globe2,
   Calendar,
-  Info,
   Download,
-  Scale,
   ShoppingBasket,
   Flame,
   Snowflake,
@@ -37,11 +32,9 @@ import {
   YAxis,
   CartesianGrid,
   Tooltip,
-  Legend,
   ResponsiveContainer,
   ReferenceLine,
   ComposedChart,
-  Area,
 } from "recharts";
 
 // ============================================================================
@@ -147,8 +140,7 @@ export default function InflationPage() {
   const [data, setData] = useState<InflationData | null>(null);
   const [selectedPeriod, setSelectedPeriod] = useState("12m");
   const [selectedRegion, setSelectedRegion] = useState("ALL");
-  const [lastUpdate, setLastUpdate] = useState<Date>(new Date());
-  
+
   useEffect(() => {
     if (status === "unauthenticated") {
       router.push("/login");
@@ -165,7 +157,6 @@ export default function InflationPage() {
       
       if (result.success) {
         setData(result);
-        setLastUpdate(new Date());
       } else {
         setError(result.error || "Failed to load inflation data");
       }
@@ -201,9 +192,9 @@ export default function InflationPage() {
     if (!data) return;
     
     const csvContent = [
-      ["Month", "NaijaMarket Rate (%)", "NBS Rate (%)", "Difference (%)"].join(","),
-      ...data.monthlyTrend.map(m => 
-        [m.monthName, m.naijaMarketRate, m.nbsRate ?? "N/A", m.difference ?? "N/A"].join(",")
+      ["Month", "NBS Rate (%)"].join(","),
+      ...data.monthlyTrend.map(m =>
+        [m.monthName, m.nbsRate ?? "N/A"].join(",")
       ),
     ].join("\n");
     
@@ -243,7 +234,6 @@ export default function InflationPage() {
   
   const currentPeriod = TIME_PERIODS.find(p => p.value === selectedPeriod);
   const inflation = data?.currentInflation;
-  const nbs = data?.nbsComparison;
   
   return (
     <div className="min-h-screen bg-[#0a0a0a] text-white p-4 md:p-4 md:p-6">
@@ -257,7 +247,7 @@ export default function InflationPage() {
               <span className="px-2 py-0.5 bg-orange-500/20 text-orange-400 text-xs rounded-full">ECST</span>
             </div>
             <p className="text-gray-400 text-sm">
-              {currentPeriod?.fullLabel} analysis • {data?.dataSource} • Updated {lastUpdate.toLocaleTimeString()}
+              {currentPeriod?.fullLabel} analysis
             </p>
           </div>
           
@@ -320,54 +310,19 @@ export default function InflationPage() {
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-6">
           <div>
             <div className="flex items-center gap-2 mb-1">
-              <p className="text-gray-400 text-sm">NaijaMarket Food Inflation (YoY)</p>
+              <p className="text-gray-400 text-sm">Food Inflation (YoY) — NBS Official</p>
               <span className="px-2 py-0.5 bg-orange-500/20 text-orange-400 text-xs rounded-full flex items-center gap-1">
                 <Calendar className="w-3 h-3" />
-                {inflation?.asOf}
+                {/* Tied to NBS_FALLBACK_RATE (17.52 = NBS June 2026 food YoY) in api/inflation/route.ts. If that constant changes, change this label. Both are removed when the route reads a real series. */}
+                June 2026 · Source: National Bureau of Statistics
               </span>
             </div>
             <div className="flex items-baseline gap-3">
-              <span className="text-5xl md:text-6xl font-bold text-white">{inflation?.rate ?? 0}%</span>
-              <div className={`flex items-center gap-1 text-xl font-medium ${
-                (inflation?.trend ?? "stable") === "up" ? "text-red-400" :
-                (inflation?.trend ?? "stable") === "down" ? "text-emerald-400" : "text-gray-400"
-              }`}>
-                {inflation?.trend === "up" ? <TrendingUp className="w-5 h-5" /> :
-                 inflation?.trend === "down" ? <TrendingDown className="w-5 h-5" /> :
-                 <Minus className="w-5 h-5" />}
-                {formatPercent(inflation?.monthOverMonth ?? 0)} MoM
-              </div>
+              <span className="text-5xl md:text-6xl font-bold text-white">{inflation?.rate != null ? `${inflation.rate}%` : "—"}</span>
             </div>
             <p className="text-gray-500 text-sm mt-2">
               Year-over-year change in food prices across Nigerian markets
             </p>
-          </div>
-          
-          {/* NBS Comparison */}
-          <div className="bg-[#1a1a1a]/50 rounded-xl p-4 min-w-[280px]">
-            <div className="flex items-center gap-2 mb-3">
-              <Scale className="w-5 h-5 text-blue-400" />
-              <p className="text-sm font-medium">vs NBS Official Data</p>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-3">
-              <div>
-                <p className="text-xs text-gray-500">NaijaMarket</p>
-                <p className="text-2xl font-bold text-orange-400">{nbs?.naijaMarket ?? 0}%</p>
-              </div>
-              <div>
-                <p className="text-xs text-gray-500">NBS Official</p>
-                <p className="text-2xl font-bold text-blue-400">{nbs?.nbs ?? 0}%</p>
-              </div>
-            </div>
-            <div className={`flex items-center gap-2 p-2 rounded-lg ${
-              (nbs?.difference ?? 0) > 0 ? "bg-red-900/30" : 
-              (nbs?.difference ?? 0) < 0 ? "bg-emerald-900/30" : "bg-gray-800"
-            }`}>
-              <Info className="w-4 h-4 text-gray-400" />
-              <p className="text-xs text-gray-300">
-                {(nbs?.difference ?? 0) > 0 ? "+" : ""}{nbs?.difference ?? 0}% difference
-              </p>
-            </div>
           </div>
         </div>
       </div>
@@ -381,12 +336,8 @@ export default function InflationPage() {
           </div>
           <div className="flex items-center gap-4 text-xs">
             <div className="flex items-center gap-1">
-              <div className="w-3 h-3 rounded-full bg-orange-500" />
-              <span className="text-gray-400">NaijaMarket</span>
-            </div>
-            <div className="flex items-center gap-1">
               <div className="w-3 h-3 rounded-full bg-blue-500" />
-              <span className="text-gray-400">NBS Official</span>
+              <span className="text-gray-400">NBS Official Food Inflation (YoY)</span>
             </div>
           </div>
         </div>
@@ -412,17 +363,7 @@ export default function InflationPage() {
                   name === "naijaMarketRate" ? "NaijaMarket" : "NBS Official"
                 ]}
               />
-              <Legend />
               <ReferenceLine y={30} stroke="#666" strokeDasharray="5 5" label={{ value: "30%", fill: "#666", fontSize: 10 }} />
-              <Area
-                type="monotone"
-                dataKey="naijaMarketRate"
-                fill="#f97316"
-                fillOpacity={0.2}
-                stroke="#f97316"
-                strokeWidth={2}
-                name="NaijaMarket"
-              />
               <Line
                 type="monotone"
                 dataKey="nbsRate"
@@ -430,7 +371,7 @@ export default function InflationPage() {
                 strokeWidth={2}
                 strokeDasharray="5 5"
                 dot={{ fill: "#3b82f6", strokeWidth: 0, r: 3 }}
-                name="NBS Official"
+                name="NBS Official Food Inflation (YoY)"
               />
             </ComposedChart>
           </ResponsiveContainer>
@@ -693,24 +634,10 @@ export default function InflationPage() {
         </div>
       </div>
       
-      {/* NBS Interpretation */}
-      <div className="bg-gradient-to-r from-blue-900/20 to-indigo-900/20 border border-blue-700/50 rounded-xl p-4 mb-6">
-        <div className="flex items-start gap-3">
-          <Info className="w-5 h-5 text-blue-400 flex-shrink-0 mt-0.5" />
-          <div>
-            <p className="font-medium text-blue-300 mb-1">NBS Comparison Analysis</p>
-            <p className="text-sm text-gray-300">{nbs?.interpretation}</p>
-            <p className="text-xs text-gray-500 mt-2">
-              NBS = National Bureau of Statistics official monthly food inflation data
-            </p>
-          </div>
-        </div>
-      </div>
-      
       {/* Footer */}
       <div className="text-center text-sm text-gray-500">
-        <p>Data Source: {data?.dataSource} • {(data?.recordCount ?? 0).toLocaleString()} records analyzed</p>
-        <p className="mt-1">Period: {currentPeriod?.fullLabel} • Last Updated: {lastUpdate.toLocaleString()}</p>
+        <p>{(data?.recordCount ?? 0).toLocaleString()} records analyzed</p>
+        <p className="mt-1">Period: {currentPeriod?.fullLabel}</p>
       </div>
     </div>
   );
