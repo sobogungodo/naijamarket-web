@@ -4,8 +4,9 @@
 -- over the 29-item frozen NBS-anchored staples basket.
 --
 -- NOT EXECUTED BY THE COMMIT THAT ADDS THIS FILE.
---   Sections A, B, C require APPROVE DDL.
---   Section D requires APPROVE DB (run after usp_Compute_NFPI_v2 executes).
+--   Sections A-C require APPROVE DDL (Section A also seeds 29 rows).
+--   Section D requires APPROVE DB (executes usp_Compute_NFPI_v2).
+--   Section E is read-only (SELECT only, no token required).
 -- Azure SQL. LOG() is natural log. price_naira source type is decimal(18,6).
 -- ASCII only.
 -- ============================================================================
@@ -227,8 +228,17 @@ GRANT EXECUTE ON dbo.usp_Compute_NFPI_v2 TO naijaapp;
 GO
 
 -- ============================================================================
--- SECTION D -- acceptance verification -- authorising token: APPROVE DB
--- Run AFTER usp_Compute_NFPI_v2 has executed. Manual comparison only.
+-- SECTION D -- execute the computation -- authorising token: APPROVE DB
+-- This is the statement that writes 96 rows to dbo.NFPI_Monthly_v2.
+-- Run once after Sections A-C. Re-running is safe: the SP DELETEs and
+-- repopulates inside one transaction with a 96-row gate.
+-- ============================================================================
+EXEC dbo.usp_Compute_NFPI_v2;
+GO
+
+-- ============================================================================
+-- SECTION E -- acceptance verification -- read-only, no token required (SELECT only)
+-- Run AFTER Section D has executed. Manual comparison only.
 -- ============================================================================
 SELECT observation_month, index_value, mom_change_pct, yoy_change_pct, items_in_basket
 FROM dbo.NFPI_Monthly_v2
