@@ -9,6 +9,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
     { url: `${base}/register`, priority: 0.9, changeFrequency: "monthly" as const },
     { url: `${base}/subscribe`, priority: 0.9, changeFrequency: "monthly" as const },
     { url: `${base}/blog`, priority: 0.8, changeFrequency: "weekly" as const },
+    { url: `${base}/blog--`, priority: 0.5, changeFrequency: "weekly" as const },
     { url: `${base}/food-news`, priority: 0.8, changeFrequency: "weekly" as const },
     { url: `${base}/methodology`, priority: 0.6, changeFrequency: "monthly" as const },
     { url: `${base}/docs`, priority: 0.6, changeFrequency: "monthly" as const },

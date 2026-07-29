@@ -16,7 +16,7 @@ const POSTS = [
     date: "Feb 14, 2026",
     title: "NaijaMarket Food Price Index: February 2026 Report",
     excerpt:
-      "Our monthly Food Price Index shows 8.9% year-over-year inflation across tracked commodities. Rice prices stabilizing while tomato season volatility creates opportunities.",
+      "NBS reported food inflation of 8.89% year-on-year in January 2026. Rice prices stabilizing while tomato season volatility creates opportunities.",
     tag: "Price Report",
     tagColor: "#FFB300",
   },
@@ -32,7 +32,7 @@ const POSTS = [
     date: "Jan 28, 2026",
     title: "From Mile 12 to Kano: Regional Price Arbitrage in Nigerian Markets",
     excerpt:
-      "A bag of rice can cost ₦4,400 more in Lagos than Kano. We analyzed 3 months of verified data to map regional price gaps and arbitrage corridors across Nigeria.",
+      "We analyzed 3 months of verified data to map regional price gaps and arbitrage corridors across Nigeria.",
     tag: "Analysis",
     tagColor: "#E040FB",
   },
