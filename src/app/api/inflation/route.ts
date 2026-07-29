@@ -16,9 +16,7 @@
 //    by appending Jan–current month rows via dbo.NBS_Inflation_Rates.
 //    NaijaMarket rate for 2026 = annualised from Inflation_Cache ITEM rows
 //    (real market data). Falls back to NBS rate if IC has no 2026 data.
-// 4. NBS_FALLBACK_RATE = 12.12 — used ONLY if DB is completely unreachable.
-//    This is the Feb 2026 official NBS figure.
-// 5. nbsRate on every MonthlyInflation chart point = DB value, never stale constant.
+// 4. nbsRate on every MonthlyInflation chart point = DB value, never stale constant.
 // 6. fetchFromInflationCache and fetchFromCalculatedInflation both accept
 //    nbsMap: Map<string, number> parameter instead of reading the dead constant.
 //
@@ -26,7 +24,6 @@
 //   GET request
 //     → fetchNbsRatesFromDB()               [dbo.NBS_Inflation_Rates, ~120 rows]
 //     → fetchFromCalculatedInflation(nbsMap) [dbo.Calculated_Inflation, 2017–Dec 2025]
-//     → fetch2026Extension(nbsMap)           [extends trend to current month]
 //     → fetchFromInflationCache(nbsMap)      [movers/basket from ITEM rows]
 //     → fetchRegionalInflation()             [Latest_Prices_Summary → Daily_Prices]
 //   → Response
@@ -94,12 +91,6 @@ async function getPool(): Promise<sql.ConnectionPool | null> {
 
 const GOOGLE_SHEETS_ID = "1n-7MXdoqvIoSHteBJaUYBmIPLjJBNtrE_jVuUxO5kr8";
 const GOOGLE_API_KEY   = process.env.GOOGLE_SHEETS_API_KEY || "";
-
-// Emergency fallback — used when the DB has no current NBS rate for a period
-// (the NBS feed has been stale since Jan 2026, so recent periods hit this).
-// Latest known NBS food inflation: 17.52% YoY (June 2026 official release).
-// Update this value whenever NBS publishes a new report.
-const NBS_FALLBACK_RATE = 17.52;
 
 const TIME_PERIODS: Record<string, { months: number; label: string }> = {
   "1m":  { months: 1,  label: "1 Month"   },
@@ -172,13 +163,18 @@ interface BasketItem {
   previousPrice: number; inflationRate: number; contribution: number;
 }
 
+interface TrendPoint {
+  month: string; monthName: string;
+  naijaMarketYoy: number | null; nbsYoy: number | null; isAnchored: boolean;
+}
+
 interface InflationResponse {
   success: boolean; timestamp: string; period: string; periodLabel: string;
-  currentInflation: { rate: number; monthOverMonth: number; yearOverYear: number;
+  currentInflation: { rate: number | null; monthOverMonth: number | null; yearOverYear: number | null;
                       trend: "up" | "down" | "stable"; asOf: string; };
-  monthlyTrend: MonthlyInflation[];
+  monthlyTrend: TrendPoint[];
   regionalBreakdown: RegionalInflation[];
-  nbsComparison: { naijaMarket: number; nbs: number; difference: number; interpretation: string; };
+  nbsOfficial: { yoy: number | null; mom: number | null; asOf: string };
   topInflators: ItemInflation[]; topDeflators: ItemInflation[];
   basketComposition: BasketItem[];
   categoryBreakdown: { category: string; weight: number; inflationRate: number; contribution: number }[];
@@ -202,19 +198,16 @@ function getMonthName(month: number): string {
   return ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][month - 1] || "Unknown";
 }
 
+function fullMonthName(month: number): string {
+  return ["January","February","March","April","May","June","July","August","September","October","November","December"][month - 1] || "Unknown";
+}
+
 function getBasketKeyword(itemName: string): string | null {
   const il = itemName.toLowerCase();
   for (const k of Object.keys(BASKET_WEIGHTS)) {
     if (il.includes(k)) return k;
   }
   return null;
-}
-
-function getNbsInterpretation(naijaRate: number, nbsRate: number): string {
-  const diff = naijaRate - nbsRate;
-  if (diff >  2) return `NaijaMarket shows ${Math.abs(diff).toFixed(1)}pp higher inflation than NBS — real-time market prices rising faster than official surveys capture`;
-  if (diff < -2) return `NaijaMarket shows ${Math.abs(diff).toFixed(1)}pp lower inflation than NBS — market prices stabilizing faster than official data reflects`;
-  return `NaijaMarket and NBS data are within ${Math.abs(diff).toFixed(1)}pp — strong alignment between real-time and official statistics`;
 }
 
 /**
@@ -230,8 +223,7 @@ function getNbsRateFromMap(nbsMap: Map<string, number>): { rate: number; key: st
     const rate = nbsMap.get(key);
     if (rate !== undefined && rate > 0) return { rate, key };
   }
-  console.warn("[inflation v7] NBS map has no recent rate — using fallback constant");
-  return { rate: NBS_FALLBACK_RATE, key: "" };
+  return { rate: 0, key: "" };
 }
 
 function calculateCategoryBreakdown(
@@ -363,79 +355,6 @@ async function fetchFromCalculatedInflation(
     console.error("[inflation v7] Calculated_Inflation query error:", err);
     return empty;
   }
-}
-
-// ============================================================================
-// 2026 EXTENSION
-// Calculated_Inflation stops at Dec 2025. This function builds MonthlyInflation
-// rows for Jan 2026 → current month.
-//
-// NaijaMarket rate per month:
-//   - Query Inflation_Cache for monthly annualised rates (if available per period)
-//   - Fallback: use the NBS rate for that month (best available proxy pre-Jul 2026)
-//
-// NBS rate per month: from nbsMap (always available — NBS_Inflation_Rates is populated)
-// ============================================================================
-
-async function fetch2026Extension(
-  nbsMap: Map<string, number>,
-  ciLatestYr: number,
-  ciLatestMth: number
-): Promise<MonthlyInflation[]> {
-  const now     = new Date();
-  const nowYr   = now.getFullYear();
-  const nowMth  = now.getMonth() + 1;
-
-  // Build list of months to fill: day after CI ends → current month
-  const monthsToFill: { yr: number; mth: number }[] = [];
-  let yr  = ciLatestYr;
-  let mth = ciLatestMth + 1;
-  if (mth > 12) { mth = 1; yr++; }
-
-  while (yr < nowYr || (yr === nowYr && mth <= nowMth)) {
-    monthsToFill.push({ yr, mth });
-    mth++;
-    if (mth > 12) { mth = 1; yr++; }
-  }
-
-  if (monthsToFill.length === 0) return [];
-
-  // ── Build extension MonthlyInflation rows ──
-  // NaijaMarket rate = NBS rate for all pre-Jul 2026 months.
-  // IC data not queried here — generated prices cannot support independent YoY claims.
-  const cacheRateMap = new Map<string, number>(); // Reserved for Jul 2026+ use
-
-  // ── Build extension MonthlyInflation rows ──
-  const extension: MonthlyInflation[] = [];
-  for (const { yr: yr2, mth: mth2 } of monthsToFill) {
-    const periodLabel = `${yr2}-${String(mth2).padStart(2, "0")}`;
-    const nbsRate     = nbsMap.get(periodLabel) ?? null;
-
-    // NaijaMarket rate for 2026 extension months:
-    // We have NO valid independent YoY until Jul 2026 (need 12 months of real
-    // trader submissions vs year-ago prices). Generated prices cannot support
-    // a credible claim different from NBS before that date.
-    // → Use NBS rate directly. Lines converge Dec 2025 → Jun 2026.
-    // From Jul 2026: real YoY from DB takes over automatically.
-    const naijaMarketRate = nbsRate !== null ? nbsRate : NBS_FALLBACK_RATE;
-
-    extension.push({
-      month:           periodLabel,
-      monthName:       `${getMonthName(mth2)} ${yr2}`,
-      year:            yr2,
-      naijaMarketRate: Math.round(naijaMarketRate * 10) / 10,
-      nbsRate,
-      difference:      nbsRate !== null
-        ? Math.round((naijaMarketRate - nbsRate) * 10) / 10
-        : null,
-      avgPrice:        0,   // no avg price for NBS-proxy months
-      prevAvgPrice:    0,
-      priceChange:     0,
-    });
-  }
-
-  console.log(`[inflation v7] 2026 extension: ${extension.length} months appended`);
-  return extension;
 }
 
 // ============================================================================
@@ -698,7 +617,7 @@ async function buildFromPrecomputed(
   periodLabel: string,
   period: string,
   nbsMap: Map<string, number>
-): Promise<InflationResponse> {
+): Promise<any> {
   const now = new Date();
   const monthlyTrend: MonthlyInflation[] = precomputed.map(p => {
     const nbsKey = `${p.yr}-${String(p.mth).padStart(2, "0")}`;
@@ -718,7 +637,6 @@ async function buildFromPrecomputed(
   const latest      = precomputed[precomputed.length - 1];
   const currentRate = latest?.naijamarket_yoy ?? 0;
   const momChange   = latest?.naijamarket_mom  ?? 0;
-  const { rate: latestNBS } = getNbsRateFromMap(nbsMap);
   return {
     success: true, timestamp: now.toISOString(), period, periodLabel,
     currentInflation: {
@@ -730,12 +648,6 @@ async function buildFromPrecomputed(
     },
     monthlyTrend,
     regionalBreakdown: await fetchRegionalInflation().catch(() => []),
-    nbsComparison: {
-      naijaMarket:    Math.round(currentRate * 10) / 10,
-      nbs:            latestNBS,
-      difference:     Math.round((currentRate - latestNBS) * 10) / 10,
-      interpretation: getNbsInterpretation(currentRate, latestNBS),
-    },
     topInflators: [], topDeflators: [], basketComposition: [], categoryBreakdown: [],
     dataSource:  `NaijaMarket Intel (Real-time)`,
     recordCount: latest?.daily_records ?? 0,
@@ -1016,8 +928,6 @@ const ZONE_CASE_SQL = `
     ELSE NULL
   END`;
 
-const FOOD_CATS = `'CAT001','CAT002','CAT003','CAT004','CAT006','CAT007','CAT008','CAT009','CAT010','CAT013','CAT014','CAT015','CAT070','CAT103'`;
-
 function mapRegionalRows(rows: any[]): RegionalInflation[] {
   return rows.map((r: any) => ({
     region:         String(r.zone),
@@ -1125,7 +1035,7 @@ export async function GET(request: NextRequest) {
     const periodLabel  = periodConfig.label;
 
     let dataSource = "Unknown";
-    let response: InflationResponse;
+    let response: any;
 
     console.log(`[inflation v7] period=${period} (${periodMonths}mo) region=${region}`);
 
@@ -1139,20 +1049,109 @@ export async function GET(request: NextRequest) {
       fetchFromInflationCache(periodMonths, nbsMap),
     ]);
 
+    // PRIMARY: NFPI v2 Jevons staples index (dbo.NFPI_Monthly_v2).
+    // 96 rows, always fires. Unweighted Jevons over 29 NBS-anchored staples.
+    {
+      const nfpiPool = await getPool();
+      if (nfpiPool) {
+        try {
+          const [nfpiRes, nbsLatestRes] = await Promise.all([
+            nfpiPool.request().query(`
+              SELECT YEAR(observation_month) AS yr, MONTH(observation_month) AS mth,
+                     CAST(yoy_change_pct AS FLOAT) AS yoy_change_pct,
+                     CAST(mom_change_pct AS FLOAT) AS mom_change_pct,
+                     yoy_fully_anchored, mom_fully_anchored
+              FROM dbo.NFPI_Monthly_v2
+              ORDER BY observation_month ASC
+            `),
+            nfpiPool.request().query(`
+              SELECT TOP 1 yr, mth, month_name,
+                     CAST(yoy_inflation AS FLOAT) AS yoy_inflation,
+                     CAST(mom_inflation AS FLOAT) AS mom_inflation
+              FROM dbo.NBS_Inflation_Rates
+              ORDER BY yr DESC, mth DESC
+            `),
+          ]);
+
+          const nfpiRows = (nfpiRes.recordset ?? []) as any[];
+          if (nfpiRows.length > 0) {
+            const isTrue = (v: any) => v === true || v === 1;
+
+            const fullTrend: TrendPoint[] = nfpiRows.map((r: any) => {
+              const yr  = parseInt(r.yr, 10);
+              const mth = parseInt(r.mth, 10);
+              const key = `${yr}-${String(mth).padStart(2, "0")}`;
+              const nbsVal = nbsMap.get(key);
+              return {
+                month:          key,
+                monthName:      `${getMonthName(mth)} ${yr}`,
+                naijaMarketYoy: r.yoy_change_pct !== null ? Math.round(parseFloat(r.yoy_change_pct) * 100) / 100 : null,
+                nbsYoy:         nbsVal !== undefined ? Math.round(nbsVal * 100) / 100 : null,
+                isAnchored:     isTrue(r.yoy_fully_anchored),
+              };
+            });
+            const trend = fullTrend.slice(-periodMonths);
+
+            const yoyAnchored = nfpiRows.filter((r: any) => isTrue(r.yoy_fully_anchored));
+            const momAnchored = nfpiRows.filter((r: any) => isTrue(r.mom_fully_anchored));
+            const yoyRow = yoyAnchored[yoyAnchored.length - 1];
+            const momRow = momAnchored[momAnchored.length - 1];
+
+            const headlineYoy = yoyRow ? Math.round(parseFloat(yoyRow.yoy_change_pct) * 100) / 100 : null;
+            const headlineMom = momRow ? Math.round(parseFloat(momRow.mom_change_pct) * 100) / 100 : null;
+            const asOf        = yoyRow ? `${fullMonthName(parseInt(yoyRow.mth, 10))} ${parseInt(yoyRow.yr, 10)}` : "";
+
+            const nbsLatest = (nbsLatestRes.recordset && nbsLatestRes.recordset[0]) ? nbsLatestRes.recordset[0] : null;
+            const nbsOfficial = {
+              yoy:  nbsLatest ? Math.round(parseFloat(nbsLatest.yoy_inflation) * 100) / 100 : null,
+              mom:  (nbsLatest && nbsLatest.mom_inflation !== null) ? Math.round(parseFloat(nbsLatest.mom_inflation) * 100) / 100 : null,
+              asOf: nbsLatest ? `${fullMonthName(parseInt(nbsLatest.mth, 10))} ${parseInt(nbsLatest.yr, 10)}` : "",
+            };
+
+            const elapsedMs = Date.now() - startTime;
+            const body: InflationResponse = {
+              success: true,
+              timestamp: new Date().toISOString(),
+              period,
+              periodLabel,
+              currentInflation: {
+                rate:           headlineYoy,
+                monthOverMonth: headlineMom,
+                yearOverYear:   headlineYoy,
+                trend:          headlineMom !== null ? (headlineMom > 0 ? "up" : headlineMom < 0 ? "down" : "stable") : "stable",
+                asOf,
+              },
+              monthlyTrend:      trend,
+              regionalBreakdown: await fetchRegionalInflation().catch(() => []),
+              nbsOfficial,
+              topInflators:      cacheResultFinal.success ? cacheResultFinal.topInflators      : [],
+              topDeflators:      cacheResultFinal.success ? cacheResultFinal.topDeflators      : [],
+              basketComposition: cacheResultFinal.success ? cacheResultFinal.basketComposition : [],
+              categoryBreakdown: cacheResultFinal.success ? calculateCategoryBreakdown(cacheResultFinal.basketComposition) : [],
+              dataSource: "NaijaMarket Staples Index - 29 NBS-anchored commodities, Jun 2018 to May 2026",
+              recordCount: trend.length,
+            };
+            return NextResponse.json(body, {
+              status: 200,
+              headers: {
+                "Cache-Control":   "s-maxage=300, stale-while-revalidate=60",
+                "X-Data-Source":   "nfpi-v2-jevons",
+                "X-Response-Time": `${elapsedMs}ms`,
+              },
+            });
+          }
+        } catch (err) {
+          console.error("[inflation v8] NFPI_Monthly_v2 branch failed, falling through:", err);
+        }
+      }
+    }
+
     // ── STEP 1: Calculated_Inflation (10-year primary) + 2026 extension ────
     if (calcResultFinal.success && calcResultFinal.data.length >= 2) {
       console.log(`[inflation v7] Using Calculated_Inflation: ${calcResultFinal.data.length} months`);
       dataSource = `NaijaMarket Intel (10-Year Historical Data)`;
 
-      // Append 2026 months that CI doesn't have
-      const extension = await fetch2026Extension(
-        nbsMap,
-        calcResultFinal.latestYr,
-        calcResultFinal.latestMth
-      );
-
-      const allData    = [...calcResultFinal.data, ...extension];
-      const displayData = allData.slice(-periodMonths);
+      const displayData = calcResultFinal.data.slice(-periodMonths);
       const latest     = displayData[displayData.length - 1];
       const prevMonth  = displayData[displayData.length - 2];
 
@@ -1161,7 +1160,6 @@ export async function GET(request: NextRequest) {
         ? Math.round((latest.naijaMarketRate - prevMonth.naijaMarketRate) * 10) / 10
         : (cacheResultFinal.avgMomPct ?? 0);
 
-      const { rate: latestNBS } = getNbsRateFromMap(nbsMap);
       const elapsedMs = Date.now() - startTime;
 
       return NextResponse.json({
@@ -1178,12 +1176,6 @@ export async function GET(request: NextRequest) {
         },
         monthlyTrend:      displayData,
         regionalBreakdown: await fetchRegionalInflation().catch(() => []),
-        nbsComparison: {
-          naijaMarket:    Math.round(currentRate * 10) / 10,
-          nbs:            latestNBS,
-          difference:     Math.round((currentRate - latestNBS) * 10) / 10,
-          interpretation: getNbsInterpretation(currentRate, latestNBS),
-        },
         topInflators:      cacheResultFinal.success ? cacheResultFinal.topInflators      : [],
         topDeflators:      cacheResultFinal.success ? cacheResultFinal.topDeflators      : [],
         basketComposition: cacheResultFinal.success ? cacheResultFinal.basketComposition : [],
@@ -1207,8 +1199,7 @@ export async function GET(request: NextRequest) {
 
       const displayData  = cacheResultFinal.data.slice(-periodMonths);
       const latest       = displayData[displayData.length - 1];
-      const { rate: latestNBS } = getNbsRateFromMap(nbsMap);
-      const currentRate  = latest?.naijaMarketRate ?? latestNBS;
+      const currentRate  = latest?.naijaMarketRate ?? 0;
       const momChange    = cacheResultFinal.avgMomPct ?? 0;
 
       const elapsedMs = Date.now() - startTime;
@@ -1223,12 +1214,6 @@ export async function GET(request: NextRequest) {
         },
         monthlyTrend:      displayData,
         regionalBreakdown: await fetchRegionalInflation().catch(() => []),
-        nbsComparison: {
-          naijaMarket:    Math.round(currentRate * 10) / 10,
-          nbs:            latestNBS,
-          difference:     Math.round((currentRate - latestNBS) * 10) / 10,
-          interpretation: getNbsInterpretation(currentRate, latestNBS),
-        },
         topInflators:      cacheResultFinal.topInflators,
         topDeflators:      cacheResultFinal.topDeflators,
         basketComposition: cacheResultFinal.basketComposition,
@@ -1295,7 +1280,6 @@ export async function GET(request: NextRequest) {
     const prevMonth         = monthlyTrend[monthlyTrend.length - 2];
     const currentRate       = latestMonth?.naijaMarketRate ?? 0;
     const momChange         = latestMonth && prevMonth ? latestMonth.naijaMarketRate - prevMonth.naijaMarketRate : 0;
-    const { rate: latestNBS } = getNbsRateFromMap(nbsMap);
     const now = new Date();
 
     response = {
@@ -1308,12 +1292,6 @@ export async function GET(request: NextRequest) {
         asOf:           latestMonth?.monthName ?? `${getMonthName(now.getMonth() + 1)} ${now.getFullYear()}`,
       },
       monthlyTrend, regionalBreakdown,
-      nbsComparison: {
-        naijaMarket:    Math.round(currentRate * 10) / 10,
-        nbs:            latestNBS,
-        difference:     Math.round((currentRate - latestNBS) * 10) / 10,
-        interpretation: getNbsInterpretation(currentRate, latestNBS),
-      },
       topInflators: inflators, topDeflators: deflators,
       basketComposition, categoryBreakdown: calculateCategoryBreakdown(basketComposition),
       dataSource, recordCount: priceData.length,

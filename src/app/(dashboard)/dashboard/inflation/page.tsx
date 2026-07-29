@@ -33,7 +33,6 @@ import {
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
-  ReferenceLine,
   ComposedChart,
 } from "recharts";
 
@@ -44,13 +43,9 @@ import {
 interface MonthlyInflation {
   month: string;
   monthName: string;
-  year: number;
-  naijaMarketRate: number;
-  nbsRate: number | null;
-  difference: number | null;
-  avgPrice: number;
-  prevAvgPrice: number;
-  priceChange: number;
+  naijaMarketYoy: number | null;
+  nbsYoy: number | null;
+  isAnchored: boolean;
 }
 
 interface RegionalInflation {
@@ -97,19 +92,18 @@ interface InflationData {
   period: string;
   periodLabel: string;
   currentInflation: {
-    rate: number;
-    monthOverMonth: number;
-    yearOverYear: number;
+    rate: number | null;
+    monthOverMonth: number | null;
+    yearOverYear: number | null;
     trend: "up" | "down" | "stable";
     asOf: string;
   };
   monthlyTrend: MonthlyInflation[];
   regionalBreakdown: RegionalInflation[];
-  nbsComparison: {
-    naijaMarket: number;
-    nbs: number;
-    difference: number;
-    interpretation: string;
+  nbsOfficial: {
+    yoy: number | null;
+    mom: number | null;
+    asOf: string;
   };
   topInflators: ItemInflation[];
   topDeflators: ItemInflation[];
@@ -192,9 +186,9 @@ export default function InflationPage() {
     if (!data) return;
     
     const csvContent = [
-      ["Month", "NBS Rate (%)"].join(","),
+      ["Month", "NaijaMarket YoY (%)", "NBS YoY (%)", "Anchored"].join(","),
       ...data.monthlyTrend.map(m =>
-        [m.monthName, m.nbsRate ?? "N/A"].join(",")
+        [m.monthName, m.naijaMarketYoy ?? "N/A", m.nbsYoy ?? "N/A", m.isAnchored ? "Yes" : "No"].join(",")
       ),
     ].join("\n");
     
@@ -310,23 +304,45 @@ export default function InflationPage() {
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-6">
           <div>
             <div className="flex items-center gap-2 mb-1">
-              <p className="text-gray-400 text-sm">Food Inflation (YoY) — NBS Official</p>
+              <p className="text-gray-400 text-sm">NaijaMarket Staples Index (YoY)</p>
               <span className="px-2 py-0.5 bg-orange-500/20 text-orange-400 text-xs rounded-full flex items-center gap-1">
                 <Calendar className="w-3 h-3" />
-                {/* Tied to NBS_FALLBACK_RATE (17.52 = NBS June 2026 food YoY) in api/inflation/route.ts. If that constant changes, change this label. Both are removed when the route reads a real series. */}
-                June 2026 · Source: National Bureau of Statistics
+                {inflation?.asOf ? `${inflation.asOf} · 29 NBS-anchored commodities` : "29 NBS-anchored commodities"}
               </span>
             </div>
             <div className="flex items-baseline gap-3">
               <span className="text-5xl md:text-6xl font-bold text-white">{inflation?.rate != null ? `${inflation.rate}%` : "—"}</span>
             </div>
-            <p className="text-gray-500 text-sm mt-2">
-              Year-over-year change in food prices across Nigerian markets
+            <p className="text-gray-400 text-sm mt-2">
+              MoM {inflation?.monthOverMonth != null ? `${inflation.monthOverMonth}%` : "—"}
+            </p>
+            <p className="text-gray-500 text-sm mt-1">
+              Year-over-year change in staple food prices across Nigerian markets
             </p>
           </div>
         </div>
       </div>
-      
+
+      {/* NBS Official Food Inflation (separate reference, no computed difference) */}
+      <div className="bg-[#1a1a1a] border border-gray-800 rounded-xl p-4 md:p-6 mb-6">
+        <div className="flex items-center gap-2 mb-1">
+          <p className="text-gray-400 text-sm">NBS Official Food Inflation</p>
+          <span className="px-2 py-0.5 bg-blue-500/20 text-blue-400 text-xs rounded-full flex items-center gap-1">
+            <Calendar className="w-3 h-3" />
+            {data?.nbsOfficial?.asOf ?? ""}
+          </span>
+        </div>
+        <div className="flex items-baseline gap-4">
+          <span className="text-2xl md:text-3xl font-bold text-white">
+            YoY {data?.nbsOfficial?.yoy != null ? `${data.nbsOfficial.yoy}%` : "—"}
+          </span>
+          <span className="text-2xl md:text-3xl font-bold text-white">
+            MoM {data?.nbsOfficial?.mom != null ? `${data.nbsOfficial.mom}%` : "—"}
+          </span>
+        </div>
+        <p className="text-gray-500 text-sm mt-2">Source: National Bureau of Statistics</p>
+      </div>
+
       {/* Monthly Trend Chart */}
       <div className="bg-[#1a1a1a] border border-gray-800 rounded-xl p-4 mb-6">
         <div className="flex items-center justify-between mb-4">
@@ -335,6 +351,10 @@ export default function InflationPage() {
             <h3 className="font-semibold">Monthly Inflation Trend</h3>
           </div>
           <div className="flex items-center gap-4 text-xs">
+            <div className="flex items-center gap-1">
+              <div className="w-3 h-3 rounded-full bg-emerald-500" />
+              <span className="text-gray-400">NaijaMarket Staples Index (YoY)</span>
+            </div>
             <div className="flex items-center gap-1">
               <div className="w-3 h-3 rounded-full bg-blue-500" />
               <span className="text-gray-400">NBS Official Food Inflation (YoY)</span>
@@ -359,25 +379,39 @@ export default function InflationPage() {
                 contentStyle={{ backgroundColor: "#1a1a1a", border: "1px solid #333", borderRadius: "8px" }}
                 labelStyle={{ color: "#fff" }}
                 formatter={(value: number, name: string) => [
-                  `${value.toFixed(1)}%`,
-                  name === "naijaMarketRate" ? "NaijaMarket" : "NBS Official"
+                  value != null ? `${Number(value).toFixed(1)}%` : "—",
+                  name
                 ]}
               />
-              <ReferenceLine y={30} stroke="#666" strokeDasharray="5 5" label={{ value: "30%", fill: "#666", fontSize: 10 }} />
               <Line
                 type="monotone"
-                dataKey="nbsRate"
+                dataKey="naijaMarketYoy"
+                stroke="#10b981"
+                strokeWidth={2}
+                dot={((p: any) => (
+                  <circle key={`nm-${p.index}`} cx={p.cx} cy={p.cy} r={p?.payload?.isAnchored ? 3.5 : 0} fill="#10b981" stroke="none" />
+                )) as any}
+                connectNulls={false}
+                name="NaijaMarket Staples Index (YoY)"
+              />
+              <Line
+                type="monotone"
+                dataKey="nbsYoy"
                 stroke="#3b82f6"
                 strokeWidth={2}
                 strokeDasharray="5 5"
                 dot={{ fill: "#3b82f6", strokeWidth: 0, r: 3 }}
+                connectNulls={true}
                 name="NBS Official Food Inflation (YoY)"
               />
             </ComposedChart>
           </ResponsiveContainer>
         </div>
+        <p className="text-gray-500 text-xs mt-3">
+          Solid points are months anchored to published NBS prices at both endpoints. Earlier months are interpolated between NBS publications.
+        </p>
       </div>
-      
+
       {/* Top Inflators & Deflators */}
       <div className="grid lg:grid-cols-2 gap-4 md:gap-6 mb-6">
         {/* Top Inflators */}
