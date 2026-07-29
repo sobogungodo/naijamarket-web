@@ -17,6 +17,7 @@
 -- recompute this filter at runtime - a composition change mid-series creates
 -- a spurious index jump.
 -- ============================================================================
+-- This guard protects creation only. If the table already exists this section is a no-op and the 29-row gate does not run. To change the basket, drop and re-seed under an explicit token.
 IF OBJECT_ID('dbo.NFPI_Basket_v2', 'U') IS NULL
 BEGIN
     CREATE TABLE dbo.NFPI_Basket_v2 (
@@ -172,7 +173,8 @@ BEGIN
         SELECT observation_month,
                EXP(AVG(LOG(price_naira))) AS G,
                COUNT(*) AS items_in_basket,
-               MAX(CASE WHEN data_source = 'NBS_ANCHOR' THEN 1 ELSE 0 END) AS month_is_anchored
+               -- MIN not MAX: the flag must mean ALL basket items anchored, not any. Identical on current data (all 29 items share the same 28 anchor months); fails safe if the basket changes.
+               MIN(CASE WHEN data_source = 'NBS_ANCHOR' THEN 1 ELSE 0 END) AS month_is_anchored
         FROM src
         GROUP BY observation_month
     ),
@@ -239,7 +241,10 @@ ORDER BY observation_month;
 --   2026-05 -> index_value 554.28, mom_change_pct +2.57, yoy_change_pct -8.92
 
 SELECT COUNT(*) AS total_rows,                                              -- expect 96
-       SUM(CASE WHEN yoy_fully_anchored = 1 THEN 1 ELSE 0 END) AS yoy_fully_anchored_rows,
-       SUM(CASE WHEN month_is_anchored  = 1 THEN 1 ELSE 0 END) AS anchored_months   -- expect 28
+       SUM(CASE WHEN yoy_fully_anchored = 1 THEN 1 ELSE 0 END) AS yoy_fully_anchored_rows,  -- expect 12
+       SUM(CASE WHEN mom_fully_anchored = 1 THEN 1 ELSE 0 END) AS mom_fully_anchored_rows,  -- expect 20
+       SUM(CASE WHEN month_is_anchored  = 1 THEN 1 ELSE 0 END) AS anchored_months,          -- expect 28
+       MIN(observation_month) AS first_month,                                               -- expect 2018-06-01
+       MAX(observation_month) AS last_month                                                 -- expect 2026-05-01
 FROM dbo.NFPI_Monthly_v2;
 GO
