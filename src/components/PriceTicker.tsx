@@ -24,11 +24,12 @@ export default function PriceTicker() {
         const data = await response.json();
         if (data.success && data.data) {
           setTickerData(data.data);
+        } else {
+          setTickerData([]);
         }
       } catch (error) {
         console.error("Failed to fetch ticker data:", error);
-        // Use fallback data on error
-        setTickerData(getStaticFallback());
+        setTickerData([]);
       } finally {
         setLoading(false);
       }
@@ -69,6 +70,8 @@ export default function PriceTicker() {
       </div>
     );
   }
+
+  if (tickerData.length === 0) return null;
 
   // Double the items for seamless loop
   const doubledData = [...tickerData, ...tickerData];
@@ -130,18 +133,4 @@ export default function PriceTicker() {
       `}</style>
     </div>
   );
-}
-
-// Static fallback data
-function getStaticFallback(): TickerItem[] {
-  return [
-    { symbol: "RICE.NGN", name: "Rice (50kg)", price: 78500, change: 2.3, trend: "up", unit: "bag" },
-    { symbol: "BEANS.NGN", name: "Beans (100kg)", price: 62000, change: -1.2, trend: "down", unit: "bag" },
-    { symbol: "GARRI.NGN", name: "Garri (50kg)", price: 28000, change: 0.8, trend: "up", unit: "bag" },
-    { symbol: "TOMATO.NGN", name: "Tomatoes", price: 45000, change: -5.2, trend: "down", unit: "basket" },
-    { symbol: "ONION.NGN", name: "Onions", price: 38500, change: 3.1, trend: "up", unit: "bag" },
-    { symbol: "CEMENT.NGN", name: "Cement", price: 6500, change: -0.3, trend: "down", unit: "bag" },
-    { symbol: "PALM.NGN", name: "Palm Oil (25L)", price: 52000, change: 1.5, trend: "up", unit: "keg" },
-    { symbol: "NFPI.IDX", name: "Food Price Index", price: 127.4, change: 2.1, trend: "up", unit: "index" },
-  ];
 }

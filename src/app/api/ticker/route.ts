@@ -39,17 +39,18 @@ export async function GET() {
         WHERE price_naira  IS NOT NULL
           AND price_naira  > 0
           AND item_id NOT LIKE 'NBS%'
+          AND is_food    = 1
+          AND is_nbs_ref = 0
       ) ranked
       WHERE rn = 1
       ORDER BY last_updated DESC
     `;
 
     if (!rows || rows.length === 0) {
-      return NextResponse.json({
-        success: true,
-        data: getStaticFallback(),
-        source: "static_fallback",
-      });
+      return NextResponse.json(
+        { success: false, error: "No ticker data available" },
+        { status: 200 }
+      );
     }
 
     // Map to ticker shape
@@ -80,11 +81,10 @@ export async function GET() {
 
   } catch (error) {
     console.error("Ticker API error:", error);
-    return NextResponse.json({
-      success: true,
-      data: getStaticFallback(),
-      source: "static_fallback",
-    });
+    return NextResponse.json(
+      { success: false, error: "Ticker data unavailable" },
+      { status: 500 }
+    );
   }
 }
 
@@ -123,18 +123,4 @@ function createSymbol(itemName: string): string {
 
   const firstWord = name.split(/[\s\-\(]/)[0] ?? "ITEM";
   return firstWord.substring(0, 6);
-}
-
-// Static fallback — only fires if Latest_Prices_Summary returns 0 rows
-function getStaticFallback() {
-  return [
-    { symbol: "RICE",     name: "Rice (50kg)",      price: 78500,  change:  2.3,  trend: "up"     as const, unit: "bag"    },
-    { symbol: "BEANS",    name: "Beans (100kg)",    price: 62000,  change: -1.2,  trend: "down"   as const, unit: "bag"    },
-    { symbol: "GARRI",    name: "Garri (50kg)",     price: 28000,  change:  0.8,  trend: "up"     as const, unit: "bag"    },
-    { symbol: "TOMATO",   name: "Tomatoes",         price: 45000,  change: -5.2,  trend: "down"   as const, unit: "basket" },
-    { symbol: "ONION",    name: "Onions",           price: 38500,  change:  3.1,  trend: "up"     as const, unit: "bag"    },
-    { symbol: "PALM",     name: "Palm Oil (25L)",   price: 52000,  change:  1.5,  trend: "up"     as const, unit: "keg"    },
-    { symbol: "YAM",      name: "Yam (tuber)",      price: 4500,   change: -0.8,  trend: "down"   as const, unit: "each"   },
-    { symbol: "FISH",     name: "Catfish (kg)",     price: 11000,  change:  0.5,  trend: "stable" as const, unit: "kg"     },
-  ];
 }
