@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import {
   Users, Shield, Search, Download, RefreshCw, UserPlus, Eye, Ban,
-  Star, MapPin, Bot, Trash2, AlertTriangle, CheckCircle2,
+  Star, MapPin, Bot, Trash2, AlertTriangle, CheckCircle2, Undo2,
 } from 'lucide-react';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
@@ -132,6 +132,10 @@ export default function UserManagementPage() {
   const [isDeleting,        setIsDeleting]          = useState(false);
   const [deleteResult,      setDeleteResult]        = useState<string | null>(null);
 
+  // Approve / unapprove confirm dialog state
+  const [statusConfirm,     setStatusConfirm]       = useState<{ id: string; name: string; action: 'approve' | 'unapprove' } | null>(null);
+  const [isStatusUpdating,  setIsStatusUpdating]    = useState(false);
+
   // ── Fetch users ────────────────────────────────────────────────────────────
   const fetchUsers = useCallback(async (tab: UserTab, source: SourceTab, search: string, status: string) => {
     try {
@@ -236,6 +240,36 @@ export default function UserManagementPage() {
       setShowDeleteConfirm(false);
     }
   }, [deleteTarget, activeTab, sourceFilter, searchQuery, statusFilter, fetchUsers, fetchStats]);
+
+  // ── Approve / unapprove a trader (PATCH /api/users) ─────────────────────────
+  const submitStatusAction = useCallback(async () => {
+    if (!statusConfirm) return;
+    setIsStatusUpdating(true);
+    try {
+      const res = await fetch('/api/users', {
+        method:  'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({
+          userId:   statusConfirm.id,
+          userType: 'trader',
+          action:   statusConfirm.action,
+          reason:   statusConfirm.action === 'unapprove' ? 'Admin unapprove' : '',
+        }),
+      });
+      const json = await res.json();
+      if (json.success) {
+        await Promise.all([
+          fetchUsers(activeTab, sourceFilter, searchQuery, statusFilter),
+          fetchStats(),
+        ]);
+      }
+    } catch (err) {
+      console.error('[submitStatusAction]', err);
+    } finally {
+      setIsStatusUpdating(false);
+      setStatusConfirm(null);
+    }
+  }, [statusConfirm, activeTab, sourceFilter, searchQuery, statusFilter, fetchUsers, fetchStats]);
 
   // ── Derived stats ─────────────────────────────────────────────────────────
   const traderStats = {
@@ -588,6 +622,20 @@ export default function UserManagementPage() {
                             <Ban className="w-4 h-4 text-gray-400" />
                           </button>
                         )}
+                        <button
+                          onClick={() => setStatusConfirm({ id: trader.id, name: trader.name, action: 'approve' })}
+                          className="p-1.5 hover:bg-green-600/20 rounded-lg transition-colors"
+                          title="Approve"
+                        >
+                          <CheckCircle2 className="w-4 h-4 text-green-400" />
+                        </button>
+                        <button
+                          onClick={() => setStatusConfirm({ id: trader.id, name: trader.name, action: 'unapprove' })}
+                          className="p-1.5 hover:bg-yellow-600/20 rounded-lg transition-colors"
+                          title="Unapprove"
+                        >
+                          <Undo2 className="w-4 h-4 text-yellow-400" />
+                        </button>
                       </div>
                     </td>
                   </tr>
@@ -716,6 +764,59 @@ export default function UserManagementPage() {
                            font-medium transition-colors disabled:opacity-50"
               >
                 {isDeleting ? 'Deleting…' : 'Confirm Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Approve / unapprove confirm dialog ─────────────────────────────── */}
+      {statusConfirm && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
+          <div className={`bg-[#1a1f2e] border rounded-xl p-6 max-w-md w-full ${
+            statusConfirm.action === 'approve' ? 'border-green-500/30' : 'border-yellow-500/30'
+          }`}>
+            <div className="flex items-center gap-3 mb-4">
+              <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
+                statusConfirm.action === 'approve' ? 'bg-green-500/20' : 'bg-yellow-500/20'
+              }`}>
+                {statusConfirm.action === 'approve'
+                  ? <CheckCircle2 className="w-5 h-5 text-green-400" />
+                  : <Undo2 className="w-5 h-5 text-yellow-400" />}
+              </div>
+              <div>
+                <h3 className="font-semibold text-white">
+                  {statusConfirm.action === 'approve' ? 'Approve trader' : 'Unapprove trader'}
+                </h3>
+                <p className="text-xs text-gray-400">{statusConfirm.name}</p>
+              </div>
+            </div>
+
+            <p className="text-sm text-gray-300 mb-5">
+              {statusConfirm.action === 'approve'
+                ? 'Sets this trader to APPROVED — their submissions enter the live pipeline and become payable.'
+                : 'Sets this trader to SUSPENDED — a withdrawn approval (distinct from never-approved). They can no longer submit live prices.'}
+            </p>
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => setStatusConfirm(null)}
+                className="flex-1 px-4 py-2.5 bg-gray-700 hover:bg-gray-600 rounded-lg text-sm transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={submitStatusAction}
+                disabled={isStatusUpdating}
+                className={`flex-1 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors disabled:opacity-50 ${
+                  statusConfirm.action === 'approve'
+                    ? 'bg-green-600 hover:bg-green-500'
+                    : 'bg-yellow-600 hover:bg-yellow-500'
+                }`}
+              >
+                {isStatusUpdating
+                  ? 'Working…'
+                  : (statusConfirm.action === 'approve' ? 'Confirm Approve' : 'Confirm Unapprove')}
               </button>
             </div>
           </div>

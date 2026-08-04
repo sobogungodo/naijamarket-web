@@ -168,38 +168,74 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Missing userId, userType, action' }, { status: 400 });
 
     const statusMap: Record<string, string> = {
-      activate: 'ACTIVE',
-      suspend:  'SUSPENDED',
-      ban:      'BANNED',
-      review:   'PENDING_REVIEW',
+      activate:  'ACTIVE',
+      suspend:   'SUSPENDED',
+      ban:       'BANNED',
+      review:    'PENDING_REVIEW',
+      approve:   'APPROVED',
+      unapprove: 'SUSPENDED',
     };
     const newStatus = statusMap[action];
     if (!newStatus) return NextResponse.json({ success: false, error: 'Invalid action' }, { status: 400 });
 
-    if (userType === 'trader') {
-      await execute(`
-        UPDATE dbo.Traders_register
-        SET registration_status = @status, suspension_reason = @reason
-        WHERE trader_id = @userId
-      `, { userId, status: newStatus, reason: reason || '' });
+    // approve/unapprove govern the trader money path (Traders_register) only — never validators.
+    if ((action === 'approve' || action === 'unapprove') && userType !== 'trader')
+      return NextResponse.json({ success: false, error: 'approve/unapprove apply to traders only' }, { status: 400 });
 
-      // [audit] log admin trader status change (fire-and-forget)
+    // is_suspended is written only for actions with a defined suspend-state.
+    // 'review' (PENDING_REVIEW) is deliberately omitted — triage is not a block.
+    const isSuspendedMap: Record<string, number> = {
+      approve: 0, activate: 0, suspend: 1, unapprove: 1, ban: 1,
+    };
+    const isSuspended = isSuspendedMap[action]; // number | undefined
+
+    // Acting admin identity, recorded in the audit row.
+    const adminId    = (session.user as { id?: string })?.id ?? null;
+    const adminEmail = (session.user as { email?: string | null })?.email ?? null;
+
+    if (userType === 'trader') {
+      // Capture prior status BEFORE the UPDATE. Traders_register is trigger-bearing
+      // (trg_Traders_register_PreventDualRole), so OUTPUT-without-INTO would throw;
+      // a plain pre-SELECT is trigger-safe.
+      let fromStatus: string | null = null;
+      let phone: string = userId;
       try {
-        const tr = await query<{ phone_number: string }>(
-          `SELECT phone_number FROM dbo.Traders_register WHERE trader_id = @userId`,
+        const prev = await query<{ phone_number: string; registration_status: string }>(
+          `SELECT phone_number, registration_status FROM dbo.Traders_register WHERE trader_id = @userId`,
           { userId }
         );
-        const phone = tr[0]?.phone_number || userId;
+        fromStatus = prev[0]?.registration_status ?? null;
+        phone      = prev[0]?.phone_number || userId;
+      } catch (e) {
+        console.error('[users PATCH][audit] pre-read failed (non-fatal):', e);
+      }
+
+      // is_suspended is added to the SET only for the mapped actions; ban/suspend/unapprove
+      // => 1, approve/activate => 0. 'review' leaves is_suspended untouched.
+      const setClauses = ['registration_status = @status', 'suspension_reason = @reason'];
+      const updParams: Record<string, unknown> = { userId, status: newStatus, reason: reason || '' };
+      if (isSuspended !== undefined) {
+        setClauses.push('is_suspended = @isSuspended');
+        updParams.isSuspended = isSuspended;
+      }
+      await execute(
+        `UPDATE dbo.Traders_register SET ${setClauses.join(', ')} WHERE trader_id = @userId`,
+        updParams,
+      );
+
+      // [audit] admin trader status change — fire-and-forget: an audit failure must NOT
+      // fail the status change. Distinctive prefix so a silent failure is greppable.
+      try {
         await execute(`
           INSERT INTO dbo.Trader_Activity_Log (phone_number, platform, event_type, event_detail, session_token, ip_address, created_at)
           VALUES (@phone, 'ADMIN', 'TRADER_STATUS_CHANGED', @detail, NULL, @ip, SYSUTCDATETIME())
         `, {
           phone,
-          detail: JSON.stringify({ action, newStatus, userId, reason: reason || '' }),
+          detail: JSON.stringify({ action, fromStatus, newStatus, adminId, adminEmail, userId, reason: reason || '' }),
           ip: request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || '',
         });
       } catch (e) {
-        console.error('[users PATCH] trader status audit non-fatal:', e);
+        console.error('[users PATCH][audit] trader status audit FAILED:', e);
       }
     } else {
       await execute(`
