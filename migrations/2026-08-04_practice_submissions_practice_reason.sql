@@ -1,0 +1,23 @@
+-- 2026-08-04_practice_submissions_practice_reason.sql
+-- Add dbo.Practice_Submissions.practice_reason to distinguish WHY a row is practice.
+--
+-- WHY: /api/submit routes non-APPROVED submissions to practice (forced), and — after the
+-- accompanying trader-app increment — lets an APPROVED reporter opt into practice
+-- deliberately (voluntary). December's merit ranking reads Practice_Submissions to rank
+-- waitlist APPLICANTS; an APPROVED reporter's voluntary rehearsals must NOT count as
+-- applicant evidence. No existing column distinguishes the two (waitlist_id is set for
+-- either, when the phone has a Waitlist row), so a write-time mark is the only clean
+-- discriminator. This column lands FIRST, before the branch that writes it is enabled.
+--
+-- VALUES: 'NOT_APPROVED' (forced — status != APPROVED) | 'VOLUNTARY' (APPROVED opt-in).
+-- NULL = written before the distinction existed. Exactly one such row today:
+-- PRC-1785852981522-hyqhh (synthetic OTP-shim test), which correctly stays NULL.
+--
+-- SAFETY: ADDITIVE, NULLABLE — no data rewrite, no default backfill, so NO pre-image /
+-- backup is needed. naijaapp holds a TABLE-LEVEL INSERT grant (sys.database_permissions
+-- minor_id=0), which automatically covers the new column; NO re-grant required
+-- (verified post-ALTER via HAS_PERMS_BY_NAME under EXECUTE AS naijaapp).
+--
+-- ROLLBACK: ALTER TABLE dbo.Practice_Submissions DROP COLUMN practice_reason;
+
+ALTER TABLE dbo.Practice_Submissions ADD practice_reason nvarchar(20) NULL;
