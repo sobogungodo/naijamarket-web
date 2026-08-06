@@ -99,6 +99,22 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Dual-role isolation: a NaijaMarket price reporter (ANY status, incl. WAITLIST) cannot
+    // also register as a consumer. The DB trigger trg_Consumers_PreventDualRole enforces this
+    // hard (THROW 50001 → generic 500); pre-check here so the reporter gets a clear message.
+    const phonePlusDR = `+${formattedPhone}`;
+    const reporterRows = await prisma.$queryRaw<Array<{ cnt: number }>>`
+      SELECT CAST(COUNT(*) AS INT) AS cnt FROM dbo.Traders_register
+      WHERE phone_number = ${formattedPhone} OR phone_number = ${phonePlusDR}
+    `;
+    if (reporterRows?.[0] && Number(reporterRows[0].cnt) > 0) {
+      console.log("❌ Phone is a registered price reporter:", formattedPhone);
+      return NextResponse.json(
+        { error: "This number is registered as a NaijaMarket price reporter and can't be used to create a consumer account." },
+        { status: 409 }
+      );
+    }
+
     // Check if user exists by email (only when an email was provided)
     if (formattedEmail) {
       const existingByEmail = await prisma.consumers.findFirst({
