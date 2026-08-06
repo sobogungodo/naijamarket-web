@@ -11,6 +11,7 @@
 "use client";
 
 import React from "react";
+import { PAYMENTS_ENABLED } from "@/lib/flags";
 
 // ─── LoadingState ─────────────────────────────────────────────────────────────
 interface LoadingStateProps {
@@ -140,19 +141,25 @@ export function UpgradePrompt({
       </div>
       <p style={upgradeFeatureStyle}>{featureName}</p>
       {featureDesc && <p style={upgradeDescStyle}>{featureDesc}</p>}
-      <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap", marginTop: "1rem" }}>
-        <a href="/pricing" style={{ ...upgradeBtnStyle, background: color }}>
-          Upgrade now
-        </a>
-        <a
-          href={`https://wa.me/2349131095009?text=I%20want%20to%20upgrade%20to%20${requiredTier}`}
-          target="_blank"
-          rel="noopener noreferrer"
-          style={waUpgradeBtnStyle}
-        >
-          WhatsApp upgrade
-        </a>
-      </div>
+      {PAYMENTS_ENABLED ? (
+        <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap", marginTop: "1rem" }}>
+          <a href="/pricing" style={{ ...upgradeBtnStyle, background: color }}>
+            Upgrade now
+          </a>
+          <a
+            href={`https://wa.me/2349131095009?text=I%20want%20to%20upgrade%20to%20${requiredTier}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            style={waUpgradeBtnStyle}
+          >
+            WhatsApp upgrade
+          </a>
+        </div>
+      ) : (
+        <p style={{ ...upgradeDescStyle, marginTop: "1rem" }}>
+          More plans are coming soon. Enjoy the free tier for now.
+        </p>
+      )}
     </div>
   );
 }

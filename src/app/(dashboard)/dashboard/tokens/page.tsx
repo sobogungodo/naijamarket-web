@@ -8,6 +8,7 @@
 "use client";
 
 import { useSession } from "next-auth/react";
+import { PAYMENTS_ENABLED } from "@/lib/flags";
 import { useState, useEffect, useCallback } from "react";
 import {
   Coins,
@@ -151,10 +152,7 @@ function getTransactionSign(type: string): string {
 export default function TokenWalletPage() {
   const { data: session, status } = useSession();
 
-  // Payments temporarily disabled for the testing phase.
-  // Flip to `true` to re-enable token-pack purchases (Paystack).
-  const PAYMENTS_ENABLED = false;
-
+  // PAYMENTS_ENABLED is the central kill-switch in @/lib/flags (free tier only for now).
   const [wallet, setWallet] = useState<WalletData | null>(null);
   const [packs, setPacks] = useState<TokenPack[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);

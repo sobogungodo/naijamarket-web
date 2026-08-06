@@ -8,6 +8,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { PAYMENTS_ENABLED } from "@/lib/flags";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
@@ -115,9 +116,7 @@ const TIER_COLORS: Record<string, { bg: string; border: string; text: string }> 
 // Tier order for comparison
 const TIER_ORDER = ["FREE", "SILVER", "GOLD", "BUSINESS", "CORPORATE", "ENTERPRISE"];
 
-// Payments temporarily disabled for the testing phase.
-// Flip to `true` to re-enable Paystack/Flutterwave checkout exactly as before.
-const PAYMENTS_ENABLED = true;
+// PAYMENTS_ENABLED is the central kill-switch in @/lib/flags (free tier only for now).
 
 // ============================================================================
 // MAIN COMPONENT
