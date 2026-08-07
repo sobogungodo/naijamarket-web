@@ -208,9 +208,9 @@ export async function POST(request: NextRequest) {
         subscription_tier: "FREE",
         account_status: "ACTIVE",
         registration_source: "WEB",
-        daily_query_limit: 5,
+        daily_query_limit: 3,
         max_markets: 1,
-        queries_remaining: 5,
+        queries_remaining: 3, // FREE = 3/week (matches query-gate FREE_WEEKLY_LIMIT)
       },
     });
 

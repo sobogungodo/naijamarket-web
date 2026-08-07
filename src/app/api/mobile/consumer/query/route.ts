@@ -1,7 +1,7 @@
 // src/app/api/mobile/consumer/query/route.ts
 // NaijaMarket Intel — Consumer mobile query gate (Bearer JWT auth).
 // The app calls this BEFORE each price search. Shares the single source of
-// truth with the web gate: FREE = Consumers.queries_remaining (5/week), paid
+// truth with the web gate: FREE = Consumers.queries_remaining (3/week), paid
 // tiers = daily Query_Log counts. Gate-time check + log (Option A) — self-
 // contained, no post-success app call required.
 
