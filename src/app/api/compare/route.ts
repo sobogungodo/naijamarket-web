@@ -58,8 +58,18 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Tier limits
-    const maxMarketsAllowed = tier === "FREE" ? 2 : tier === "SILVER" ? 3 : 5;
+    // Tier market caps — mirror Subscription_Tiers (FREE 1 / SILVER 3 / GOLD 10 / …).
+    // Comparison needs ≥2 markets, so FREE (1 market) can't compare — it's a Silver+ feature.
+    const TIER_MAX_MARKETS: Record<string, number> = {
+      FREE: 1, SILVER: 3, GOLD: 10, BUSINESS: 5, CORPORATE: 6, ENTERPRISE: 226,
+    };
+    const maxMarketsAllowed = TIER_MAX_MARKETS[tier] ?? 1;
+    if (maxMarketsAllowed < 2) {
+      return NextResponse.json(
+        { success: false, error: "upgrade_required", message: "Comparing markets is a Silver plan feature. Upgrade to compare prices across markets." },
+        { status: 403 }
+      );
+    }
     const limitedMarketIds = marketIds.slice(0, maxMarketsAllowed);
 
     console.log("Compare API - Searching for:", { itemName, itemId, marketIds: limitedMarketIds });
