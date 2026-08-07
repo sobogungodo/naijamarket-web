@@ -1,0 +1,26 @@
+63a64,88
+>         # Phase 2 (first-reporter-wins): fold real trader submissions into the day's
+>         # 14:30 cells as an outlier-trimmed mean. usp_Aggregate_Trader_Prices MERGE-overwrites
+>         # the generator's (price_date,'14:30',item,market) cell wherever reporters submitted,
+>         # so usp_Refresh_LatestPrices below (which picks the highest slot per item+market =
+>         # 14:30) surfaces the trader-derived price to consumers. MUST run AFTER
+>         # sp_Generate_Daily_Prices (which owns full-catalog 14:30 generation — running before it
+>         # would trip its "slot already generated" guard) and BEFORE the LPS refresh.
+>         # Non-fatal: an aggregation hiccup must NOT break the core generate->refresh; consumers
+>         # then simply keep the generator price for that cell.
+>         try:
+>             logging.info("[generate_afternoon_prices] Aggregating trader prices ...")
+>             cur_agg = conn.cursor()
+>             cur_agg.execute("EXEC dbo.usp_Aggregate_Trader_Prices")
+>             conn.commit()
+>             cur_agg.close()
+>             logging.info("[generate_afternoon_prices] Trader aggregation complete.")
+>         except Exception as agg_e:
+>             logging.error(
+>                 "[generate_afternoon_prices] Trader aggregation FAILED (non-fatal, consumers "
+>                 "keep generator prices): %s", str(agg_e), exc_info=True)
+>             try:
+>                 conn.rollback()
+>             except Exception:
+>                 pass
+> 
