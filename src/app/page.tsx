@@ -8,6 +8,7 @@ import WhatsAppCTA from '@/components/WhatsAppCTA'
 
 // App download links (Google Play)
 const CONSUMER_APP_URL = "https://play.google.com/store/apps/details?id=com.giggababytes.naijamarketconsumer";
+const REPORTER_APP_URL = "https://play.google.com/store/apps/details?id=com.giggababytes.naijamarkettrader";
 
 // ============================================================================
 // NaijaMarket Intel — Landing Page v2.1 — optimised June 2026
@@ -787,6 +788,10 @@ function Footer() {
             <a href={CONSUMER_APP_URL} target="_blank" rel="noopener noreferrer" className="nm-footer-app">
               <Image src="/google-play-badge.png" alt="Get NaijaMarket Intel on Google Play" width={140} height={42} className="nm-footer-badge" />
               <span className="nm-footer-app-label">Buyers &amp; Businesses</span>
+            </a>
+            <a href={REPORTER_APP_URL} target="_blank" rel="noopener noreferrer" className="nm-footer-app">
+              <Image src="/google-play-badge.png" alt="Get NaijaMarket Reporter on Google Play" width={140} height={42} className="nm-footer-badge" />
+              <span className="nm-footer-app-label">Price Reporters</span>
             </a>
           </div>
         </div>

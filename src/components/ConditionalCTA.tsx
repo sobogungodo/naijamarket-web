@@ -23,7 +23,6 @@ export default function ConditionalCTA() {
   return (
     <>
       <WhatsAppCTA />
-      <WhatsAppCTA variant="reporter" message="reporter" label="Register as Price Reporter" />
     </>
   );
 }
