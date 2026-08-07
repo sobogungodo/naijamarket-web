@@ -106,17 +106,17 @@ const FEATURES = [
 const TIERS = [
   {
     nm: "FREE", pr: "₦0", pd: "", tg: null, ac: "#64FFDA", hl: false,
-    ft: ["3 queries/week", "3 markets", "WhatsApp access", "Basic price search", "1 free guest query"],
+    ft: ["3 searches/week", "1 market", "WhatsApp access", "Basic price search", "1 free guest query"],
     ct: "Start Free", hr: "/register",
   },
   {
     nm: "SILVER", pr: "₦500", pd: "/week", tg: null, ac: "#90CAF9", hl: false,
-    ft: ["10 queries/day", "3 markets", "Price alerts", "Price trends", "WhatsApp + Web"],
+    ft: ["10 searches/day", "3 markets / state", "Price alerts", "Price trends", "WhatsApp + Web"],
     ct: "Go Silver", hr: "/register?plan=silver",
   },
   {
     nm: "GOLD", pr: "₦1,800", pd: "/mo", tg: "BEST VALUE", ac: "#FFD740", hl: true,
-    ft: ["25 queries/day", "3 markets", "Price forecast", "Market snapshot", "Historical data", "Priority support"],
+    ft: ["25 searches/day", "10 markets / region", "Price forecast", "Market snapshot", "Historical data", "Priority support"],
     ct: "Go Gold", hr: "/register?plan=gold",
   },
 ];
