@@ -8,7 +8,6 @@ import WhatsAppCTA from '@/components/WhatsAppCTA'
 
 // App download links (Google Play)
 const CONSUMER_APP_URL = "https://play.google.com/store/apps/details?id=com.giggababytes.naijamarketconsumer";
-const REPORTER_APP_URL = "https://play.google.com/store/apps/details?id=com.giggababytes.naijamarkettrader";
 
 // ============================================================================
 // NaijaMarket Intel — Landing Page v2.1 — optimised June 2026
@@ -789,10 +788,6 @@ function Footer() {
               <Image src="/google-play-badge.png" alt="Get NaijaMarket Intel on Google Play" width={140} height={42} className="nm-footer-badge" />
               <span className="nm-footer-app-label">Buyers &amp; Businesses</span>
             </a>
-            <a href={REPORTER_APP_URL} target="_blank" rel="noopener noreferrer" className="nm-footer-app">
-              <Image src="/google-play-badge.png" alt="Get NaijaMarket Reporter on Google Play" width={140} height={42} className="nm-footer-badge" />
-              <span className="nm-footer-app-label">Price Reporters</span>
-            </a>
           </div>
         </div>
       </div>
@@ -1114,7 +1109,7 @@ html { scroll-behavior: smooth; }
   align-items: center;
   position: relative;
   overflow: hidden;
-  padding: 145px 16px 24px;
+  padding: 124px 20px 24px;
 }
 .nm-hero-grid-bg {
   position: absolute;
@@ -1442,11 +1437,14 @@ html { scroll-behavior: smooth; }
   max-width: 1280px;
   margin: 0 auto;
   display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  justify-content: flex-start;
   align-items: center;
-  gap: 6px 20px;
+  gap: 16px;
+  scrollbar-width: none;
 }
+.nm-trust-bar-inner::-webkit-scrollbar { display: none; }
 .nm-trust-bar-item {
   display: inline-flex;
   align-items: center;
@@ -1467,7 +1465,7 @@ html { scroll-behavior: smooth; }
 .nm-trust-dot-amber { background: #FFB300; animation: nm-pulse 2.5s infinite; }
 
 /* ── Sections ── */
-.nm-section { padding: 34px 16px; }
+.nm-section { padding: 64px 20px; }
 .nm-section-accent {
   background: linear-gradient(180deg, transparent, rgba(0, 200, 83, 0.012), transparent);
 }
@@ -1498,7 +1496,7 @@ html { scroll-behavior: smooth; }
 }
 
 /* ── Features Grid ── */
-.nm-features-grid { display: grid; grid-template-columns: 1fr; gap: 14px; }
+.nm-features-grid { display: grid; grid-template-columns: 1fr; gap: 24px; }
 .nm-features-grid.nm-visible .nm-feature-card { animation: nm-fade-up 0.5s ease both; }
 .nm-feature-card {
   background: var(--nm-card);
@@ -1860,8 +1858,9 @@ html { scroll-behavior: smooth; }
   .nm-hero-copy { flex: 1; }
   .nm-hero-demo { flex: 1; max-width: 500px; }
 
-  .nm-section { padding: 44px 40px; }
-  .nm-features-grid { grid-template-columns: repeat(3, 1fr); }
+  .nm-section { padding: 96px 40px; }
+  .nm-trust-bar-inner { flex-wrap: wrap; justify-content: center; overflow-x: visible; gap: 6px 20px; }
+  .nm-features-grid { grid-template-columns: repeat(3, 1fr); gap: 28px; }
 
   .nm-step-connector {
     display: block;
@@ -1871,7 +1870,7 @@ html { scroll-behavior: smooth; }
     background: linear-gradient(90deg, rgba(0, 200, 83, 0.2), transparent);
   }
 
-  .nm-pricing-grid { gap: 20px; }
+  .nm-pricing-grid { gap: 28px; }
   .nm-price-card-hl { transform: scale(1.03); }
 
   .nm-footer { padding: 56px 40px 28px; }
