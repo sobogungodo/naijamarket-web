@@ -1,0 +1,226 @@
+--- a/trader/submit.py (base: wa-v161.zip)
++++ b/trader/submit.py (frw edit)
+@@ -29,6 +29,25 @@
+       trail; does not affect the daily-count logic itself (that still
+       reads from the shared dbo.Submissions table, which both surfaces
+       already write to).
++
++First-reporter-wins parity (frw, Task 7 — mirrors the trader PWA /api/submit
++change from Task 4):
++  - _check_slot_rules() REMOVED. It used to pre-block a submission on two
++    ad-hoc rules (RULE-1 "you already have an APPROVED row this slot",
++    RULE-2 "two other traders already reported this slot"). Both are now
++    subsumed by dbo.usp_Process_Trader_Submission, which is the single
++    source of truth for win/duplicate/cap arbitration.
++  - _check_daily_limit() no longer BLOCKS the submission before insert —
++    under first-reporter-wins the cap counts WINS, not raw submissions,
++    and is enforced by the proc. It is still called to read the configured
++    limit value, which is passed to the proc as @daily_limit. An
++    over-cap submission is still INSERTED (the proc returns OVER_CAP and
++    the row is kept so it still counts toward the consumer price average).
++  - SUBMIT step now always inserts the PENDING row first, then EXECs
++    dbo.usp_Process_Trader_Submission and maps its outcome
++    (WINNER / ALREADY_REPORTED / ALREADY_REPORTED_SELF / OVER_CAP / ERROR)
++    to the trader-facing reply. Only WINNER triggers validator assignment
++    and the reward-earned confirmation.
+ """
+ 
+ import logging
+@@ -193,52 +212,6 @@
+         return []
+ 
+ 
+-def _check_slot_rules(phone, trader_id, item_id, market_id):
+-    slot = _current_slot()
+-    try:
+-        conn = _get_conn()
+-        cur  = conn.cursor()
+-
+-        _c = phone.lstrip("+").strip(); _p = "+" + _c
+-        cur.execute("""
+-            SELECT COUNT(*) AS cnt FROM dbo.Submissions
+-            WHERE  (trader_phone = %s OR trader_phone = %s) AND item_id = %s AND market_id = %s
+-              AND  validation_status = 'APPROVED'
+-              AND  CAST(TRY_CAST(submitted_at AS DATETIME2) AS DATE) = CAST(GETUTCDATE() AS DATE)
+-              AND  %s = CASE
+-                WHEN DATEPART(HOUR, TRY_CAST(submitted_at AS DATETIME2)) < 8  THEN 'MORNING'
+-                WHEN DATEPART(HOUR, TRY_CAST(submitted_at AS DATETIME2)) < 13 THEN 'MIDDAY'
+-                ELSE 'AFTERNOON' END
+-        """, (_c, _p, item_id, market_id, slot))
+-        if int(cur.fetchone()['cnt']) > 0:
+-            conn.close()
+-            return False, 'approved', None
+-
+-        cur.execute("""
+-            SELECT COUNT(*) AS cnt, AVG(CAST(price AS FLOAT)) AS avg_price
+-            FROM   dbo.Submissions
+-            WHERE  item_id = %s AND market_id = %s
+-              AND  trader_phone NOT IN (%s, %s)
+-              AND  trader_id NOT LIKE 'SYN-%%'
+-              AND  validation_status IN ('PENDING','APPROVED')
+-              AND  CAST(TRY_CAST(submitted_at AS DATETIME2) AS DATE) = CAST(GETUTCDATE() AS DATE)
+-              AND  %s = CASE
+-                WHEN DATEPART(HOUR, TRY_CAST(submitted_at AS DATETIME2)) < 8  THEN 'MORNING'
+-                WHEN DATEPART(HOUR, TRY_CAST(submitted_at AS DATETIME2)) < 13 THEN 'MIDDAY'
+-                ELSE 'AFTERNOON' END
+-        """, (item_id, market_id, _c, _p, slot))
+-        row   = cur.fetchone()
+-        conn.close()
+-        count = int(row['cnt']) if row else 0
+-        avg   = float(row['avg_price']) if row and row['avg_price'] else None
+-        if count >= 2:
+-            return False, 'full', avg
+-        return True, '', None
+-    except Exception as e:
+-        logging.error(f'[trader.submit] slot_rules error: {e}')
+-        return True, '', None
+-
+-
+ def _check_daily_limit(phone):
+     """
+     Returns (allowed: bool, count: int, limit: int)
+@@ -250,6 +223,15 @@
+     is a money-gating exploit surface. A trader hitting this during a
+     transient DB blip gets blocked and can retry; that cost is acceptable.
+     Unbounded submission past the cap during DB instability is not.
++
++    frw (Task 7): the caller at the SUBMIT step no longer uses the
++    `allowed` flag to block the submission — the daily cap is now enforced
++    by dbo.usp_Process_Trader_Submission (it counts WINS, not raw
++    submissions, and an over-cap row must still be saved). This function
++    is still called for its `limit` value, which is passed to the proc as
++    @daily_limit. Fail-closed on DB error still applies to the value
++    returned (defaults to 15) — a genuinely unreachable DB will also fail
++    the subsequent insert, so there is no separate exploit surface here.
+     """
+     try:
+         conn = _get_conn()
+@@ -571,15 +553,10 @@
+ 
+         item_id, item_name, unit, baseline = items[idx]
+ 
+-        can_submit, reason, avg_price = _check_slot_rules(phone, trader_id, item_id, market_id)
+-
+-        if not can_submit:
+-            if reason == 'approved':
+-                send_message(phone, tt(lang, "already_approved_item", item=item_name))
+-            else:
+-                avg_str = tt(lang, "current_market_price", avg=_fmt(avg_price)) if avg_price else ''
+-                send_message(phone, tt(lang, "already_have_price", item=item_name, avg_str=avg_str))
+-            return
++        # frw (Task 7): the old pre-check (_check_slot_rules) is removed here.
++        # dbo.usp_Process_Trader_Submission is now the single source of truth for
++        # win/duplicate/cap arbitration, evaluated once at the SUBMIT step after
++        # the row is inserted — not as an early item-selection gate.
+ 
+         # wa-v155 (AH1): baseline +/-10% market-range anchor removed - never inject.
+         # (market_range i18n key retained; simply no longer used.)
+@@ -696,30 +673,12 @@
+         except Exception:
+             pass
+ 
+-        # Daily cap check (all surfaces enforced) — H1: now fails CLOSED
+-        allowed, count, limit = _check_daily_limit(phone)
+-        if not allowed:
+-            # H2 FIX: was `return tt(...)` — discarded by caller, trader got
+-            # no feedback at all. Now actually sends the message.
+-            send_message(phone, tt(lang, "daily_limit", count=count, limit=limit))
+-            session['_step'] = 'CATEGORY'
+-            save_session(phone, session)
+-            return
+-
+-        can_submit, reason, avg_price = _check_slot_rules(phone, trader_id, item_id, market_id)
+-        if not can_submit:
+-            try:
+-                log_activity(
+-                    phone_number=phone, platform="WA",
+-                    event_type="SUBMISSION_DUPLICATE",
+-                    event_detail={"item_id": item_id, "market_id": market_id},
+-                )
+-            except Exception:
+-                pass
+-            send_message(phone, tt(lang, "dup_at_submit", item=item_name))
+-            session['_step'] = 'CATEGORY'
+-            save_session(phone, session)
+-            return
++        # frw (Task 7): daily_limit VALUE only — no longer gates the submission here.
++        # Under first-reporter-wins the cap counts WINS and is enforced by
++        # dbo.usp_Process_Trader_Submission after insert; an over-cap submission is
++        # still saved (the proc returns OVER_CAP and the row counts toward the
++        # consumer average). `allowed`/`count` are intentionally unused below.
++        _allowed, _count, daily_limit = _check_daily_limit(phone)
+ 
+         # wa-v155 (AF1): GPS gate. On first confirmation, request the pin and pause at
+         # LOCATION; the insert below runs only after an in-range pin sets _geo_done.
+@@ -756,21 +715,68 @@
+                 _notes_val
+             )
+ 
+-            # NEW (wa-v121) — cross-platform dedup audit ledger
+-            _write_submission_slot(phone, sub_id, _current_slot())
++            # frw (Task 7): the insert above always happens; this proc is the
++            # single source of truth for who "wins" the slot. It reads/updates
++            # the just-inserted row by submission_id.
++            outcome = 'ERROR'
++            try:
++                _pconn = _get_conn()
++                _pcur  = _pconn.cursor()
++                _pcur.execute(
++                    "EXEC dbo.usp_Process_Trader_Submission @submission_id=%s, @daily_limit=%s",
++                    (sub_id, daily_limit)
++                )
++                _prow = _pcur.fetchone()
++                outcome = _prow['outcome'] if _prow else 'ERROR'
++                _pconn.commit()
++                _pconn.close()
++            except Exception as pe:
++                logging.error(f"[trader.submit] usp_Process_Trader_Submission error: {pe}")
++                outcome = 'ERROR'
+ 
+             try:
+                 log_submission_attempt(
+                     phone_number=phone, platform="WA",
+-                    outcome="SUBMITTED",
++                    outcome="SUBMITTED" if outcome != 'ERROR' else 'FAILED',
+                     item_id=item_id, item_name=item_name,
+                     market_id=market_id, market_name=market_name,
+                     price_entered=price, unit=unit,
+                     submission_id=str(sub_id) if sub_id else None,
++                    failure_reason=None if outcome != 'ERROR' else 'proc_outcome_ERROR',
+                 )
+             except Exception:
+                 pass
+ 
++            if outcome != 'WINNER':
++                # ALREADY_REPORTED / ALREADY_REPORTED_SELF / OVER_CAP / ERROR: the row
++                # is saved (or the proc failed) but this trader does not win the slot —
++                # no validator assignment, no reward-earned copy.
++                try:
++                    log_activity(
++                        phone_number=phone, platform="WA",
++                        event_type="SUBMISSION_DUPLICATE",
++                        event_detail={"item_id": item_id, "market_id": market_id, "outcome": outcome},
++                    )
++                except Exception:
++                    pass
++
++                if outcome == 'ALREADY_REPORTED_SELF':
++                    reply = f"You already reported {item_name} today."
++                elif outcome in ('ALREADY_REPORTED', 'OVER_CAP'):
++                    reply = f"We already have the price for {item_name}. Please submit a price for another item."
++                else:
++                    reply = "Could not record your price. Please try again."
++
++                session['_step'] = 'CATEGORY'
++                save_session(phone, session)
++                send_message(phone, reply)
++                return
++
++            # NEW (wa-v121) — cross-platform dedup audit ledger. frw (parity fix):
++            # written ONLY on WINNER, matching the trader PWA /api/submit (Task 4)
++            # behavior — not on every insert.
++            _write_submission_slot(phone, sub_id, _current_slot())
++
+             fav_note = tt(lang, "fav_note") if sub_count >= 3 else ''
+ 
+             try:
