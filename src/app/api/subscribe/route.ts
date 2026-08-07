@@ -79,7 +79,7 @@ const TIER_PRICES: Record<string, TierInfo> = {
     durationUnit: "forever",
     billingCycle: "forever",
     queryLimit: 3,
-    maxMarkets: 3,
+    maxMarkets: 1,
   },
   SILVER: {
     price: 500,
@@ -91,13 +91,13 @@ const TIER_PRICES: Record<string, TierInfo> = {
     maxMarkets: 3,
   },
   GOLD: {
-    price: 800,
+    price: 1800,
     tierName: "Gold",
-    duration: 7,
+    duration: 30,
     durationUnit: "days",
-    billingCycle: "weekly",
-    queryLimit: 30, // per DAY — canonical: Subscription_Tiers
-    maxMarkets: 3,
+    billingCycle: "monthly",
+    queryLimit: 25, // per DAY — canonical: Subscription_Tiers
+    maxMarkets: 10,
   },
   BUSINESS: {
     price: 5000,

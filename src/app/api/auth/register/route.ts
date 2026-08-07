@@ -209,7 +209,7 @@ export async function POST(request: NextRequest) {
         account_status: "ACTIVE",
         registration_source: "WEB",
         daily_query_limit: 5,
-        max_markets: 3,
+        max_markets: 1,
         queries_remaining: 5,
       },
     });
