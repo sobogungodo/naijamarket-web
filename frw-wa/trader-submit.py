@@ -715,10 +715,6 @@ def handle_submit(phone, message="", session=None, *args):
                 _notes_val
             )
 
-            # NEW (wa-v121) — cross-platform dedup audit ledger. frw: written for
-            # every insert (win or not) — the row is always saved now.
-            _write_submission_slot(phone, sub_id, _current_slot())
-
             # frw (Task 7): the insert above always happens; this proc is the
             # single source of truth for who "wins" the slot. It reads/updates
             # the just-inserted row by submission_id.
@@ -775,6 +771,11 @@ def handle_submit(phone, message="", session=None, *args):
                 save_session(phone, session)
                 send_message(phone, reply)
                 return
+
+            # NEW (wa-v121) — cross-platform dedup audit ledger. frw (parity fix):
+            # written ONLY on WINNER, matching the trader PWA /api/submit (Task 4)
+            # behavior — not on every insert.
+            _write_submission_slot(phone, sub_id, _current_slot())
 
             fav_note = tt(lang, "fav_note") if sub_count >= 3 else ''
 

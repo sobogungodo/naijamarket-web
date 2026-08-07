@@ -35,6 +35,11 @@ copies used for prior deploys.
   - An over-cap (or already-reported) submission is still **saved** — the
     insert always happens before the proc call, so the row exists and
     contributes to the consumer price average regardless of outcome.
+- `_write_submission_slot()` (the `Reporter_Submission_Slots` cross-platform
+  dedup audit ledger write) runs **only on `WINNER`**, matching the trader
+  PWA `/api/submit` (Task 4) behavior. It is not written for
+  ALREADY_REPORTED / ALREADY_REPORTED_SELF / OVER_CAP / ERROR, even though
+  the `Submissions` row itself is saved in all of those cases too.
 
 ## Deploy (gated — do NOT do this yet)
 

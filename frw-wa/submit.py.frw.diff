@@ -152,15 +152,12 @@
  
          # wa-v155 (AF1): GPS gate. On first confirmation, request the pin and pause at
          # LOCATION; the insert below runs only after an in-range pin sets _geo_done.
-@@ -756,21 +715,67 @@
+@@ -756,21 +715,68 @@
                  _notes_val
              )
  
 -            # NEW (wa-v121) — cross-platform dedup audit ledger
-+            # NEW (wa-v121) — cross-platform dedup audit ledger. frw: written for
-+            # every insert (win or not) — the row is always saved now.
-             _write_submission_slot(phone, sub_id, _current_slot())
- 
+-            _write_submission_slot(phone, sub_id, _current_slot())
 +            # frw (Task 7): the insert above always happens; this proc is the
 +            # single source of truth for who "wins" the slot. It reads/updates
 +            # the just-inserted row by submission_id.
@@ -179,7 +176,7 @@
 +            except Exception as pe:
 +                logging.error(f"[trader.submit] usp_Process_Trader_Submission error: {pe}")
 +                outcome = 'ERROR'
-+
+ 
              try:
                  log_submission_attempt(
                      phone_number=phone, platform="WA",
@@ -218,6 +215,11 @@
 +                save_session(phone, session)
 +                send_message(phone, reply)
 +                return
++
++            # NEW (wa-v121) — cross-platform dedup audit ledger. frw (parity fix):
++            # written ONLY on WINNER, matching the trader PWA /api/submit (Task 4)
++            # behavior — not on every insert.
++            _write_submission_slot(phone, sub_id, _current_slot())
 +
              fav_note = tt(lang, "fav_note") if sub_count >= 3 else ''
  
