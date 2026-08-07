@@ -115,7 +115,7 @@ const TIERS = [
     ct: "Go Silver", hr: "/register?plan=silver",
   },
   {
-    nm: "GOLD", pr: "₦2,000", pd: "/mo", tg: "BEST VALUE", ac: "#FFD740", hl: true,
+    nm: "GOLD", pr: "₦1,800", pd: "/mo", tg: "BEST VALUE", ac: "#FFD740", hl: true,
     ft: ["25 queries/day", "3 markets", "Price forecast", "Market snapshot", "Historical data", "Priority support"],
     ct: "Go Gold", hr: "/register?plan=gold",
   },
@@ -1470,7 +1470,7 @@ html { scroll-behavior: smooth; }
 .nm-trust-dot-amber { background: #FFB300; animation: nm-pulse 2.5s infinite; }
 
 /* ── Sections ── */
-.nm-section { padding: 64px 20px; }
+.nm-section { padding: 48px 20px; }
 .nm-section-accent {
   background: linear-gradient(180deg, transparent, rgba(0, 200, 83, 0.012), transparent);
 }
@@ -1863,7 +1863,7 @@ html { scroll-behavior: smooth; }
   .nm-hero-copy { flex: 1; }
   .nm-hero-demo { flex: 1; max-width: 500px; }
 
-  .nm-section { padding: 96px 40px; }
+  .nm-section { padding: 70px 40px; }
   .nm-trust-bar-inner { flex-wrap: wrap; justify-content: center; overflow-x: visible; gap: 6px 20px; }
   .nm-features-grid { grid-template-columns: repeat(3, 1fr); gap: 28px; }
 
