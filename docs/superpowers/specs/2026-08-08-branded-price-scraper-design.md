@@ -1,7 +1,16 @@
 # Branded Wholesale Price Scraper — Design
 
 **Date:** 2026-08-08
-**Status:** Approved (design), pending implementation plan
+**Status:** ⛔ **SHELVED 2026-08-08 — not deployed.** During implementation the chosen primary source
+(nigerianprice.com) was found to be **~2.4 years stale** (all relevant articles stamped March 2024),
+which the freshness guard rejects; the only *current* sources (Supermart/Pricepally) are **retail
+per-unit**, which systematically overshoot the wholesale seed and fail the ±40% gate. Conclusion:
+no reliable *current wholesale-carton* online source exists for these branded SKUs. **Decision
+(product owner): keep wholesale semantics and rely on generation (`SIM_BASELINE`) + the
+first-reporter-wins reporter pipeline; drop online scraping.** The pipeline scaffolding (map table,
+staging table, parser framework — Tasks 1–3) is **built and committed on branch
+`feat/branded-price-scraper` but NOT applied to prod**, preserved in case a genuine fetchable
+wholesale source appears. See "Shelving addendum" at the end of this doc.
 **Repo of record:** `naijamarket-web` (scraper recovery source + committed deployment zips live here)
 **Author:** design session 2026-08-08
 
@@ -156,13 +165,14 @@ Logic App HTTP trigger — settled in the implementation plan; in-function CRON 
    (item,source) without a code change.
 2. **`staging.Branded_Price_Feeds`** — raw candidates per run (populated by the proc from the JSON
    param, for audit): `feed_id, run_ts, source, item_id, raw_price, unit_multiplier,
-   normalized_price, status (USED|GATED|UNPARSED|REJECTED), reject_reason, raw_excerpt`.
-3. **`dbo.usp_Merge_Branded_Scrape_Prices @price_date DATE, @candidates_json NVARCHAR(MAX)`** —
-   OPENJSON-shred → INSERT staging (audit) → aggregate (median) → ±40% gate → MERGE into
-   `Daily_Prices` (today's latest slot, `WEB_SCRAPE`, conf 85) → targeted `Latest_Prices_Summary`
-   upsert for the 17 items. Guards: item set restricted to ITM01044–ITM01060 (join on
-   `Branded_Scrape_Map` / catalog); slot must already exist for the date; per-item status logged;
-   `SET XACT_ABORT ON`.
+   normalized_price, source_date, status (USED|GATED|UNPARSED|REJECTED), reject_reason, raw_excerpt`.
+3. **`dbo.usp_Merge_Branded_Scrape_Prices @price_date DATE, @candidates_json NVARCHAR(MAX),
+   @max_age_days INT = 120`** — OPENJSON-shred → INSERT staging (audit) → drop `STALE`
+   (`source_date` older than `@max_age_days`) → aggregate (median of survivors) → ±40% gate → MERGE
+   into `Daily_Prices` (today's latest slot, `WEB_SCRAPE`, conf 85) → targeted
+   `Latest_Prices_Summary` upsert for the 17 items. Guards: item set restricted to ITM01044–ITM01060
+   (join on `Branded_Scrape_Map` / catalog); slot must already exist for the date; per-item status
+   logged; `SET XACT_ABORT ON`.
 
 **Grants (verified during design):** `naijaapp` is `db_datareader` (SELECT-only; no `db_datawriter`).
 `dbo`, `staging`, and their tables are all `dbo`-owned, so the proc writes via **ownership chaining**
@@ -174,9 +184,13 @@ directly; it only `SELECT`s `Branded_Scrape_Map` and `EXEC`s the proc.
 
 - `WEB_SCRAPE` is a distinct `data_source` — branded online prices are separable in analytics and
   never conflated with `REAL_ANCHORED` (genuine market anchors) or `SIM_*`.
-- **±40% gate vs `whole_sale_Price`** is the primary safety rail against bad parses, wrong pack
-  sizes, and stale articles. Gated/unparsed candidates are recorded (not silently dropped) for
-  observability.
+- **±40% gate vs `whole_sale_Price`** is the primary safety rail against bad parses and wrong pack
+  sizes. Gated/unparsed candidates are recorded (not silently dropped) for observability.
+- **Freshness guard.** nigerianprice.com articles carry a "PRICES LAST UPDATED: &lt;date&gt;" stamp
+  and can be months stale (the Titus Sardine article was last updated 2026-03-04 during design). The
+  parser extracts that date into each candidate's `source_date`; the proc **rejects** (status
+  `GATED`, reason `STALE`) any candidate whose `source_date` is older than `@max_age_days` (default
+  **120**). Sources without a parseable date (e.g. live retail listings) use the run date.
 - **NFPI is structurally unaffected** (fixed 29-item basket; branded items not members) — no code
   path lets `WEB_SCRAPE` rows reach NFPI computation.
 
@@ -214,3 +228,38 @@ Per the established scraper packaging rule:
 3. NFPI monthly/weekly outputs are byte-unchanged by the run.
 4. Between runs, the 17 items show `SIM_TRACKED` prices tracking the last scrape (no snap-back, no gap).
 5. Deploy leaves `func-naijamarket-scraper` with all functions loaded; rollback path verified.
+
+---
+
+## Shelving addendum (2026-08-08)
+
+**Why shelved.** Verified during implementation:
+- **nigerianprice.com** — every relevant carton article ("PRICES LAST UPDATED") is stamped
+  **March 2024** (~2.4 yrs old). With NGN inflation ~30%/yr these figures are ~50%+ too low; the
+  120-day freshness guard correctly rejects them. Also carries correct brand+pack carton pricing for
+  only **6 of 17** items.
+- **Supermart.ng** — live WooCommerce, current prices, statically fetchable (captcha widget present
+  but product HTML is served), but **retail per-unit**. Retail-per-unit × pack overshoots the
+  wholesale seed by well over 40% ⇒ rejected by the outlier gate under wholesale semantics.
+- **Pricepally** — live but Next.js with no product sitemap; needs internal-API reverse-engineering.
+- **Wigmore** — `www.wigmore.ng` did not resolve; domain unconfirmed.
+
+Net: no reliable **current wholesale-carton** online source exists for these branded SKUs.
+
+**Fallback that consumers actually get (verified).** `sp_Generate_Daily_Prices` includes all ACTIVE
+`Items_Catalog` items (`#Universe = Items_Catalog × Markets`); the 17 branded items have
+`whole_sale_Price>0` ⇒ **Path B `SIM_BASELINE`** at the next fresh-day slot. `usp_Refresh_LatestPrices`
+surfaces the latest slot with **no category/is_food/item filter**, so they reach consumers
+automatically. Reporters overlay real prices via first-reporter-wins. (As of 2026-08-08 they are not
+yet in `Latest_Prices_Summary` — added after today's slots generated; the same-day guard blocks
+regeneration — so they appear at the next successful new-day generation slot.)
+
+**What is built and preserved (branch `feat/branded-price-scraper`, NOT applied to prod):**
+- `branded-scraper/db/01_Branded_Scrape_Map.sql`, `02_staging_Branded_Price_Feeds.sql` — table DDL (unapplied)
+- `branded-scraper/db/04_seed_Branded_Scrape_Map.sql` — 17-row NGPRICE seed (6 active)
+- `branded-scraper/price_scraper/parse.py` + `tests/` — regex parser + passing unit tests (fail-safe on ambiguous hints)
+
+**To resume if a fetchable current wholesale source appears:** confirm the source is current, add a
+parser to `parse.py` + `Branded_Scrape_Map` rows, then implement Tasks 4–7 of the plan
+(`usp_Merge_Branded_Scrape_Prices`, function rewrite, scraper-v45 build, gated deploy). The merge
+proc's freshness + ±40% gates are the safety rails and should stay.

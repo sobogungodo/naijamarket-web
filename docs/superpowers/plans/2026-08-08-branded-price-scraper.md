@@ -2,6 +2,13 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+> ⛔ **SHELVED 2026-08-08 after Tasks 1–3.** No reliable *current wholesale-carton* online source
+> exists for these SKUs (nigerianprice.com is ~2.4 yrs stale; Supermart/Pricepally are retail
+> per-unit that overshoot the ±40% wholesale gate). Product-owner decision: rely on generation
+> (`SIM_BASELINE`) + the reporter/first-reporter-wins pipeline. **Tasks 1–3 are built + committed on
+> `feat/branded-price-scraper` but NOT applied to prod; Tasks 4–7 were not executed.** See the spec's
+> "Shelving addendum". Resume only if a fetchable current wholesale source is found.
+
 **Goal:** Weekly-scrape current wholesale carton prices for the 17 branded CAT010 items (ITM01044–ITM01060) from Nigerian sites and surface them to consumers via `Daily_Prices → Latest_Prices_Summary`, stamped `WEB_SCRAPE`, without touching the NFPI basket.
 
 **Architecture:** Repurpose the dormant `price_scraper` timer function inside the live `func-naijamarket-scraper` (RUN_FROM_PACKAGE) app. The Python fetches + parses prices (deps already vendored), then calls one `dbo`-owned proc with a JSON param; the proc stages, applies freshness + ±40% gates, MERGEs into `Daily_Prices`, and does a bounded `Latest_Prices_Summary` upsert. All DB writes go through ownership chaining, so `naijaapp` needs only `EXECUTE`.
