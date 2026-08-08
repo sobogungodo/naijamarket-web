@@ -45,8 +45,8 @@ export async function GET(request: NextRequest) {
       const yoyComparison = await query<any>(`
         SELECT TOP ${months}
           yr, mth, period_label,
-          yoy_change_pct     AS naijamarket_yoy,
-          nbs_yoy_inflation  AS nbs_yoy,
+          yoy_change_pct,
+          nbs_yoy_inflation,
           divergence_pct,
           index_value,
           basket_value_naira
