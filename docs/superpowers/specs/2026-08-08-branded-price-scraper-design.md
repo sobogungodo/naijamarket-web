@@ -88,26 +88,46 @@ intended, not a bug.
 
 ## 5. Architecture
 
-New timer function **`branded_price_scraper`** inside **`func-naijamarket-scraper`** (next package
-build = **scraper-v45.zip**). Reuses vendored `pymssql` (`shared/db.py`) and `requests`;
-`beautifulsoup4` + `lxml` vendored into the package if not already present (verified at build time).
+**Repurpose the dormant `price_scraper` timer function** inside **`func-naijamarket-scraper`**
+(next package build = **scraper-v45.zip**). Discovery (2026-08-08): the live package already contains
+a `price_scraper/` function that is a **127-char no-op stub** (`logging.info("[price_scraper] tick")`)
+on a daily `0 0 6 * * *` timer. Repurposing this existing folder (edit `__init__.py`, change the
+CRON to weekly) is **lower-risk than adding a new function folder** — it avoids the
+"root/extra `function.json` → 0-functions" indexing trap from the packaging rule and reuses a
+dormant slot. The folder name `price_scraper` is kept (it is a price scraper).
+
+**Dependencies already vendored** (verified in the live package's `.python_packages`): `pymssql`,
+`requests`, `beautifulsoup4` (`bs4`), `lxml`, `soupsieve`, `certifi`, `urllib3`, `charset`, `idna`.
+No new dependency vendoring is required. DB access reuses `shared/db.py` (`pymssql`, SQL auth as
+`SQL_USER=naijaapp`).
+
+**Write path via ownership chaining (verified):** `naijaapp` is `db_datareader` only — it has
+**SELECT-only** on `Daily_Prices`/`Latest_Prices_Summary` and no `db_datawriter`. All writes
+therefore go through a **`dbo`-owned proc**: `dbo`, `staging`, and their tables are all `dbo`-owned,
+so ownership chaining lets the proc write with no table-level grants. The Python function passes its
+scraped candidates to the proc as a **JSON string parameter** (DB compat level 170 → `OPENJSON`
+supported); the proc shreds JSON → stages → gates → MERGEs → upserts LPS. `naijaapp` needs exactly
+**one** new grant: `GRANT EXECUTE` on that proc.
 
 ### 4-part flow
 
 ```
 weekly timer (Mon, inside S3 capacity window)
-  1. FETCH + PARSE  — for each active (item_id, source) in dbo.Branded_Scrape_Map:
-         GET url (polite UA + per-source crawl-delay), parse per parse_hint,
-         normalise to carton wholesale = raw_price × unit_multiplier.
-         DB-light; failures per (item,source) are non-fatal and logged.
-  2. STAGE          — write candidates to staging.Branded_Price_Feeds (PENDING).
-  3. MERGE (proc)   — EXEC dbo.usp_Merge_Branded_Scrape_Prices:
-         • aggregate candidates per item = MEDIAN of sources that passed
+  1. LOAD MAP       — Python reads dbo.Branded_Scrape_Map (active rows) via naijaapp SELECT.
+  2. FETCH + PARSE  — for each active (item_id, source): GET url (polite UA + per-source
+         crawl-delay), parse per parse_hint, normalise to carton wholesale =
+         raw_price × unit_multiplier. DB-light HTTP only; failures per (item,source)
+         are non-fatal and logged. Build a JSON array of candidates.
+  3. EXEC PROC      — Python calls EXEC dbo.usp_Merge_Branded_Scrape_Prices
+         @price_date=<today WAT>, @candidates_json='[…]'. The dbo-owned proc:
+         • OPENJSON-shreds candidates → INSERT staging.Branded_Price_Feeds (audit)
+         • aggregate per item = MEDIAN of sources that passed parsing
          • GATE: reject if |price − whole_sale_Price| / whole_sale_Price > 0.40
          • MERGE survivors into Daily_Prices (today, latest existing slot,
            17 items × all markets), data_source='WEB_SCRAPE', confidence ≈ 85
          • targeted UPSERT of the same 17×market rows into Latest_Prices_Summary
            (bounded 17-item write — NOT the ~5-min full usp_Refresh_LatestPrices)
+         All writes via ownership chaining; naijaapp needs only EXECUTE on this proc.
   4. RESULT         — consumers see the WEB_SCRAPE price immediately.
 ```
 
@@ -134,17 +154,21 @@ Logic App HTTP trigger — settled in the implementation plan; in-function CRON 
    active, notes, created_at`. Seeded for the 17 items (nigerianprice.com URLs first;
    Wigmore/Supermart/Pricepally rows added as URLs are confirmed). `active=0` disables a
    (item,source) without a code change.
-2. **`staging.Branded_Price_Feeds`** — raw candidates per run:
-   `feed_id, run_ts, source, item_id, raw_price, unit_multiplier, normalized_price, status
-   (PENDING|USED|REJECTED|GATED|UNPARSED), reject_reason, raw_excerpt`.
-3. **`dbo.usp_Merge_Branded_Scrape_Prices @price_date`** — aggregate (median) → ±40% gate →
-   MERGE into `Daily_Prices` (today's latest slot, `WEB_SCRAPE`) → targeted `Latest_Prices_Summary`
-   upsert for the 17 items. Guards: item set restricted to ITM01044–ITM01060; slot must already
-   exist; per-item logging; `SET XACT_ABORT ON`.
+2. **`staging.Branded_Price_Feeds`** — raw candidates per run (populated by the proc from the JSON
+   param, for audit): `feed_id, run_ts, source, item_id, raw_price, unit_multiplier,
+   normalized_price, status (USED|GATED|UNPARSED|REJECTED), reject_reason, raw_excerpt`.
+3. **`dbo.usp_Merge_Branded_Scrape_Prices @price_date DATE, @candidates_json NVARCHAR(MAX)`** —
+   OPENJSON-shred → INSERT staging (audit) → aggregate (median) → ±40% gate → MERGE into
+   `Daily_Prices` (today's latest slot, `WEB_SCRAPE`, conf 85) → targeted `Latest_Prices_Summary`
+   upsert for the 17 items. Guards: item set restricted to ITM01044–ITM01060 (join on
+   `Branded_Scrape_Map` / catalog); slot must already exist for the date; per-item status logged;
+   `SET XACT_ABORT ON`.
 
-Grants: writes execute as the scraper's DB principal (AAD/app login). If that login lacks
-UPDATE/INSERT on the target tables, the MERGE runs inside a proc owned by a principal that has them
-(same approach as existing generation procs). Confirmed in the plan.
+**Grants (verified during design):** `naijaapp` is `db_datareader` (SELECT-only; no `db_datawriter`).
+`dbo`, `staging`, and their tables are all `dbo`-owned, so the proc writes via **ownership chaining**
+— no table grants needed. The only new grant is **`GRANT EXECUTE ON dbo.usp_Merge_Branded_Scrape_Prices
+TO naijaapp`** (matching how existing generation procs are exposed). The Python never writes tables
+directly; it only `SELECT`s `Branded_Scrape_Map` and `EXEC`s the proc.
 
 ## 7. Provenance, safety rails, and NFPI
 
@@ -160,8 +184,10 @@ UPDATE/INSERT on the target tables, the MERGE runs inside a proc owned by a prin
 
 Per the established scraper packaging rule:
 - Build with Python `zipfile`, forward-slash paths, `ZipInfo.external_attr = 0o100644 << 16` on
-  added files; **new blob name** `scraper-v45.zip`; diff namelist vs live v44 (only the new
-  function's folder + any newly vendored deps added; no root `function.json`).
+  changed files; **new blob name** `scraper-v45.zip`; diff namelist vs live v44 — the **only**
+  changes are `price_scraper/__init__.py` (content) and `price_scraper/function.json` (schedule);
+  **no folders added/removed, no new deps, no root `function.json`**. Function count must be
+  identical before/after.
 - Upload to `sanaijamarketprod/function-releases/scraper-v45.zip`; mint a **past-start** SAS;
   `curl --range 0-100` → expect 206; flip `WEBSITE_RUN_FROM_PACKAGE` via `--settings @file.json`
   (no BOM), read-back byte-identical; restart; verify `/admin/functions` shows all functions loaded
