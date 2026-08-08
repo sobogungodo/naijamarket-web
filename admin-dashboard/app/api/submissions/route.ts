@@ -27,10 +27,22 @@ export async function GET(request: NextRequest) {
     const source    = searchParams.get('source')  || 'all';
     const offset    = (page - 1) * pageSize;
 
-    let dateFilter = `AND CAST(s.created_at AS DATE) = CAST(GETDATE() AS DATE)`;
-    if (dateRange === 'week')  dateFilter = `AND s.created_at >= DATEADD(day, -7, GETDATE())`;
-    if (dateRange === 'month') dateFilter = `AND s.created_at >= DATEADD(day, -30, GETDATE())`;
+    // Sargable date bounds. created_at is an nvarchar ISO-ish string in two
+    // shapes ('YYYY-MM-DDTHH:MM:SS.sssZ' from the app, 'YYYY-MM-DD HH:MM:SS'
+    // from the synthetic engine); both sort correctly by their 'YYYY-MM-DD'
+    // prefix, so lexical range bounds select the right rows AND let an index on
+    // created_at seek instead of forcing a full-table scan (the old
+    // CAST(created_at AS DATE)=... predicate was non-sargable and timed out on S1).
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const dayStr = (d: Date) =>
+      `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`;
+    const nowUtc = new Date();
+    const dfEnd   = dayStr(new Date(nowUtc.getTime() + 86400000)); // exclusive upper bound = tomorrow (UTC)
+    let   dfStart = dayStr(nowUtc);                                // today (UTC)
+    if (dateRange === 'week')  dfStart = dayStr(new Date(nowUtc.getTime() -  7 * 86400000));
+    if (dateRange === 'month') dfStart = dayStr(new Date(nowUtc.getTime() - 30 * 86400000));
 
+    const dateFilter = `AND s.created_at >= @dfStart AND s.created_at < @dfEnd`;
     let where = `WHERE 1=1 ${dateFilter}`;
     if (search)   where += ` AND (s.trader_name LIKE '%' + @search + '%' OR s.item LIKE '%' + @search + '%' OR s.submission_id LIKE '%' + @search + '%')`;
     if (status && status !== 'All') where += ` AND s.validation_status = @status`;
@@ -59,7 +71,7 @@ export async function GET(request: NextRequest) {
       SELECT COUNT(*) AS total FROM dbo.Submissions s ${where};
     `;
 
-    const params: Record<string, unknown> = { offset, pageSize };
+    const params: Record<string, unknown> = { offset, pageSize, dfStart, dfEnd };
     if (search)   params.search   = search;
     if (status && status !== 'All') params.status = status;
     if (marketId && marketId !== 'all') params.marketId = marketId;
@@ -87,23 +99,42 @@ export async function POST(request: NextRequest) {
     if (!session) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
 
     const { action } = await request.json();
-    const today = new Date().toISOString().split('T')[0];
+
+    // Sargable UTC day bounds (created_at is an ISO-ish nvarchar; range bounds on
+    // the 'YYYY-MM-DD' prefix are index-seekable and correct for both stored formats).
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const dayStr = (d: Date) =>
+      `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`;
+    const nowUtc = new Date();
+    const todayStart     = dayStr(nowUtc);
+    const tomorrowStart  = dayStr(new Date(nowUtc.getTime() + 86400000));
+    const yesterdayStart = dayStr(new Date(nowUtc.getTime() - 86400000));
+    const monthStart     = dayStr(new Date(nowUtc.getTime() - 30 * 86400000));
 
     if (action === 'stats') {
+      // Single pass over the last 30 days with conditional aggregation, instead
+      // of 11 separate non-sargable full-table COUNT scans (which took ~70s on
+      // S1 and blew the 60s driver timeout, leaving the dashboard showing zeros).
       const rows = await query<Record<string, unknown>>(`
+        WITH recent AS (
+          SELECT created_at, validation_status, trader_id, fraud_flag
+          FROM dbo.Submissions
+          WHERE created_at >= @monthStart AND created_at < @tomorrowStart
+        )
         SELECT
-          (SELECT COUNT(*) FROM dbo.Submissions WHERE CAST(created_at AS DATE) = '${today}') AS totalToday,
-          (SELECT COUNT(*) FROM dbo.Submissions WHERE CAST(created_at AS DATE) = '${today}' AND validation_status = 'PENDING')  AS pendingReview,
-          (SELECT COUNT(*) FROM dbo.Submissions WHERE CAST(created_at AS DATE) = '${today}' AND validation_status = 'APPROVED') AS approvedToday,
-          (SELECT COUNT(*) FROM dbo.Submissions WHERE CAST(created_at AS DATE) = '${today}' AND validation_status = 'REJECTED') AS rejectedToday,
-          (SELECT COUNT(*) FROM dbo.Submissions WHERE CAST(created_at AS DATE) = '${today}' AND fraud_flag = 1)                 AS fraudFlagged,
-          (SELECT COUNT(*) FROM dbo.Submissions WHERE CAST(created_at AS DATE) = '${today}' AND trader_id NOT LIKE 'SYN-TR-%')  AS realToday,
-          (SELECT COUNT(*) FROM dbo.Submissions WHERE CAST(created_at AS DATE) = '${today}' AND trader_id LIKE 'SYN-TR-%')      AS syntheticToday,
-          (SELECT COUNT(*) FROM dbo.Submissions WHERE CAST(created_at AS DATE) = CAST(DATEADD(day,-1,GETDATE()) AS DATE))        AS totalYesterday,
-          (SELECT COUNT(*) FROM dbo.Submissions WHERE created_at >= DATEADD(day,-30,GETDATE()) AND validation_status = 'APPROVED') AS approvedMonth,
-          (SELECT COUNT(*) FROM dbo.Submissions WHERE created_at >= DATEADD(day,-30,GETDATE()) AND validation_status = 'PENDING')  AS pendingMonth,
-          (SELECT COUNT(*) FROM dbo.Submissions WHERE created_at >= DATEADD(day,-30,GETDATE()) AND validation_status = 'REJECTED') AS rejectedMonth
-      `);
+          SUM(CASE WHEN created_at >= @todayStart THEN 1 ELSE 0 END)                                   AS totalToday,
+          SUM(CASE WHEN created_at >= @todayStart AND validation_status = 'PENDING'  THEN 1 ELSE 0 END) AS pendingReview,
+          SUM(CASE WHEN created_at >= @todayStart AND validation_status = 'APPROVED' THEN 1 ELSE 0 END) AS approvedToday,
+          SUM(CASE WHEN created_at >= @todayStart AND validation_status = 'REJECTED' THEN 1 ELSE 0 END) AS rejectedToday,
+          SUM(CASE WHEN created_at >= @todayStart AND fraud_flag = 1 THEN 1 ELSE 0 END)                 AS fraudFlagged,
+          SUM(CASE WHEN created_at >= @todayStart AND trader_id NOT LIKE 'SYN-TR-%' THEN 1 ELSE 0 END)  AS realToday,
+          SUM(CASE WHEN created_at >= @todayStart AND trader_id LIKE 'SYN-TR-%' THEN 1 ELSE 0 END)      AS syntheticToday,
+          SUM(CASE WHEN created_at >= @yesterdayStart AND created_at < @todayStart THEN 1 ELSE 0 END)   AS totalYesterday,
+          SUM(CASE WHEN validation_status = 'APPROVED' THEN 1 ELSE 0 END)                               AS approvedMonth,
+          SUM(CASE WHEN validation_status = 'PENDING'  THEN 1 ELSE 0 END)                               AS pendingMonth,
+          SUM(CASE WHEN validation_status = 'REJECTED' THEN 1 ELSE 0 END)                               AS rejectedMonth
+        FROM recent;
+      `, { todayStart, tomorrowStart, yesterdayStart, monthStart });
       const s = rows[0] ?? {};
       const totalToday     = (s.totalToday     as number) ?? 0;
       const totalYesterday = (s.totalYesterday as number) ?? 1;
@@ -116,11 +147,11 @@ export async function POST(request: NextRequest) {
       const affected = await execute(`
         UPDATE dbo.Submissions
         SET validation_status = 'APPROVED', status = 'APPROVED', consensus_result = 'APPROVED',
-            approved_at = CAST(GETDATE() AS NVARCHAR(30)), updated_at = CAST(GETDATE() AS NVARCHAR(30))
+            approved_at = CAST(GETUTCDATE() AS NVARCHAR(30)), updated_at = CAST(GETUTCDATE() AS NVARCHAR(30))
         WHERE validation_status = 'PENDING'
-          AND CAST(created_at AS DATE) = '${today}'
+          AND created_at >= @todayStart AND created_at < @tomorrowStart
           AND trader_id NOT LIKE 'SYN-TR-%'
-      `);
+      `, { todayStart, tomorrowStart });
       return NextResponse.json({ success: true, message: `${affected} submissions approved`, affected });
     }
 
