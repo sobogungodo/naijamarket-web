@@ -116,7 +116,9 @@ export default function SubmissionsPage() {
   const [search,        setSearch]        = useState('');
   const [statusFilter,  setStatusFilter]  = useState('All');
   const [marketFilter,  setMarketFilter]  = useState('all');
-  const [dateRange,     setDateRange]     = useState<DateRange>('today');
+  // Default to the last 7 days so recent submissions always show on login —
+  // "today" is frequently empty (e.g. before the day's activity/synthetic run).
+  const [dateRange,     setDateRange]     = useState<DateRange>('week');
   const [sourceFilter,  setSourceFilter]  = useState<SourceFilter>('all');
 
   const [page,          setPage]          = useState(1);

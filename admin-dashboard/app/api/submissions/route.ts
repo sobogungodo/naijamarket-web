@@ -23,7 +23,7 @@ export async function GET(request: NextRequest) {
     const search    = searchParams.get('search')  || '';
     const status    = searchParams.get('status')  || '';
     const marketId  = searchParams.get('market')  || '';
-    const dateRange = searchParams.get('date')    || 'today';
+    const dateRange = searchParams.get('date')    || 'week';
     const source    = searchParams.get('source')  || 'all';
     const offset    = (page - 1) * pageSize;
 
