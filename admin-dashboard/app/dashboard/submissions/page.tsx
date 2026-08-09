@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import {
   Search, Download, RefreshCw, Eye, CheckCircle, XCircle,
   AlertTriangle, MapPin, Navigation, Bot, Filter, ChevronLeft, ChevronRight,
+  Calendar,
 } from 'lucide-react';
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 
@@ -105,7 +106,16 @@ const PIE_COLORS = ['#22c55e', '#eab308', '#ef4444'];
 // PAGE
 // ============================================================================
 
-type DateRange = 'today' | 'week' | 'month';
+type DateRange = 'today' | 'week' | 'month' | 'quarter' | 'year' | 'all';
+
+const DATE_OPTIONS: { value: DateRange; label: string }[] = [
+  { value: 'today',   label: 'Today' },
+  { value: 'week',    label: 'Last 7 days' },
+  { value: 'month',   label: 'Last 30 days' },
+  { value: 'quarter', label: 'Last 90 days' },
+  { value: 'year',    label: 'Last 12 months' },
+  { value: 'all',     label: 'All time' },
+];
 type SourceFilter = 'all' | 'real' | 'synthetic';
 
 export default function SubmissionsPage() {
@@ -164,14 +174,14 @@ export default function SubmissionsPage() {
       const res  = await fetch('/api/submissions', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ action: 'stats' }),
+        body:    JSON.stringify({ action: 'stats', dateRange }),
       });
       const json = await res.json();
       if (json.success) setStats(json.data as SubStats);
     } catch (err) {
       console.error('[fetchStats]', err);
     }
-  }, []);
+  }, [dateRange]);
 
   // ── Fetch markets for filter ───────────────────────────────────────────────
   const fetchMarkets = useCallback(async () => {
@@ -277,6 +287,10 @@ export default function SubmissionsPage() {
   const pendingCount = stats?.pendingReview ?? 0;
   const fraudCount   = stats?.fraudFlagged  ?? 0;
 
+  // Cards/labels track the selected date range so the whole page reflects the dropdown.
+  const isToday      = dateRange === 'today';
+  const rangeLabel   = DATE_OPTIONS.find(o => o.value === dateRange)?.label ?? 'Today';
+
   return (
     <div className="min-h-screen bg-[#0d1117] text-white p-6">
 
@@ -313,10 +327,12 @@ export default function SubmissionsPage() {
       <div className="grid grid-cols-4 gap-4 mb-6">
         {[
           {
-            label: 'Total Today',
+            label: isToday ? 'Total Today' : `Total · ${rangeLabel}`,
             value: isLoading ? '…' : String(stats?.totalToday ?? 0),
-            sub:   stats ? `${stats.vsYesterday >= 0 ? '+' : ''}${stats.vsYesterday}% vs yesterday` : '',
-            subCls: (stats?.vsYesterday ?? 0) >= 0 ? 'text-green-400' : 'text-red-400',
+            sub:   isToday
+              ? (stats ? `${stats.vsYesterday >= 0 ? '+' : ''}${stats.vsYesterday}% vs yesterday` : '')
+              : `in ${rangeLabel.toLowerCase()}`,
+            subCls: isToday ? ((stats?.vsYesterday ?? 0) >= 0 ? 'text-green-400' : 'text-red-400') : 'text-gray-400',
             icon:  '📋',
           },
           {
@@ -327,7 +343,7 @@ export default function SubmissionsPage() {
             icon:  '🕐',
           },
           {
-            label: 'Approved Today',
+            label: isToday ? 'Approved Today' : `Approved · ${rangeLabel}`,
             value: isLoading ? '…' : String(stats?.approvedToday ?? 0),
             sub:   stats ? `${stats.approvalRate}% approval rate` : '',
             subCls: 'text-green-400',
@@ -356,7 +372,7 @@ export default function SubmissionsPage() {
       <div className="grid grid-cols-3 gap-6 mb-6">
         {/* Synthetic vs Real today */}
         <div className="col-span-2 bg-[#1a1f2e] rounded-xl p-5 border border-gray-800">
-          <h3 className="font-semibold mb-4">Today's Submission Mix</h3>
+          <h3 className="font-semibold mb-4">{isToday ? "Today's Submission Mix" : `Submission Mix · ${rangeLabel}`}</h3>
           <div className="grid grid-cols-2 gap-4">
             <div className="bg-[#0d1117] rounded-lg p-4 border border-gray-800">
               <p className="text-xs text-gray-400 mb-1">Real Traders</p>
@@ -373,7 +389,7 @@ export default function SubmissionsPage() {
             </div>
             <div className="col-span-2 bg-[#0d1117] rounded-lg p-3 border border-gray-800">
               <div className="flex justify-between text-xs text-gray-400 mb-2">
-                <span>Approval rate today</span>
+                <span>{isToday ? 'Approval rate today' : 'Approval rate'}</span>
                 <span className="text-green-400 font-medium">{stats?.approvalRate ?? 0}%</span>
               </div>
               <div className="h-2 bg-gray-800 rounded-full overflow-hidden flex">
@@ -386,7 +402,7 @@ export default function SubmissionsPage() {
 
         {/* Status breakdown pie */}
         <div className="bg-[#1a1f2e] rounded-xl p-5 border border-gray-800">
-          <h3 className="font-semibold mb-4">Status Breakdown (30d)</h3>
+          <h3 className="font-semibold mb-4">Status Breakdown ({rangeLabel})</h3>
           {isLoading || pieData.every(d => d.value === 0) ? (
             <div className="h-40 flex items-center justify-center text-gray-500 text-sm">No data yet</div>
           ) : (
@@ -447,19 +463,19 @@ export default function SubmissionsPage() {
           </select>
         </div>
 
-        {/* Date range */}
-        <div className="flex bg-[#1a1f2e] border border-gray-800 rounded-lg p-1">
-          {(['today','week','month'] as DateRange[]).map(d => (
-            <button
-              key={d}
-              onClick={() => setDateRange(d)}
-              className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
-                dateRange === d ? 'bg-gray-700 text-white' : 'text-gray-400 hover:text-white'
-              }`}
-            >
-              {d.charAt(0).toUpperCase() + d.slice(1)}
-            </button>
-          ))}
+        {/* Date range (dropdown — includes historical ranges) */}
+        <div className="flex items-center gap-2">
+          <Calendar className="w-4 h-4 text-gray-500" />
+          <select
+            value={dateRange}
+            onChange={e => setDateRange(e.target.value as DateRange)}
+            className="bg-[#1a1f2e] border border-gray-700 rounded-lg px-3 py-2.5 text-sm
+                       focus:outline-none focus:border-green-500"
+          >
+            {DATE_OPTIONS.map(o => (
+              <option key={o.value} value={o.value}>{o.label}</option>
+            ))}
+          </select>
         </div>
 
         {/* Source filter */}
