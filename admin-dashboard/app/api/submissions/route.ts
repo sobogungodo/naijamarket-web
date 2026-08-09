@@ -39,8 +39,11 @@ export async function GET(request: NextRequest) {
     const nowUtc = new Date();
     const dfEnd   = dayStr(new Date(nowUtc.getTime() + 86400000)); // exclusive upper bound = tomorrow (UTC)
     let   dfStart = dayStr(nowUtc);                                // today (UTC)
-    if (dateRange === 'week')  dfStart = dayStr(new Date(nowUtc.getTime() -  7 * 86400000));
-    if (dateRange === 'month') dfStart = dayStr(new Date(nowUtc.getTime() - 30 * 86400000));
+    if (dateRange === 'week')    dfStart = dayStr(new Date(nowUtc.getTime() -   7 * 86400000));
+    if (dateRange === 'month')   dfStart = dayStr(new Date(nowUtc.getTime() -  30 * 86400000));
+    if (dateRange === 'quarter') dfStart = dayStr(new Date(nowUtc.getTime() -  90 * 86400000));
+    if (dateRange === 'year')    dfStart = dayStr(new Date(nowUtc.getTime() - 365 * 86400000));
+    if (dateRange === 'all')     dfStart = '0001-01-01';          // historical: no lower bound
 
     const dateFilter = `AND s.created_at >= @dfStart AND s.created_at < @dfEnd`;
     let where = `WHERE 1=1 ${dateFilter}`;
@@ -98,7 +101,7 @@ export async function POST(request: NextRequest) {
     const session = await getServerSession(authOptions);
     if (!session) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
 
-    const { action } = await request.json();
+    const { action, dateRange = 'today' } = await request.json();
 
     // Sargable UTC day bounds (created_at is an ISO-ish nvarchar; range bounds on
     // the 'YYYY-MM-DD' prefix are index-seekable and correct for both stored formats).
@@ -111,36 +114,45 @@ export async function POST(request: NextRequest) {
     const yesterdayStart = dayStr(new Date(nowUtc.getTime() - 86400000));
     const monthStart     = dayStr(new Date(nowUtc.getTime() - 30 * 86400000));
 
+    // Selected-range lower bound (mirrors GET) so the stat cards track the dropdown.
+    let rangeStart = todayStart;
+    if (dateRange === 'week')    rangeStart = dayStr(new Date(nowUtc.getTime() -   7 * 86400000));
+    if (dateRange === 'month')   rangeStart = dayStr(new Date(nowUtc.getTime() -  30 * 86400000));
+    if (dateRange === 'quarter') rangeStart = dayStr(new Date(nowUtc.getTime() -  90 * 86400000));
+    if (dateRange === 'year')    rangeStart = dayStr(new Date(nowUtc.getTime() - 365 * 86400000));
+    if (dateRange === 'all')     rangeStart = '0001-01-01';
+
     if (action === 'stats') {
-      // Single pass over the last 30 days with conditional aggregation, instead
-      // of 11 separate non-sargable full-table COUNT scans (which took ~70s on
-      // S1 and blew the 60s driver timeout, leaving the dashboard showing zeros).
+      // Single pass over [cteStart, tomorrow) with conditional aggregation (one
+      // index seek, not 11 full scans). cteStart spans the selected range AND
+      // yesterday, so the range cards and the "vs yesterday" delta come from one query.
+      const cteStart = rangeStart < yesterdayStart ? rangeStart : yesterdayStart;
       const rows = await query<Record<string, unknown>>(`
-        WITH recent AS (
+        WITH ranged AS (
           SELECT created_at, validation_status, trader_id, fraud_flag
           FROM dbo.Submissions
-          WHERE created_at >= @monthStart AND created_at < @tomorrowStart
+          WHERE created_at >= @cteStart AND created_at < @tomorrowStart
         )
         SELECT
-          SUM(CASE WHEN created_at >= @todayStart THEN 1 ELSE 0 END)                                   AS totalToday,
-          SUM(CASE WHEN created_at >= @todayStart AND validation_status = 'PENDING'  THEN 1 ELSE 0 END) AS pendingReview,
-          SUM(CASE WHEN created_at >= @todayStart AND validation_status = 'APPROVED' THEN 1 ELSE 0 END) AS approvedToday,
-          SUM(CASE WHEN created_at >= @todayStart AND validation_status = 'REJECTED' THEN 1 ELSE 0 END) AS rejectedToday,
-          SUM(CASE WHEN created_at >= @todayStart AND fraud_flag = 1 THEN 1 ELSE 0 END)                 AS fraudFlagged,
-          SUM(CASE WHEN created_at >= @todayStart AND trader_id NOT LIKE 'SYN-TR-%' THEN 1 ELSE 0 END)  AS realToday,
-          SUM(CASE WHEN created_at >= @todayStart AND trader_id LIKE 'SYN-TR-%' THEN 1 ELSE 0 END)      AS syntheticToday,
+          SUM(CASE WHEN created_at >= @rangeStart THEN 1 ELSE 0 END)                                   AS totalToday,
+          SUM(CASE WHEN created_at >= @rangeStart AND validation_status = 'PENDING'  THEN 1 ELSE 0 END) AS pendingReview,
+          SUM(CASE WHEN created_at >= @rangeStart AND validation_status = 'APPROVED' THEN 1 ELSE 0 END) AS approvedToday,
+          SUM(CASE WHEN created_at >= @rangeStart AND validation_status = 'REJECTED' THEN 1 ELSE 0 END) AS rejectedToday,
+          SUM(CASE WHEN created_at >= @rangeStart AND fraud_flag = 1 THEN 1 ELSE 0 END)                 AS fraudFlagged,
+          SUM(CASE WHEN created_at >= @rangeStart AND trader_id NOT LIKE 'SYN-TR-%' THEN 1 ELSE 0 END)  AS realToday,
+          SUM(CASE WHEN created_at >= @rangeStart AND trader_id LIKE 'SYN-TR-%' THEN 1 ELSE 0 END)      AS syntheticToday,
           SUM(CASE WHEN created_at >= @yesterdayStart AND created_at < @todayStart THEN 1 ELSE 0 END)   AS totalYesterday,
-          SUM(CASE WHEN validation_status = 'APPROVED' THEN 1 ELSE 0 END)                               AS approvedMonth,
-          SUM(CASE WHEN validation_status = 'PENDING'  THEN 1 ELSE 0 END)                               AS pendingMonth,
-          SUM(CASE WHEN validation_status = 'REJECTED' THEN 1 ELSE 0 END)                               AS rejectedMonth
-        FROM recent;
-      `, { todayStart, tomorrowStart, yesterdayStart, monthStart });
+          SUM(CASE WHEN created_at >= @rangeStart AND validation_status = 'APPROVED' THEN 1 ELSE 0 END) AS approvedMonth,
+          SUM(CASE WHEN created_at >= @rangeStart AND validation_status = 'PENDING'  THEN 1 ELSE 0 END) AS pendingMonth,
+          SUM(CASE WHEN created_at >= @rangeStart AND validation_status = 'REJECTED' THEN 1 ELSE 0 END) AS rejectedMonth
+        FROM ranged;
+      `, { cteStart, rangeStart, tomorrowStart, yesterdayStart, todayStart });
       const s = rows[0] ?? {};
       const totalToday     = (s.totalToday     as number) ?? 0;
       const totalYesterday = (s.totalYesterday as number) ?? 1;
       const approvalRate   = totalToday > 0 ? Math.round(((s.approvedToday as number ?? 0) / totalToday) * 1000) / 10 : 0;
       const vsYesterday    = totalYesterday > 0 ? Math.round(((totalToday - totalYesterday) / totalYesterday) * 1000) / 10 : 0;
-      return NextResponse.json({ success: true, data: { ...s, approvalRate, vsYesterday }, timestamp: new Date().toISOString() });
+      return NextResponse.json({ success: true, data: { ...s, approvalRate, vsYesterday, dateRange }, timestamp: new Date().toISOString() });
     }
 
     if (action === 'approve_pending') {
