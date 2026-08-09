@@ -77,6 +77,22 @@ const COLUMN_TYPES: Record<string, Record<string, string>> = {
     created_at: 'DATETIME2',
     resolved_at: 'DATETIME2',
   },
+  // Added 2026-08-09: Validator_Votes migrated nvarchar(max) -> typed columns. Without this map
+  // every column fell back to NVARCHAR(MAX) and bit cols got 'TRUE'/'FALSE' strings that fail
+  // conversion. convertValue now yields real Date/number/boolean per column.
+  'Validator_Votes': {
+    created_at: 'DATETIME2', updated_at: 'DATETIME2', voted_at: 'DATETIME2', deadline: 'DATETIME2',
+    expired_at: 'DATETIME2', gps_timestamp: 'DATETIME2', local_time_of_vote: 'DATETIME2',
+    prev_gps_timestamp: 'DATETIME2', request_sent_at: 'DATETIME2',
+    gps_latitude: 'DECIMAL(18,4)', gps_longitude: 'DECIMAL(18,4)', prev_gps_latitude: 'DECIMAL(18,4)',
+    prev_gps_longitude: 'DECIMAL(18,4)', price_range_max: 'DECIMAL(18,4)', price_range_min: 'DECIMAL(18,4)',
+    reward_earned: 'DECIMAL(18,4)', trader_submitted_price: 'DECIMAL(18,4)', validator_price_estimate: 'DECIMAL(18,4)',
+    gps_distance_from_market: 'DECIMAL(18,4)', movement_velocity_kmh: 'DECIMAL(18,4)', variance_percent: 'DECIMAL(18,4)',
+    variance_from_range_center: 'DECIMAL(18,4)',
+    gps_age_seconds: 'INT', gps_market_radius: 'INT', response_time_sec: 'INT', re_verification_round: 'INT',
+    agreed_with_consensus: 'BIT', is_expired: 'BIT', is_honeypot: 'BIT', re_verification_requested: 'BIT', was_replaced: 'BIT',
+    validator_phone: 'NVARCHAR(20)',
+  },
 };
 
 // Initialize Google Sheets client
