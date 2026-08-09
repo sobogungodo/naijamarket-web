@@ -10,6 +10,9 @@ import { query } from '@/lib/db';
 //   Submissions, Validator_Votes, Validator_Notification_Queue
 // ============================================================
 
+// Hit the live DB on request, never at build time — build-time static generation
+// of this route runs the queries and times out (see wa/build notes).
+export const dynamic = 'force-dynamic';
 export const revalidate = 60
 export async function GET(request: NextRequest) {
   try {

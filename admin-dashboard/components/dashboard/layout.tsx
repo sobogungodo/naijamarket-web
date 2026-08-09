@@ -147,9 +147,11 @@ const bottomNavItems = [
 interface SidebarProps {
   collapsed: boolean;
   onToggle: () => void;
+  mobileOpen?: boolean;
+  onMobileClose?: () => void;
 }
 
-export function Sidebar({ collapsed, onToggle }: SidebarProps) {
+export function Sidebar({ collapsed, onToggle, mobileOpen = false, onMobileClose }: SidebarProps) {
   const pathname = usePathname();
   const { data: session } = useSession();
 
@@ -168,6 +170,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
       <Link
         key={item.href}
         href={item.href}
+        onClick={onMobileClose}
         className={cn(
           'flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200',
           'hover:bg-dash-hover group',
@@ -200,11 +203,24 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
   };
 
   return (
+    <>
+      {/* Mobile backdrop (only when the drawer is open) */}
+      {mobileOpen && (
+        <div
+          onClick={onMobileClose}
+          aria-hidden="true"
+          className="fixed inset-0 z-40 bg-black/60 md:hidden"
+        />
+      )}
     <aside
       className={cn(
-        'fixed left-0 top-0 z-40 h-screen bg-dash-card border-r border-dash-border',
-        'transition-all duration-300 ease-in-out',
-        collapsed ? 'w-20' : 'w-64'
+        'fixed left-0 top-0 z-50 h-screen bg-dash-card border-r border-dash-border',
+        'transition-transform duration-300 ease-in-out',
+        // Mobile: full-width drawer, slides in/out. Desktop: always visible, width follows collapse.
+        'w-64',
+        collapsed ? 'md:w-20' : 'md:w-64',
+        mobileOpen ? 'translate-x-0' : '-translate-x-full',
+        'md:translate-x-0'
       )}
     >
       <div className="flex flex-col h-full">
@@ -249,6 +265,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
               <Link
                 key={item.href}
                 href={item.href}
+                onClick={onMobileClose}
                 className={cn(
                   'flex items-center gap-3 px-3 py-2 rounded-lg transition-all duration-200',
                   'hover:bg-dash-hover text-dash-muted hover:text-dash-text',
@@ -305,7 +322,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
           className={cn(
             'absolute -right-3 top-20 w-6 h-6 rounded-full',
             'bg-dash-card border border-dash-border',
-            'flex items-center justify-center',
+            'hidden md:flex items-center justify-center',
             'text-dash-muted hover:text-dash-text hover:bg-dash-hover',
             'transition-colors shadow-lg'
           )}
@@ -318,6 +335,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
         </button>
       </div>
     </aside>
+    </>
   );
 }
 
