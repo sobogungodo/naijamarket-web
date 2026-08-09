@@ -147,7 +147,7 @@ export async function POST(request: NextRequest) {
       const affected = await execute(`
         UPDATE dbo.Submissions
         SET validation_status = 'APPROVED', status = 'APPROVED', consensus_result = 'APPROVED',
-            approved_at = CAST(GETUTCDATE() AS NVARCHAR(30)), updated_at = CAST(GETUTCDATE() AS NVARCHAR(30))
+            approved_at = GETUTCDATE(), updated_at = GETUTCDATE()
         WHERE validation_status = 'PENDING'
           AND created_at >= @todayStart AND created_at < @tomorrowStart
           AND trader_id NOT LIKE 'SYN-TR-%'
@@ -185,8 +185,8 @@ export async function PATCH(request: NextRequest) {
     await execute(`
       UPDATE dbo.Submissions
       SET validation_status = @status, status = @status, consensus_result = @status,
-          ${timestampCol} = CAST(GETDATE() AS NVARCHAR(30)),
-          updated_at      = CAST(GETDATE() AS NVARCHAR(30))
+          ${timestampCol} = GETUTCDATE(),
+          updated_at      = GETUTCDATE()
       WHERE submission_id = @submissionId
     `, { status: newStatus, submissionId });
 
