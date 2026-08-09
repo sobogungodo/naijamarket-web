@@ -93,6 +93,15 @@ const COLUMN_TYPES: Record<string, Record<string, string>> = {
     agreed_with_consensus: 'BIT', is_expired: 'BIT', is_honeypot: 'BIT', re_verification_requested: 'BIT', was_replaced: 'BIT',
     validator_phone: 'NVARCHAR(20)',
   },
+  // Added 2026-08-09: Validation_Queue migrated nvarchar->typed columns.
+  'Validation_Queue': {
+    completed_at: 'DATETIME2', created_at: 'DATETIME2', deadline: 'DATETIME2', updated_at: 'DATETIME2',
+    validator1_timeout_at: 'DATETIME2', validator2_timeout_at: 'DATETIME2', validator3_timeout_at: 'DATETIME2',
+    price: 'DECIMAL(18,4)', price_range_min: 'DECIMAL(18,4)', price_range_max: 'DECIMAL(18,4)',
+    timeout_duration: 'INT', trader_reputation: 'INT', total_replacements: 'INT',
+    validator1_replacement_count: 'INT', validator2_replacement_count: 'INT', validator3_replacement_count: 'INT',
+    is_timed_out: 'BIT',
+  },
 };
 
 // Initialize Google Sheets client
