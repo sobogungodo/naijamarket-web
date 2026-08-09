@@ -45,15 +45,25 @@ export async function GET(request: NextRequest) {
     if (dateRange === 'year')    dfStart = dayStr(new Date(nowUtc.getTime() - 365 * 86400000));
     if (dateRange === 'all')     dfStart = '0001-01-01';          // historical: no lower bound
 
-    const dateFilter = `AND s.created_at >= @dfStart AND s.created_at < @dfEnd`;
-    let where = `WHERE 1=1 ${dateFilter}`;
-    if (search)   where += ` AND (s.trader_name LIKE '%' + @search + '%' OR s.item LIKE '%' + @search + '%' OR s.submission_id LIKE '%' + @search + '%')`;
-    if (status && status !== 'All') where += ` AND s.validation_status = @status`;
-    if (marketId && marketId !== 'all') where += ` AND s.market_id = @marketId`;
-    if (source === 'synthetic') where += ` AND s.trader_id LIKE 'SYN-TR-%'`;
-    if (source === 'real')      where += ` AND s.trader_id NOT LIKE 'SYN-TR-%'`;
+    // A real-status filter (not 'PRACTICE') means practice rows can't match — exclude them.
+    const statusFiltersOutPractice = !!(status && status !== 'All' && status !== 'PRACTICE');
+    const includeSubs     = source !== 'practice';
+    const includePractice = (source === 'all' || source === 'practice') && !statusFiltersOutPractice;
 
-    const sql = `
+    // Submissions (real + synthetic) branch
+    let subsWhere = `WHERE 1=1 AND s.created_at >= @dfStart AND s.created_at < @dfEnd`;
+    if (search)   subsWhere += ` AND (s.trader_name LIKE '%' + @search + '%' OR s.item LIKE '%' + @search + '%' OR s.submission_id LIKE '%' + @search + '%')`;
+    if (status && status !== 'All' && status !== 'PRACTICE') subsWhere += ` AND s.validation_status = @status`;
+    if (marketId && marketId !== 'all') subsWhere += ` AND s.market_id = @marketId`;
+    if (source === 'synthetic') subsWhere += ` AND s.trader_id LIKE 'SYN-TR-%'`;
+    if (source === 'real')      subsWhere += ` AND s.trader_id NOT LIKE 'SYN-TR-%'`;
+
+    // Practice_Submissions branch (dbo.Practice_Submissions) — mapped to the same column shape
+    let pracWhere = `WHERE 1=1 AND p.created_at >= @dfStart AND p.created_at < @dfEnd`;
+    if (search)   pracWhere += ` AND (p.item LIKE '%' + @search + '%' OR p.practice_id LIKE '%' + @search + '%' OR p.trader_phone LIKE '%' + @search + '%')`;
+    if (marketId && marketId !== 'all') pracWhere += ` AND p.market_id = @marketId`;
+
+    const subsSelect = `
       SELECT
         s.submission_id, s.trader_id, s.trader_name, s.trader_phone,
         CAST(ISNULL(s.reputation_at_submission, 50) AS INT) AS reputation,
@@ -65,13 +75,39 @@ export async function GET(request: NextRequest) {
         s.validation_status, s.status,
         s.fraud_flag, s.fraud_flag_reason,
         s.submitted_at, s.created_at, s.approved_at, s.rejected_at,
-        CASE WHEN s.trader_id LIKE 'SYN-TR-%' THEN 1 ELSE 0 END AS isSynthetic
-      FROM dbo.Submissions s
-      ${where}
-      ORDER BY s.created_at DESC
+        CASE WHEN s.trader_id LIKE 'SYN-TR-%' THEN 1 ELSE 0 END AS isSynthetic,
+        CAST(0 AS bit) AS isPractice
+      FROM dbo.Submissions s ${subsWhere}`;
+
+    const pracSelect = `
+      SELECT
+        p.practice_id AS submission_id, p.trader_id, CAST(NULL AS nvarchar(200)) AS trader_name, p.trader_phone,
+        CAST(NULL AS INT) AS reputation,
+        p.market_id, p.market, p.state,
+        p.item_id, p.item, p.category, p.unit,
+        p.price, CAST(NULL AS decimal(18,2)) AS baseline_price, CAST(NULL AS decimal(18,2)) AS variance_from_baseline,
+        p.gps_latitude, p.gps_longitude, CAST(NULL AS bit) AS gps_verified,
+        p.distance_from_market,
+        'PRACTICE' AS validation_status, 'PRACTICE' AS status,
+        CAST(0 AS bit) AS fraud_flag, p.practice_reason AS fraud_flag_reason,
+        p.submitted_at, p.created_at, CAST(NULL AS datetime2) AS approved_at, CAST(NULL AS datetime2) AS rejected_at,
+        CAST(0 AS bit) AS isSynthetic,
+        CAST(1 AS bit) AS isPractice
+      FROM dbo.Practice_Submissions p ${pracWhere}`;
+
+    const branches: string[] = [];
+    if (includeSubs)     branches.push(subsSelect);
+    if (includePractice) branches.push(pracSelect);
+    const combinedSql = branches.length ? branches.join('\n      UNION ALL\n') : `${subsSelect} AND 1=0`;
+    const cte = `WITH combined AS (${combinedSql})`;
+
+    const sql = `
+      ${cte}
+      SELECT * FROM combined ORDER BY created_at DESC
       OFFSET @offset ROWS FETCH NEXT @pageSize ROWS ONLY;
 
-      SELECT COUNT(*) AS total FROM dbo.Submissions s ${where};
+      ${cte}
+      SELECT COUNT(*) AS total FROM combined;
     `;
 
     const params: Record<string, unknown> = { offset, pageSize, dfStart, dfEnd };

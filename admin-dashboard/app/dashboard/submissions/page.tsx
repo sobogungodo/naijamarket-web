@@ -39,6 +39,7 @@ interface Submission {
   submitted_at:         string;
   created_at:           string;
   isSynthetic:          boolean;
+  isPractice:           boolean;
 }
 
 interface SubStats {
@@ -116,7 +117,7 @@ const DATE_OPTIONS: { value: DateRange; label: string }[] = [
   { value: 'year',    label: 'Last 12 months' },
   { value: 'all',     label: 'All time' },
 ];
-type SourceFilter = 'all' | 'real' | 'synthetic';
+type SourceFilter = 'all' | 'real' | 'synthetic' | 'practice';
 
 export default function SubmissionsPage() {
   const [submissions,   setSubmissions]   = useState<Submission[]>([]);
@@ -480,13 +481,15 @@ export default function SubmissionsPage() {
 
         {/* Source filter */}
         <div className="flex bg-[#1a1f2e] border border-gray-800 rounded-lg p-1">
-          {(['all','real','synthetic'] as SourceFilter[]).map(s => (
+          {(['all','real','synthetic','practice'] as SourceFilter[]).map(s => (
             <button
               key={s}
               onClick={() => setSourceFilter(s)}
               className={`flex items-center gap-1 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
                 sourceFilter === s
-                  ? s === 'synthetic' ? 'bg-purple-700 text-white' : 'bg-gray-700 text-white'
+                  ? s === 'synthetic' ? 'bg-purple-700 text-white'
+                  : s === 'practice' ? 'bg-amber-600 text-white'
+                  : 'bg-gray-700 text-white'
                   : 'text-gray-400 hover:text-white'
               }`}
             >
@@ -529,14 +532,19 @@ export default function SubmissionsPage() {
                 key={s.submission_id}
                 className={`border-b border-gray-800/50 hover:bg-[#252b3b]/50 transition-colors
                             ${s.fraud_flag ? 'bg-red-950/10' : ''}
-                            ${s.isSynthetic ? 'bg-purple-950/5' : ''}`}
+                            ${s.isSynthetic ? 'bg-purple-950/5' : ''}
+                            ${s.isPractice ? 'bg-amber-950/10' : ''}`}
               >
                 {/* Trader */}
                 <td className="p-4">
                   <div className="flex items-center gap-2">
                     <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-medium
-                                    ${s.isSynthetic ? 'bg-purple-500/20 text-purple-400' : 'bg-green-500/20 text-green-500'}`}>
-                      {s.isSynthetic ? <Bot className="w-3.5 h-3.5" /> : s.trader_name?.split(' ').map(n => n[0]).join('').slice(0,2)}
+                                    ${s.isSynthetic ? 'bg-purple-500/20 text-purple-400'
+                                      : s.isPractice ? 'bg-amber-500/20 text-amber-400'
+                                      : 'bg-green-500/20 text-green-500'}`}>
+                      {s.isSynthetic ? <Bot className="w-3.5 h-3.5" />
+                        : s.isPractice ? 'P'
+                        : s.trader_name?.split(' ').map(n => n[0]).join('').slice(0,2)}
                     </div>
                     <div>
                       <p className="font-medium text-xs">{s.trader_name}</p>
