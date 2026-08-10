@@ -32,6 +32,7 @@ interface Trader {
   createdAt: string;
   lastActive: string;
   isSynthetic: boolean;
+  uncapped?: number;
 }
 
 interface Validator {
@@ -270,6 +271,26 @@ export default function UserManagementPage() {
       setStatusConfirm(null);
     }
   }, [statusConfirm, activeTab, sourceFilter, searchQuery, statusFilter, fetchUsers, fetchStats]);
+
+  // ── Remove / restore a reporter's daily submission cap (PATCH /api/users) ─────
+  const handleUncap = useCallback(async (id: string, currentlyUncapped: boolean) => {
+    try {
+      const res = await fetch('/api/users', {
+        method:  'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({
+          userId:   id,
+          userType: 'trader',
+          action:   currentlyUncapped ? 'recap_submissions' : 'uncap_submissions',
+        }),
+      });
+      if ((await res.json()).success) {
+        await fetchUsers(activeTab, sourceFilter, searchQuery, statusFilter);
+      }
+    } catch (err) {
+      console.error('[handleUncap]', err);
+    }
+  }, [activeTab, sourceFilter, searchQuery, statusFilter, fetchUsers]);
 
   // ── Derived stats ─────────────────────────────────────────────────────────
   const traderStats = {
@@ -636,6 +657,15 @@ export default function UserManagementPage() {
                         >
                           <Undo2 className="w-4 h-4 text-yellow-400" />
                         </button>
+                        {!trader.isSynthetic && (
+                          <button
+                            onClick={() => handleUncap(trader.id, !!trader.uncapped)}
+                            className={`px-2 py-1 rounded-lg text-[11px] font-medium transition-colors ${trader.uncapped ? 'bg-green-600/20 text-green-400 hover:bg-green-600/30' : 'text-gray-400 hover:bg-gray-700'}`}
+                            title={trader.uncapped ? 'Uncapped — click to restore the daily submission limit' : 'Remove the daily submission limit'}
+                          >
+                            {trader.uncapped ? '∞ Uncapped' : 'Uncap'}
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>
