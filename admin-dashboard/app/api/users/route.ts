@@ -60,6 +60,7 @@ export async function GET(request: NextRequest) {
           t.registration_status AS status,
           t.registered_at    AS createdAt,
           t.last_submission_at AS lastActive,
+          ISNULL(t.submission_uncapped, 0) AS uncapped,
           CASE WHEN t.trader_id LIKE 'SYN-TR-%' THEN 1 ELSE 0 END AS isSynthetic
         FROM dbo.Traders_register t
         ${where}
@@ -166,6 +167,40 @@ export async function PATCH(request: NextRequest) {
     const { userId, userType, action, reason } = await request.json();
     if (!userId || !userType || !action)
       return NextResponse.json({ success: false, error: 'Missing userId, userType, action' }, { status: 400 });
+
+    // ── Submission-cap toggle (traders only) — separate from the status actions ──
+    if (action === 'uncap_submissions' || action === 'recap_submissions') {
+      if (userType !== 'trader')
+        return NextResponse.json({ success: false, error: 'Uncap applies to traders only' }, { status: 400 });
+      const val = action === 'uncap_submissions' ? 1 : 0;
+      let phone: string = userId;
+      try {
+        const prev = await query<{ phone_number: string }>(
+          `SELECT phone_number FROM dbo.Traders_register WHERE trader_id = @userId`, { userId },
+        );
+        phone = prev[0]?.phone_number || userId;
+      } catch (e) {
+        console.error('[users PATCH][uncap] pre-read failed (non-fatal):', e);
+      }
+      await execute(
+        `UPDATE dbo.Traders_register SET submission_uncapped = @val WHERE trader_id = @userId`,
+        { userId, val },
+      );
+      try {
+        await execute(`
+          INSERT INTO dbo.Trader_Activity_Log (phone_number, platform, event_type, event_detail, session_token, ip_address, created_at)
+          VALUES (@phone, 'ADMIN', @evt, @detail, NULL, @ip, SYSUTCDATETIME())
+        `, {
+          phone,
+          evt: action === 'uncap_submissions' ? 'SUBMISSION_UNCAP' : 'SUBMISSION_RECAP',
+          detail: JSON.stringify({ action, submission_uncapped: val, userId,
+            adminId: (session.user as { id?: string })?.id ?? null,
+            adminEmail: (session.user as { email?: string | null })?.email ?? null }),
+          ip: request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || '',
+        });
+      } catch (e) { console.error('[users PATCH][uncap audit] non-fatal:', e); }
+      return NextResponse.json({ success: true, submission_uncapped: val });
+    }
 
     const statusMap: Record<string, string> = {
       activate:  'ACTIVE',
