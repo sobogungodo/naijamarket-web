@@ -37,7 +37,7 @@ async function buildCaption(): Promise<{ caption: string; asOf: Date | null; cou
     const s = c >= 0 ? '▲' : '▼';
     cap += `${s} ${m.item_name}: ₦${Math.round(Number(m.price)).toLocaleString('en-NG')} (${c >= 0 ? '+' : ''}${c.toFixed(1)}%)\n`;
   }
-  cap += `\nLive prices across 200+ markets on the NaijaMarket app.\n👉 naijamarketintel.com\n\n#NaijaMarket #FoodPrices #Nigeria #MarketPrices #FoodInflation #Lagos #Naija`;
+  cap += `\n📍 Want the CHEAPEST state and the EXACT market for each item? Get full live prices across 200+ markets:\n🌐 Visit naijamarketintel.com\n📲 Download the NaijaMarket app — or add our PWA to your phone.\n\n#NaijaMarket #FoodPrices #Nigeria #MarketPrices #FoodInflation #Lagos #Naija`;
   return { caption: cap, asOf, count: movers.length };
 }
 
