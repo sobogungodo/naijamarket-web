@@ -22,26 +22,41 @@ async function postToTwitter(cardUrl: string, text: string): Promise<unknown> {
   if (!appKey || !appSecret || !accessToken || !accessSecret) {
     return { ok: false, error: 'TWITTER_* credentials not set' };
   }
+  const client = new TwitterApi({ appKey, appSecret, accessToken, accessSecret });
+  const rw = client.readWrite;
+  const body = text.length > TWEET_MAX ? text.slice(0, TWEET_MAX - 1) + '…' : text;
+
+  // Try an image tweet first. X's Free tier blocks media upload (HTTP 402), so on failure we
+  // fall back to a text-only tweet — which posts fine on Free. If the app is later upgraded to
+  // Basic, the image path just starts working again (mode flips back to 'image'), no code change.
+  let mediaError: string | undefined;
   try {
-    const client = new TwitterApi({ appKey, appSecret, accessToken, accessSecret });
-    const rw = client.readWrite;
-
-    // X media upload needs the actual bytes, not a URL — fetch the card JPEG first.
     const imgRes = await fetch(cardUrl);
-    if (!imgRes.ok) return { ok: false, error: `card fetch failed: HTTP ${imgRes.status}` };
-    const buf = Buffer.from(await imgRes.arrayBuffer());
+    if (imgRes.ok) {
+      const buf = Buffer.from(await imgRes.arrayBuffer());
+      const mediaId = await rw.v1.uploadMedia(buf, { mimeType: 'image/jpeg' });
+      const tweet = await rw.v2.tweet({ text: body, media: { media_ids: [mediaId] } });
+      return { ok: true, mode: 'image', id: tweet?.data?.id };
+    }
+    mediaError = `card fetch failed: HTTP ${imgRes.status}`;
+  } catch (e) {
+    mediaError = e instanceof Error ? e.message : String(e);
+  }
 
-    const mediaId = await rw.v1.uploadMedia(buf, { mimeType: 'image/jpeg' });
-    const body = text.length > TWEET_MAX ? text.slice(0, TWEET_MAX - 1) + '…' : text;
-    const tweet = await rw.v2.tweet({ text: body, media: { media_ids: [mediaId] } });
-    return { ok: true, id: tweet?.data?.id };
+  // Text-only fallback (works on Free tier). The caption already carries the site link.
+  try {
+    const tweet = await rw.v2.tweet({ text: body });
+    const upgradeNote = /402|payment/i.test(mediaError || '')
+      ? 'Image upload requires X Basic tier — posted text only. Upgrade to auto-attach the card image.'
+      : 'Posted text only (image upload failed).';
+    return { ok: true, mode: 'text', id: tweet?.data?.id, note: upgradeNote, mediaError };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    const hint = /403|forbidden|401|unauthor|oauth|permission/i.test(msg)
-      ? 'Verify the X app has Read+Write permission, that the Access token/secret were regenerated AFTER ' +
-        'enabling write, and that the app is attached to a Project. Media upload needs OAuth 1.0a user context.'
+    const hint = /215|bad authentication|401|unauthor|oauth|403|forbidden|permission/i.test(msg)
+      ? 'Auth rejected. Use the OAuth 1.0a keys (Consumer Key/Secret + a generated OAuth-1.0 Access ' +
+        'token/secret marked Read+Write) — NOT the OAuth 2.0 Client ID/Secret or Bearer token.'
       : undefined;
-    return { ok: false, error: msg, ...(hint ? { hint } : {}) };
+    return { ok: false, error: msg, mediaError, ...(hint ? { hint } : {}) };
   }
 }
 
