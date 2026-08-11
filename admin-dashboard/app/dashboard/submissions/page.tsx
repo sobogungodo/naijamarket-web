@@ -141,6 +141,7 @@ export default function SubmissionsPage() {
   const [isExporting,   setIsExporting]   = useState(false);
   const [lastUpdated,   setLastUpdated]   = useState(new Date());
   const [actionResult,  setActionResult]  = useState<string | null>(null);
+  const [detail,        setDetail]        = useState<Submission | null>(null);
 
   const PAGE_SIZE = 20;
 
@@ -608,7 +609,10 @@ export default function SubmissionsPage() {
                 {/* Actions */}
                 <td className="p-4">
                   <div className="flex items-center gap-1">
-                    <button className="p-1.5 hover:bg-gray-700 rounded-lg transition-colors" title="View">
+                    <button
+                      onClick={() => setDetail(s)}
+                      className="p-1.5 hover:bg-gray-700 rounded-lg transition-colors" title="View details"
+                    >
                       <Eye className="w-3.5 h-3.5 text-gray-400" />
                     </button>
                     {s.validation_status === 'PENDING' && !s.isSynthetic && (
@@ -700,6 +704,51 @@ export default function SubmissionsPage() {
           </button>
         </div>
       </div>
+
+      {/* ── Submission detail modal (View) ─────────────────────────────────── */}
+      {detail && (() => {
+        const fmtDate = (d: string | null | undefined) => d ? new Date(d).toLocaleString() : '—';
+        const kindLabel = detail.isSynthetic ? 'Synthetic' : detail.isPractice ? 'Practice' : 'Real';
+        const rows: { label: string; value: string | number }[] = [
+          { label: 'Submission ID', value: detail.submission_id },
+          { label: 'Type', value: kindLabel },
+          { label: 'Reporter', value: `${detail.trader_name || '—'}${detail.trader_phone ? ` · ${detail.trader_phone}` : ''}` },
+          { label: 'Reputation', value: detail.reputation ?? '—' },
+          { label: 'Market', value: `${detail.market || '—'}${detail.state ? ` · ${detail.state}` : ''}` },
+          { label: 'Item', value: `${detail.item || '—'}${detail.category ? ` · ${detail.category}` : ''}` },
+          { label: 'Unit', value: detail.unit || '—' },
+          { label: 'Price', value: fmtPrice(detail.price) },
+          { label: 'Baseline', value: fmtPrice(detail.baseline_price) },
+          { label: 'Variance', value: detail.variance_from_baseline != null ? `${detail.variance_from_baseline >= 0 ? '+' : ''}${Number(detail.variance_from_baseline).toFixed(1)}%` : '—' },
+          { label: 'GPS', value: detail.gps_verified ? `Verified · ${Math.round(detail.distance_from_market ?? 0)}m` : 'Not verified' },
+          { label: 'Coordinates', value: (detail.gps_latitude != null && detail.gps_longitude != null) ? `${Number(detail.gps_latitude).toFixed(5)}, ${Number(detail.gps_longitude).toFixed(5)}` : '—' },
+          { label: 'Status', value: detail.validation_status },
+          { label: 'Fraud flag', value: detail.fraud_flag ? `Yes${detail.fraud_flag_reason ? ` — ${detail.fraud_flag_reason}` : ''}` : 'No' },
+          { label: 'Submitted', value: fmtDate(detail.submitted_at) },
+          { label: 'Created', value: fmtDate(detail.created_at) },
+        ];
+        return (
+          <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4" onClick={() => setDetail(null)}>
+            <div className="bg-[#1a1f2e] border border-gray-700 rounded-xl p-6 max-w-lg w-full max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h3 className="font-semibold text-white">Submission detail</h3>
+                  <p className="text-xs text-gray-400">{detail.item} @ {detail.market}</p>
+                </div>
+                <button onClick={() => setDetail(null)} className="text-gray-500 hover:text-white text-lg leading-none">✕</button>
+              </div>
+              <div className="divide-y divide-gray-800 rounded-lg border border-gray-800 overflow-hidden">
+                {rows.map(r => (
+                  <div key={r.label} className="flex items-start justify-between gap-4 px-4 py-2.5 text-sm">
+                    <span className="text-gray-400 flex-shrink-0">{r.label}</span>
+                    <span className="text-white text-right break-words">{r.value}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

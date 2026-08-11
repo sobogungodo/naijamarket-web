@@ -33,6 +33,10 @@ interface Trader {
   lastActive: string;
   isSynthetic: boolean;
   uncapped?: number;
+  is_suspended?: number;
+  suspensionReason?: string | null;
+  suspensionCount?: number;
+  approvedAt?: string | null;
 }
 
 interface Validator {
@@ -133,9 +137,14 @@ export default function UserManagementPage() {
   const [isDeleting,        setIsDeleting]          = useState(false);
   const [deleteResult,      setDeleteResult]        = useState<string | null>(null);
 
-  // Approve / unapprove confirm dialog state
-  const [statusConfirm,     setStatusConfirm]       = useState<{ id: string; name: string; action: 'approve' | 'unapprove' } | null>(null);
+  // Approve / unapprove / suspend / unsuspend confirm dialog state
+  const [statusConfirm,     setStatusConfirm]       = useState<{ id: string; name: string; action: 'approve' | 'unapprove' | 'suspend' | 'unsuspend'; userType: 'trader' | 'validator' } | null>(null);
   const [isStatusUpdating,  setIsStatusUpdating]    = useState(false);
+
+  // Detail modal (View button) — traders or validators
+  const [detailUser, setDetailUser] = useState<
+    { kind: 'trader'; data: Trader } | { kind: 'validator'; data: Validator } | null
+  >(null);
 
   // ── Fetch users ────────────────────────────────────────────────────────────
   const fetchUsers = useCallback(async (tab: UserTab, source: SourceTab, search: string, status: string) => {
@@ -247,14 +256,18 @@ export default function UserManagementPage() {
     if (!statusConfirm) return;
     setIsStatusUpdating(true);
     try {
+      const reasonMap: Record<string, string> = {
+        suspend:   'Admin suspend',
+        unapprove: 'Admin unapprove',
+      };
       const res = await fetch('/api/users', {
         method:  'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({
           userId:   statusConfirm.id,
-          userType: 'trader',
+          userType: statusConfirm.userType,
           action:   statusConfirm.action,
-          reason:   statusConfirm.action === 'unapprove' ? 'Admin unapprove' : '',
+          reason:   reasonMap[statusConfirm.action] ?? '',
         }),
       });
       const json = await res.json();
@@ -467,9 +480,9 @@ export default function UserManagementPage() {
           >
             <option>All</option>
             <option>APPROVED</option>
-            <option>SYNTHETIC</option>
-            <option>SUSPENDED</option>
-            <option>PENDING</option>
+            <option>PENDING_APPROVAL</option>
+            <option>WAITLIST</option>
+            <option>BANNED</option>
           </select>
         </div>
       </div>
@@ -622,36 +635,59 @@ export default function UserManagementPage() {
                       ₦{(trader.balance ?? 0).toLocaleString()}
                     </td>
                     <td className="p-4">
-                      <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${
-                        trader.status === 'APPROVED' || trader.status === 'active'
-                          ? 'bg-green-500/20 text-green-500'
-                          : trader.status === 'SYNTHETIC'
-                          ? 'bg-purple-500/20 text-purple-400'
-                          : 'bg-red-500/20 text-red-500'
-                      }`}>
-                        {trader.status}
-                      </span>
+                      <div className="flex flex-col items-start gap-1">
+                        <span className={`px-2.5 py-1 rounded-full text-xs font-medium ${
+                          trader.status === 'APPROVED' || trader.status === 'active'
+                            ? 'bg-green-500/20 text-green-500'
+                            : trader.status === 'SYNTHETIC'
+                            ? 'bg-purple-500/20 text-purple-400'
+                            : trader.status === 'BANNED'
+                            ? 'bg-red-500/20 text-red-500'
+                            : 'bg-yellow-500/20 text-yellow-400'
+                        }`}>
+                          {trader.status}
+                        </span>
+                        {!!trader.is_suspended && (
+                          <span
+                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-500/20 text-red-400 border border-red-500/30"
+                            title={trader.suspensionReason || 'Suspended by admin'}
+                          >
+                            <Ban className="w-2.5 h-2.5" /> SUSPENDED
+                          </span>
+                        )}
+                      </div>
                     </td>
                     <td className="p-4 text-gray-400">{timeAgo(trader.lastActive)}</td>
                     <td className="p-4">
                       <div className="flex items-center gap-2">
-                        <button className="p-1.5 hover:bg-gray-700 rounded-lg transition-colors" title="View">
+                        <button
+                          onClick={() => setDetailUser({ kind: 'trader', data: trader })}
+                          className="p-1.5 hover:bg-gray-700 rounded-lg transition-colors" title="View details"
+                        >
                           <Eye className="w-4 h-4 text-gray-400" />
                         </button>
                         {!trader.isSynthetic && (
-                          <button className="p-1.5 hover:bg-gray-700 rounded-lg transition-colors" title="Suspend">
-                            <Ban className="w-4 h-4 text-gray-400" />
+                          <button
+                            onClick={() => setStatusConfirm({
+                              id: trader.id, name: trader.name,
+                              action: trader.is_suspended ? 'unsuspend' : 'suspend',
+                              userType: 'trader',
+                            })}
+                            className={`p-1.5 rounded-lg transition-colors ${trader.is_suspended ? 'hover:bg-blue-600/20' : 'hover:bg-red-600/20'}`}
+                            title={trader.is_suspended ? 'Unsuspend' : 'Suspend'}
+                          >
+                            <Ban className={`w-4 h-4 ${trader.is_suspended ? 'text-blue-400' : 'text-red-400'}`} />
                           </button>
                         )}
                         <button
-                          onClick={() => setStatusConfirm({ id: trader.id, name: trader.name, action: 'approve' })}
+                          onClick={() => setStatusConfirm({ id: trader.id, name: trader.name, action: 'approve', userType: 'trader' })}
                           className="p-1.5 hover:bg-green-600/20 rounded-lg transition-colors"
                           title="Approve"
                         >
                           <CheckCircle2 className="w-4 h-4 text-green-400" />
                         </button>
                         <button
-                          onClick={() => setStatusConfirm({ id: trader.id, name: trader.name, action: 'unapprove' })}
+                          onClick={() => setStatusConfirm({ id: trader.id, name: trader.name, action: 'unapprove', userType: 'trader' })}
                           className="p-1.5 hover:bg-yellow-600/20 rounded-lg transition-colors"
                           title="Unapprove"
                         >
@@ -738,12 +774,23 @@ export default function UserManagementPage() {
                     <td className="p-4 text-gray-400">{timeAgo(validator.lastActive)}</td>
                     <td className="p-4">
                       <div className="flex items-center gap-2">
-                        <button className="p-1.5 hover:bg-gray-700 rounded-lg transition-colors" title="View">
+                        <button
+                          onClick={() => setDetailUser({ kind: 'validator', data: validator })}
+                          className="p-1.5 hover:bg-gray-700 rounded-lg transition-colors" title="View details"
+                        >
                           <Eye className="w-4 h-4 text-gray-400" />
                         </button>
                         {!validator.isSynthetic && (
-                          <button className="p-1.5 hover:bg-gray-700 rounded-lg transition-colors" title="Suspend">
-                            <Ban className="w-4 h-4 text-gray-400" />
+                          <button
+                            onClick={() => setStatusConfirm({
+                              id: validator.id, name: validator.name,
+                              action: validator.status === 'SUSPENDED' ? 'unsuspend' : 'suspend',
+                              userType: 'validator',
+                            })}
+                            className={`p-1.5 rounded-lg transition-colors ${validator.status === 'SUSPENDED' ? 'hover:bg-blue-600/20' : 'hover:bg-red-600/20'}`}
+                            title={validator.status === 'SUSPENDED' ? 'Unsuspend' : 'Suspend'}
+                          >
+                            <Ban className={`w-4 h-4 ${validator.status === 'SUSPENDED' ? 'text-blue-400' : 'text-red-400'}`} />
                           </button>
                         )}
                       </div>
@@ -800,33 +847,52 @@ export default function UserManagementPage() {
         </div>
       )}
 
-      {/* ── Approve / unapprove confirm dialog ─────────────────────────────── */}
-      {statusConfirm && (
+      {/* ── Approve / unapprove / suspend / unsuspend confirm dialog ───────── */}
+      {statusConfirm && (() => {
+        const noun = statusConfirm.userType === 'validator' ? 'validator' : 'trader';
+        const META: Record<typeof statusConfirm.action, {
+          title: string; desc: string; icon: JSX.Element; border: string; iconBg: string; btn: string; confirm: string;
+        }> = {
+          approve: {
+            title: `Approve ${noun}`,
+            desc: `Sets this ${noun} to APPROVED — their submissions enter the live pipeline and become payable.`,
+            icon: <CheckCircle2 className="w-5 h-5 text-green-400" />,
+            border: 'border-green-500/30', iconBg: 'bg-green-500/20', btn: 'bg-green-600 hover:bg-green-500', confirm: 'Confirm Approve',
+          },
+          unapprove: {
+            title: `Unapprove ${noun}`,
+            desc: `Reverts this ${noun} to PENDING_APPROVAL (back in the review queue) — a withdrawn approval, distinct from a suspension. Their suspended state is left unchanged; they drop to practice mode until re-approved.`,
+            icon: <Undo2 className="w-5 h-5 text-yellow-400" />,
+            border: 'border-yellow-500/30', iconBg: 'bg-yellow-500/20', btn: 'bg-yellow-600 hover:bg-yellow-500', confirm: 'Confirm Unapprove',
+          },
+          suspend: {
+            title: `Suspend ${noun}`,
+            desc: `Suspends this ${noun} — an independent block. Their approval status is left unchanged, but they cannot submit live prices while suspended.`,
+            icon: <Ban className="w-5 h-5 text-red-400" />,
+            border: 'border-red-500/30', iconBg: 'bg-red-500/20', btn: 'bg-red-600 hover:bg-red-500', confirm: 'Confirm Suspend',
+          },
+          unsuspend: {
+            title: `Unsuspend ${noun}`,
+            desc: `Lifts the suspension on this ${noun}. Their approval status is left unchanged.`,
+            icon: <Ban className="w-5 h-5 text-blue-400" />,
+            border: 'border-blue-500/30', iconBg: 'bg-blue-500/20', btn: 'bg-blue-600 hover:bg-blue-500', confirm: 'Confirm Unsuspend',
+          },
+        };
+        const m = META[statusConfirm.action];
+        return (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-          <div className={`bg-[#1a1f2e] border rounded-xl p-6 max-w-md w-full ${
-            statusConfirm.action === 'approve' ? 'border-green-500/30' : 'border-yellow-500/30'
-          }`}>
+          <div className={`bg-[#1a1f2e] border rounded-xl p-6 max-w-md w-full ${m.border}`}>
             <div className="flex items-center gap-3 mb-4">
-              <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
-                statusConfirm.action === 'approve' ? 'bg-green-500/20' : 'bg-yellow-500/20'
-              }`}>
-                {statusConfirm.action === 'approve'
-                  ? <CheckCircle2 className="w-5 h-5 text-green-400" />
-                  : <Undo2 className="w-5 h-5 text-yellow-400" />}
+              <div className={`w-10 h-10 rounded-full flex items-center justify-center ${m.iconBg}`}>
+                {m.icon}
               </div>
               <div>
-                <h3 className="font-semibold text-white">
-                  {statusConfirm.action === 'approve' ? 'Approve trader' : 'Unapprove trader'}
-                </h3>
+                <h3 className="font-semibold text-white">{m.title}</h3>
                 <p className="text-xs text-gray-400">{statusConfirm.name}</p>
               </div>
             </div>
 
-            <p className="text-sm text-gray-300 mb-5">
-              {statusConfirm.action === 'approve'
-                ? 'Sets this trader to APPROVED — their submissions enter the live pipeline and become payable.'
-                : 'Sets this trader to SUSPENDED — a withdrawn approval (distinct from never-approved). They can no longer submit live prices.'}
-            </p>
+            <p className="text-sm text-gray-300 mb-5">{m.desc}</p>
 
             <div className="flex gap-3">
               <button
@@ -838,20 +904,80 @@ export default function UserManagementPage() {
               <button
                 onClick={submitStatusAction}
                 disabled={isStatusUpdating}
-                className={`flex-1 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors disabled:opacity-50 ${
-                  statusConfirm.action === 'approve'
-                    ? 'bg-green-600 hover:bg-green-500'
-                    : 'bg-yellow-600 hover:bg-yellow-500'
-                }`}
+                className={`flex-1 px-4 py-2.5 rounded-lg text-sm font-medium transition-colors disabled:opacity-50 ${m.btn}`}
               >
-                {isStatusUpdating
-                  ? 'Working…'
-                  : (statusConfirm.action === 'approve' ? 'Confirm Approve' : 'Confirm Unapprove')}
+                {isStatusUpdating ? 'Working…' : m.confirm}
               </button>
             </div>
           </div>
         </div>
-      )}
+        );
+      })()}
+
+      {/* ── Detail modal (View) ────────────────────────────────────────────── */}
+      {detailUser && (() => {
+        const fmtDate = (d: string | null | undefined) => d ? new Date(d).toLocaleString() : '—';
+        const rows: { label: string; value: string | number }[] = detailUser.kind === 'trader'
+          ? (() => { const t = detailUser.data; return [
+              { label: 'Trader ID', value: t.id },
+              { label: 'Phone', value: t.phone || '—' },
+              { label: 'Market', value: t.market ? `${t.market}${t.state ? ` · ${t.state}` : ''}` : '—' },
+              { label: 'Approval status', value: t.status },
+              { label: 'Suspended', value: t.is_suspended ? `Yes${t.suspensionReason ? ` — ${t.suspensionReason}` : ''}${t.suspensionCount ? ` (×${t.suspensionCount})` : ''}` : 'No' },
+              { label: 'Reputation', value: t.reputation },
+              { label: 'Submissions', value: `${t.approved} approved / ${t.submissions} total${t.rejected ? ` · ${t.rejected} rejected` : ''}` },
+              { label: 'Daily cap', value: t.uncapped ? 'Uncapped (no daily limit)' : 'Standard limit' },
+              { label: 'Balance', value: `₦${(t.balance ?? 0).toLocaleString()}` },
+              { label: 'Registered', value: fmtDate(t.createdAt) },
+              { label: 'Approved at', value: fmtDate(t.approvedAt) },
+              { label: 'Last active', value: fmtDate(t.lastActive) },
+            ]; })()
+          : (() => { const v = detailUser.data; return [
+              { label: 'Validator ID', value: v.id },
+              { label: 'Phone', value: v.phone || '—' },
+              { label: 'Market', value: v.market ? `${v.market}${v.state ? ` · ${v.state}` : ''}` : '—' },
+              { label: 'Status', value: v.status },
+              { label: 'Tier', value: v.tier || '—' },
+              { label: 'Accuracy', value: `${v.accuracy ?? 0}%` },
+              { label: 'Votes', value: `${(v.correctVotes ?? 0).toLocaleString()} correct / ${(v.totalValidations ?? 0).toLocaleString()} total` },
+              { label: 'Balance', value: `₦${(v.balance ?? 0).toLocaleString()}` },
+              { label: 'Registered', value: fmtDate(v.createdAt) },
+              { label: 'Last active', value: fmtDate(v.lastActive) },
+            ]; })();
+        const d = detailUser.data;
+        return (
+          <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4" onClick={() => setDetailUser(null)}>
+            <div className="bg-[#1a1f2e] border border-gray-700 rounded-xl p-6 max-w-lg w-full" onClick={e => e.stopPropagation()}>
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-3">
+                  <div className={`w-11 h-11 rounded-full flex items-center justify-center font-medium ${
+                    d.isSynthetic ? 'bg-purple-500/20 text-purple-400'
+                    : detailUser.kind === 'trader' ? 'bg-green-500/20 text-green-500' : 'bg-yellow-500/20 text-yellow-500'
+                  }`}>
+                    {d.isSynthetic ? <Bot className="w-5 h-5" /> : (d.name?.split(' ').map(n => n[0]).join('').slice(0, 2) || '?')}
+                  </div>
+                  <div>
+                    <div className="flex items-center">
+                      <h3 className="font-semibold text-white">{d.name}</h3>
+                      {d.isSynthetic && <SynBadge />}
+                    </div>
+                    <p className="text-xs text-gray-400 capitalize">{detailUser.kind}</p>
+                  </div>
+                </div>
+                <button onClick={() => setDetailUser(null)} className="text-gray-500 hover:text-white text-lg leading-none">✕</button>
+              </div>
+              <div className="divide-y divide-gray-800 rounded-lg border border-gray-800 overflow-hidden">
+                {rows.map(r => (
+                  <div key={r.label} className="flex items-start justify-between gap-4 px-4 py-2.5 text-sm">
+                    <span className="text-gray-400">{r.label}</span>
+                    <span className="text-white text-right break-words max-w-[60%]">{r.value}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ── Add user modal ─────────────────────────────────────────────────── */}
       <AddUserModal

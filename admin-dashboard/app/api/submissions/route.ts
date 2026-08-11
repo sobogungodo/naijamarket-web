@@ -52,7 +52,7 @@ export async function GET(request: NextRequest) {
 
     // Submissions (real + synthetic) branch
     let subsWhere = `WHERE 1=1 AND s.created_at >= @dfStart AND s.created_at < @dfEnd`;
-    if (search)   subsWhere += ` AND (s.trader_name LIKE '%' + @search + '%' OR s.item LIKE '%' + @search + '%' OR s.submission_id LIKE '%' + @search + '%')`;
+    if (search)   subsWhere += ` AND (s.trader_name LIKE '%' + @search + '%' OR tr.full_name LIKE '%' + @search + '%' OR s.item LIKE '%' + @search + '%' OR s.submission_id LIKE '%' + @search + '%')`;
     if (status && status !== 'All' && status !== 'PRACTICE') subsWhere += ` AND s.validation_status = @status`;
     if (marketId && marketId !== 'all') subsWhere += ` AND s.market_id = @marketId`;
     if (source === 'synthetic') subsWhere += ` AND s.trader_id LIKE 'SYN-TR-%'`;
@@ -65,7 +65,10 @@ export async function GET(request: NextRequest) {
 
     const subsSelect = `
       SELECT
-        s.submission_id, s.trader_id, s.trader_name, s.trader_phone,
+        s.submission_id, s.trader_id,
+        COALESCE(NULLIF(tr.full_name, ''), NULLIF(NULLIF(s.trader_name, '0'), ''),
+                 CASE WHEN s.trader_id LIKE 'SYN-TR-%' THEN 'Synthetic' ELSE 'Unknown' END) AS trader_name,
+        s.trader_phone,
         CAST(ISNULL(s.reputation_at_submission, 50) AS INT) AS reputation,
         s.market_id, s.market, s.state,
         s.item_id, s.item, s.category, s.unit,
@@ -77,11 +80,15 @@ export async function GET(request: NextRequest) {
         s.submitted_at, s.created_at, s.approved_at, s.rejected_at,
         CASE WHEN s.trader_id LIKE 'SYN-TR-%' THEN 1 ELSE 0 END AS isSynthetic,
         CAST(0 AS bit) AS isPractice
-      FROM dbo.Submissions s ${subsWhere}`;
+      FROM dbo.Submissions s
+      LEFT JOIN dbo.Traders_register tr ON tr.trader_id = s.trader_id
+      ${subsWhere}`;
 
     const pracSelect = `
       SELECT
-        p.practice_id AS submission_id, p.trader_id, CAST(NULL AS nvarchar(200)) AS trader_name, p.trader_phone,
+        p.practice_id AS submission_id, p.trader_id,
+        COALESCE(NULLIF(tr2.full_name, ''), 'Practice') AS trader_name,
+        p.trader_phone,
         CAST(NULL AS INT) AS reputation,
         p.market_id, p.market, p.state,
         p.item_id, p.item, p.category, p.unit,
@@ -93,7 +100,9 @@ export async function GET(request: NextRequest) {
         p.submitted_at, p.created_at, CAST(NULL AS datetime2) AS approved_at, CAST(NULL AS datetime2) AS rejected_at,
         CAST(0 AS bit) AS isSynthetic,
         CAST(1 AS bit) AS isPractice
-      FROM dbo.Practice_Submissions p ${pracWhere}`;
+      FROM dbo.Practice_Submissions p
+      LEFT JOIN dbo.Traders_register tr2 ON tr2.trader_id = p.trader_id
+      ${pracWhere}`;
 
     const branches: string[] = [];
     if (includeSubs)     branches.push(subsSelect);

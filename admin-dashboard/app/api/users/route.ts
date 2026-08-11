@@ -61,6 +61,10 @@ export async function GET(request: NextRequest) {
           t.registered_at    AS createdAt,
           t.last_submission_at AS lastActive,
           ISNULL(t.submission_uncapped, 0) AS uncapped,
+          ISNULL(t.is_suspended, 0) AS is_suspended,
+          t.suspension_reason AS suspensionReason,
+          ISNULL(t.suspension_count, 0) AS suspensionCount,
+          t.approved_at      AS approvedAt,
           CASE WHEN t.trader_id LIKE 'SYN-TR-%' THEN 1 ELSE 0 END AS isSynthetic
         FROM dbo.Traders_register t
         ${where}
@@ -202,33 +206,43 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ success: true, submission_uncapped: val });
     }
 
-    const statusMap: Record<string, string> = {
-      activate:  'ACTIVE',
-      suspend:   'SUSPENDED',
-      ban:       'BANNED',
-      review:    'PENDING_REVIEW',
-      approve:   'APPROVED',
-      unapprove: 'SUSPENDED',
-    };
-    const newStatus = statusMap[action];
-    if (!newStatus) return NextResponse.json({ success: false, error: 'Invalid action' }, { status: 400 });
+    // Orthogonal status model:
+    //   • registration_status (trader) / status (validator) = the APPROVAL lifecycle.
+    //   • is_suspended (trader) = an INDEPENDENT block that does NOT change approval.
+    // 'unapprove' reverts approval to PENDING_APPROVAL and leaves is_suspended alone;
+    // 'suspend'/'unsuspend' flip the block and leave approval alone. These are different things.
+    const VALID_ACTIONS = ['approve', 'unapprove', 'suspend', 'unsuspend', 'ban', 'review', 'activate'];
+    if (!VALID_ACTIONS.includes(action))
+      return NextResponse.json({ success: false, error: 'Invalid action' }, { status: 400 });
 
     // approve/unapprove govern the trader money path (Traders_register) only — never validators.
     if ((action === 'approve' || action === 'unapprove') && userType !== 'trader')
       return NextResponse.json({ success: false, error: 'approve/unapprove apply to traders only' }, { status: 400 });
-
-    // is_suspended is written only for actions with a defined suspend-state.
-    // 'review' (PENDING_REVIEW) is deliberately omitted — triage is not a block.
-    const isSuspendedMap: Record<string, number> = {
-      approve: 0, activate: 0, suspend: 1, unapprove: 1, ban: 1,
-    };
-    const isSuspended = isSuspendedMap[action]; // number | undefined
 
     // Acting admin identity, recorded in the audit row.
     const adminId    = (session.user as { id?: string })?.id ?? null;
     const adminEmail = (session.user as { email?: string | null })?.email ?? null;
 
     if (userType === 'trader') {
+      // registration_status change (undefined = leave the approval lifecycle untouched —
+      // this is what lets 'suspend'/'unsuspend' NOT disturb an APPROVED reporter).
+      const regStatusMap: Record<string, string | undefined> = {
+        approve:   'APPROVED',
+        unapprove: 'PENDING_APPROVAL',
+        ban:       'BANNED',
+        review:    'PENDING_REVIEW',
+        // suspend / unsuspend / activate → undefined (approval untouched)
+      };
+      // is_suspended change (undefined = leave the block untouched — this is what lets
+      // 'unapprove' revert approval WITHOUT suspending, and 'review' not block).
+      const suspendMap: Record<string, number | undefined> = {
+        approve: 0, activate: 0, unsuspend: 0,
+        suspend: 1, ban: 1,
+        // unapprove / review → undefined (block untouched)
+      };
+      const newStatus  = regStatusMap[action];   // string | undefined
+      const suspendVal = suspendMap[action];      // number | undefined
+
       // Capture prior status BEFORE the UPDATE. Traders_register is trigger-bearing
       // (trg_Traders_register_PreventDualRole), so OUTPUT-without-INTO would throw;
       // a plain pre-SELECT is trigger-safe.
@@ -245,18 +259,35 @@ export async function PATCH(request: NextRequest) {
         console.error('[users PATCH][audit] pre-read failed (non-fatal):', e);
       }
 
-      // is_suspended is added to the SET only for the mapped actions; ban/suspend/unapprove
-      // => 1, approve/activate => 0. 'review' leaves is_suspended untouched.
-      const setClauses = ['registration_status = @status', 'suspension_reason = @reason'];
-      const updParams: Record<string, unknown> = { userId, status: newStatus, reason: reason || '' };
-      if (isSuspended !== undefined) {
-        setClauses.push('is_suspended = @isSuspended');
-        updParams.isSuspended = isSuspended;
+      // Build the SET list from only the columns this action actually changes.
+      const setClauses: string[] = [];
+      const updParams: Record<string, unknown> = { userId };
+      if (newStatus !== undefined) {
+        setClauses.push('registration_status = @status');
+        updParams.status = newStatus;
       }
-      await execute(
-        `UPDATE dbo.Traders_register SET ${setClauses.join(', ')} WHERE trader_id = @userId`,
-        updParams,
-      );
+      if (suspendVal !== undefined) {
+        setClauses.push('is_suspended = @isSuspended');
+        updParams.isSuspended = suspendVal;
+      }
+      // suspension_reason: set on suspend/ban, clear on unsuspend, otherwise leave as-is.
+      if (action === 'suspend' || action === 'ban') {
+        setClauses.push('suspension_reason = @reason');
+        updParams.reason = reason || '';
+      } else if (action === 'unsuspend') {
+        setClauses.push('suspension_reason = NULL');
+      }
+      // Count each suspension event.
+      if (action === 'suspend') {
+        setClauses.push('suspension_count = ISNULL(suspension_count, 0) + 1');
+      }
+
+      if (setClauses.length > 0) {
+        await execute(
+          `UPDATE dbo.Traders_register SET ${setClauses.join(', ')} WHERE trader_id = @userId`,
+          updParams,
+        );
+      }
 
       // [audit] admin trader status change — fire-and-forget: an audit failure must NOT
       // fail the status change. Distinctive prefix so a silent failure is greppable.
@@ -266,18 +297,37 @@ export async function PATCH(request: NextRequest) {
           VALUES (@phone, 'ADMIN', 'TRADER_STATUS_CHANGED', @detail, NULL, @ip, SYSUTCDATETIME())
         `, {
           phone,
-          detail: JSON.stringify({ action, fromStatus, newStatus, adminId, adminEmail, userId, reason: reason || '' }),
+          detail: JSON.stringify({ action, fromStatus, newStatus: newStatus ?? null, isSuspended: suspendVal ?? null, adminId, adminEmail, userId, reason: reason || '' }),
           ip: request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || '',
         });
       } catch (e) {
         console.error('[users PATCH][audit] trader status audit FAILED:', e);
       }
     } else {
-      await execute(`
-        UPDATE dbo.Validators
-        SET status = @status, suspension_reason = @reason
-        WHERE validator_id = @userId
-      `, { userId, status: newStatus, reason: reason || '' });
+      // Validators use a single `status` column (no separate is_suspended flag).
+      const valStatusMap: Record<string, string | undefined> = {
+        suspend:   'SUSPENDED',
+        unsuspend: 'ACTIVE',
+        activate:  'ACTIVE',
+        ban:       'BANNED',
+        review:    'PENDING_REVIEW',
+      };
+      const vStatus = valStatusMap[action];
+      if (vStatus === undefined)
+        return NextResponse.json({ success: false, error: 'Action not applicable to validators' }, { status: 400 });
+
+      const vSet: string[] = ['status = @status'];
+      const vParams: Record<string, unknown> = { userId, status: vStatus };
+      if (action === 'suspend' || action === 'ban') {
+        vSet.push('suspension_reason = @reason');
+        vParams.reason = reason || '';
+      } else if (action === 'unsuspend' || action === 'activate') {
+        vSet.push('suspension_reason = NULL');
+      }
+      await execute(
+        `UPDATE dbo.Validators SET ${vSet.join(', ')} WHERE validator_id = @userId`,
+        vParams,
+      );
 
       // [audit] log admin validator status change (fire-and-forget)
       try {
@@ -291,7 +341,7 @@ export async function PATCH(request: NextRequest) {
           VALUES (@phone, 'ADMIN', 'VALIDATOR_STATUS_CHANGED', @detail, NULL, @ip, SYSUTCDATETIME())
         `, {
           phone,
-          detail: JSON.stringify({ action, newStatus, userId, reason: reason || '' }),
+          detail: JSON.stringify({ action, newStatus: vStatus, userId, reason: reason || '' }),
           ip: request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || '',
         });
       } catch (e) {
@@ -299,7 +349,7 @@ export async function PATCH(request: NextRequest) {
       }
     }
 
-    return NextResponse.json({ success: true, message: `User ${action}d successfully` });
+    return NextResponse.json({ success: true, message: `Action '${action}' applied successfully` });
   } catch (error) {
     console.error('[users PATCH]', error);
     return NextResponse.json({ success: false, error: 'Failed to update user' }, { status: 500 });
