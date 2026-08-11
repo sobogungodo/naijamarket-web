@@ -180,7 +180,17 @@ export async function GET(request: NextRequest) {
           t.current_balance  AS balance,
           t.registration_status AS status,
           t.registered_at    AS createdAt,
-          t.last_submission_at AS lastActive,
+          -- 'Last active' = the reporter's most recent price submission (live or practice),
+          -- derived on read because Traders_register.last_submission_at is never maintained.
+          -- Matched by trader_phone (indexed: IX_Submissions_trader_phone) and skipped for
+          -- synthetic reporters so it stays fast on the large Submissions table.
+          CASE WHEN t.trader_id LIKE 'SYN-TR-%' THEN NULL ELSE (
+            SELECT MAX(x.d) FROM (
+              SELECT MAX(created_at) AS d FROM dbo.Submissions WITH (NOLOCK) WHERE trader_phone = t.phone_number
+              UNION ALL
+              SELECT MAX(created_at) AS d FROM dbo.Practice_Submissions WITH (NOLOCK) WHERE trader_phone = t.phone_number
+            ) x
+          ) END AS lastActive,
           ISNULL(t.submission_uncapped, 0) AS uncapped,
           ISNULL(t.is_suspended, 0) AS is_suspended,
           t.suspension_reason AS suspensionReason,
