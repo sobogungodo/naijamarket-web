@@ -61,9 +61,14 @@ export async function GET() {
     logoUri = 'data:image/png;base64,' + b.toString('base64');
   } catch { /* logo optional */ }
 
+  // DejaVu Sans covers the Naira sign (₦) and ▲/▼ arrows, which next/og's default font lacks.
+  const fontDir = path.join(process.cwd(), 'public', 'fonts');
+  const fontReg = fs.readFileSync(path.join(fontDir, 'DejaVuSans.ttf'));
+  const fontBold = fs.readFileSync(path.join(fontDir, 'DejaVuSans-Bold.ttf'));
+
   const png = new ImageResponse(
     (
-      <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', background: '#04160c', color: '#fff', fontFamily: 'sans-serif', padding: '56px' }}>
+      <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', background: '#04160c', color: '#fff', fontFamily: 'DejaVu Sans', padding: '56px' }}>
         <div style={{ display: 'flex', alignItems: 'center', marginBottom: 22 }}>
           {logoUri ? <img src={logoUri} width={82} height={82} style={{ borderRadius: 16, marginRight: 20 }} /> : null}
           <div style={{ display: 'flex', flexDirection: 'column' }}>
@@ -94,7 +99,14 @@ export async function GET() {
         </div>
       </div>
     ),
-    { width: 1080, height: 1080 },
+    {
+      width: 1080,
+      height: 1080,
+      fonts: [
+        { name: 'DejaVu Sans', data: fontReg, weight: 400, style: 'normal' },
+        { name: 'DejaVu Sans', data: fontBold, weight: 700, style: 'normal' },
+      ],
+    },
   );
 
   const pngBuf = Buffer.from(await png.arrayBuffer());
