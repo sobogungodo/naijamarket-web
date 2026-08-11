@@ -20,7 +20,20 @@ export async function postCardToSocial(cardUrl: string, caption: string): Promis
     u.searchParams.set('caption', caption);
     u.searchParams.set('access_token', token);
     const r = await fetch(u.toString(), { method: 'POST' });
-    results.fb = { ok: r.ok, ...(await r.json().catch(() => ({}))) };
+    const body = (await r.json().catch(() => ({}))) as { error?: { code?: number; message?: string } };
+    const fb: Record<string, unknown> = { ok: r.ok, ...body };
+    // Scope check: FB returns the deprecated-"publish_actions" error (code 200) when the token
+    // lacks pages_manage_posts. Translate that into an actionable hint instead of the cryptic default.
+    if (!r.ok) {
+      const msg = (body?.error?.message || '').toLowerCase();
+      if (body?.error?.code === 200 || msg.includes('publish_actions') || msg.includes('pages_manage_posts')) {
+        fb.hint =
+          'PAGE_ACCESS_TOKEN is missing the pages_manage_posts scope. Regenerate the social-poster ' +
+          'system-user token (App: naijamarketintel) with pages_manage_posts + pages_read_engagement + ' +
+          'pages_show_list + instagram_content_publish, then update PAGE_ACCESS_TOKEN in Vercel and redeploy.';
+      }
+    }
+    results.fb = fb;
   } catch (e) {
     results.fb = { ok: false, error: String(e) };
   }
