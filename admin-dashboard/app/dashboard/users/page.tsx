@@ -37,6 +37,14 @@ interface Trader {
   suspensionReason?: string | null;
   suspensionCount?: number;
   approvedAt?: string | null;
+  email?: string | null;
+  dob?: string | null;
+  address?: string | null;
+  bankName?: string | null;
+  accountNumber?: string | null;
+  bankAccountName?: string | null;
+  bankVerified?: number;
+  hasBvn?: number;
 }
 
 interface Validator {
@@ -921,6 +929,7 @@ export default function UserManagementPage() {
           ? (() => { const t = detailUser.data; return [
               { label: 'Trader ID', value: t.id },
               { label: 'Phone', value: t.phone || '—' },
+              { label: 'Email', value: t.email || '—' },
               { label: 'Market', value: t.market ? `${t.market}${t.state ? ` · ${t.state}` : ''}` : '—' },
               { label: 'Approval status', value: t.status },
               { label: 'Suspended', value: t.is_suspended ? `Yes${t.suspensionReason ? ` — ${t.suspensionReason}` : ''}${t.suspensionCount ? ` (×${t.suspensionCount})` : ''}` : 'No' },
@@ -931,6 +940,14 @@ export default function UserManagementPage() {
               { label: 'Registered', value: fmtDate(t.createdAt) },
               { label: 'Approved at', value: fmtDate(t.approvedAt) },
               { label: 'Last active', value: fmtDate(t.lastActive) },
+              // ── KYC ──
+              { label: 'Date of birth', value: t.dob ? new Date(t.dob).toLocaleDateString() : '—' },
+              { label: 'Address', value: t.address || '—' },
+              { label: 'Bank', value: t.bankName || '—' },
+              { label: 'Account no.', value: t.accountNumber ? `••••${String(t.accountNumber).slice(-4)}` : '—' },
+              { label: 'Account name', value: t.bankAccountName || '—' },
+              { label: 'Bank verified', value: t.bankVerified ? 'Yes' : 'No' },
+              { label: 'BVN', value: t.hasBvn ? 'On file' : '—' },
             ]; })()
           : (() => { const v = detailUser.data; return [
               { label: 'Validator ID', value: v.id },

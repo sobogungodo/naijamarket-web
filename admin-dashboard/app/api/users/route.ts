@@ -186,6 +186,14 @@ export async function GET(request: NextRequest) {
           t.suspension_reason AS suspensionReason,
           ISNULL(t.suspension_count, 0) AS suspensionCount,
           t.approved_at      AS approvedAt,
+          t.email            AS email,
+          t.date_of_birth    AS dob,
+          t.Address          AS address,
+          t.bank_name        AS bankName,
+          t.account_number   AS accountNumber,
+          t.bank_account_name AS bankAccountName,
+          ISNULL(t.bank_account_verified, 0) AS bankVerified,
+          CASE WHEN t.bvn_hash IS NULL OR t.bvn_hash = '' THEN 0 ELSE 1 END AS hasBvn,
           CASE WHEN t.trader_id LIKE 'SYN-TR-%' THEN 1 ELSE 0 END AS isSynthetic
         FROM dbo.Traders_register t
         ${where}
@@ -439,9 +447,11 @@ export async function PATCH(request: NextRequest) {
       }
       // Admin approve notifies the reporter immediately (below), so suppress the trader_notify
       // timer's duplicate welcome by marking welcome_sent. Auto-approved reporters (no admin
-      // action) still get the timer since they never hit this path.
+      // action) still get the timer since they never hit this path. Also stamp approved_at so
+      // the admin detail view shows when the reporter was approved.
       if (action === 'approve') {
         setClauses.push('welcome_sent = 1');
+        setClauses.push('approved_at = SYSUTCDATETIME()');
       }
       // suspension_reason: set on suspend/ban, clear on unsuspend, otherwise leave as-is.
       if (action === 'suspend' || action === 'ban') {
