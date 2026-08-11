@@ -13,24 +13,37 @@ export async function postCardToSocial(cardUrl: string, caption: string): Promis
     return { fb: { ok: false, error: 'PAGE_ACCESS_TOKEN not set' }, ig: { ok: false, error: 'PAGE_ACCESS_TOKEN not set' } };
   }
 
-  // Facebook Page photo
+  // Facebook Page photo. To publish AS the Page, Graph needs the PAGE-specific access token —
+  // posting with a user/system-user token (even one that has pages_manage_posts) returns the
+  // misleading "(#200) publish_actions ... deprecated" error. So derive the page token first.
   try {
+    let pageToken = token;
+    let pageTokenSource = 'provided';
+    try {
+      const pt = await fetch(`${GRAPH}/${FB_PAGE_ID}?fields=access_token&access_token=${encodeURIComponent(token)}`);
+      const ptj = (await pt.json().catch(() => ({}))) as { access_token?: string; error?: { message?: string } };
+      if (ptj?.access_token) { pageToken = ptj.access_token; pageTokenSource = 'derived'; }
+      else if (ptj?.error) { pageTokenSource = `derive-failed: ${ptj.error.message || 'unknown'}`; }
+    } catch (e) {
+      pageTokenSource = `derive-error: ${String(e)}`;
+    }
+
     const u = new URL(`${GRAPH}/${FB_PAGE_ID}/photos`);
     u.searchParams.set('url', cardUrl);
     u.searchParams.set('caption', caption);
-    u.searchParams.set('access_token', token);
+    u.searchParams.set('access_token', pageToken);
     const r = await fetch(u.toString(), { method: 'POST' });
     const body = (await r.json().catch(() => ({}))) as { error?: { code?: number; message?: string } };
-    const fb: Record<string, unknown> = { ok: r.ok, ...body };
-    // Scope check: FB returns the deprecated-"publish_actions" error (code 200) when the token
-    // lacks pages_manage_posts. Translate that into an actionable hint instead of the cryptic default.
+    const fb: Record<string, unknown> = { ok: r.ok, pageTokenSource, ...body };
     if (!r.ok) {
       const msg = (body?.error?.message || '').toLowerCase();
       if (body?.error?.code === 200 || msg.includes('publish_actions') || msg.includes('pages_manage_posts')) {
         fb.hint =
-          'PAGE_ACCESS_TOKEN is missing the pages_manage_posts scope. Regenerate the social-poster ' +
-          'system-user token (App: naijamarketintel) with pages_manage_posts + pages_read_engagement + ' +
-          'pages_show_list + instagram_content_publish, then update PAGE_ACCESS_TOKEN in Vercel and redeploy.';
+          pageTokenSource === 'derived'
+            ? 'Posting with the derived PAGE token still failed — verify the social-poster system user has ' +
+              'the NaijaMarket Intel Page assigned with content-creation access, and the token has pages_manage_posts.'
+            : 'Could not derive the PAGE access token (' + pageTokenSource + '). The PAGE_ACCESS_TOKEN must be a ' +
+              'system-user token with pages_show_list + pages_manage_posts and the Page assigned to that system user.';
       }
     }
     results.fb = fb;
