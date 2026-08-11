@@ -168,7 +168,7 @@ export async function PATCH(request: NextRequest) {
     if (!hasPermission(userRole, 'canTakeAction'))
       return NextResponse.json({ success: false, error: 'Insufficient permissions' }, { status: 403 });
 
-    const { userId, userType, action, reason } = await request.json();
+    const { userId, userType, action, reason, marketId } = await request.json();
     if (!userId || !userType || !action)
       return NextResponse.json({ success: false, error: 'Missing userId, userType, action' }, { status: 400 });
 
@@ -204,6 +204,50 @@ export async function PATCH(request: NextRequest) {
         });
       } catch (e) { console.error('[users PATCH][uncap audit] non-fatal:', e); }
       return NextResponse.json({ success: true, submission_uncapped: val });
+    }
+
+    // ── Market assignment (traders only) — admin override, BYPASSES the reporter 7-day
+    //    self-change cooldown. Sets the home market the reporter is locked to. ──
+    if (action === 'set_market') {
+      if (userType !== 'trader')
+        return NextResponse.json({ success: false, error: 'set_market applies to traders only' }, { status: 400 });
+      const mid = (typeof marketId === 'string' ? marketId : '').trim();
+      if (!mid)
+        return NextResponse.json({ success: false, error: 'marketId is required' }, { status: 400 });
+      // Validate against dbo.Markets — name/state written from the authoritative row, not the client.
+      const mrows = await query<{ market_id: string; market_name: string; state: string }>(
+        `SELECT TOP 1 market_id, market_name, state FROM dbo.Markets WHERE market_id = @marketId`,
+        { marketId: mid },
+      );
+      const m = mrows[0];
+      if (!m)
+        return NextResponse.json({ success: false, error: 'Unknown market' }, { status: 400 });
+      let phone: string = userId;
+      try {
+        const prev = await query<{ phone_number: string }>(
+          `SELECT phone_number FROM dbo.Traders_register WHERE trader_id = @userId`, { userId });
+        phone = prev[0]?.phone_number || userId;
+      } catch (e) { console.error('[users PATCH][set_market] pre-read failed (non-fatal):', e); }
+      await execute(`
+        UPDATE dbo.Traders_register
+        SET assigned_market_id = @mid, assigned_market_name = @mname, assigned_state = @mstate,
+            market_last_changed_at = SYSUTCDATETIME(),
+            market_locked_at = COALESCE(market_locked_at, SYSUTCDATETIME())
+        WHERE trader_id = @userId
+      `, { userId, mid: m.market_id, mname: m.market_name, mstate: m.state });
+      try {
+        await execute(`
+          INSERT INTO dbo.Trader_Activity_Log (phone_number, platform, event_type, event_detail, session_token, ip_address, created_at)
+          VALUES (@phone, 'ADMIN', 'MARKET_SET_ADMIN', @detail, NULL, @ip, SYSUTCDATETIME())
+        `, {
+          phone,
+          detail: JSON.stringify({ marketId: m.market_id, market_name: m.market_name, userId,
+            adminId: (session.user as { id?: string })?.id ?? null,
+            adminEmail: (session.user as { email?: string | null })?.email ?? null }),
+          ip: request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || '',
+        });
+      } catch (e) { console.error('[users PATCH][set_market audit] non-fatal:', e); }
+      return NextResponse.json({ success: true, market_id: m.market_id, market_name: m.market_name });
     }
 
     // Orthogonal status model:
