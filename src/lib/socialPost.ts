@@ -2,12 +2,13 @@
 // Best-effort per platform; never throws. Returns a per-platform result. Each platform self-heals
 // (no-ops) until its own credentials are set, so this can ship inert and activate when env is added.
 import { TwitterApi } from 'twitter-api-v2';
+import { postToLinkedIn } from '@/lib/linkedin';
 
 const FB_PAGE_ID = process.env.FB_PAGE_ID || '1235437569645195';   // NaijaMarket Intel Page
 const IG_USER_ID = process.env.IG_USER_ID || '17841416251692661';  // @naijamarketintel
 const GRAPH = 'https://graph.facebook.com/v22.0';
 
-export interface SocialResult { fb?: unknown; ig?: unknown; tw?: unknown }
+export interface SocialResult { fb?: unknown; ig?: unknown; tw?: unknown; li?: unknown }
 
 // X/Twitter caption cap. We clamp defensively; callers should pass a pre-shortened twitterText.
 const TWEET_MAX = 280;
@@ -143,6 +144,13 @@ export async function postCardToSocial(
 
   // X/Twitter — independent credentials, so it runs regardless of the Meta token state.
   results.tw = await postToTwitter(cardUrl, (opts?.twitterText || caption));
+
+  // LinkedIn Company Page — independent (DB-stored OAuth token); no-ops until connected.
+  try {
+    results.li = await postToLinkedIn(cardUrl, caption);
+  } catch (e) {
+    results.li = { ok: false, error: String(e) };
+  }
 
   return results;
 }
