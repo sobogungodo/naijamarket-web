@@ -34,11 +34,20 @@ export async function postCardToSocial(cardUrl: string, caption: string): Promis
     const cr = await fetch(c.toString(), { method: 'POST' });
     const cj = await cr.json().catch(() => ({}));
     if (cj?.id) {
+      // Poll the container until FINISHED before publishing — images are usually fast, but
+      // publishing immediately can hit "media is not ready" (subcode 2207027).
+      let status = '';
+      for (let i = 0; i < 8; i++) {
+        const s = await fetch(`${GRAPH}/${cj.id}?fields=status_code&access_token=${encodeURIComponent(token)}`);
+        status = ((await s.json().catch(() => ({}))) as { status_code?: string }).status_code || '';
+        if (status === 'FINISHED' || status === 'ERROR') break;
+        await new Promise((r) => setTimeout(r, 2500));
+      }
       const p = new URL(`${GRAPH}/${IG_USER_ID}/media_publish`);
       p.searchParams.set('creation_id', cj.id);
       p.searchParams.set('access_token', token);
       const pr = await fetch(p.toString(), { method: 'POST' });
-      results.ig = { ok: pr.ok, creation_id: cj.id, ...(await pr.json().catch(() => ({}))) };
+      results.ig = { ok: pr.ok, creation_id: cj.id, container_status: status, ...(await pr.json().catch(() => ({}))) };
     } else {
       results.ig = { ok: false, error: 'no creation_id', detail: cj };
     }

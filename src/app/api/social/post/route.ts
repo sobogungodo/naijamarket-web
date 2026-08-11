@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/db';
+import { postCardToSocial } from '@/lib/socialPost';
 
 // Daily social poster — publishes the price card + caption to the Facebook Page and Instagram.
 // Triggered by a Vercel cron (07:00 WAT). Guarded by CRON_SECRET (Vercel adds the Bearer header).
@@ -10,10 +11,6 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const CRON_SECRET = process.env.CRON_SECRET || '';
-const FB_PAGE_ID  = process.env.FB_PAGE_ID  || '1235437569645195';   // NaijaMarket Intel Page
-const IG_USER_ID  = process.env.IG_USER_ID  || '17841416251692661';  // @naijamarketintel
-const PAGE_TOKEN  = process.env.PAGE_ACCESS_TOKEN || '';
-const GRAPH = 'https://graph.facebook.com/v22.0';
 
 type Mover = { item_name: string; price: number; change_pct: number; as_of: Date };
 
@@ -71,47 +68,8 @@ export async function GET(request: NextRequest) {
   if (dryRun) {
     return NextResponse.json({ dryRun: true, cardUrl, caption, asOf, count });
   }
-  if (!PAGE_TOKEN) {
-    console.warn('[social/post] PAGE_ACCESS_TOKEN not set — skipping post');
-    return NextResponse.json({ skipped: true, reason: 'PAGE_ACCESS_TOKEN not set', cardUrl });
-  }
 
-  const results: { fb?: unknown; ig?: unknown } = {};
-
-  // ── Facebook Page photo ──
-  try {
-    const u = new URL(`${GRAPH}/${FB_PAGE_ID}/photos`);
-    u.searchParams.set('url', cardUrl);
-    u.searchParams.set('caption', caption);
-    u.searchParams.set('access_token', PAGE_TOKEN);
-    const r = await fetch(u.toString(), { method: 'POST' });
-    const j = await r.json().catch(() => ({}));
-    results.fb = { ok: r.ok, ...j };
-  } catch (e) {
-    results.fb = { ok: false, error: String(e) };
-  }
-
-  // ── Instagram: create media container → publish ──
-  try {
-    const c = new URL(`${GRAPH}/${IG_USER_ID}/media`);
-    c.searchParams.set('image_url', cardUrl);
-    c.searchParams.set('caption', caption);
-    c.searchParams.set('access_token', PAGE_TOKEN);
-    const cr = await fetch(c.toString(), { method: 'POST' });
-    const cj = await cr.json().catch(() => ({}));
-    if (cj?.id) {
-      const p = new URL(`${GRAPH}/${IG_USER_ID}/media_publish`);
-      p.searchParams.set('creation_id', cj.id);
-      p.searchParams.set('access_token', PAGE_TOKEN);
-      const pr = await fetch(p.toString(), { method: 'POST' });
-      const pj = await pr.json().catch(() => ({}));
-      results.ig = { ok: pr.ok, creation_id: cj.id, ...pj };
-    } else {
-      results.ig = { ok: false, error: 'no creation_id', detail: cj };
-    }
-  } catch (e) {
-    results.ig = { ok: false, error: String(e) };
-  }
+  const results = await postCardToSocial(cardUrl, caption);
 
   console.log('[social/post] done', JSON.stringify(results));
   return NextResponse.json({ posted: true, cardUrl, ...results });
