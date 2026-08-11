@@ -17,6 +17,7 @@ interface Submission {
   trader_id:            string;
   trader_name:          string;
   trader_phone:         string;
+  reporter_status:      string | null;
   reputation:           number;
   market_id:            string;
   market:               string;
@@ -131,6 +132,7 @@ export default function SubmissionsPage() {
   // "today" is frequently empty (e.g. before the day's activity/synthetic run).
   const [dateRange,     setDateRange]     = useState<DateRange>('week');
   const [sourceFilter,  setSourceFilter]  = useState<SourceFilter>('all');
+  const [waitlistOnly,  setWaitlistOnly]  = useState(false); // filter to WAITLIST reporters (their practice submissions)
 
   const [page,          setPage]          = useState(1);
   const [totalPages,    setTotalPages]    = useState(1);
@@ -157,6 +159,7 @@ export default function SubmissionsPage() {
       if (search)  params.set('search', search);
       if (statusFilter !== 'All') params.set('status', statusFilter);
       if (marketFilter !== 'all') params.set('market', marketFilter);
+      if (waitlistOnly) params.set('reporterStatus', 'WAITLIST');
 
       const res  = await fetch(`/api/submissions?${params}`, { cache: 'no-store' });
       const json = await res.json();
@@ -168,7 +171,7 @@ export default function SubmissionsPage() {
     } catch (err) {
       console.error('[fetchSubmissions]', err);
     }
-  }, [search, statusFilter, marketFilter, dateRange, sourceFilter]);
+  }, [search, statusFilter, marketFilter, dateRange, sourceFilter, waitlistOnly]);
 
   // ── Fetch stats ────────────────────────────────────────────────────────────
   const fetchStats = useCallback(async () => {
@@ -213,7 +216,7 @@ export default function SubmissionsPage() {
     setPage(1);
     fetchSubmissions(1);
     fetchStats();
-  }, [search, statusFilter, marketFilter, dateRange, sourceFilter, fetchSubmissions, fetchStats]);
+  }, [search, statusFilter, marketFilter, dateRange, sourceFilter, waitlistOnly, fetchSubmissions, fetchStats]);
 
   const handleRefresh = useCallback(async () => {
     setIsRefreshing(true);
@@ -499,6 +502,19 @@ export default function SubmissionsPage() {
             </button>
           ))}
         </div>
+
+        {/* Waitlist-reporters-only toggle — isolates practice/subs from WAITLIST reporters */}
+        <button
+          onClick={() => setWaitlistOnly(v => !v)}
+          className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+            waitlistOnly
+              ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+              : 'bg-[#1a1f2e] text-gray-400 border-gray-800 hover:text-white'
+          }`}
+          title="Show only submissions from reporters still on the waitlist"
+        >
+          Waitlist reporters only
+        </button>
       </div>
 
       {/* ── Action result banner ───────────────────────────────────────────── */}
@@ -548,7 +564,19 @@ export default function SubmissionsPage() {
                         : s.trader_name?.split(' ').map(n => n[0]).join('').slice(0,2)}
                     </div>
                     <div>
-                      <p className="font-medium text-xs">{s.trader_name}</p>
+                      <div className="flex items-center gap-1.5">
+                        <p className="font-medium text-xs">{s.trader_name}</p>
+                        {s.reporter_status && (
+                          <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${
+                            s.reporter_status === 'WAITLIST'      ? 'bg-amber-500/20 text-amber-300'
+                            : s.reporter_status === 'APPROVED'    ? 'bg-green-500/20 text-green-400'
+                            : s.reporter_status === 'BANNED'      ? 'bg-red-500/20 text-red-400'
+                            : 'bg-gray-600/30 text-gray-300'
+                          }`}>
+                            {s.reporter_status}
+                          </span>
+                        )}
+                      </div>
                       <p className="text-gray-500 text-xs">Rep: {s.reputation}</p>
                     </div>
                   </div>
@@ -713,6 +741,7 @@ export default function SubmissionsPage() {
           { label: 'Submission ID', value: detail.submission_id },
           { label: 'Type', value: kindLabel },
           { label: 'Reporter', value: `${detail.trader_name || '—'}${detail.trader_phone ? ` · ${detail.trader_phone}` : ''}` },
+          { label: 'Reporter status', value: detail.reporter_status || '—' },
           { label: 'Reputation', value: detail.reputation ?? '—' },
           { label: 'Market', value: `${detail.market || '—'}${detail.state ? ` · ${detail.state}` : ''}` },
           { label: 'Item', value: `${detail.item || '—'}${detail.category ? ` · ${detail.category}` : ''}` },

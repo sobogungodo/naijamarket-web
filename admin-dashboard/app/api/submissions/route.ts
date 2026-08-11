@@ -25,6 +25,7 @@ export async function GET(request: NextRequest) {
     const marketId  = searchParams.get('market')  || '';
     const dateRange = searchParams.get('date')    || 'week';
     const source    = searchParams.get('source')  || 'all';
+    const reporterStatus = searchParams.get('reporterStatus') || ''; // e.g. WAITLIST — filter by the reporter's registration_status
     const offset    = (page - 1) * pageSize;
 
     // Sargable date bounds. created_at is an nvarchar ISO-ish string in two
@@ -57,11 +58,13 @@ export async function GET(request: NextRequest) {
     if (marketId && marketId !== 'all') subsWhere += ` AND s.market_id = @marketId`;
     if (source === 'synthetic') subsWhere += ` AND s.trader_id LIKE 'SYN-TR-%'`;
     if (source === 'real')      subsWhere += ` AND s.trader_id NOT LIKE 'SYN-TR-%'`;
+    if (reporterStatus)         subsWhere += ` AND tr.registration_status = @reporterStatus`;
 
     // Practice_Submissions branch (dbo.Practice_Submissions) — mapped to the same column shape
     let pracWhere = `WHERE 1=1 AND p.created_at >= @dfStart AND p.created_at < @dfEnd`;
     if (search)   pracWhere += ` AND (p.item LIKE '%' + @search + '%' OR p.practice_id LIKE '%' + @search + '%' OR p.trader_phone LIKE '%' + @search + '%')`;
     if (marketId && marketId !== 'all') pracWhere += ` AND p.market_id = @marketId`;
+    if (reporterStatus)                 pracWhere += ` AND tr2.registration_status = @reporterStatus`;
 
     const subsSelect = `
       SELECT
@@ -69,6 +72,7 @@ export async function GET(request: NextRequest) {
         COALESCE(NULLIF(tr.full_name, ''), NULLIF(NULLIF(s.trader_name, '0'), ''),
                  CASE WHEN s.trader_id LIKE 'SYN-TR-%' THEN 'Synthetic' ELSE 'Unknown' END) AS trader_name,
         s.trader_phone,
+        tr.registration_status AS reporter_status,
         CAST(ISNULL(s.reputation_at_submission, 50) AS INT) AS reputation,
         s.market_id, s.market, s.state,
         s.item_id, s.item, s.category, s.unit,
@@ -89,6 +93,7 @@ export async function GET(request: NextRequest) {
         p.practice_id AS submission_id, p.trader_id,
         COALESCE(NULLIF(tr2.full_name, ''), 'Practice') AS trader_name,
         p.trader_phone,
+        tr2.registration_status AS reporter_status,
         CAST(NULL AS INT) AS reputation,
         p.market_id, p.market, p.state,
         p.item_id, p.item, p.category, p.unit,
@@ -123,6 +128,7 @@ export async function GET(request: NextRequest) {
     if (search)   params.search   = search;
     if (status && status !== 'All') params.status = status;
     if (marketId && marketId !== 'all') params.marketId = marketId;
+    if (reporterStatus) params.reporterStatus = reporterStatus;
 
     const rows     = await query<Record<string, unknown>>(sql, params);
     const items    = rows.filter(r => 'submission_id' in r);
