@@ -14,6 +14,127 @@ import { AdminRole } from '@/types';
 
 export const dynamic = 'force-dynamic';
 
+// ── Reporter notification on admin actions ───────────────────────────────────
+// Each admin action against a reporter fires a WhatsApp + email via the WA function's
+// central notify_reporter endpoint (WA_NOTIFY_URL + WA_NOTIFY_KEY). Best-effort, never
+// fails the action. Templates self-heal (send returns false) until approved in Meta.
+// A few actions share a template (unsuspend/activate; uncap/recap) per the design.
+type NotifyCfg = {
+  wa_template: string;
+  subject: string;
+  waParams: (first: string, extra?: string) => string[];
+  html: (first: string, extra?: string) => string;
+};
+const NOTIFY_MAP: Record<string, NotifyCfg> = {
+  approve: {
+    wa_template: 'naijamarket_reporter_approved', subject: "You're approved — NaijaMarket Reporter",
+    waParams: (f) => [f],
+    html: (f) => `<p>Hi ${f}, your NaijaMarket Reporter account has been <b>approved</b>. Log in and choose the market you'll report from to start submitting prices and earning.</p>`,
+  },
+  unapprove: {
+    wa_template: 'naijamarket_reporter_unapproved', subject: 'Your reporter approval is under review',
+    waParams: (f) => [f],
+    html: (f) => `<p>Hi ${f}, your reporter approval has been placed back under review. We'll let you know once it's re-approved.</p>`,
+  },
+  suspend: {
+    wa_template: 'naijamarket_reporter_suspended', subject: 'Your reporter account has been suspended',
+    waParams: (f) => [f],
+    html: (f) => `<p>Hi ${f}, your reporter account has been <b>suspended</b> and cannot submit prices for now. Contact support if you believe this is a mistake.</p>`,
+  },
+  unsuspend: {
+    wa_template: 'naijamarket_reporter_active', subject: 'Your reporter account is active again',
+    waParams: (f) => [f],
+    html: (f) => `<p>Hi ${f}, your reporter account is <b>active</b> again — you can submit prices.</p>`,
+  },
+  activate: {
+    wa_template: 'naijamarket_reporter_active', subject: 'Your reporter account is active',
+    waParams: (f) => [f],
+    html: (f) => `<p>Hi ${f}, your reporter account is <b>active</b> — you can submit prices.</p>`,
+  },
+  ban: {
+    wa_template: 'naijamarket_reporter_banned', subject: 'Your reporter account has been closed',
+    waParams: (f) => [f],
+    html: (f) => `<p>Hi ${f}, your reporter account has been closed.</p>`,
+  },
+  review: {
+    wa_template: 'naijamarket_reporter_review', subject: 'Your reporter account is under review',
+    waParams: (f) => [f],
+    html: (f) => `<p>Hi ${f}, your reporter account is under review. We'll be in touch shortly.</p>`,
+  },
+  set_market: {
+    wa_template: 'naijamarket_reporter_market_changed', subject: 'Your reporting market changed',
+    waParams: (f, m) => [f, m || 'your market'],
+    html: (f, m) => `<p>Hi ${f}, your reporting market has been set to <b>${m || 'your market'}</b>. You'll report prices from there.</p>`,
+  },
+  uncap_submissions: {
+    wa_template: 'naijamarket_reporter_limit_changed', subject: 'Your daily submission limit changed',
+    waParams: (f) => [f, 'removed'],
+    html: (f) => `<p>Hi ${f}, your daily submission limit has been <b>removed</b> — you can submit without the daily cap.</p>`,
+  },
+  recap_submissions: {
+    wa_template: 'naijamarket_reporter_limit_changed', subject: 'Your daily submission limit changed',
+    waParams: (f) => [f, 'restored'],
+    html: (f) => `<p>Hi ${f}, your daily submission limit has been <b>restored</b>.</p>`,
+  },
+};
+
+async function notifyReporterOfAction(userId: string, action: string, extra: string | undefined, request: NextRequest) {
+  const cfg = NOTIFY_MAP[action];
+  if (!cfg) return; // action isn't reporter-facing
+  const url = process.env.WA_NOTIFY_URL;
+  const key = process.env.WA_NOTIFY_KEY;
+  if (!url || !key) { console.warn('[notify] WA_NOTIFY_URL/KEY not set — skipping reporter notification'); return; }
+  try {
+    const rows = await query<{ phone_number: string; email: string | null; first_name: string | null; full_name: string | null }>(
+      `SELECT phone_number, email, first_name, full_name FROM dbo.Traders_register WHERE trader_id = @userId`,
+      { userId },
+    );
+    const r = rows[0];
+    if (!r?.phone_number) return;
+    const first = (r.first_name || (r.full_name || 'Reporter').split(' ')[0] || 'Reporter').trim();
+
+    // Dedupe: skip if the SAME action already notified this reporter in the last ~2 minutes.
+    const recent = await query<{ x: number }>(
+      `SELECT TOP 1 1 AS x FROM dbo.Trader_Activity_Log
+       WHERE phone_number = @phone AND event_type = 'REPORTER_NOTIFIED'
+         AND event_detail LIKE @pat AND created_at > DATEADD(minute, -2, SYSUTCDATETIME())`,
+      { phone: r.phone_number, pat: `%"action":"${action}"%` },
+    );
+    if (recent.length) { console.log('[notify] dedupe skip', action, r.phone_number); return; }
+
+    const payload = {
+      phone: r.phone_number,
+      wa_template: cfg.wa_template,
+      wa_params: cfg.waParams(first, extra),
+      email: r.email || undefined,
+      email_subject: cfg.subject,
+      email_html: cfg.html(first, extra),
+    };
+    let waRes: unknown = null, emailRes: unknown = null;
+    try {
+      const resp = await fetch(`${url}?code=${encodeURIComponent(key)}`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
+      });
+      if (resp.ok) { const j = await resp.json().catch(() => ({})); waRes = (j as { wa?: unknown }).wa ?? null; emailRes = (j as { email?: unknown }).email ?? null; }
+    } catch (e) { console.error('[notify] endpoint call failed:', e); }
+
+    // Log the notification (also powers the dedupe window).
+    try {
+      await execute(
+        `INSERT INTO dbo.Trader_Activity_Log (phone_number, platform, event_type, event_detail, session_token, ip_address, created_at)
+         VALUES (@phone, 'ADMIN', 'REPORTER_NOTIFIED', @detail, NULL, @ip, SYSUTCDATETIME())`,
+        {
+          phone: r.phone_number,
+          detail: JSON.stringify({ action, wa: waRes, email: emailRes, hadEmail: !!r.email }),
+          ip: request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || '',
+        },
+      );
+    } catch (e) { console.error('[notify] audit failed:', e); }
+  } catch (e) {
+    console.error('[notify] reporter notification failed (non-fatal):', e);
+  }
+}
+
 // ── GET ──────────────────────────────────────────────────────────────────────
 export async function GET(request: NextRequest) {
   try {
@@ -203,6 +324,7 @@ export async function PATCH(request: NextRequest) {
           ip: request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || '',
         });
       } catch (e) { console.error('[users PATCH][uncap audit] non-fatal:', e); }
+      await notifyReporterOfAction(userId, action, undefined, request);
       return NextResponse.json({ success: true, submission_uncapped: val });
     }
 
@@ -247,6 +369,7 @@ export async function PATCH(request: NextRequest) {
           ip: request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || '',
         });
       } catch (e) { console.error('[users PATCH][set_market audit] non-fatal:', e); }
+      await notifyReporterOfAction(userId, 'set_market', m.market_name, request);
       return NextResponse.json({ success: true, market_id: m.market_id, market_name: m.market_name });
     }
 
@@ -314,6 +437,12 @@ export async function PATCH(request: NextRequest) {
         setClauses.push('is_suspended = @isSuspended');
         updParams.isSuspended = suspendVal;
       }
+      // Admin approve notifies the reporter immediately (below), so suppress the trader_notify
+      // timer's duplicate welcome by marking welcome_sent. Auto-approved reporters (no admin
+      // action) still get the timer since they never hit this path.
+      if (action === 'approve') {
+        setClauses.push('welcome_sent = 1');
+      }
       // suspension_reason: set on suspend/ban, clear on unsuspend, otherwise leave as-is.
       if (action === 'suspend' || action === 'ban') {
         setClauses.push('suspension_reason = @reason');
@@ -347,6 +476,9 @@ export async function PATCH(request: NextRequest) {
       } catch (e) {
         console.error('[users PATCH][audit] trader status audit FAILED:', e);
       }
+
+      // Notify the reporter of this status action (WA + email; best-effort, deduped).
+      await notifyReporterOfAction(userId, action, undefined, request);
     } else {
       // Validators use a single `status` column (no separate is_suspended flag).
       const valStatusMap: Record<string, string | undefined> = {
