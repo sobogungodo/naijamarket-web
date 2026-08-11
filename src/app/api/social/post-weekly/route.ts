@@ -78,6 +78,7 @@ async function buildCaption(): Promise<{ caption: string; asOf: Date | null; cou
 export async function GET(request: NextRequest) {
   const auth = request.headers.get('authorization');
   const dryRun = request.nextUrl.searchParams.get('dryRun') === '1';
+  const force = request.nextUrl.searchParams.get('force') === '1'; // manual test: bypass the stale/count guard
   if (CRON_SECRET && auth !== `Bearer ${CRON_SECRET}`) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
@@ -92,7 +93,7 @@ export async function GET(request: NextRequest) {
   }
 
   const stale = !asOf || (Date.now() - new Date(asOf).getTime()) > 3 * 86400000;
-  if (count < 4 || stale) {
+  if (!force && (count < 4 || stale)) {
     return NextResponse.json({ skipped: true, reason: count < 4 ? 'too few items' : 'stale data', asOf, count });
   }
   if (dryRun) {

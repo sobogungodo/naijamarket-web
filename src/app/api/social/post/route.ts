@@ -44,6 +44,7 @@ async function buildCaption(): Promise<{ caption: string; asOf: Date | null; cou
 export async function GET(request: NextRequest) {
   const auth = request.headers.get('authorization');
   const dryRun = request.nextUrl.searchParams.get('dryRun') === '1';
+  const force = request.nextUrl.searchParams.get('force') === '1'; // manual test: bypass the stale/count guard
 
   // Cron guard — Vercel cron sends Authorization: Bearer ${CRON_SECRET}. Applies to dryRun too.
   if (CRON_SECRET && auth !== `Bearer ${CRON_SECRET}`) {
@@ -62,7 +63,7 @@ export async function GET(request: NextRequest) {
 
   // Bad-data guard: don't publish an empty/stale card.
   const stale = !asOf || (Date.now() - new Date(asOf).getTime()) > 2 * 86400000;
-  if (count < 5 || stale) {
+  if (!force && (count < 5 || stale)) {
     console.warn('[social/post] skipped — count', count, 'stale', stale);
     return NextResponse.json({ skipped: true, reason: count < 5 ? 'too few items' : 'stale data', asOf, count });
   }
