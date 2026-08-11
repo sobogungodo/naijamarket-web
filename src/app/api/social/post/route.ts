@@ -14,7 +14,7 @@ const CRON_SECRET = process.env.CRON_SECRET || '';
 
 type Mover = { item_name: string; price: number; change_pct: number; as_of: Date };
 
-async function buildCaption(): Promise<{ caption: string; asOf: Date | null; count: number }> {
+async function buildCaption(): Promise<{ caption: string; twitterText: string; asOf: Date | null; count: number }> {
   const movers = await prisma.$queryRaw<Mover[]>(Prisma.sql`
     SELECT TOP 5 item_name,
            AVG(price_naira)      AS price,
@@ -35,7 +35,18 @@ async function buildCaption(): Promise<{ caption: string; asOf: Date | null; cou
     cap += `${s} ${m.item_name}: ₦${Math.round(Number(m.price)).toLocaleString('en-NG')} (${c >= 0 ? '+' : ''}${c.toFixed(1)}%)\n`;
   }
   cap += `\n📍 Want the CHEAPEST state and the EXACT market for each item? Get full live prices across 200+ markets:\n🌐 Visit naijamarketintel.com\n📲 Download the NaijaMarket app — or add our PWA to your phone.\n\n#NaijaMarket #FoodPrices #Nigeria #MarketPrices #FoodInflation #Lagos #Naija`;
-  return { caption: cap, asOf, count: movers.length };
+
+  // X/Twitter needs ≤280 chars — a compact variant with the top 3 movers.
+  const shortDate = (asOf ?? new Date()).toLocaleDateString('en-NG', { day: 'numeric', month: 'short' });
+  const twLines = movers.slice(0, 3).map((m) => {
+    const c = Number(m.change_pct);
+    const name = m.item_name.replace(/\s*\(per kg\)/i, '');
+    return `${c >= 0 ? '▲' : '▼'} ${name}: ₦${Math.round(Number(m.price)).toLocaleString('en-NG')}`;
+  });
+  let tw = `📊 Naija Food Prices — ${shortDate}\n${twLines.join('\n')}\nLive prices across 200+ markets 👉 naijamarketintel.com #FoodPrices #Nigeria`;
+  if (tw.length > 280) tw = tw.slice(0, 279) + '…';
+
+  return { caption: cap, twitterText: tw, asOf, count: movers.length };
 }
 
 export async function GET(request: NextRequest) {
@@ -50,9 +61,9 @@ export async function GET(request: NextRequest) {
 
   const cardUrl = `${request.nextUrl.origin}/api/social/card`;
 
-  let caption = '', asOf: Date | null = null, count = 0;
+  let caption = '', twitterText = '', asOf: Date | null = null, count = 0;
   try {
-    ({ caption, asOf, count } = await buildCaption());
+    ({ caption, twitterText, asOf, count } = await buildCaption());
   } catch (e) {
     console.error('[social/post] caption build failed:', e);
     return NextResponse.json({ skipped: true, reason: 'query failed' }, { status: 200 });
@@ -66,10 +77,10 @@ export async function GET(request: NextRequest) {
   }
 
   if (dryRun) {
-    return NextResponse.json({ dryRun: true, cardUrl, caption, asOf, count });
+    return NextResponse.json({ dryRun: true, cardUrl, caption, twitterText, asOf, count });
   }
 
-  const results = await postCardToSocial(cardUrl, caption);
+  const results = await postCardToSocial(cardUrl, caption, { twitterText });
 
   console.log('[social/post] done', JSON.stringify(results));
   return NextResponse.json({ posted: true, cardUrl, ...results });

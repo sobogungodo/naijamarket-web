@@ -34,7 +34,7 @@ const ZONE_SQL = Prisma.sql`CASE
 function naira(n: number) { return '₦' + Math.round(n).toLocaleString('en-NG'); }
 type ZoneRow = { item_name: string; zone: string; avg_p: number };
 
-async function buildCaption(): Promise<{ caption: string; asOf: Date | null; count: number }> {
+async function buildCaption(): Promise<{ caption: string; twitterText: string; asOf: Date | null; count: number }> {
   const rows = await prisma.$queryRaw<ZoneRow[]>(Prisma.sql`
     WITH stats AS (
       SELECT item_name, AVG(price_naira) AS avg_p
@@ -72,7 +72,18 @@ async function buildCaption(): Promise<{ caption: string; asOf: Date | null; cou
     cap += `• ${it.label}: buy ~${naira(it.loP)} in the ${ZFULL[it.lo]}, sells ~${naira(it.hiP)} in the ${ZFULL[it.hi]} → ~₦${margin.toLocaleString('en-NG')}/bag margin (${it.spread.toFixed(0)}%).\n`;
   }
   cap += `\nFind the exact cheapest market in any state — live prices across 200+ markets on the NaijaMarket app.\n👉 naijamarketintel.com\n\n#NaijaMarket #BulkPrices #Wholesale #Arbitrage #FoodPrices #Nigeria #Reseller`;
-  return { caption: cap, asOf, count: items.length };
+
+  // X/Twitter needs ≤280 chars — lead with the single biggest-margin arbitrage.
+  let tw: string;
+  if (top[0]) {
+    const t = top[0];
+    tw = `🛒💰 Weekly Bulk Arbitrage (${dateStr})\n${t.label}: buy ~${naira(t.loP)} in the ${ZFULL[t.lo]}, sells ~${naira(t.hiP)} in the ${ZFULL[t.hi]} (~${t.spread.toFixed(0)}% margin).\nFind the cheapest market 👉 naijamarketintel.com #Wholesale #Nigeria`;
+  } else {
+    tw = `🛒 Weekly Bulk Prices (${dateStr}) — compare wholesale staples across Nigeria's zones. 👉 naijamarketintel.com #Wholesale #Nigeria`;
+  }
+  if (tw.length > 280) tw = tw.slice(0, 279) + '…';
+
+  return { caption: cap, twitterText: tw, asOf, count: items.length };
 }
 
 export async function GET(request: NextRequest) {
@@ -84,9 +95,9 @@ export async function GET(request: NextRequest) {
   }
 
   const cardUrl = `${request.nextUrl.origin}/api/social/card-weekly`;
-  let caption = '', asOf: Date | null = null, count = 0;
+  let caption = '', twitterText = '', asOf: Date | null = null, count = 0;
   try {
-    ({ caption, asOf, count } = await buildCaption());
+    ({ caption, twitterText, asOf, count } = await buildCaption());
   } catch (e) {
     console.error('[social/post-weekly] caption failed:', e);
     return NextResponse.json({ skipped: true, reason: 'query failed' });
@@ -97,10 +108,10 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ skipped: true, reason: count < 4 ? 'too few items' : 'stale data', asOf, count });
   }
   if (dryRun) {
-    return NextResponse.json({ dryRun: true, cardUrl, caption, asOf, count });
+    return NextResponse.json({ dryRun: true, cardUrl, caption, twitterText, asOf, count });
   }
 
-  const results = await postCardToSocial(cardUrl, caption);
+  const results = await postCardToSocial(cardUrl, caption, { twitterText });
   console.log('[social/post-weekly] done', JSON.stringify(results));
   return NextResponse.json({ posted: true, cardUrl, ...results });
 }
