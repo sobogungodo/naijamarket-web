@@ -80,6 +80,8 @@ export async function GET() {
     const spread = ((zp[hi] - zp[lo]) / zp[lo]) * 100;
     return { label, zp, lo, hi, spread };
   }).filter(Boolean) as { label: string; zp: Record<string, number>; lo: string; hi: string; spread: number }[];
+  // Biggest arbitrage margin on top.
+  items.sort((a, b) => b.spread - a.spread);
 
   const dateStr = (asOf ?? new Date()).toLocaleDateString('en-NG', { day: 'numeric', month: 'long', year: 'numeric' });
 
@@ -117,10 +119,10 @@ export async function GET() {
         </div>
 
         {/* rows */}
-        <div style={{ display: 'flex', flexDirection: 'column', flex: 1, justifyContent: 'space-between', marginTop: 6 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', flex: 1, gap: 8, marginTop: 10 }}>
           {items.map((it, i) => (
-            <div key={i} style={{ display: 'flex', alignItems: 'stretch', padding: '6px 0', borderBottom: '1px solid #14301f', fontSize: 22 }}>
-              <div style={cell(W.name, { justifyContent: 'flex-start', paddingLeft: 10, fontWeight: 700, color: '#e8f0e8', fontSize: 21 })}>{it.label}</div>
+            <div key={i} style={{ display: 'flex', alignItems: 'center', flex: 1, borderRadius: 10, background: i % 2 === 0 ? '#0a2016' : '#071a10', fontSize: 22 }}>
+              <div style={cell(W.name, { justifyContent: 'flex-start', paddingLeft: 12, fontWeight: 700, color: '#e8f0e8', fontSize: 21 })}>{it.label}</div>
               {ZONES.map((z) => {
                 const isLo = z === it.lo, isHi = z === it.hi;
                 const col = isLo ? '#3ddc84' : isHi ? '#ff6b6b' : '#d7e2d7';
