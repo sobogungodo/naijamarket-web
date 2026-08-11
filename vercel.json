@@ -15,6 +15,10 @@
     {
       "path": "/api/social/post",
       "schedule": "0 6 * * *"
+    },
+    {
+      "path": "/api/social/post-weekly",
+      "schedule": "0 6 * * 1"
     }
   ]
 }
