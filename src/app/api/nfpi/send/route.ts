@@ -5,7 +5,6 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { prisma as sharedPrisma } from "@/lib/db";
-import { PrismaClient } from "@prisma/client";
 import { cronGuard } from "@/lib/scheduler";
 
 const prisma = sharedPrisma;
@@ -19,6 +18,13 @@ const TWILIO_WHATSAPP_FROM = process.env.TWILIO_WHATSAPP_FROM || "whatsapp:+1415
 // POST - Send NFPI Report via WhatsApp
 // =============================================================================
 export async function POST(request: NextRequest) {
+  // Fail-closed auth. This endpoint sends an outbound WhatsApp message to an
+  // arbitrary phone; it must never be callable anonymously. It has no in-app
+  // caller and its Twilio send path is deprecated — gated fail-closed pending
+  // removal/migration to the Meta WhatsApp service.
+  const denied = cronGuard(request);
+  if (denied) return denied;
+
   try {
     const body = await request.json();
     const { phone, tier } = body;
