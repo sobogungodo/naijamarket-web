@@ -10,6 +10,11 @@ import re
 import psycopg2
 from psycopg2.extras import RealDictCursor
 
+try:
+    from tsql_translate import translate_tsql
+except ImportError:  # when imported as a package module
+    from .tsql_translate import translate_tsql
+
 _EXEC_RE = re.compile(r'^\s*EXEC(?:UTE)?\s+([A-Za-z0-9_]+)\s*(.*)$', re.IGNORECASE | re.DOTALL)
 
 
@@ -18,7 +23,9 @@ class _PgCursor:
         self._cur = cur
 
     def execute(self, sql, params=None):
-        s = sql.replace("dbo.", "").replace("DBO.", "")
+        # Apply the T-SQL -> Postgres surface translations (also strips dbo.), then handle the
+        # EXEC/EXECUTE proc -> CALL form the scraper uses for the ported generation procs.
+        s = translate_tsql(sql)
         m = _EXEC_RE.match(s)
         if m:
             name = m.group(1).lower()
