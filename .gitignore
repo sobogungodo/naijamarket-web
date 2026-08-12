@@ -60,6 +60,11 @@ __tests__/
 *.test.ts
 *.spec.ts
 
+# Scheduler seam tests are intentionally tracked (jest+ts-jest scoped to
+# src/lib/scheduler — see docs/superpowers/plans/2026-08-12-scheduler-seam.md)
+!src/lib/scheduler/__tests__/
+!src/lib/scheduler/__tests__/*.test.ts
+
 .vercel
 
 # VAPID keys
@@ -75,3 +80,4 @@ admin-dashboard/.next/
 # NBS extractor bytecode cache
 scripts/nbs/__pycache__/
 src/generated/
+.superpowers/
