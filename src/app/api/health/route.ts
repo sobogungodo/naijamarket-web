@@ -4,6 +4,7 @@
 
 import { NextResponse } from 'next/server';
 import sql from 'mssql';
+import { isSupabase, getSupabaseConnection } from "@/lib/db-supabase";
 
 // ─────────────────────────────────────────────
 // Azure SQL Connection Config
@@ -84,7 +85,7 @@ async function getDatabaseStats(): Promise<{
   const start = Date.now();
 
   try {
-    const pool = await sql.connect(sqlConfig);
+    const pool = (isSupabase() ? ((await getSupabaseConnection()) as unknown as sql.ConnectionPool) : await sql.connect(sqlConfig));
 
     // ── Database Size ──────────────────────────────────────────────────────
     // Uses sys.database_files which works on all Azure SQL tiers

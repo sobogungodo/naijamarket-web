@@ -7,6 +7,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import sql from "mssql";
+import { isSupabase, getSupabaseConnection } from "@/lib/db-supabase";
 import { jwtVerify } from "jose";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
@@ -114,7 +115,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    pool = await sql.connect(sqlConfig);
+    pool = (isSupabase() ? ((await getSupabaseConnection()) as unknown as sql.ConnectionPool) : await sql.connect(sqlConfig));
 
     // 1. Pack
     const packResult = await pool.request()

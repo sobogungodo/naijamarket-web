@@ -8,6 +8,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import sql from "mssql";
+import { isSupabase, getSupabaseConnection } from "@/lib/db-supabase";
 
 // ============================================================================
 // CONFIGURATION
@@ -158,7 +159,7 @@ async function fetchFromAzureSQL(): Promise<{ data: PriceRecord[]; success: bool
   let pool: sql.ConnectionPool | null = null;
   
   try {
-    pool = await sql.connect(SQL_CONFIG);
+    pool = (isSupabase() ? ((await getSupabaseConnection()) as unknown as sql.ConnectionPool) : await sql.connect(SQL_CONFIG));
     
     const result = await pool.request().query(`
       WITH PriceData AS (

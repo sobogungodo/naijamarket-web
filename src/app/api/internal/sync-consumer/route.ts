@@ -16,6 +16,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import sql from "mssql";
+import { isSupabase, getSupabaseConnection } from "@/lib/db-supabase";
 
 // ============================================================================
 // CONFIGURATION
@@ -42,8 +43,9 @@ const dbConfig: sql.config = {
 let pool: sql.ConnectionPool | null = null;
 
 async function getPool(): Promise<sql.ConnectionPool> {
+  if (isSupabase()) return (await getSupabaseConnection()) as unknown as sql.ConnectionPool;
   if (!pool || !pool.connected) {
-    pool = await sql.connect(dbConfig);
+    pool = (isSupabase() ? ((await getSupabaseConnection()) as unknown as sql.ConnectionPool) : await sql.connect(dbConfig));
   }
   return pool;
 }

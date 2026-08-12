@@ -7,6 +7,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import sql from "mssql";
+import { isSupabase, getSupabaseConnection } from "@/lib/db-supabase";
 import { sendPaymentConfirmed } from "@/lib/whatsapp";
 
 // ============================================================================
@@ -199,7 +200,7 @@ async function updatePaymentStatus(
   let pool: sql.ConnectionPool | null = null;
 
   try {
-    pool = await sql.connect(dbConfig);
+    pool = (isSupabase() ? ((await getSupabaseConnection()) as unknown as sql.ConnectionPool) : await sql.connect(dbConfig));
 
     await pool.request()
       .input("reference", sql.NVarChar(50), reference)
@@ -241,7 +242,7 @@ async function upgradeSubscription(
   let pool: sql.ConnectionPool | null = null;
 
   try {
-    pool = await sql.connect(dbConfig);
+    pool = (isSupabase() ? ((await getSupabaseConnection()) as unknown as sql.ConnectionPool) : await sql.connect(dbConfig));
 
     // ---- Tier normalization — BEFORE the EXEC ------------------------------
     // `tier` originates from payment-provider metadata (Paystack metadata.tier /

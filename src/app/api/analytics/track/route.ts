@@ -7,6 +7,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import sql from "mssql";
+import { isSupabase, getSupabaseConnection } from "@/lib/db-supabase";
 
 const DB_CONFIG = {
   server:   process.env.AZURE_SQL_SERVER!,
@@ -50,7 +51,7 @@ export async function POST(req: NextRequest) {
     const country = req.headers.get("x-vercel-ip-country") || null;
     const region  = req.headers.get("x-vercel-ip-country-region") || null;
 
-    const pool = await sql.connect(DB_CONFIG);
+    const pool = (isSupabase() ? ((await getSupabaseConnection()) as unknown as sql.ConnectionPool) : await sql.connect(DB_CONFIG));
 
     // ── SITE ANALYTICS (anonymous) ────────────────────────────────────────────
     if (SITE_EVENTS.has(event_type)) {

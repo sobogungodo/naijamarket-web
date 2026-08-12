@@ -27,6 +27,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import sql from "mssql";
+import { isSupabase, getSupabaseConnection } from "@/lib/db-supabase";
 
 export const dynamic = "force-dynamic";
 
@@ -48,6 +49,7 @@ const SQL_CONFIG: sql.config = {
 let _pool: sql.ConnectionPool | null = null;
 
 async function getPool(): Promise<sql.ConnectionPool | null> {
+  if (isSupabase()) return (await getSupabaseConnection()) as unknown as sql.ConnectionPool;
   if (_pool && _pool.connected) {
     try { await _pool.request().query("SELECT 1"); return _pool; }
     catch {

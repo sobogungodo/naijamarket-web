@@ -23,6 +23,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import sql from "mssql";
+import { isSupabase, getSupabaseConnection } from "@/lib/db-supabase";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import { checkQuery, logQuery } from "@/lib/query-gate";
@@ -54,6 +55,7 @@ const SQL_CONFIG: sql.config = {
 let _pool: sql.ConnectionPool | null = null;
 
 async function getPool(): Promise<sql.ConnectionPool | null> {
+  if (isSupabase()) return (await getSupabaseConnection()) as unknown as sql.ConnectionPool;
   // Check pool is truly healthy — .connected can be stale after Vercel cold start
   if (_pool && _pool.connected) {
     try {

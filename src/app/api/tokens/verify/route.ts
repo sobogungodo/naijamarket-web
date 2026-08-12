@@ -7,6 +7,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import sql from "mssql";
+import { isSupabase, getSupabaseConnection } from "@/lib/db-supabase";
 
 const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY || "";
 
@@ -73,7 +74,7 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    pool = await sql.connect(sqlConfig);
+    pool = (isSupabase() ? ((await getSupabaseConnection()) as unknown as sql.ConnectionPool) : await sql.connect(sqlConfig));
 
     // 2. Idempotency — already credited?
     const existing = await pool.request()

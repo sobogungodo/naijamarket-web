@@ -5,6 +5,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import sql from "mssql";
+import { isSupabase, getSupabaseConnection } from "@/lib/db-supabase";
 import { jwtVerify } from "jose";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
@@ -60,7 +61,7 @@ export async function GET(request: NextRequest) {
     let pool: sql.ConnectionPool | null = null;
 
     try {
-      pool = await sql.connect(sqlConfig);
+      pool = (isSupabase() ? ((await getSupabaseConnection()) as unknown as sql.ConnectionPool) : await sql.connect(sqlConfig));
 
       // Resolve the wallet key — Token_* tables are keyed by consumer_phone.
       const cr = await pool.request()

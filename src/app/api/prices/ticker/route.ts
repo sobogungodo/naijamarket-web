@@ -4,6 +4,7 @@
 
 import { NextResponse } from "next/server";
 import sql from "mssql";
+import { isSupabase, getSupabaseConnection } from "@/lib/db-supabase";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -40,7 +41,7 @@ const FALLBACK = [
 export async function GET() {
   let pool: sql.ConnectionPool | null = null;
   try {
-    pool = await sql.connect(dbConfig);
+    pool = (isSupabase() ? ((await getSupabaseConnection()) as unknown as sql.ConnectionPool) : await sql.connect(dbConfig));
 
     const result = await pool.request().query(`
       SELECT TOP 12

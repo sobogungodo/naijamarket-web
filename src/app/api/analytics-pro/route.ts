@@ -5,6 +5,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import sql from 'mssql';
+import { isSupabase, getSupabaseConnection } from "@/lib/db-supabase";
 
 // =============================================================================
 // DATABASE CONFIGURATION
@@ -61,6 +62,7 @@ const TIER_FEATURES: Record<string, {
 let pool: sql.ConnectionPool | null = null;
 
 async function getPool(): Promise<sql.ConnectionPool> {
+  if (isSupabase()) return (await getSupabaseConnection()) as unknown as sql.ConnectionPool;
   if (!pool) {
     pool = await new sql.ConnectionPool(sqlConfig).connect();
     console.log('✅ Connected to Azure SQL for analytics');

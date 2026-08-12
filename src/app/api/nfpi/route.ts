@@ -7,6 +7,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/app/api/auth/[...nextauth]/route'
 import sql from 'mssql'
+import { isSupabase, getSupabaseConnection } from "@/lib/db-supabase";
 
 const sqlConfig: sql.config = {
   user:     process.env.AZURE_SQL_USER!,
@@ -18,6 +19,7 @@ const sqlConfig: sql.config = {
 }
 
 async function getPool(): Promise<sql.ConnectionPool> {
+  if (isSupabase()) return (await getSupabaseConnection()) as unknown as sql.ConnectionPool;
   return sql.connect(sqlConfig)
 }
 

@@ -5,6 +5,7 @@ export const runtime = "nodejs";
 import { NextRequest, NextResponse } from "next/server";
 import { randomUUID } from "crypto";
 import sql from "mssql";
+import { isSupabase, getSupabaseConnection } from "@/lib/db-supabase";
 
 const FUNC_BASE = process.env.FUNC_API_BASE_URL || "https://func-naijamarket-api.azurewebsites.net/api";
 const FUNC_KEY  = process.env.FUNC_API_KEY || "";
@@ -71,7 +72,7 @@ export async function POST(request: NextRequest) {
 
       let pool2: sql.ConnectionPool | null = null;
       try {
-        pool2 = await sql.connect(sqlConfig);
+        pool2 = (isSupabase() ? ((await getSupabaseConnection()) as unknown as sql.ConnectionPool) : await sql.connect(sqlConfig));
         if (exempt) {
           await pool2.request()
             .input("consumer_id", sql.NVarChar(50), consumerId)

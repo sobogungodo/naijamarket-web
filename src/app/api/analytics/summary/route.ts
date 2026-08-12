@@ -6,6 +6,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import sql from "mssql";
+import { isSupabase, getSupabaseConnection } from "@/lib/db-supabase";
 
 const DB_CONFIG = {
   server:   process.env.AZURE_SQL_SERVER!,
@@ -48,7 +49,7 @@ export async function GET(req: NextRequest) {
     }
 
     const days = parseInt(req.nextUrl.searchParams.get("days") || "30");
-    const pool = await sql.connect(DB_CONFIG);
+    const pool = (isSupabase() ? ((await getSupabaseConnection()) as unknown as sql.ConnectionPool) : await sql.connect(DB_CONFIG));
 
     // 1. Site overview
     const siteOverview = await pool.request()

@@ -9,12 +9,19 @@
 // (Azure). Full cutover = switch Prisma provider to postgresql + port those raw queries to
 // Postgres dialect (route-by-route). This adapter proves connectivity + the shim patterns.
 import { Pool, types } from 'pg';
+import { translateTSQL } from './tsql-translate';
 
 // node-pg returns int8 (bigint, OID 20) as a string; Prisma returns it as a JS number/BigInt.
 // COUNT(*)/SUM(...) land in int8, and many routes do arithmetic on them, so parse int8 to a
 // JS number for parity (safe for the count magnitudes this app deals with). numeric (money)
 // is left as-is — routes already treat Prisma's Decimal as non-number and parse it.
 types.setTypeParser(20, (v) => (v === null ? null : parseInt(v, 10)));
+
+// Lightweight backend flag (no Prisma/googleapis import) for the lean mssql routes that
+// branch their pool acquisition to the pg shim.
+export function isSupabase(): boolean {
+  return process.env.DB_BACKEND === 'supabase';
+}
 
 declare global {
   // eslint-disable-next-line no-var
@@ -53,9 +60,10 @@ export async function getSupabaseConnection(): Promise<PgConn> {
       const builder: PgReq = {
         input(name: string, value: unknown) { params[name] = value; return builder; },
         async query(sqlTemplate: string) {
-          // @name → $n (dedup)
+          // Apply the T-SQL -> PG surface translations first, then @name → $n (dedup).
+          const translated = translateTSQL(sqlTemplate);
           const order: string[] = [];
-          const pgText = sqlTemplate.replace(/@(\w+)/g, (_m, n: string) => {
+          const pgText = translated.replace(/@(\w+)/g, (_m, n: string) => {
             let i = order.indexOf(n); if (i === -1) { order.push(n); i = order.length - 1; }
             return '$' + (i + 1);
           });
