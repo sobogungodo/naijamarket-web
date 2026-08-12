@@ -11,14 +11,21 @@ import os
 import psycopg2
 from psycopg2.extras import RealDictCursor
 
+try:
+    from shared.tsql_translate import translate_tsql
+except ImportError:  # when run with the package root on sys.path
+    from tsql_translate import translate_tsql
+
 
 class _PgCursor:
     def __init__(self, cur):
         self._cur = cur
 
     def execute(self, sql, params=None):
-        # dbo.Table -> Table (public); keep everything else verbatim
-        sql = sql.replace("dbo.", "").replace("DBO.", "")
+        # Apply the T-SQL -> Postgres surface translations (dbo-strip, brackets, GETUTCDATE,
+        # ISNULL, TOP->LIMIT, DATEADD/DATEDIFF, OFFSET/FETCH, ...). Params stay %s (shared by
+        # pymssql + psycopg2), so no placeholder rewrite is needed.
+        sql = translate_tsql(sql)
         return self._cur.execute(sql, params if params is not None else None)
 
     def fetchone(self):
