@@ -17,6 +17,7 @@
     "db:studio": "prisma studio",
     "test": "jest",
     "test:watch": "jest --watch",
+    "crons:check": "jest jobs",
     "postinstall": "prisma generate && prisma generate --schema=prisma/schema.supabase.prisma"
   },
   "dependencies": {
