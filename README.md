@@ -95,7 +95,8 @@ naijamarket-web/
 | `NEXTAUTH_URL` | Application URL | Yes |
 | `NEXTAUTH_SECRET` | NextAuth secret key | Yes |
 | `JWT_SECRET` | JWT signing secret | Yes |
-| `TWILIO_ACCOUNT_SID` | Twilio account ID | For WhatsApp |
+| `META_ACCESS_TOKEN` | Meta WhatsApp Cloud API token | For WhatsApp |
+| `META_PHONE_NUMBER_ID` | Meta WhatsApp phone number ID | For WhatsApp |
 | `PAYSTACK_SECRET_KEY` | Payment processing | For payments |
 
 See `.env.example` for complete list.

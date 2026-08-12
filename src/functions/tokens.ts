@@ -444,44 +444,10 @@ async function paymentWebhook(req: HttpRequest, ctx: InvocationContext): Promise
             reference,
         });
 
-        // === SEND WHATSAPP CONFIRMATION ===
-        try {
-            const twilioSid = process.env.TWILIO_ACCOUNT_SID;
-            const twilioAuth = process.env.TWILIO_AUTH_TOKEN;
-            const twilioFrom = process.env.TWILIO_WHATSAPP_FROM || "whatsapp:+14155238886";
-
-            if (twilioSid && twilioAuth) {
-                const message = `🎉 *Token Purchase Successful!*\n\n` +
-                    `━━━━━━━━━━━━━━━━━━━━━━\n` +
-                    `📦 Pack: ${pack.display_name}\n` +
-                    `🪙 Tokens: +${result.tokens_credited}\n` +
-                    `💰 Paid: ₦${pack.price_naira.toLocaleString()}\n` +
-                    `💳 Ref: ${reference}\n` +
-                    `━━━━━━━━━━━━━━━━━━━━━━\n` +
-                    `💰 *New Balance: ${result.balance_after} tokens*\n\n` +
-                    `Type *price* to use a token and check prices now! 🔍`;
-
-                const twilioUrl = `https://api.twilio.com/2010-04-01/Accounts/${twilioSid}/Messages.json`;
-                const authHeader = Buffer.from(`${twilioSid}:${twilioAuth}`).toString("base64");
-
-                await fetch(twilioUrl, {
-                    method: "POST",
-                    headers: {
-                        "Authorization": `Basic ${authHeader}`,
-                        "Content-Type": "application/x-www-form-urlencoded",
-                    },
-                    body: new URLSearchParams({
-                        From: twilioFrom,
-                        To: `whatsapp:${phone}`,
-                        Body: message,
-                    }).toString(),
-                });
-
-                ctx.log("WhatsApp confirmation sent to:", phone);
-            }
-        } catch (waError: any) {
-            ctx.warn("WhatsApp notification failed (non-critical):", waError.message);
-        }
+        // WhatsApp purchase confirmation retired with Twilio. The token wallet is
+        // currently OFF (double-credit bug), so there is no live purchase to notify;
+        // wire a Meta template (e.g. a token_purchase_confirmed UTILITY template)
+        // here when the wallet is re-enabled. Credit already committed above.
 
         return jsonResponse({ status: "success", message: "Payment processed" });
     } catch (error: any) {

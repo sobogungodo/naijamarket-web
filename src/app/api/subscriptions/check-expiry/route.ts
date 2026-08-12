@@ -30,47 +30,8 @@ import { NextRequest, NextResponse } from "next/server";
 // ============================================================================
 
 import { prisma } from "@/lib/db";
-import { sendExpiryReminder } from "@/lib/whatsapp";
+import { sendExpiryReminder, sendGracePeriodStarted, sendDowngradedToFree } from "@/lib/whatsapp";
 import { cronGuard } from "@/lib/scheduler";
-
-// ============================================================================
-// CONFIG
-// ============================================================================
-
-const TWILIO_SID = process.env.TWILIO_ACCOUNT_SID || "";
-const TWILIO_TOKEN = process.env.TWILIO_AUTH_TOKEN || "";
-const TWILIO_FROM = process.env.TWILIO_WHATSAPP_FROM || "whatsapp:+14155238886";
-
-// ============================================================================
-// HELPERS
-// ============================================================================
-
-function phoneToWA(phone: string): string {
-  let c = phone.replace(/\D/g, "");
-  if (c.startsWith("0")) c = "234" + c.substring(1);
-  if (!c.startsWith("234")) c = "234" + c;
-  return `whatsapp:+${c}`;
-}
-
-async function sendWhatsApp(phone: string, message: string): Promise<boolean> {
-  if (!TWILIO_SID || !TWILIO_TOKEN) return false;
-  try {
-    const res = await fetch(
-      `https://api.twilio.com/2010-04-01/Accounts/${TWILIO_SID}/Messages.json`,
-      {
-        method: "POST",
-        headers: {
-          Authorization: "Basic " + Buffer.from(`${TWILIO_SID}:${TWILIO_TOKEN}`).toString("base64"),
-          "Content-Type": "application/x-www-form-urlencoded",
-        },
-        body: new URLSearchParams({
-          From: TWILIO_FROM, To: phoneToWA(phone), Body: message,
-        }).toString(),
-      }
-    );
-    return res.ok;
-  } catch { return false; }
-}
 
 // ============================================================================
 // MAIN HANDLER
@@ -176,12 +137,11 @@ export async function GET(request: NextRequest) {
           ? new Date(sub.grace_end_date).toLocaleDateString("en-NG")
           : "3 days";
 
-        const sent = await sendWhatsApp(sub.phone_number,
-          `🔶 *Subscription Expired*\n\n` +
-          `Your *${sub.tier_name || sub.tier_code}* plan has expired.\n\n` +
-          `You still have access until *${graceEnd}* (grace period).\n\n` +
-          `After that, your account will be downgraded to FREE.\n\n` +
-          `Type *upgrade* to renew and keep your access.`
+        // Migrated Twilio → Meta: subscription_expired_grace template.
+        const sent = await sendGracePeriodStarted(
+          sub.phone_number,
+          sub.tier_name || sub.tier_code,
+          graceEnd,
         );
         if (sent) stats.whatsappSent++; else stats.whatsappFailed++;
         stats.movedToGrace++;
@@ -222,13 +182,10 @@ export async function GET(request: NextRequest) {
           WHERE phone_number = ${sub.phone_number}
         `;
 
-        const sent = await sendWhatsApp(sub.phone_number,
-          `🔴 *Subscription Downgraded*\n\n` +
-          `Your *${sub.tier_name || sub.tier_code}* plan has been downgraded to *FREE* due to non-renewal.\n\n` +
-          `FREE tier includes:\n` +
-          `• 3 price queries per day\n` +
-          `• Yesterday's prices only\n\n` +
-          `Type *upgrade* anytime to reactivate your plan.`
+        // Migrated Twilio → Meta: subscription_downgraded template.
+        const sent = await sendDowngradedToFree(
+          sub.phone_number,
+          sub.tier_name || sub.tier_code,
         );
         if (sent) stats.whatsappSent++; else stats.whatsappFailed++;
         stats.downgradedToFree++;

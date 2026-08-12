@@ -25,7 +25,7 @@ import { prisma as sharedPrisma } from "@/lib/db";
 // ============================================================================
 
 import { PrismaClient } from "@prisma/client";
-import { sendPaymentConfirmed } from "@/lib/whatsapp";
+import { sendPaymentConfirmed, sendPaymentFailed, sendAddOnActivated, sendMorningBriefActivated } from "@/lib/whatsapp";
 const globalForPrisma = globalThis as unknown as { prisma: PrismaClient };
 const prisma = sharedPrisma;
 if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = prisma;
@@ -36,9 +36,6 @@ if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = prisma;
 
 const FLW_SECRET_HASH = process.env.FLUTTERWAVE_SECRET_HASH || "";
 const FLW_SECRET_KEY = process.env.FLUTTERWAVE_SECRET_KEY || "";
-const TWILIO_SID = process.env.TWILIO_ACCOUNT_SID || "";
-const TWILIO_TOKEN = process.env.TWILIO_AUTH_TOKEN || "";
-const TWILIO_FROM = process.env.TWILIO_WHATSAPP_FROM || "whatsapp:+14155238886";
 
 const DURATION_DAYS: Record<string, number> = {
   WEEKLY: 7, MONTHLY: 30, QUARTERLY: 90, ANNUAL: 365,
@@ -49,39 +46,12 @@ const GRACE_PERIOD_DAYS = 3;
 // HELPERS (same as Paystack)
 // ============================================================================
 
-function phoneToWA(phone: string): string {
-  let c = phone.replace(/\D/g, "");
-  if (c.startsWith("0")) c = "234" + c.substring(1);
-  if (!c.startsWith("234")) c = "234" + c;
-  return `whatsapp:+${c}`;
-}
-
 function naira(amount: number): string {
   return `₦${amount.toLocaleString("en-NG")}`;
 }
 
 function genId(prefix: string): string {
   return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 8)}`;
-}
-
-async function sendWhatsApp(phone: string, message: string): Promise<boolean> {
-  if (!TWILIO_SID || !TWILIO_TOKEN) return false;
-  try {
-    const res = await fetch(
-      `https://api.twilio.com/2010-04-01/Accounts/${TWILIO_SID}/Messages.json`,
-      {
-        method: "POST",
-        headers: {
-          Authorization: "Basic " + Buffer.from(`${TWILIO_SID}:${TWILIO_TOKEN}`).toString("base64"),
-          "Content-Type": "application/x-www-form-urlencoded",
-        },
-        body: new URLSearchParams({
-          From: TWILIO_FROM, To: phoneToWA(phone), Body: message,
-        }).toString(),
-      }
-    );
-    return res.ok;
-  } catch { return false; }
 }
 
 // ============================================================================
@@ -248,9 +218,9 @@ export async function POST(request: NextRequest) {
             )
           `;
 
-          await sendWhatsApp(meta.phone_number,
-            `❌ *Payment Failed*\n\nWe couldn't process your payment of ${naira(data.amount || 0)}.\n\nType *upgrade* to retry.`
-          );
+          // Migrated Twilio → Meta: payment_failed template. Flutterwave omits a
+          // machine reason here, so pass a generic one for the {{2}} slot.
+          await sendPaymentFailed(meta.phone_number, naira(data.amount || 0), "Payment not completed");
         }
       }
 
@@ -293,9 +263,8 @@ export async function POST(request: NextRequest) {
           ${amount}, 'NGN', 'FLUTTERWAVE', ${ref}, 'SUCCESS', GETDATE(), GETDATE()
         )
       `;
-      await sendWhatsApp(phone,
-        `✅ *Add-On Activated!*\n\n${meta.tier_name || "Your add-on"} is now active.\nPayment: ${naira(amount)}\n\nType *mystatus* to see details.`
-      );
+      // Migrated Twilio → Meta: add_on_activated template.
+      await sendAddOnActivated(phone, meta.tier_name || "Your add-on", naira(amount));
       result = `Addon for ${phone}`;
 
     } else if (meta.product_type === "MORNING_BRIEF") {
@@ -314,9 +283,8 @@ export async function POST(request: NextRequest) {
           ${amount}, 'NGN', 'FLUTTERWAVE', ${ref}, 'SUCCESS', GETDATE(), GETDATE()
         )
       `;
-      await sendWhatsApp(phone,
-        `✅ *Morning Brief Activated!*\n\nDaily prices at 5:30 AM.\nPayment: ${naira(amount)}\nValid until: ${endDate.toLocaleDateString("en-NG")}\n\n🌅 See you tomorrow morning!`
-      );
+      // Migrated Twilio → Meta: morning_brief_activated template.
+      await sendMorningBriefActivated(phone, naira(amount), endDate.toLocaleDateString("en-NG"));
       result = `Morning Brief for ${phone}`;
 
     } else {
