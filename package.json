@@ -5,18 +5,19 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "prisma generate && next build",
+    "build": "prisma generate && prisma generate --schema=prisma/schema.supabase.prisma && next build",
     "start": "next start",
     "lint": "next lint",
     "lint:fix": "next lint --fix",
     "type-check": "tsc --noEmit",
     "format": "prettier --write .",
     "db:generate": "prisma generate",
+ "db:generate:supabase": "prisma generate --schema=prisma/schema.supabase.prisma",
     "db:push": "prisma db push",
     "db:studio": "prisma studio",
     "test": "jest",
     "test:watch": "jest --watch",
-    "postinstall": "prisma generate"
+    "postinstall": "prisma generate && prisma generate --schema=prisma/schema.supabase.prisma"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.72.1",

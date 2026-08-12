@@ -74,3 +74,4 @@ admin-dashboard/.next/
 
 # NBS extractor bytecode cache
 scripts/nbs/__pycache__/
+src/generated/

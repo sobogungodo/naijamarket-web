@@ -1,0 +1,2621 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma-pg"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("SUPABASE_DB_URL")
+}
+
+model Consumers {
+  consumer_id                String            @id()
+  phone_number               String?
+  preferred_language         String?
+  first_name                 String?
+  last_name                  String?
+  full_name                  String?
+  gender                     String?
+  age_range                  String?
+  registration_date          DateTime?
+  registration_source        String?
+  subscription_tier          String?
+  subscription_start         String?
+  subscription_end           String?
+  grace_period_end           String?
+  pending_downgrade_tier     String?
+  downgrade_effective_date   DateTime?
+  auto_renew                 String?
+  daily_query_limit          Int?
+  daily_queries_used         Boolean?
+  weekly_queries_used        Boolean?
+  weekly_queries_reset       String?
+  queries_today              Boolean?
+  queries_this_week          Boolean?
+  total_queries              Int?
+  last_query_date            DateTime?
+  favorite_markets           String?
+  favorite_items             String?
+  max_markets                Int?
+  favorite_markets_2         String?
+  queries_remaining          Int?
+  account_status             String?
+  last_active_at             DateTime?
+  created_at                 DateTime?
+  updated_at                 DateTime?         @updatedAt
+  referred_by                String?
+  referral_code              String?
+  daily_abandon_count        Int?
+  last_abandon_date          DateTime?
+  abandon_locked_until       String?
+  registration_blocked_until String?
+  notes                      String?
+  date_of_birth              DateTime?
+  age                        String?
+  city                       String?
+  state                      String?
+  max_alerts                 Boolean?
+  tc_accepted                Boolean?
+  tc_accepted_at             DateTime?
+  tc_version                 Boolean?
+  phone_verified             Boolean?          @default(false)
+  email_verified             Boolean?          @default(false)
+  phone                      String?
+  email                      String?
+  password_hash              String?
+  subscription_start_date    DateTime?
+  subscription_end_date      DateTime?
+  two_factor_enabled         Boolean           @default(false) @map("two_factor_enabled")
+  two_factor_method          String?           @map("two_factor_method")
+  two_factor_enabled_at      DateTime?         @map("two_factor_enabled_at")
+  settings_json              String?
+  Consumer_Addons            Consumer_Addons[]
+  @@map("consumers")
+}
+
+model OTP_Codes {
+  id          Int       @id() @default(autoincrement())
+  identifier  String
+  type        String
+  code        String
+  attempts    Int?      @default(0)
+  verified    Boolean?  @default(false)
+  verified_at DateTime?
+  expires_at  DateTime
+  created_at  DateTime? @default(now())
+
+  @@index([expires_at])
+  @@index([identifier, type])
+  @@map("otp_codes")
+}
+
+model OTP_Sessions {
+  otp_session_id Int      @id @default(autoincrement())
+  phone_number   String
+  otp_code       String
+  verified       Boolean  @default(false)
+  expires_at     DateTime
+  created_at     DateTime @default(now())
+
+  @@map("OTP_Sessions")
+}
+
+model Approved_Prices {
+  price_id             String    @id()
+  submission_id        String?
+  state                String?
+  market_name          String?
+  market_id            String?
+  category_name        String?
+  category_id          String?
+  item_name            String?
+  item_id              String?
+  brand_name           String?
+  brand_id             String?
+  price                Decimal?
+  unit                 String?
+  currency             String?   @default("NGN")
+  submission_date      DateTime?
+  validated_at         DateTime?
+  validation_status    String?
+  validators_count     Int?
+  approval_count       Int?
+  reject_count         Int?
+  consensus_method     String?
+  trader_phone         String?
+  trader_id            String?
+  trader_name          String?
+  trader_reputation    String?
+  gps_latitude         Decimal?
+  gps_longitude        Decimal?
+  gps_verified         Boolean?
+  previous_price       Decimal?
+  price_change_amount  Decimal?
+  price_change_percent Decimal?
+  price_trend          String?
+  data_source          String?
+  confidence_score     Int?
+  is_outlier           Boolean?  @default(false)
+  notes                String?
+
+  @@index([item_id])
+  @@index([market_id])
+  @@map("approved_prices")
+}
+
+model Markets {
+  market_id         String    @id()
+  region_id         String?
+  market_name       String?
+  state             String?
+  latitude          Decimal?
+  longitude         Decimal?
+  radius_meters     Int?
+  opening_hours     String?
+  status            String?
+  created_at        DateTime?
+  coordinate_source String?
+  PowerAppsId__     String?   @map("__PowerAppsId__")
+  @@map("markets")
+}
+
+model Categories {
+  category_id   String    @id()
+  category_name String?
+  description   String?
+  status        String?
+  display_order Int?
+  created_at    DateTime?
+  PowerAppsId__ String?   @map("__PowerAppsId__")
+  @@map("categories")
+}
+
+model Items_Catalog {
+  item_id               String    @id()
+  item_name             String?
+  category_id           String?
+  Unit                  String?
+  measurement           String?
+  whole_sale_Price      Decimal?
+  Ave_Measurement_Price Decimal?
+  Average_Unit_Price    Decimal?
+  status                String?
+  Max_whole_sale_Price  Decimal?
+  min_price             Decimal?
+  max_price             Decimal?
+  created_at            DateTime?
+  PowerAppsId__         String?   @map("__PowerAppsId__")
+  @@map("items_catalog")
+}
+
+model Brands {
+  brand_id          String    @id()
+  brand_name        String?
+  category_id       String?
+  category          String?
+  country_of_origin String?
+  description       String?
+  status            String?
+  created_at        DateTime?
+  @@map("brands")
+}
+
+model Subscription_Tiers {
+  tier_id                  String   @id()
+  tier_name                String?
+  tier_rank                Int?
+  price_ngn                Decimal?
+  billing_cycle            String?
+  query_limit              Int?
+  query_period             String?
+  max_markets              Int?
+  extra_market_fee_weekly  Decimal?
+  extra_market_fee_monthly Decimal?
+  priority_support         Boolean?
+  api_access               Boolean?
+  email_pdf                String?
+  excel_download           Boolean?
+  analytics_access         Boolean?
+  dedicated_manager        Boolean?
+  features                 String?
+  description              String?
+  status                   String?
+  @@map("subscription_tiers")
+}
+
+model Price_History_NBS {
+  history_id         String
+  item_id            String?
+  item_name_nbs      String?
+  item_name_standard String?
+  category_id        String?
+  category_name      String?
+  state_code_nbs     String?
+  state_name_nbs     String?
+  db_state           String?
+  market_id          String?
+  market_name        String?
+  price_naira        Decimal?
+  price_original     Decimal?
+  variation_pct      Decimal?
+  unit               String?
+  year               Int?
+  month              Boolean?
+  observation_date   DateTime?
+  data_source        String?
+  import_batch       String?
+  created_at         DateTime?
+  id                 Int       @id() @default(autoincrement())
+  @@map("price_history_nbs")
+}
+
+model Bank_Codes {
+  bank_id   Int?
+  bank_name String?
+  bank_code Int?
+  bank_type String?
+  is_active Boolean?
+  id        Int      @id() @default(autoincrement())
+  @@map("bank_codes")
+}
+
+model Export_History {
+  export_id     String    @id()
+  phone_number  String
+  export_type   String
+  export_format String
+  date_range    String?
+  row_count     Int?      @default(0)
+  file_size_kb  Int?      @default(0)
+  created_at    DateTime? @default(now())
+
+  @@index([phone_number])
+  @@map("export_history")
+}
+
+model Blacklist {
+  blacklist_id      String    @id()
+  type              String?
+  value             Int?
+  reason            String?
+  related_trader_id String?
+  related_phone     String?
+  evidence_url      String?
+  banned_at         DateTime?
+  banned_by         String?
+  expires_at        DateTime?
+  status            String?
+  notes             String?
+  @@map("blacklist")
+}
+
+model Consumer_Query_Sessions {
+  Consumer_id                  String?
+  session_id                   String    @id()
+  phone_number                 String?
+  session_status               String?
+  current_step                 String?
+  page_number                  Boolean?
+  displayed_ids                String?
+  preferred_language           String?
+  session_data                 String?
+  lang_state                   String?
+  selected_state               String?
+  selected_state_id            String?
+  selected_market              String?
+  selected_market_id           String?
+  selected_super_category      String?
+  selected_super_category_name String?
+  selected_category            String?
+  selected_category_id         String?
+  selected_item                String?
+  selected_item_id             String?
+  selected_item_unit           String?
+  selected_item_min_price      Decimal?
+  selected_item_max_price      Decimal?
+  selected_item_wholesale      String?
+  selected_brand               String?
+  selected_brand_id            String?
+  total_markets                String?
+  timeout_prompted             String?
+  timeout_prompt_at            DateTime?
+  query_completed              String?
+  created_at                   DateTime?
+  expires_at                   DateTime?
+  last_updated                 DateTime?
+  selected_region              String?
+  selected_region_code         String?
+  @@map("consumer_query_sessions")
+}
+
+model Consumer_Registration_Sessions {
+  session_id         String    @id()
+  phone_number       String?
+  preferred_language String?
+  current_step       String?
+  session_status     String?
+  first_name         String?
+  last_name          String?
+  gender             String?
+  age_range          String?
+  selected_tier      String?
+  step_data          String?
+  created_at         DateTime?
+  expires_at         DateTime?
+  last_updated       DateTime?
+  timeout_prompted   String?
+  timeout_prompt_at  DateTime?
+  exit_count         Int?
+  blocked_until      String?
+  wa_profile_name    String?
+  payment_ref        String?
+  payment_provider   String?
+  current_tier       String?
+  @@map("consumer_registration_sessions")
+}
+
+model Message_Log {
+  timestamp       DateTime?
+  phone_number    String?
+  message_body    String?
+  response_length String?
+  status          String?
+  id              Int       @id() @default(autoincrement())
+  @@map("message_log")
+}
+
+model Error_Log {
+  timestamp     DateTime?
+  phone_number  String?
+  message_body  String?
+  status_code   String?
+  error_details String?
+  error_type    String?
+  id            Int       @id() @default(autoincrement())
+  @@map("error_log")
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model Column_Documentation {
+  Sheet       String?
+  Column      String?
+  Data_Type   String? @map("Data Type")
+  Required    String?
+  Description String?
+  Example     String?
+
+  @@map("_Column_Documentation")
+  @@ignore
+}
+
+model Addon_Products {
+  addon_code    String   @id()
+  addon_name    String
+  description   String
+  weekly_price  Decimal?
+  monthly_price Decimal?
+  is_active     Boolean  @default(true)
+  created_at    DateTime @default(now())
+  @@map("addon_products")
+}
+
+model API_Keys {
+  key_id                String    @id()
+  phone_number          String
+  key_name              String
+  key_hash              String
+  key_prefix            String
+  status                String?   @default("active")
+  request_count         Int?      @default(0)
+  daily_limit           Int?      @default(1000)
+  rate_limit_per_minute Int?      @default(100)
+  last_used_at          DateTime?
+  created_at            DateTime? @default(now())
+  updated_at            DateTime? @default(now())
+
+  @@index([key_hash])
+  @@index([phone_number])
+  @@index([status])
+  @@map("api_keys")
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model AVAILABLE_CODES {
+  Code   String?
+  Market String?
+  State  String?
+
+  @@ignore
+  @@map("available_codes")
+}
+
+model Calculated_Inflation {
+  yr                       Int
+  mth                      Int
+  month_name               String
+  month_date               DateTime
+  current_month_avg        Decimal
+  same_month_last_year_avg Decimal?
+  yoy_inflation            Decimal?
+  prev_month_avg           Decimal?
+  mom_inflation            Decimal?
+  daily_records            Int
+  days_with_data           Int
+  calculated_at            DateTime? @default(now())
+
+  @@id([yr, mth])
+  @@map("calculated_inflation")
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model Collusion_Monitor {
+  monitor_id                    String?
+  validator_phone               String?
+  validator_id                  String?
+  validator_name                String?
+  trader_phone                  String?
+  trader_id                     String?
+  trader_name                   String?
+  market_id                     String?
+  market_name                   String?
+  total_validations             Boolean?
+  approve_count                 Int?
+  reject_count                  Int?
+  approval_rate                 Boolean?
+  first_interaction             DateTime?
+  last_interaction              DateTime?
+  days_since_last               Boolean?
+  consecutive_approvals         Boolean?
+  avg_response_time_for_trader  Boolean?
+  variance_from_normal_response Boolean?
+  flagged                       Boolean?
+  flagged_at                    DateTime?
+  flagged_reason                String?
+  flag_severity                 String?
+  reviewed                      String?
+  reviewed_by                   String?
+  review_at                     DateTime?
+  review_decision               String?
+  review_notes                  String?
+  action_taken                  String?
+  action_at                     DateTime?
+  created_at                    DateTime?
+  updated_at                    DateTime?
+
+  @@ignore
+  @@map("collusion_monitor")
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model Column_Reference {
+  Sheet         String?
+  Column_Letter String?
+  Column_Index  Int?
+  Column_Name   String?
+  Data_Type     String?
+  Description   String?
+
+  @@ignore
+  @@map("column_reference")
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model Consumer_Abandon_Tracking {
+  tracking_id           String?
+  phone_number          String?
+  tracking_date         DateTime?
+  registration_abandons String?
+  query_abandons        String?
+  total_abandons        String?
+  warning_sent          String?
+  warning_sent_at       DateTime?
+  locked                String?
+  locked_at             DateTime?
+  locked_until          String?
+  lock_reason           String?
+  created_at            DateTime?
+  updated_at            DateTime?
+
+  @@ignore
+  @@map("consumer_abandon_tracking")
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model Consumer_Active_Subscriptions {
+  subscription_id    String?
+  consumer_id        String?
+  phone_number       String?
+  tier_code          String?
+  tier_name          String?
+  status             String?
+  start_date         DateTime?
+  end_date           DateTime?
+  grace_end_date     DateTime?
+  queries_used_today String?
+  queries_used_week  String?
+  last_query_reset   String?
+  payment_reference  String?
+  payment_provider   String?
+  payment_amount     Decimal?
+  auto_renew         Boolean?
+  proration_credit   Decimal?
+  upgraded_from      String?
+  upgraded_at        DateTime?
+  created_at         DateTime?
+  updated_at         DateTime?
+  notes              String?
+  billing_cycle      String?
+  amount_paid        Decimal?
+  address            String?
+  nin                Int?
+  nin_verified       Boolean?
+  nin_verified_at    DateTime?
+  kyc_status         String?
+  kyc_completed_at   DateTime?
+
+  @@ignore
+  @@map("consumer_active_subscriptions")
+}
+
+model Consumer_Addons {
+  addon_id          Int       @id() @default(autoincrement())
+  consumer_id       String
+  addon_code        String
+  addon_name        String
+  status            String    @default("ACTIVE")
+  price_naira       Decimal
+  billing_cycle     String
+  purchased_at      DateTime  @default(now())
+  expires_at        DateTime
+  auto_renew        Boolean   @default(true)
+  payment_reference String?
+  Consumers         Consumers @relation(fields: [consumer_id], references: [consumer_id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([consumer_id, addon_code])
+  @@index([addon_code])
+  @@index([consumer_id])
+  @@index([expires_at])
+  @@index([status])
+  @@map("consumer_addons")
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model Consumer_Daily_Updates_Config {
+  config_id              String?
+  consumer_id            String?
+  phone_number           String?
+  frequency_code         String?
+  frequency_name         String?
+  status                 String?
+  start_date             DateTime?
+  end_date               DateTime?
+  billing_cycle          String?
+  price_paid             Decimal?
+  selected_markets_json  String?
+  selected_markets_count Int?
+  max_markets_allowed    String?
+  extra_markets_count    Int?
+  extra_markets_fee      Decimal?
+  selected_items_json    String?
+  last_sent_9am          String?
+  last_sent_12pm         String?
+  last_sent_4pm          String?
+  total_sent             String?
+  failed_count           Int?
+  payment_reference      String?
+  payment_provider       String?
+  created_at             DateTime?
+  updated_at             DateTime?
+  cancelled_at           DateTime?
+  cancellation_reason    String?
+
+  @@ignore
+  @@map("consumer_daily_updates_config")
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model Consumer_Historical_Config {
+  config_id           String?
+  consumer_id         String?
+  phone_number        String?
+  period_code         String?
+  period_name         String?
+  status              String?
+  start_date          DateTime?
+  end_date            DateTime?
+  billing_cycle       String?
+  price_paid          Decimal?
+  data_period_days    String?
+  payment_reference   String?
+  payment_provider    String?
+  created_at          DateTime?
+  updated_at          DateTime?
+  cancelled_at        DateTime?
+  cancellation_reason String?
+
+  @@ignore
+  @@map("consumer_historical_config")
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model Consumer_Message_Templates {
+  template_id      String?
+  template_name    String?
+  context          String?
+  language         String?
+  message_template String?
+  placeholders     String?
+  notes            String?
+
+  @@ignore
+  @@map("consumer_message_templates")
+}
+
+model Consumer_OTP {
+  id           Int       @id() @default(autoincrement())
+  phone_number String
+  otp_code     String
+  expires_at   DateTime
+  verified     Boolean?  @default(false)
+  created_at   DateTime? @default(now())
+
+  @@index([expires_at])
+  @@index([phone_number])
+  @@map("consumer_otp")
+}
+
+model Consumer_Payments {
+  payment_id        Int       @id() @default(autoincrement())
+  reference         String    @unique()
+  phone             String
+  consumer_id       String?
+  tier              String
+  amount            Decimal
+  currency          String?   @default("NGN")
+  provider          String
+  status            String    @default("PENDING")
+  failure_reason    String?
+  provider_response String?
+  created_at        DateTime  @default(now())
+  updated_at        DateTime  @default(now())
+  completed_at      DateTime?
+
+  @@index([created_at(sort: Desc)])
+  @@index([phone])
+  @@index([status])
+  @@map("consumer_payments")
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model Consumer_Query_Session_Archive {
+  consumer_id          String?
+  archive_id           String?
+  session_id           String?
+  phone_number         String?
+  current_step         String?
+  session_status       String?
+  selected_market      String?
+  selected_market_id   String?
+  selected_category    String?
+  selected_category_id String?
+  selected_item        String?
+  selected_item_id     String?
+  selected_brand       String?
+  selected_brand_id    String?
+  page_number          String?
+  displayed_ids        String?
+  session_data         String?
+  created_at           DateTime?
+  expires_at           DateTime?
+  last_updated         DateTime?
+  timeout_prompted     String?
+  timeout_prompt_at    DateTime?
+  archived_at          DateTime?
+  archive_reason       String?
+  query_completed      String?
+  can_restore          String?
+  selected_region      String?
+  selected_state       String?
+  abandon_count        Int?
+
+  @@ignore
+  @@map("consumer_query_session_archive")
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model Consumer_Reg_Session_Archive {
+  archive_id            String?
+  session_id            String?
+  phone_number          String?
+  current_step          String?
+  session_status        String?
+  first_name            String?
+  last_name             String?
+  gender                String?
+  age_range             String?
+  selected_tier         String?
+  payment_reference     String?
+  step_data             String?
+  created_at            DateTime?
+  expires_at            DateTime?
+  last_updated          DateTime?
+  archived_at           DateTime?
+  archive_reason        String?
+  exit_count_at_archive String?
+  blocked_until         String?
+  wa_profile_name       String?
+  can_restore           String?
+
+  @@ignore
+  @@map("consumer_reg_session_archive")
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model Consumers_Registration {
+  record_id         String?
+  consumer_id       String?
+  phone_number      String?
+  first_name        String?
+  last_name         String?
+  gender            String?
+  age_range         String?
+  subscription_tier String?
+  tier_price_paid   Decimal?
+  billing_cycle     String?
+  daily_query_limit String?
+  max_markets       String?
+  valid_from        String?
+  valid_to          String?
+  is_current        Boolean?
+  change_type       String?
+  change_reason     String?
+  previous_tier     String?
+  payment_id        String?
+  created_at        DateTime?
+  created_by        String?
+
+  @@ignore
+  @@map("consumers_registration")
+}
+
+model Daily_Price_Config {
+  config_key   String    @id()
+  config_value String?
+  description  String?
+  updated_at   DateTime? @default(dbgenerated("getutcdate()"))
+  @@map("daily_price_config")
+}
+
+model Daily_Prices {
+  price_id         Int       @default(autoincrement())
+  price_date       DateTime
+  time_slot        String
+  time_slot_name   String
+  item_id          String
+  item_name        String
+  market_id        String
+  market_name      String
+  state            String
+  category_id      String?
+  unit             String?
+  price_naira      Decimal
+  previous_price   Decimal?
+  price_change_pct Decimal?
+  trend            String?   @default("?")
+  confidence_score Int?
+  data_source      String?   @default("NBS_SYNTHETIC")
+  generated_at     DateTime? @default(dbgenerated("getutcdate()"))
+
+  @@id([price_date, time_slot, item_id, market_id])
+  @@index([item_id])
+  @@index([market_id])
+  @@index([price_id])
+  @@map("daily_prices")
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model Daily_Update_Queue {
+  queue_id        String?
+  consumer_id     String?
+  phone_number    String?
+  scheduled_time  String?
+  scheduled_date  DateTime?
+  frequency_code  String?
+  markets_json    String?
+  items_json      String?
+  message_content String?
+  status          String?
+  twilio_sid      String?
+  sent_at         DateTime?
+  delivered_at    DateTime?
+  error_message   String?
+  retry_count     Int?
+  created_at      DateTime?
+
+  @@ignore
+  @@map("daily_update_queue")
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model Daily_Updates_Subscriptions {
+  consumer_id           String?
+  subscription_id       String?
+  consumer_phone        String?
+  consumer_name         String?
+  frequency             String?
+  delivery_times        String?
+  selected_markets      String?
+  selected_items        String?
+  billing_cycle         String?
+  price_paid            Decimal?
+  currency              String?
+  start_date            DateTime?
+  end_date              DateTime?
+  is_active             Boolean?
+  last_delivery_at      DateTime?
+  delivery_count        Int?
+  failed_delivery_count Int?
+  created_at            DateTime?
+  updated_at            DateTime?
+  cancelled_at          DateTime?
+  cancellation_reason   String?
+
+  @@ignore
+  @@map("daily_updates_subscriptions")
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model Device_Fingerprints {
+  fingerprint_id       String?
+  device_id            String?
+  whatsapp_version     String?
+  phone_model          String?
+  os_version           String?
+  first_seen_phone     String?
+  first_seen_user_type String?
+  first_seen_at        DateTime?
+  all_phones_json      String?
+  phone_count          Int?
+  trader_count         Int?
+  validator_count      Int?
+  consumer_count       Int?
+  is_suspicious        Boolean?
+  suspicious_reason    String?
+  flagged              Boolean?
+  flagged_at           DateTime?
+  flagged_reason       String?
+  reviewed             Boolean?
+  reviewed_by          String?
+  review_at            DateTime?
+  review_decision      String?
+  review_notes         String?
+  action_taken         String?
+  action_at            DateTime?
+  affected_phones      String?
+  created_at           DateTime?
+  updated_at           DateTime?
+
+  @@ignore
+  @@map("device_fingerprints")
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model FakeGPS_Detection_Log {
+  log_id         String?
+  timestamp      DateTime?
+  phone          String?
+  latitude       Decimal?
+  longitude      Decimal?
+  score          Decimal?
+  recommendation String?
+  flags_count    Int?
+  flag_types     String?
+
+  @@ignore
+  @@map("fakegps_detection_log")
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model Flag_Types_Reference {
+  Flag_Type   String? @map("Flag Type")
+  Severity    String?
+  Trigger     String?
+  Auto_Action String? @map("Auto Action")
+
+  @@ignore
+  @@map("flag_types_reference")
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model Fraud_Flags {
+  flag_id                  String?
+  user_type                String?
+  phone_number             String?
+  user_id                  String?
+  user_name                String?
+  flag_type                String?
+  flag_subtype             String?
+  severity                 String?
+  reference_type           String?
+  reference_id             String?
+  market_id                String?
+  market_name              String?
+  details                  String?
+  evidence_json            String?
+  triggered_by             String?
+  metrics_json             String?
+  status                   String?
+  flagged_at               DateTime?
+  assigned_to              String?
+  investigation_started_at DateTime?
+  investigation_notes      String?
+  resolution               String?
+  resolution_notes         String?
+  resolved_at              DateTime?
+  resolved_by              String?
+  action_type              String?
+  action_details           String?
+  action_at                DateTime?
+  created_at               DateTime?
+  updated_at               DateTime?
+
+  @@ignore
+  @@map("fraud_flags")
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model GPS_Coordinates_Log {
+  log_id          String?
+  latitude        Decimal?
+  longitude       Decimal?
+  coordinate_hash String?
+  first_seen      String?
+  user_phones     String?
+  usage_count     Int?
+  flagged         String?
+  flagged_at      DateTime?
+
+  @@ignore
+  @@map("gps_coordinates_log")
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model GPS_Verification_Log {
+  log_id                String?
+  phone                 String?
+  user_type             String?
+  action_type           String?
+  reference_id          String?
+  gps_latitude          String?
+  gps_longitude         String?
+  gps_accuracy_meters   String?
+  gps_timestamp         DateTime?
+  gps_age_seconds       String?
+  expected_market_id    String?
+  expected_market_name  String?
+  market_latitude       String?
+  market_longitude      String?
+  market_radius_meters  String?
+  distance_from_market  String?
+  is_within_radius      Boolean?
+  is_gps_fresh          Boolean?
+  verification_result   String?
+  verification_notes    String?
+  prev_latitude         String?
+  prev_longitude        String?
+  prev_timestamp        DateTime?
+  time_diff_seconds     String?
+  distance_moved_meters String?
+  velocity_kmh          String?
+  velocity_flag         Boolean?
+  is_fraudulent         Boolean?
+  fraud_type            String?
+  fraud_action_taken    String?
+  created_at            DateTime?
+
+  @@ignore
+  @@map("gps_verification_log")
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model Historical_Trends_Subs {
+  consumer_id         String?
+  subscription_id     String?
+  consumer_phone      String?
+  consumer_name       String?
+  trend_period        String?
+  selected_markets    String?
+  selected_items      String?
+  delivery_day        String?
+  delivery_time       String?
+  delivery_format     String?
+  billing_cycle       String?
+  price_paid          Decimal?
+  currency            String?
+  start_date          DateTime?
+  end_date            DateTime?
+  is_active           Boolean?
+  last_delivery_at    DateTime?
+  delivery_count      Int?
+  created_at          DateTime?
+  updated_at          DateTime?
+  cancelled_at        DateTime?
+  cancellation_reason String?
+
+  @@ignore
+  @@map("historical_trends_subs")
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model Honorifics_Reference {
+  Language String?
+  Gender   String?
+
+  /// This field was commented out because of an invalid name. Please provide a valid one that matches [a-zA-Z][a-zA-Z0-9_]*
+  // 18-30 String? @map("18-30")
+  /// This field was commented out because of an invalid name. Please provide a valid one that matches [a-zA-Z][a-zA-Z0-9_]*
+  // 31-45 String? @map("31-45")
+  /// This field was commented out because of an invalid name. Please provide a valid one that matches [a-zA-Z][a-zA-Z0-9_]*
+  // 46+ String? @map("46+")
+  @@ignore
+  @@map("honorifics_reference")
+}
+
+model Inflation_Refresh_Log {
+  log_id            Int       @id() @default(autoincrement())
+  run_date          DateTime
+  run_type          String
+  months_processed  Int?
+  latest_month      DateTime?
+  latest_yoy        Decimal?
+  latest_mom        Decimal?
+  execution_time_ms Int?
+  created_at        DateTime? @default(now())
+  @@map("inflation_refresh_log")
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model Item_Mapping {
+  catalog_item_id        String?
+  catalog_item_name      String?
+  catalog_category_id    String?
+  nbs_item_id            String?
+  nbs_item_name_standard String?
+  nbs_category_name      String?
+  match_score            Decimal?
+  match_status           String?
+  manual_override_nbs_id String?
+  last_updated           DateTime?
+
+  @@ignore
+  @@map("item_mapping")
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model Make_Module_Reference {
+  Module_ID Int?    @map("Module ID")
+  Name      String?
+  Type      String?
+  Purpose   String?
+  Input     String?
+  Output    String?
+
+  @@ignore
+  @@map("make_module_reference")
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model Market_Tier_Limits {
+  tier_code                String?
+  tier_name                String?
+  max_markets_included     Int?
+  extra_market_fee_weekly  Decimal?
+  extra_market_fee_monthly Decimal?
+  upgrade_strategy         String?
+  description              String?
+  status                   String?
+
+  @@ignore
+  @@map("market_tier_limits")
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model Message_Templates {
+  message_id String?
+  context    String?
+  english    String?
+  pidgin     String?
+
+  @@ignore
+  @@map("message_templates")
+}
+
+model Monthly_Prices {
+  yr             Int
+  mth            Int
+  month_date     DateTime
+  month_name     String
+  daily_records  Int
+  days_with_data Int
+  items          Int
+  markets        Int
+  avg_price      Decimal
+  min_price      Decimal
+  max_price      Decimal
+
+  @@id([yr, mth])
+  @@map("monthly_prices")
+}
+
+model NBS_Inflation_Rates {
+  yr            Int
+  mth           Int
+  yoy_inflation Decimal
+  month_name    String?
+
+  @@id([yr, mth])
+  @@map("nbs_inflation_rates")
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model NBS_Items_Reference {
+  nbs_item_id            String?
+  nbs_item_name_nbs      String?
+  nbs_item_name_standard String?
+  nbs_category_name      String?
+
+  @@ignore
+  @@map("nbs_items_reference")
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model NFPI_Basket {
+  item_id        String?
+  item_name      String?
+  search_terms   String?
+  unit           String?
+  weight_pct     Decimal?
+  category       String?
+  is_active      Boolean?
+  baseline_price Decimal?
+  created_at     DateTime?
+  updated_at     DateTime?
+
+  @@ignore
+  @@map("nfpi_basket")
+}
+
+model NFPI_Delivery_Log {
+  log_id        Int      @id() @default(autoincrement())
+  phone         String
+  tier          String
+  channel       String
+  status        String
+  error_message String?
+  twilio_sid    String?
+  sent_at       DateTime @default(now())
+  period        String?
+
+  @@index([phone])
+  @@index([sent_at])
+  @@index([status])
+  @@map("nfpi_delivery_log")
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model NFPI_Item_Prices {
+  week_id                DateTime?
+  item_id                String?
+  item_name              String?
+  category               String?
+  avg_price              Decimal?
+  weighted_price         Decimal?
+  price_change_pct       Decimal?
+  price_change_direction Decimal?
+  submission_count       Int?
+  min_price              Decimal?
+  max_price              Decimal?
+  std_dev                Decimal?
+  data_quality           String?
+  markets_count          Int?
+  regions_count          Int?
+  calculated_at          DateTime?
+
+  @@ignore
+  @@map("nfpi_item_prices")
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model NFPI_Weekly {
+  week_id                   DateTime?
+  week_start                DateTime?
+  week_end                  DateTime?
+  is_baseline               Boolean?
+  national_index            Int?
+  national_change_pct       Decimal?
+  national_change_direction String?
+  nw_index                  Decimal?
+  ne_index                  Decimal?
+  nc_index                  Decimal?
+  sw_index                  Decimal?
+  se_index                  Decimal?
+  ss_index                  Decimal?
+  grains_index              Decimal?
+  proteins_index            Decimal?
+  vegetables_index          Decimal?
+  oils_index                Decimal?
+  basket_value_naira        Int?
+  baseline_value            Int?
+  data_quality_score        Decimal?
+  items_with_data           Int?
+  total_submissions         Int?
+  top_gainers               String?
+  top_losers                String?
+  insight                   String?
+  calculated_at             DateTime?
+  published_at              DateTime?
+
+  @@ignore
+  @@map("nfpi_weekly")
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model Notification_Queue {
+  notification_id  String?
+  timestamp        DateTime?
+  phone            String?
+  user_type        String?
+  user_id          String?
+  user_name        String?
+  type             String?
+  subtype          String?
+  priority         String?
+  message          String?
+  message_template String?
+  variables_json   String?
+  reference_type   String?
+  reference_id     String?
+  status           String?
+  sent_at          DateTime?
+  delivered_at     DateTime?
+  read_at          DateTime?
+  twilio_sid       String?
+  retry_count      Int?
+  last_retry_at    DateTime?
+  error_message    String?
+  created_at       DateTime?
+  updated_at       DateTime?
+
+  @@ignore
+  @@map("notification_queue")
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model Payment_Log {
+  payment_id     String?
+  consumer_id    String?
+  phone_number   String?
+  tier           String?
+  duration       String?
+  amount         Decimal?
+  status         String?
+  payment_method String?
+  reference      String?
+  created_at     DateTime?
+
+  @@ignore
+  @@map("payment_log")
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model Payment_Logs {
+  payment_id           String?
+  consumer_id          String?
+  consumer_phone       String?
+  consumer_name        String?
+  payment_type         String?
+  subscription_type    String?
+  tier_or_addon        String?
+  amount               Decimal?
+  currency             String?
+  payment_reference    String?
+  provider             String?
+  provider_reference   String?
+  payment_channel      String?
+  payment_link         String?
+  payment_link_expires String?
+  status               String?
+  failure_reason       String?
+  created_at           DateTime?
+  updated_at           DateTime?
+  completed_at         DateTime?
+  verified_at          DateTime?
+  subscription_start   String?
+  subscription_end     String?
+  refund_status        String?
+  refund_amount        Decimal?
+  refund_date          DateTime?
+  notes                String?
+
+  @@ignore
+  @@map("payment_logs")
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model Payment_Webhooks_Log {
+  log_id            String?
+  provider          String?
+  event_type        String?
+  reference         String?
+  payload_json      String?
+  processed         String?
+  processing_result String?
+  error_message     String?
+  received_at       DateTime?
+  processed_at      DateTime?
+
+  @@ignore
+  @@map("payment_webhooks_log")
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model Payout_Log {
+  trader_id     String?
+  payout_id     Decimal?
+  batch_id      String?
+  phone_number  String?
+  network       String?
+  amount        Decimal?
+  status        String?
+  vtpass_ref    String?
+  error_message String?
+  processed_at  DateTime?
+
+  @@ignore
+  @@map("payout_log")
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model Payout_Summary {
+  batch_id               String?
+  period_start           String?
+  period_end             String?
+  total_validators       Int?
+  total_traders          Int?
+  validator_payout_total Decimal?
+  trader_payout_total    Decimal?
+  combined_total         Int?
+  success_count          Int?
+  failed_count           Int?
+  pending_count          Int?
+  success_rate           Decimal?
+  pdf_generated_count    Int?
+  whatsapp_sent_count    Int?
+  processed_at           DateTime?
+  notes                  String?
+
+  @@ignore
+  @@map("payout_summary")
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model Penalty_Matrix {
+  Violation  String?
+  st_Offense String? @map("1st Offense")
+  nd_Offense String? @map("2nd Offense")
+  rd_Offense String? @map("3rd Offense")
+  Notes      String?
+
+  @@ignore
+  @@map("penalty_matrix")
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model Prediction_Usage {
+  phone         String?
+  usage_month   String?
+  count         Int?
+  tier          String?
+  last_used     String?
+  items_queried String?
+
+  @@ignore
+  @@map("prediction_usage")
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model Price_Alerts {
+  alert_id      String?
+  consumer_id   String?
+  phone_number  String?
+  market_id     String?
+  market_name   String?
+  item_id       String?
+  item_name     String?
+  target_price  Decimal?
+  category_id   String?
+  category_name String?
+  alert_type    String?
+  status        String?
+  created_at    DateTime?
+  triggered_at  DateTime?
+
+  @@ignore
+  @@map("price_alerts")
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model Price_Baselines {
+  baseline_id                String?
+  item_id                    String?
+  item_name                  String?
+  market_id                  String?
+  market_name                String?
+  brand_id                   String?
+  brand_name                 String?
+  unit                       String?
+  avg_price_24h              Decimal?
+  min_price_24h              Decimal?
+  max_price_24h              Decimal?
+  stddev_24h                 String?
+  submission_count_24h       String?
+  avg_price_7d               Decimal?
+  min_price_7d               Decimal?
+  max_price_7d               Decimal?
+  stddev_7d                  String?
+  submission_count_7d        String?
+  avg_price_30d              Decimal?
+  min_price_30d              Decimal?
+  max_price_30d              Decimal?
+  stddev_30d                 String?
+  submission_count_30d       String?
+  state_avg_price            Decimal?
+  national_avg_price         Decimal?
+  variance_from_state_avg    String?
+  variance_from_national_avg String?
+  acceptable_min             String?
+  acceptable_max             String?
+  volatility_score           Decimal?
+  is_seasonal                Boolean?
+  last_submission_at         DateTime?
+  last_updated               DateTime?
+  created_at                 DateTime?
+
+  @@ignore
+  @@map("price_baselines")
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model Price_Submission_Sessions {
+  session_id              String?
+  phone_number            String?
+  current_step            String?
+  status                  String?
+  selected_state          String?
+  selected_market_id      String?
+  selected_market_name    String?
+  selected_super_category String?
+  selected_category_id    String?
+  selected_category_name  String?
+  selected_item_id        String?
+  selected_item_name      String?
+  selected_brand_id       String?
+  selected_brand_name     String?
+  entered_price           Decimal?
+  price_unit              Decimal?
+  gps_latitude            String?
+  gps_longitude           String?
+  gps_verified            String?
+  gps_distance_meters     String?
+  page_number             String?
+  created_at              DateTime?
+  expires_at              DateTime?
+  last_updated            DateTime?
+  market_page             String?
+  category_page           String?
+  item_page               String?
+  brand_page              String?
+
+  @@ignore
+  @@map("price_submission_sessions")
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model Price_Update_Delivery_Log {
+  delivery_id       String?
+  subscription_id   String?
+  subscription_type String?
+  consumer_phone    String?
+  consumer_name     String?
+  delivery_time     String?
+  delivery_date     DateTime?
+  scheduled_at      DateTime?
+  markets_included  String?
+  items_included    String?
+  message_preview   String?
+  message_length    String?
+  twilio_sid        String?
+  delivery_status   String?
+  error_message     String?
+  sent_at           DateTime?
+  delivered_at      DateTime?
+  read_at           DateTime?
+  created_at        DateTime?
+
+  @@ignore
+  @@map("price_update_delivery_log")
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model Query_Log {
+  query_id              String?
+  consumer_phone        String?
+  consumer_name         String?
+  subscription_tier     String?
+  market_name           String?
+  market_id             String?
+  category_name         Boolean?
+  category_id           String?
+  item_name             String?
+  item_id               String?
+  brand_name            String?
+  brand_id              String?
+  price_returned        Decimal?
+  unit                  String?
+  price_trend           Decimal?
+  previous_price        Decimal?
+  price_change_pct      Decimal?
+  query_source          String?
+  query_type            String?
+  query_timestamp       DateTime?
+  query_date            DateTime?
+  query_hour            String?
+  session_id            String?
+  response_time_ms      String?
+  counted_against_limit String?
+  query_number_today    String?
+  query_number_week     String?
+  created_at            DateTime?
+
+  @@ignore
+  @@map("query_log")
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model Re_Verification_Log {
+  reverify_id                      String?
+  submission_id                    String?
+  queue_id                         String?
+  trigger_reason                   String?
+  trigger_threshold                Decimal?
+  trigger_value                    Decimal?
+  original_validator_prices        Decimal?
+  original_price_mean              Decimal?
+  original_price_stddev            Decimal?
+  original_price_stddev_pct        Decimal?
+  original_price_range             Decimal?
+  reverify_round                   Boolean?
+  outlier_validator_phone          String?
+  outlier_validator_original_price Decimal?
+  outlier_variance_from_mean       Decimal?
+  notification_sent_at             DateTime?
+  notification_message             String?
+  deadline                         String?
+  response_received                Boolean?
+  response_at                      DateTime?
+  new_price_estimate               Decimal?
+  price_changed                    Decimal?
+  new_variance_from_mean           String?
+  outcome                          String?
+  outcome_notes                    String?
+  validator_replaced               Boolean?
+  replacement_validator_phone      String?
+  replacement_at                   DateTime?
+  escalated_to_admin               Boolean?
+  admin_decision                   String?
+  admin_notes                      String?
+  new_consensus_result             String?
+  resolved_at                      DateTime?
+  created_at                       DateTime?
+  updated_at                       DateTime?
+
+  @@ignore
+  @@map("re_verification_log")
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model Regions_Reference {
+  region_number Int?
+  region_code   String?
+  region_name   String?
+  emoji         String?
+  states_list   String?
+  total_markets Int?
+  state_count   Int?
+  display_text  String?
+
+  @@ignore
+  @@map("regions_reference")
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model Registration_Messages {
+  message_id   String?
+  message_type String?
+  message_text String?
+  notes        String?
+
+  @@ignore
+  @@map("registration_messages")
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model Rewards_Ledger {
+  transaction_id   String?
+  timestamp        DateTime?
+  phone_number     String?
+  transaction_type String?
+  amount           Decimal?
+  fee              Decimal?
+  net_amount       Decimal?
+  status           String?
+  payout_batch_id  Decimal?
+  description      String?
+  user_type        String?
+  user_id          String?
+  reference_id     String?
+  balance_after    Decimal?
+
+  @@ignore
+  @@map("rewards_ledger")
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model Session_Archive {
+  session_id             String?
+  phone_number           String?
+  current_flow           String?
+  flow_step              String?
+  flow_data              String?
+  created_at             DateTime?
+  last_updated           DateTime?
+  expires_at             DateTime?
+  selected_state         String?
+  selected_market_id     String?
+  selected_market_name   String?
+  selected_category_id   String?
+  selected_category_name String?
+  selected_item_id       String?
+  selected_item_name     String?
+  entered_price          Decimal?
+  gps_latitude           String?
+  gps_longitude          String?
+  gps_verified           String?
+  submission_id          String?
+  session_status         String?
+  archived_at            DateTime?
+  archived_reason        String?
+  steps_completed        String?
+  duration_seconds       String?
+
+  @@ignore
+  @@map("session_archive")
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model Session_Columns_Update {
+  Column      String?
+  Field       String?
+  Type        String?
+  Description String?
+  Status      String?
+
+  @@ignore
+  @@map("session_columns_update")
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model Setup_Checklist {
+  Step   Int?
+  Task   String?
+  Status String?
+  Notes  String?
+
+  @@ignore
+  @@map("setup_checklist")
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model States_Reference {
+  state_number Int?
+  state_name   String?
+  region_code  String?
+  region_name  String?
+  market_count Int?
+  display_text String?
+  status       String?
+  created_at   DateTime @default(dbgenerated("sysutcdatetime()"))
+  updated_at   DateTime @default(dbgenerated("sysutcdatetime()"))
+
+  @@index([region_code])
+  @@ignore
+  @@map("states_reference")
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model Status_Reference {
+  status      String?
+  description String?
+
+  @@ignore
+  @@map("status_reference")
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model Submissions {
+  submission_id               String?
+  trader_phone                String?
+  trader_name                 String?
+  trader_id                   String?
+  reputation_at_submission    Int?
+  state                       String?
+  market_id                   String?
+  market                      String?
+  category_id                 String?
+  category                    String?
+  item_id                     String?
+  item                        String?
+  brand_id                    String?
+  brand                       String?
+  unit                        String?
+  price                       Decimal?
+  price_range_min             Decimal?
+  price_range_max             Decimal?
+  gps_latitude                Decimal?
+  gps_longitude               Decimal?
+  gps_timestamp               DateTime?
+  gps_age_seconds             String?
+  gps_verified                Boolean?
+  distance_from_market        String?
+  validator_1                 String?
+  validator_2                 String?
+  validator_3                 String?
+  vote_1                      String?
+  vote_2                      String?
+  vote_3                      String?
+  validator_replacement_count Int?
+  re_verification_count       Int?
+  final_consensus_method      String?
+  validation_status           String?
+  status                      String?
+  consensus_result            String?
+  fraud_flag                  Boolean?
+  fraud_flag_reason           String?
+  is_outlier                  Boolean?
+  baseline_price              Decimal?
+  variance_from_baseline      String?
+  is_honeypot                 Boolean?
+  honeypot_expected_vote      String?
+  honeypot_type               String?
+  honeypot_baseline_price     Decimal?
+  submitted_at                DateTime?
+  approved_at                 DateTime?
+  rejected_at                 DateTime?
+  notes                       String?
+  created_at                  DateTime?
+  updated_at                  DateTime?
+
+  @@ignore
+  @@map("submissions")
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model Subscription_Price_Codes {
+  code             String?
+  type             String?
+  name             String?
+  price_weekly     Decimal?
+  price_monthly    Decimal?
+  duration_days    Int?
+  queries_per_day  Int?
+  queries_per_week Int?
+  max_markets      Int?
+  delivery_times   String?
+  data_period_days Int?
+  features         String?
+  description      String?
+  display_order    Int?
+  status           String?
+  created_at       DateTime @default(dbgenerated("sysutcdatetime()"))
+  updated_at       DateTime @default(dbgenerated("sysutcdatetime()"))
+
+  @@ignore
+  @@map("subscription_price_codes")
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model Subscription_Reminders {
+  reminder_id       String?
+  consumer_id       String?
+  phone_number      String?
+  subscription_id   String?
+  reminder_type     String?
+  days_until_expiry Int?
+  scheduled_date    DateTime?
+  message_sent      Boolean?
+  status            String?
+  twilio_sid        String?
+  sent_at           DateTime?
+  created_at        DateTime?
+
+  @@ignore
+  @@map("subscription_reminders")
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model Subscription_Transactions {
+  transaction_id     String?
+  consumer_id        String?
+  phone_number       String?
+  transaction_type   String?
+  product_code       String?
+  product_name       String?
+  billing_cycle      String?
+  gross_amount       Decimal?
+  proration_credit   Decimal?
+  discount_amount    Decimal?
+  net_amount         Decimal?
+  currency           String?
+  payment_provider   String?
+  payment_reference  String?
+  provider_reference String?
+  payment_channel    String?
+  payment_status     String?
+  failure_reason     String?
+  subscription_start String?
+  subscription_end   String?
+  created_at         DateTime?
+  completed_at       DateTime?
+  verified_at        DateTime?
+  refund_status      String?
+  refund_amount      Decimal?
+  refund_date        DateTime?
+  notes              String?
+
+  @@ignore
+  @@map("subscription_transactions")
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model Terms_Acceptance {
+  acceptance_id     String?
+  phone_number      String?
+  trader_id         String?
+  tc_version        Boolean?
+  accepted_at       DateTime?
+  ip_address        String?
+  device_info       String?
+  acceptance_method String?
+  acceptance_text   String?
+
+  @@ignore
+  @@map("terms_acceptance")
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model Trader_Payout_Log {
+  payout_id            Decimal?
+  batch_id             String?
+  period_start         DateTime?
+  period_end           DateTime?
+  trader_id            String?
+  trader_name          String?
+  phone                String?
+  email                String?
+  earnings_amount      Decimal?
+  deductions           Boolean?
+  net_amount           Decimal?
+  payment_method       String?
+  bank_name            String?
+  account_number       Int?
+  account_name         String?
+  network              String?
+  status               String?
+  vtpass_ref           String?
+  bank_ref             String?
+  error_message        String?
+  retry_count          Int?
+  total_submissions    Int?
+  approved_submissions Int?
+  approval_rate        Boolean?
+  pdf_generated        Boolean?
+  pdf_url              String?
+  whatsapp_sent        Boolean?
+  whatsapp_sent_at     DateTime?
+  processed_at         DateTime?
+  created_at           DateTime?
+  updated_at           DateTime?
+  notes                String?
+
+  @@ignore
+  @@map("trader_payout_log")
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model Trader_registration_archive {
+  session_id         String?
+  phone_number       String?
+  current_step       Int?
+  step_data          String?
+  expires_at         DateTime?
+  created_at         DateTime?
+  updated_at         DateTime?
+  full_name          String?
+  dob                DateTime?
+  address            String?
+  nin                Int?
+  bank_code          Int?
+  account_number     Int?
+  tc_accepted        Boolean?
+  preferred_language String?
+  archived_at        DateTime?
+  archive_reason     String?
+
+  @@ignore
+  @@map("trader_registration_archive")
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model Trader_Registration_Sessions {
+  session_id               String?
+  phone_number             String?
+  preferred_language       String?
+  current_step             String?
+  step_data                String?
+  expires_at               DateTime?
+  created_at               DateTime?
+  last_updated_at          DateTime?
+  bank_verified            String?
+  bank_account_name        String?
+  name_match_status        String?
+  tc_accepted              String?
+  tc_accepted_at           DateTime?
+  fraud_check_passed       String?
+  fraud_flags              String?
+  tc_quit_count            Int?
+  preferred_language_2     String?
+  tc_decline_count         Int?
+  wa_profile_name          String?
+  wa_id                    String?
+  registration_device_info String?
+  photo_url                String?
+
+  @@ignore
+  @@map("trader_registration_sessions")
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model Trader_Service_Messages {
+  message_id       String?
+  command          String?
+  message_type     String?
+  message_template String?
+  placeholders     String?
+  notes            String?
+
+  @@ignore
+  @@map("trader_service_messages")
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model Trader_Service_Sessions {
+  trader_id       String?
+  phone_number    String?
+  current_flow    String?
+  flow_step       String?
+  flow_data       String?
+  created_at      DateTime?
+  expires_at      DateTime?
+  last_updated_at DateTime?
+  completed_at    DateTime?
+  status          String?
+
+  @@ignore
+  @@map("trader_service_sessions")
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model Trader_Tiers {
+  tier_id                String?
+  tier_name              String?
+  min_reputation         Int?
+  max_reputation         Int?
+  daily_submission_limit Int?
+  instant_approval       Boolean?
+  reward_per_submission  Int?
+  description            String?
+  upgrade_message        String?
+  emoji                  String?
+  status                 String?
+
+  @@ignore
+  @@map("trader_tiers")
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model Traders_KYC_Verification_Queue {
+  verification_id   String?
+  trader_id         String?
+  phone_number      String?
+  full_name         String?
+  address           String?
+  date_of_birth     DateTime?
+  nin               Int?
+  bank_name         String?
+  account_number    Int?
+  photo_url         String?
+  status            String?
+  submitted_at      DateTime?
+  reviewed_at       DateTime?
+  reviewed_by       String?
+  notification_sent Boolean?
+  tc_accepted       Boolean?
+  tc_accepted_at    DateTime?
+  tc_version        Boolean?
+  region            String?
+
+  @@ignore
+  @@map("traders_kyc_verification_queue")
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model Traders_register {
+  trader_id                String?
+  phone_number             String?
+  full_name                String?
+  first_name               String?
+  date_of_birth            DateTime?
+  Address                  String?
+  total_submissions        String?
+  approved_submissions     String?
+  rejected_submissions     String?
+  reputation               String?
+  balance                  Decimal?
+  total_earned             String?
+  registration_status      String?
+  registered_at            DateTime?
+  approved_at              DateTime?
+  last_submission_at       DateTime?
+  assigned_markets         String?
+  nin                      String?
+  bank_name                String?
+  account_number           String?
+  photo_url                String?
+  bank_account_verified    String?
+  bank_account_name        String?
+  name_match_score         Decimal?
+  name_match_status        String?
+  verification_date        DateTime?
+  tc_version_accepted      String?
+  tc_accepted_at           DateTime?
+  fraud_flag_count         Int?
+  last_fraud_flag          Boolean?
+  suspension_count         Int?
+  is_suspended             Boolean?
+  suspended_until          String?
+  suspension_reason        String?
+  wa_profile_name          String?
+  wa_id                    String?
+  registration_device_info String?
+  notification_sent_at     DateTime?
+  approval_rate            String?
+  pending_count            Int?
+  tier_name                String?
+  tier_emoji               String?
+  points_to_trusted        String?
+  last_rate_limit_hit      String?
+  preferred_language       String?
+  alternate_last_name      String?
+
+  @@ignore
+  @@map("traders_register")
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model User_Preferences {
+  phone_number       String?
+  preferred_language String?
+  updated_at         DateTime?
+
+  @@ignore
+  @@map("user_preferences")
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model User_Roles {
+  phone_number        String?
+  role                String?
+  status              String?
+  created_at          DateTime?
+  locked              Boolean?
+  lock_reason         String?
+  bank_account_number Int?
+  verified_last_name  String?
+
+  @@ignore
+  @@map("user_roles")
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model User_Sessions {
+  phone_number String?
+  current_step String?
+  step_data    String?
+  created_at   DateTime?
+  updated_at   DateTime?
+  expires_at   DateTime?
+
+  @@ignore
+  @@map("user_sessions")
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model v17_Column_Reference {
+  Sheet       String?
+  Column      String?
+  Index       String?
+  Data_Type   String? @map("Data Type")
+  Description String?
+
+  @@ignore
+  @@map("v17_column_reference")
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model Validated_Prices {
+  price_id         Decimal?
+  submission_id    String?
+  market           String?
+  category         String?
+  item             String?
+  price_naira      Decimal?
+  validated_at     DateTime?
+  validators_count Int?
+  approval_count   Int?
+  previous_price   Decimal?
+  price_change_pct Decimal?
+  trend            String?
+  price            Decimal?
+  price_min        Decimal?
+  price_max        Decimal?
+  unit             String?
+  currency         String?
+  trader_id        String?
+  trader_name      String?
+  trader_phone     String?
+  validation_count Int?
+  approve_count    Int?
+  reject_count     Int?
+  consensus_result String?
+  confidence_score Decimal?
+  price_trend      Decimal?
+  trend_percent    Decimal?
+  previous_price_1 Decimal?  @map("previous_price.1")
+  validated_at_1   String?   @map("validated_at.1")
+  expires_at       DateTime?
+  status           String?
+  created_at       DateTime?
+
+  @@ignore
+  @@map("validated_prices")
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model Validation_Queue {
+  queue_id                      String?
+  submission_id                 String?
+  trader_phone                  String?
+  trader_name                   String?
+  trader_reputation             Int?
+  market                        String?
+  market_id                     String?
+  item                          String?
+  item_id                       String?
+  brand                         String?
+  brand_id                      String?
+  price                         Decimal?
+  unit                          String?
+  price_range_min               Decimal?
+  price_range_max               Decimal?
+  created_at                    DateTime?
+  deadline                      String?
+  timeout_duration              Int?
+  is_timed_out                  Boolean?
+  completed_at                  DateTime?
+  validator1_phone              String?
+  validator1_id                 String?
+  validator1_name               String?
+  validator1_status             String?
+  validator1_vote               String?
+  validator1_price_estimate     Decimal?
+  validator1_response_time      String?
+  validator1_gps_verified       String?
+  validator1_timeout_at         DateTime?
+  validator1_replaced_by        String?
+  validator1_replacement_reason String?
+  validator1_replacement_count  Int?
+  validator2_phone              String?
+  validator2_id                 String?
+  validator2_name               String?
+  validator2_status             String?
+  validator2_vote               String?
+  validator2_price_estimate     Decimal?
+  validator2_response_time      String?
+  validator2_gps_verified       String?
+  validator2_timeout_at         DateTime?
+  validator2_replaced_by        String?
+  validator2_replacement_reason String?
+  validator2_replacement_count  Int?
+  validator3_phone              String?
+  validator3_id                 String?
+  validator3_name               String?
+  validator3_status             String?
+  validator3_vote               String?
+  validator3_price_estimate     Decimal?
+  validator3_response_time      String?
+  validator3_gps_verified       String?
+  validator3_timeout_at         DateTime?
+  validator3_replaced_by        String?
+  validator3_replacement_reason String?
+  validator3_replacement_count  Int?
+  votes_received                Int?
+  votes_required                Int?
+  consensus_required            Int?
+  approve_votes                 Int?
+  reject_votes                  Int?
+  validator_prices_json         Decimal?
+  price_mean                    Decimal?
+  price_stddev                  Decimal?
+  price_range                   Decimal?
+  price_stddev_percent          Decimal?
+  re_verification_requested     String?
+  re_verification_count         Int?
+  re_verification_reason        String?
+  re_verification_validators    String?
+  re_verification_started_at    DateTime?
+  re_verification_completed_at  DateTime?
+  total_replacements            Int?
+  replacement_log_json          String?
+  status                        String?
+  consensus_result              String?
+  final_consensus_method        String?
+  auto_approved_reason          String?
+  admin_override                String?
+  admin_notes                   String?
+  updated_at                    DateTime?
+
+  @@ignore
+  @@map("validation_queue")
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model Validator_Invite_Codes {
+  invite_code         String?
+  market_id           String?
+  market_name         String?
+  created_at          DateTime?
+  expires_at          DateTime?
+  status              String?
+  used_by_phone       String?
+  used_by_name        String?
+  used_at             DateTime?
+  generated_by        String?
+  generation_batch_id String?
+  notes               String?
+  updated_at          DateTime?
+
+  @@ignore
+  @@map("validator_invite_codes")
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model Validator_Payout_Log {
+  payout_id           Decimal?
+  batch_id            String?
+  period_start        DateTime?
+  period_end          DateTime?
+  validator_id        String?
+  validator_name      String?
+  phone               String?
+  email               String?
+  earnings_amount     Decimal?
+  deductions          Boolean?
+  net_amount          Decimal?
+  payment_method      String?
+  bank_name           String?
+  account_number      Int?
+  account_name        String?
+  network             String?
+  status              String?
+  vtpass_ref          String?
+  bank_ref            String?
+  error_message       String?
+  retry_count         Int?
+  total_validations   Int?
+  correct_validations Int?
+  accuracy_rate       Decimal?
+  pdf_generated       Boolean?
+  pdf_url             String?
+  whatsapp_sent       Boolean?
+  whatsapp_sent_at    DateTime?
+  processed_at        DateTime?
+  created_at          DateTime?
+  updated_at          DateTime?
+  notes               String?
+
+  @@ignore
+  @@map("validator_payout_log")
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model Validator_Reg_Sessions {
+  session_id                 String?
+  phone_number               String?
+  step                       Int?
+  status                     String?
+  invite_code                String?
+  invite_code_valid          Boolean?
+  invite_code_market_id      String?
+  invite_code_market_name    String?
+  full_name                  String?
+  first_name                 String?
+  last_name                  String?
+  date_of_birth              DateTime?
+  address                    String?
+  state                      String?
+  bank_name                  String?
+  bank_code                  Int?
+  account_number             Int?
+  bank_verification_status   String?
+  bank_account_name          String?
+  verified_last_name         String?
+  alternate_last_name        String?
+  bank_verified_at           DateTime?
+  assigned_market_id         String?
+  assigned_market_name       String?
+  tc_page                    String?
+  tc_version                 String?
+  tc_accepted                String?
+  tc_accepted_at             DateTime?
+  preferred_language         String?
+  started_at                 DateTime?
+  last_activity_at           DateTime?
+  expires_at                 DateTime?
+  completed_at               DateTime?
+  abandoned_at               DateTime?
+  invite_code_attempts       Boolean?
+  bank_verification_attempts String?
+  max_attempts_reached       String?
+  last_error                 String?
+  error_count                Int?
+  registration_successful    Boolean?
+  validator_id               String?
+  created_at                 DateTime?
+  updated_at                 DateTime?
+
+  @@ignore
+  @@map("validator_reg_sessions")
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model Validator_Replacements {
+  replacement_id                String?
+  submission_id                 String?
+  queue_id                      String?
+  original_validator_phone      String?
+  original_validator_id         String?
+  original_validator_name       String?
+  original_assigned_at          DateTime?
+  replacement_reason            String?
+  replacement_round             Int?
+  replacement_validator_phone   String?
+  replacement_validator_id      String?
+  replacement_validator_name    String?
+  replacement_at                DateTime?
+  original_notified             String?
+  original_notification_at      DateTime?
+  original_notification_message String?
+  replacement_notified          Boolean?
+  replacement_notification_at   DateTime?
+  replacement_responded         String?
+  replacement_response_at       DateTime?
+  replacement_vote              String?
+  created_at                    DateTime?
+  updated_at                    DateTime?
+
+  @@ignore
+  @@map("validator_replacements")
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model Validator_Suspensions {
+  suspension_id                      String?
+  validator_phone                    String?
+  validator_id                       String?
+  validator_name                     String?
+  suspension_reason                  String?
+  suspension_trigger                 String?
+  evidence_json                      String?
+  suspension_type                    String?
+  duration_days                      String?
+  suspended_at                       DateTime?
+  suspension_ends_at                 DateTime?
+  accuracy_at_suspension             String?
+  honeypot_failures_at_suspension    String?
+  consecutive_timeouts_at_suspension String?
+  total_votes_at_suspension          String?
+  notification_sent                  String?
+  notification_at                    DateTime?
+  notification_message               String?
+  is_active                          Boolean?
+  reinstated                         String?
+  reinstated_at                      DateTime?
+  reinstated_by                      String?
+  reinstatement_reason               String?
+  reinstatement_conditions           String?
+  appeal_submitted                   String?
+  appeal_at                          DateTime?
+  appeal_message                     String?
+  appeal_decision                    String?
+  appeal_decided_at                  DateTime?
+  appeal_decided_by                  String?
+  created_at                         DateTime?
+  updated_at                         DateTime?
+
+  @@ignore
+  @@map("validator_suspensions")
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model Validator_Votes {
+  vote_id                    String?
+  queue_id                   String?
+  submission_id              String?
+  validator_phone            String?
+  validator_id               String?
+  validator_name             String?
+  market                     String?
+  market_id                  String?
+  item                       String?
+  item_id                    String?
+  brand                      String?
+  brand_id                   String?
+  trader_submitted_price     Decimal?
+  price_range_shown          Decimal?
+  price_range_min            Decimal?
+  price_range_max            Decimal?
+  validator_price_estimate   Decimal?
+  variance_percent           Decimal?
+  variance_from_range_center Boolean?
+  vote                       String?
+  vote_reason                String?
+  vote_confidence            String?
+  request_sent_at            DateTime?
+  deadline                   DateTime?
+  voted_at                   DateTime?
+  response_time_sec          String?
+  local_time_of_vote         DateTime?
+  is_expired                 Boolean?
+  expired_at                 DateTime?
+  was_replaced               Boolean?
+  replaced_by                String?
+  replacement_reason         String?
+  gps_latitude               Decimal?
+  gps_longitude              Decimal?
+  gps_timestamp              DateTime?
+  gps_age_seconds            Int?
+  gps_distance_from_market   Boolean?
+  gps_market_radius          Int?
+  gps_verified               Boolean?
+  gps_verification_notes     String?
+  prev_gps_latitude          Decimal?
+  prev_gps_longitude         Decimal?
+  prev_gps_timestamp         DateTime?
+  movement_velocity_kmh      Boolean?
+  movement_flag              Boolean?
+  re_verification_round      Boolean?
+  re_verification_requested  Boolean?
+  re_verification_reason     String?
+  original_vote_id           String?
+  is_honeypot                Boolean?
+  honeypot_expected_vote     String?
+  honeypot_result            String?
+  consensus_result           String?
+  agreed_with_consensus      Boolean?
+  reward_earned              Int?
+  status                     String?
+  created_at                 DateTime?
+  updated_at                 DateTime?
+
+  @@ignore
+  @@map("validator_votes")
+}
+
+/// The underlying table does not contain a valid unique identifier and can therefore currently not be handled by Prisma Client.
+model Validators {
+  validator_id             String?
+  phone_number             String?
+  full_name                String?
+  first_name               String?
+  date_of_birth            DateTime?
+  address                  String?
+  state                    String?
+  assigned_market          String?
+  market_id                String?
+  assigned_at              DateTime?
+  bank_name                String?
+  bank_code                Int?
+  account_number           Int?
+  bank_verified_at         DateTime?
+  bank_account_name        String?
+  verified_last_name       String?
+  alternate_last_name      String?
+  invite_code              String?
+  invited_by               String?
+  registration_status      String?
+  tc_version_accepted      Boolean?
+  tc_accepted_at           DateTime?
+  registered_at            DateTime?
+  approved_at              DateTime?
+  total_votes              Int?
+  correct_votes            Int?
+  approval_count           Int?
+  rejection_count          Int?
+  accuracy_rate            Int?
+  approval_rate            Int?
+  avg_response_time_sec    Int?
+  response_rate            Int?
+  consecutive_timeouts     Int?
+  total_timeouts           Int?
+  honeypot_failures        Boolean?
+  honeypot_correct         Int?
+  honeypot_accuracy        Int?
+  tier                     String?
+  status                   String?
+  suspension_reason        String?
+  suspended_at             DateTime?
+  suspension_duration_days String?
+  suspension_ends_at       DateTime?
+  suspension_count         Int?
+  last_suspension_at       DateTime?
+  reinstatement_at         DateTime?
+  reinstated_by            String?
+  balance                  Decimal?
+  total_earned             Int?
+  last_payout_at           DateTime?
+  last_payout_amount       Decimal?
+  last_gps_latitude        Int?
+  last_gps_longitude       Int?
+  last_gps_timestamp       DateTime?
+  gps_compliance_rate      Int?
+  gps_fraud_count          Int?
+  weekly_assignments       Int?
+  weekly_assignment_limit  Int?
+  votes_last_hour          Int?
+  last_vote_at             DateTime?
+  last_assignment_at       DateTime?
+  device_id                String?
+  whatsapp_version         String?
+  phone_model              String?
+  last_device_change_at    DateTime?
+  device_change_count      Int?
+  typical_active_start     String?
+  typical_active_end       String?
+  odd_hours_vote_count     Int?
+  preferred_language       String?
+  created_at               DateTime?
+  updated_at               DateTime?
+
+  @@ignore
+  @@map("validators")
+}

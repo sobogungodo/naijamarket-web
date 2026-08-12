@@ -8,8 +8,17 @@
 // Not proxied: Prisma model-builder methods (prisma.<model>.<method>) still hit the real
 // client — port those separately for a pure Supabase run.
 import { translateTSQL } from './tsql-translate';
+// Separate postgresql-provider Prisma client, generated from prisma/schema.supabase.prisma
+// (same models as the sqlserver schema, @db. native types stripped, @@map to the lowercase
+// Supabase tables). Model-builder methods (prisma.<model>.findMany/…) route here on Supabase.
+// Generate it in dev with: npx prisma generate --schema=prisma/schema.supabase.prisma
+import { PrismaClient as PgPrismaClient } from '../generated/prisma-pg';
 
 export const USE_SUPABASE = process.env.DB_BACKEND === 'supabase';
+
+// One pg model-client for the Dev backend (reads SUPABASE_DB_URL via its datasource env).
+// Only constructed when DB_BACKEND=supabase, so production never loads/opens it.
+const pgModelClient = USE_SUPABASE ? new PgPrismaClient() : null;
 
 function taggedToPg(strings: TemplateStringsArray, values: unknown[]): { text: string; values: unknown[] } {
   let text = '';
@@ -29,7 +38,7 @@ async function sbPool() {
 export function wrapPrismaForSupabase<T extends object>(realPrisma: T): T {
   if (!USE_SUPABASE) return realPrisma;
   return new Proxy(realPrisma, {
-    get(target, prop, receiver) {
+    get(target, prop) {
       switch (prop) {
         case '$queryRaw':
           return async (strings: TemplateStringsArray, ...values: unknown[]) => {
@@ -48,8 +57,11 @@ export function wrapPrismaForSupabase<T extends object>(realPrisma: T): T {
           return async (sql: string, ...params: unknown[]) =>
             (await (await sbPool()).query(normalizeUnsafe(sql), params)).rowCount ?? 0;
         default: {
-          const val = Reflect.get(target, prop, receiver);
-          return typeof val === 'function' ? val.bind(target) : val;
+          // Model-builder methods (prisma.<model>.*) and other client props route to the pg
+          // model client on Supabase; falls back to the real client if it isn't available.
+          const t = pgModelClient ?? target;
+          const val = Reflect.get(t, prop, t);
+          return typeof val === 'function' ? val.bind(t) : val;
         }
       }
     },
