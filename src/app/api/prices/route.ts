@@ -36,6 +36,7 @@ import { isSupabase, getSupabaseConnection } from "@/lib/db-supabase";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import { checkQuery, logQuery } from "@/lib/query-gate";
+import { env } from "@/lib/env";
 
 // ============================================================================
 // FOOD-ONLY CATEGORY MAP (15 categories)
@@ -106,10 +107,10 @@ interface FilterOptions {
 // ============================================================================
 
 const SQL_CONFIG: sql.config = {
-  server:   process.env.AZURE_SQL_SERVER   || process.env.DATABASE_SERVER   || "naijafood.database.windows.net",
-  database: process.env.AZURE_SQL_DATABASE || process.env.DATABASE_NAME     || "naijafoodmarket-live",
-  user:     process.env.AZURE_SQL_USER     || process.env.DATABASE_USER     || "",
-  password: process.env.AZURE_SQL_PASSWORD || process.env.DATABASE_PASSWORD || "",
+  server:   env.db.server,
+  database: env.db.database,
+  user:     env.db.user,
+  password: env.db.password,
   options: {
     encrypt:                true,
     trustServerCertificate: false,
