@@ -8,7 +8,13 @@
 // NOTE: the app's many prisma.$queryRaw`...` calls use T-SQL dialect and go through Prisma
 // (Azure). Full cutover = switch Prisma provider to postgresql + port those raw queries to
 // Postgres dialect (route-by-route). This adapter proves connectivity + the shim patterns.
-import { Pool } from 'pg';
+import { Pool, types } from 'pg';
+
+// node-pg returns int8 (bigint, OID 20) as a string; Prisma returns it as a JS number/BigInt.
+// COUNT(*)/SUM(...) land in int8, and many routes do arithmetic on them, so parse int8 to a
+// JS number for parity (safe for the count magnitudes this app deals with). numeric (money)
+// is left as-is — routes already treat Prisma's Decimal as non-number and parse it.
+types.setTypeParser(20, (v) => (v === null ? null : parseInt(v, 10)));
 
 declare global {
   // eslint-disable-next-line no-var
