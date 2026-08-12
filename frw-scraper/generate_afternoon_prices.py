@@ -17,6 +17,11 @@ def _get_gen_connection():
     """Dedicated connection for the long-running generation SP. Query timeout
     must be set explicitly (600s) — timeout=0 silently caps at login_timeout
     on this driver/server combo, not "unlimited"."""
+    # Supabase Dev environment: DB_BACKEND=supabase routes to psycopg2 -> Supabase Postgres
+    # (EXEC->CALL, dbo.-strip). Production leaves DB_BACKEND unset -> pymssql -> Azure SQL.
+    if os.environ.get("DB_BACKEND") == "supabase":
+        from db_supabase import get_supabase_connection
+        return get_supabase_connection()
     return pymssql.connect(
         server=os.environ["SQL_SERVER"],
         user=os.environ.get("SQL_USERNAME") or os.environ.get("SQL_USER", ""),

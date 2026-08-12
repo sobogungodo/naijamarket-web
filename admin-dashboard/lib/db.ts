@@ -27,6 +27,11 @@ const config: sql.config = {
 let pool: sql.ConnectionPool | null = null;
 
 export async function getConnection(): Promise<sql.ConnectionPool> {
+  // Supabase Dev environment: DB_BACKEND=supabase routes to the pg adapter; prod stays mssql/Azure.
+  if (process.env.DB_BACKEND === 'supabase') {
+    const { getSupabasePool } = await import('./db-supabase');
+    return getSupabasePool() as unknown as sql.ConnectionPool;
+  }
   if (pool && pool.connected) {
     return pool;
   }
