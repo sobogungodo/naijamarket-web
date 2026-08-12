@@ -57,9 +57,9 @@ const SERVICES = [
     description: 'BREVO_API_KEY not configured',
   },
   {
-    name: 'WhatsApp API (Twilio)',
-    type: 'twilio' as const,
-    description: 'Twilio account responding',
+    name: 'WhatsApp API (Meta)',
+    type: 'meta' as const,
+    description: 'Meta WhatsApp credentials configured',
   },
   {
     name: 'VTPass Payment',
@@ -186,40 +186,21 @@ async function checkHttpService(
 }
 
 // ─────────────────────────────────────────────
-// Twilio Check — validates env vars are present
-// (avoids billing a real API call on every health check)
+// Meta WhatsApp Check — validates env vars are present
+// (avoids billing a real Graph API call on every health check).
+// Live WhatsApp goes through the Meta WhatsApp service; Twilio is deprecated.
 // ─────────────────────────────────────────────
-async function checkTwilio(): Promise<{ ok: boolean; responseMs: number; accountSid?: string }> {
+async function checkMeta(): Promise<{ ok: boolean; responseMs: number; phoneNumberId?: string }> {
   const start = Date.now();
-  const sid = process.env.TWILIO_ACCOUNT_SID;
-  const token = process.env.TWILIO_AUTH_TOKEN;
+  const token = process.env.META_ACCESS_TOKEN;
+  const phoneId = process.env.META_PHONE_NUMBER_ID;
+  const ok = Boolean(token && phoneId);
 
-  if (!sid || !token) {
-    return { ok: false, responseMs: Date.now() - start };
-  }
-
-  try {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 5000);
-
-    const res = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${sid}.json`, {
-      headers: {
-        Authorization: `Basic ${Buffer.from(`${sid}:${token}`).toString('base64')}`,
-      },
-      signal: controller.signal,
-      cache: 'no-store',
-    });
-    clearTimeout(timer);
-
-    const data = await res.json();
-    return {
-      ok: res.ok,
-      responseMs: Date.now() - start,
-      accountSid: data.sid ? `${data.sid.substring(0, 10)}...` : undefined,
-    };
-  } catch {
-    return { ok: false, responseMs: Date.now() - start };
-  }
+  return {
+    ok,
+    responseMs: Date.now() - start,
+    phoneNumberId: ok ? `${String(phoneId).substring(0, 6)}...` : undefined,
+  };
 }
 
 // ─────────────────────────────────────────────
@@ -229,11 +210,11 @@ export async function GET() {
   const overallStart = Date.now();
 
   // Run all checks in parallel for speed
-  const [dbStats, consumerCheck, adminCheck, twilioCheck] = await Promise.all([
+  const [dbStats, consumerCheck, adminCheck, metaCheck] = await Promise.all([
     getDatabaseStats(),
     checkHttpService('https://www.naijamarketintel.com'),
     checkHttpService(process.env.NEXT_PUBLIC_ADMIN_URL || 'https://naijamarket-admin.vercel.app'),
-    checkTwilio(),
+    checkMeta(),
   ]);
 
   // Build service statuses
@@ -272,12 +253,12 @@ export async function GET() {
         : 'BREVO_API_KEY not configured',
     },
     {
-      name: 'WhatsApp API (Twilio)',
-      status: twilioCheck.ok ? 'operational' : 'not_configured',
-      responseTime: twilioCheck.ok ? `${twilioCheck.responseMs}ms` : '—',
-      description: twilioCheck.ok
-        ? `Twilio account ${twilioCheck.accountSid ?? ''} responding`
-        : 'TWILIO_ACCOUNT_SID / AUTH_TOKEN not configured',
+      name: 'WhatsApp API (Meta)',
+      status: metaCheck.ok ? 'operational' : 'not_configured',
+      responseTime: '—',
+      description: metaCheck.ok
+        ? `Meta WhatsApp configured (phone ${metaCheck.phoneNumberId ?? ''})`
+        : 'META_ACCESS_TOKEN / META_PHONE_NUMBER_ID not configured',
     },
     {
       name: 'VTPass Payment',

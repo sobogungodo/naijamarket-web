@@ -19,7 +19,6 @@ export const SCHEDULED_JOBS: ScheduledJob[] = [
   { name: "social-weekly",       path: "/api/social/post-weekly",        schedule: "0 6 * * 1",    onVercel: true,  description: "Weekly bulk-staples card" },
   // Known CRON_SECRET-guarded routes not currently scheduled in vercel.json:
   { name: "push-send",           path: "/api/push/send",                 schedule: "",             onVercel: false, description: "Web-push dispatch (triggered externally today)" },
-  { name: "nfpi-send",           path: "/api/nfpi/send",                 schedule: "",             onVercel: false, description: "NFPI dispatch" },
   { name: "fmcg-alerts",         path: "/api/fmcg-alerts/send",          schedule: "",             onVercel: false, description: "FMCG alerts dispatch" },
 ];
 

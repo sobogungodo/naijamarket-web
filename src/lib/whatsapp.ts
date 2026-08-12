@@ -101,8 +101,11 @@ export const sendMorningBriefActivated = (phone: string, amount: string, validUn
 export const sendPaymentFailed = (phone: string, amount: string, reason: string) =>
   sendMetaTemplate(phone, 'payment_failed', [amount, reason]);
 
+// Uses a fresh UTILITY template name. The old `renewal_failed` was categorized
+// MARKETING in Business Manager (suppressed for opted-out users); UTILITY is
+// required for guaranteed transactional delivery. Body is identical.
 export const sendRenewalFailed = (phone: string, graceDays: string) =>
-  sendMetaTemplate(phone, 'renewal_failed', [graceDays]);
+  sendMetaTemplate(phone, 'subscription_renewal_failed', [graceDays]);
 
 export const sendRefundProcessed = (phone: string, amount: string) =>
   sendMetaTemplate(phone, 'refund_processed', [amount]);

@@ -7,7 +7,7 @@
 // Manual: GET /api/fmcg-alerts/send?test=1
 //
 // Sends daily/weekly price intelligence to FMCG companies tracking competitors
-// Delivery: Email (Brevo), WhatsApp (Twilio), or API webhook
+// Delivery: Email (Brevo) or API webhook. (WhatsApp retired with Twilio.)
 // ============================================================================
 
 import { NextRequest, NextResponse } from "next/server";
@@ -20,9 +20,6 @@ const prisma = sharedPrisma;
 if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = prisma;
 
 const BREVO_API_KEY = process.env.BREVO_API_KEY || "";
-const TWILIO_SID = process.env.TWILIO_ACCOUNT_SID || "";
-const TWILIO_TOKEN = process.env.TWILIO_AUTH_TOKEN || "";
-const TWILIO_FROM = process.env.TWILIO_WHATSAPP_FROM || "whatsapp:+14155238886";
 
 // ============================================================================
 // GET — Cron trigger
@@ -78,10 +75,9 @@ export async function GET(request: NextRequest) {
         if ((method === "EMAIL" || method === "BOTH") && sub.contact_email) {
           sent = await sendEmailAlert(sub, alertContent);
         }
-        if ((method === "WHATSAPP" || method === "BOTH") && sub.whatsapp_number) {
-          const waSent = await sendWhatsAppAlert(sub, alertContent.whatsappVersion);
-          sent = sent || waSent;
-        }
+        // WhatsApp delivery retired with Twilio (Meta `fmcg_alert` template not
+        // yet designed). WHATSAPP-only subscribers get nothing until it exists;
+        // BOTH subscribers still receive the email above.
         if (method === "API" && sub.api_webhook_url) {
           sent = await sendWebhookAlert(sub, priceData);
         }
@@ -169,29 +165,6 @@ function generateAlertContent(sub: any, prices: any[], threshold: number) {
   const alerts = prices.filter(p => Math.abs(p.change) >= threshold);
   const date = new Date().toLocaleDateString("en-NG", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
 
-  // WhatsApp version
-  let wa = `📊 *FMCG Price Intelligence*\n📅 ${date}\n`;
-  wa += `🏢 ${sub.company_name}\n━━━━━━━━━━━━━━━━━━━━━━\n\n`;
-
-  if (alerts.length > 0) {
-    wa += `⚠️ *${alerts.length} PRICE ALERT${alerts.length > 1 ? "S" : ""}*\n\n`;
-    alerts.slice(0, 10).forEach(p => {
-      const arrow = p.change >= 0 ? "🔴⬆" : "🟢⬇";
-      wa += `${arrow} *${p.item}* — ${p.market}\n`;
-      wa += `   ₦${p.price.toLocaleString()} (${p.change >= 0 ? "+" : ""}${p.change.toFixed(1)}%)\n`;
-      wa += `   7d avg: ₦${p.avg7d.toLocaleString()} | 30d avg: ₦${p.avg30d.toLocaleString()}\n\n`;
-    });
-  }
-
-  wa += `📋 *ALL TRACKED ITEMS (${prices.length})*\n\n`;
-  prices.slice(0, 15).forEach(p => {
-    const emoji = p.change > 0 ? "📈" : p.change < 0 ? "📉" : "➡️";
-    wa += `${emoji} ${p.item} — ${p.market}: ₦${p.price.toLocaleString()} (${p.change >= 0 ? "+" : ""}${p.change.toFixed(1)}%)\n`;
-  });
-
-  wa += `\n━━━━━━━━━━━━━━━━━━━━━━\n`;
-  wa += `Powered by NaijaMarket Intel\nhttps://naijamarketintel.com`;
-
   // Email HTML version
   const alertRows = prices.map(p => {
     const color = p.change > 0 ? "#ff1744" : p.change < 0 ? "#00c853" : "#666";
@@ -233,7 +206,7 @@ function generateAlertContent(sub: any, prices: any[], threshold: number) {
       </div>
     </div>`;
 
-  return { whatsappVersion: wa, emailHTML, subject: `📊 Price Alert: ${alerts.length} items changed >${threshold}% — ${sub.company_name}` };
+  return { emailHTML, subject: `📊 Price Alert: ${alerts.length} items changed >${threshold}% — ${sub.company_name}` };
 }
 
 // ============================================================================
@@ -252,25 +225,6 @@ async function sendEmailAlert(sub: any, content: { emailHTML: string; subject: s
         subject: content.subject,
         htmlContent: content.emailHTML,
       }),
-    });
-    return res.ok;
-  } catch { return false; }
-}
-
-async function sendWhatsAppAlert(sub: any, message: string) {
-  if (!TWILIO_SID || !TWILIO_TOKEN) return false;
-  try {
-    let phone = String(sub.whatsapp_number).replace(/\D/g, "");
-    if (phone.startsWith("0")) phone = "234" + phone.substring(1);
-    if (!phone.startsWith("234")) phone = "234" + phone;
-
-    const res = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${TWILIO_SID}/Messages.json`, {
-      method: "POST",
-      headers: {
-        Authorization: "Basic " + Buffer.from(`${TWILIO_SID}:${TWILIO_TOKEN}`).toString("base64"),
-        "Content-Type": "application/x-www-form-urlencoded",
-      },
-      body: new URLSearchParams({ From: TWILIO_FROM, To: `whatsapp:+${phone}`, Body: message }),
     });
     return res.ok;
   } catch { return false; }
