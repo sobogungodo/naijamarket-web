@@ -10,10 +10,9 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
-import { PrismaClient } from "@prisma/client";
+import { prisma, isSupabase } from "@/lib/db";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 
-const prisma = new PrismaClient();
 
 // ============================================================================
 // TIER ACCESS
@@ -908,6 +907,9 @@ const TIER_MONTHLY_LIMITS: Record<string, number> = {
 };
 
 async function ensureUsageTable(): Promise<void> {
+  // Supabase Dev: report_usage already exists in the migrated schema; the T-SQL IDENTITY/
+  // NVARCHAR/DATETIME2 DDL batch below is SQL-Server-only, so skip it.
+  if (isSupabase()) return;
   try {
     await prisma.$executeRawUnsafe(`
       IF NOT EXISTS (SELECT * FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = 'Report_Usage')

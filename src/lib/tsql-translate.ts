@@ -12,6 +12,38 @@
 //     dropping [bracket] quoting resolves CamelCase names to the lowercase tables/columns.
 //   - non-dbo schemas (ref, nbs, catalog, dim, hist, staging) exist and are kept as-is.
 
+// Rewrite every call to FUNC(...) using balanced-paren argument parsing (handles nested
+// parens/commas that a flat regex cannot). transform() receives the trimmed top-level args
+// and returns the replacement text. Unbalanced/again-malformed calls are left untouched.
+function rewriteCalls(text: string, fn: string, transform: (args: string[]) => string): string {
+  const re = new RegExp(`\\b${fn}\\s*\\(`, 'gi');
+  let out = '';
+  let last = 0;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text))) {
+    const start = m.index;
+    const open = m.index + m[0].length - 1; // index of '('
+    let depth = 0;
+    let i = open;
+    const args: string[] = [];
+    let cur = '';
+    let ok = false;
+    for (; i < text.length; i++) {
+      const ch = text[i];
+      if (ch === '(') { depth++; if (depth === 1) continue; }
+      if (ch === ')') { depth--; if (depth === 0) { args.push(cur); ok = true; break; } }
+      if (ch === ',' && depth === 1) { args.push(cur); cur = ''; continue; }
+      cur += ch;
+    }
+    if (!ok) break; // unbalanced — stop rewriting this fn
+    out += text.slice(last, start) + transform(args.map((a) => a.trim()));
+    last = i + 1;
+    re.lastIndex = i + 1;
+  }
+  out += text.slice(last);
+  return out;
+}
+
 export function translateTSQL(text: string): string {
   let t = text;
 
@@ -35,6 +67,18 @@ export function translateTSQL(text: string): string {
   t = t.replace(/\bSYSDATETIME\s*\(\s*\)/gi, 'now()');
   t = t.replace(/\bGETDATE\s*\(\s*\)/gi, 'now()');
 
+  // 5b. Month-truncation idiom DATEADD(month, DATEDIFF(month, 0, <now>), 0) -> first day of
+  //     the current month. Handle the whole idiom before the generic DATEADD/DATEDIFF rules
+  //     (its inner DATEDIFF has a 0 "date" that the generic handler can't take). <now> is
+  //     already now() / (now() at time zone 'utc') after rule 5.
+  t = t.replace(
+    /\bDATEADD\s*\(\s*month\s*,\s*DATEDIFF\s*\(\s*month\s*,\s*0\s*,\s*(\(now\(\) at time zone 'utc'\)|now\(\))\s*\)\s*,\s*0\s*\)/gi,
+    (_m, nowExpr: string) => `date_trunc('month', ${nowExpr})`,
+  );
+
+  // 5c. DATETIME2 type name -> timestamp (in CAST/CREATE TABLE/DECLARE contexts).
+  t = t.replace(/\bDATETIME2\b/gi, 'timestamp');
+
   // 6. ISNULL(a, b) -> COALESCE(a, b)  (identical 2-arg semantics).
   t = t.replace(/\bISNULL\s*\(/gi, 'COALESCE(');
 
@@ -46,6 +90,29 @@ export function translateTSQL(text: string): string {
     (_m, unit: string, n: string, expr: string) =>
       `((${expr}) + (${n} * interval '1 ${unit.toLowerCase()}'))`,
   );
+
+  // 7b. DATEDIFF(unit, a, b) -> Postgres interval/date arithmetic (balanced-paren parse).
+  //     DATEDIFF is confined to a handful of tail routes, so this is safe for the rest.
+  t = rewriteCalls(t, 'DATEDIFF', (args) => {
+    if (args.length !== 3) return `DATEDIFF(${args.join(', ')})`;
+    const [unit = '', a = '', b = ''] = args;
+    const u = unit.toLowerCase();
+    const epoch = `extract(epoch from ((${b}) - (${a})))`;
+    switch (u) {
+      case 'day':    return `((${b})::date - (${a})::date)`;
+      case 'week':   return `(floor(((${b})::date - (${a})::date) / 7.0)::int)`;
+      case 'hour':   return `(floor(${epoch} / 3600)::int)`;
+      case 'minute': return `(floor(${epoch} / 60)::int)`;
+      case 'second': return `(${epoch}::int)`;
+      case 'month':  return `(((extract(year from (${b})) - extract(year from (${a}))) * 12 + (extract(month from (${b})) - extract(month from (${a}))))::int)`;
+      case 'year':   return `((extract(year from (${b})) - extract(year from (${a})))::int)`;
+      default:       return `DATEDIFF(${args.join(', ')})`; // unknown unit — leave as-is
+    }
+  });
+
+  // 7c. YEAR(x)/MONTH(x)/DAY(x) -> EXTRACT(... FROM x)::int.
+  t = rewriteCalls(t, 'YEAR',  (a) => (a.length === 1 ? `(extract(year from (${a[0]}))::int)`  : `YEAR(${a.join(', ')})`));
+  t = rewriteCalls(t, 'MONTH', (a) => (a.length === 1 ? `(extract(month from (${a[0]}))::int)` : `MONTH(${a.join(', ')})`));
 
   // 8. Statement-leading MERGE <table>  ->  MERGE INTO <table>.
   //    T-SQL allows "MERGE tbl AS t USING ..."; PG17 (which has native MERGE) requires the

@@ -6,9 +6,8 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
-import { PrismaClient } from "@prisma/client";
+import { prisma, isSupabase } from "@/lib/db";
 
-const prisma = new PrismaClient();
 
 const TIER_HIERARCHY = [
   "FREE", "STARTER", "SILVER", "GOLD", "BUSINESS", "BUSINESS_PLUS",
@@ -73,8 +72,9 @@ export async function GET(request: NextRequest) {
 
     const monthlyLimit = TIER_MONTHLY_LIMITS[userTier] || 0;
 
-    // Ensure table exists
+    // Ensure table exists (Supabase Dev: report_usage already exists; skip the T-SQL DDL).
     try {
+      if (isSupabase()) throw new Error('skip-ddl-on-supabase');
       await prisma.$executeRawUnsafe(`
         IF NOT EXISTS (SELECT * FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = 'Report_Usage')
         BEGIN

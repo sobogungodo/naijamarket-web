@@ -1,6 +1,6 @@
 import { PrismaClient } from "@prisma/client";
 import { google } from 'googleapis';
-import { translateTSQL } from './tsql-translate';
+import { wrapPrismaForSupabase, USE_SUPABASE } from './supabase-prisma-proxy';
 
 // =============================================================================
 // PRISMA CLIENT (EXISTING)
@@ -23,63 +23,19 @@ if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = realPrisma;
 // =============================================================================
 // SUPABASE DEV BACKEND — backend-aware prisma proxy (DB_BACKEND=supabase)
 // =============================================================================
-// The consumer web reaches the DB almost entirely through Prisma's RAW methods
-// ($queryRaw / $queryRawUnsafe / $executeRaw / $executeRawUnsafe). When DB_BACKEND=supabase
-// we route those four methods to the Supabase pg pool, applying translateTSQL() to the
-// (T-SQL) text so the ~220 raw sites run on Postgres without per-file edits. Production
-// leaves DB_BACKEND unset → the real Prisma/Azure client is returned untouched.
-//
-// NOT proxied: Prisma model-builder methods (prisma.<model>.findMany/…, ~65 sites) still
-// hit the real client — port those separately (raw-ify or a pg-generated client) for a pure
-// Supabase run. int8 is parsed to Number so COUNT(*) arithmetic in routes keeps working.
-const USE_SUPABASE = process.env.DB_BACKEND === 'supabase';
+// The consumer web reaches the DB largely through Prisma's RAW methods ($queryRaw /
+// $queryRawUnsafe / $executeRaw / $executeRawUnsafe). wrapPrismaForSupabase() routes those
+// to the Supabase pg pool (translateTSQL applied) when DB_BACKEND=supabase; production leaves
+// DB_BACKEND unset → the real Prisma/Azure client is returned untouched. Shared with
+// @/lib/prisma so both shared clients behave identically. int8 is parsed to Number (see
+// db-supabase.ts) so COUNT(*) arithmetic in routes keeps working.
+export const prisma: PrismaClient = wrapPrismaForSupabase(realPrisma);
 
-function taggedToPg(strings: TemplateStringsArray, values: unknown[]): { text: string; values: unknown[] } {
-  let text = '';
-  strings.forEach((s, i) => { text += s; if (i < values.length) text += '$' + (i + 1); });
-  return { text: translateTSQL(text), values };
+// Exposed so routes can branch when their T-SQL can't be surface-translated (DECLARE @var
+// batches, DDL) and needs a hand-written PG path or a no-op on the Supabase Dev backend.
+export function isSupabase(): boolean {
+  return USE_SUPABASE;
 }
-// $queryRawUnsafe/$executeRawUnsafe: most callers pass a prebuilt string (no params). Convert
-// any `?` placeholders to $n, leave $n as-is, then translate.
-function normalizeUnsafe(sql: string): string {
-  let i = 0;
-  const s = sql.replace(/\?/g, () => '$' + (++i));
-  return translateTSQL(s);
-}
-
-async function sbPool() {
-  const { supabasePool } = await import('./db-supabase');
-  return supabasePool();
-}
-
-export const prisma: PrismaClient = USE_SUPABASE
-  ? (new Proxy(realPrisma, {
-      get(target, prop, receiver) {
-        switch (prop) {
-          case '$queryRaw':
-            return async (strings: TemplateStringsArray, ...values: unknown[]) => {
-              const { text, values: v } = taggedToPg(strings, values);
-              return (await (await sbPool()).query(text, v)).rows;
-            };
-          case '$executeRaw':
-            return async (strings: TemplateStringsArray, ...values: unknown[]) => {
-              const { text, values: v } = taggedToPg(strings, values);
-              return (await (await sbPool()).query(text, v)).rowCount ?? 0;
-            };
-          case '$queryRawUnsafe':
-            return async (sql: string, ...params: unknown[]) =>
-              (await (await sbPool()).query(normalizeUnsafe(sql), params)).rows;
-          case '$executeRawUnsafe':
-            return async (sql: string, ...params: unknown[]) =>
-              (await (await sbPool()).query(normalizeUnsafe(sql), params)).rowCount ?? 0;
-          default: {
-            const val = Reflect.get(target, prop, receiver);
-            return typeof val === 'function' ? val.bind(target) : val;
-          }
-        }
-      },
-    }) as unknown as PrismaClient)
-  : realPrisma;
 
 export async function checkDatabaseHealth(): Promise<{
   connected: boolean;
