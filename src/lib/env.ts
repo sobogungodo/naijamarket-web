@@ -4,10 +4,15 @@
  * Secrets stay ENV-INJECTED on every platform (Vercel / Supabase / AWS Secrets
  * Manager -> env at deploy) — this is not a runtime secrets SDK.
  *
- * DB credentials historically use THREE naming conventions across the codebase:
- *   AZURE_SQL_* (routes)  |  DATABASE_* (routes, irregular DATABASE_NAME)  |
- *   SQL_* (admin-dashboard, irregular SQL_USERNAME).
- * env.db reconciles them with AZURE_SQL_* preferred, preserving existing defaults.
+ * env.db reconciles the MAIN app's (src/) DB-cred convention only — the one used
+ * by routes such as api/prices: AZURE_SQL_* preferred, then DATABASE_* (irregular
+ * DATABASE_NAME), then SQL_* (irregular SQL_USERNAME/SQL_USER) as a last-resort
+ * alias, with the existing defaults.
+ *
+ * WARNING: admin-dashboard/ is a SEPARATE app with its OWN lib/db.ts that uses an
+ * INVERTED SQL_*-first precedence (SQL_* wins over AZURE_SQL_*). It does NOT import
+ * this module, and env.db must NOT be wired into it without adjusting for that
+ * inversion — doing so naively would silently change admin-dashboard's precedence.
  *
  * Getters (not plain object literals) are used throughout so that tests can
  * mutate process.env and re-read via `jest.resetModules()` + `require('./env')`,
@@ -37,7 +42,7 @@ export const env = {
   db: {
     get server()   { return firstDefined(['AZURE_SQL_SERVER', 'DATABASE_SERVER', 'SQL_SERVER'], 'naijafood.database.windows.net')!; },
     get database() { return firstDefined(['AZURE_SQL_DATABASE', 'DATABASE_NAME', 'SQL_DATABASE'], 'naijafoodmarket-live')!; },
-    get user()     { return firstDefined(['AZURE_SQL_USER', 'DATABASE_USER', 'SQL_USERNAME'], '')!; },
+    get user()     { return firstDefined(['AZURE_SQL_USER', 'DATABASE_USER', 'SQL_USERNAME', 'SQL_USER'], '')!; },
     get password() { return firstDefined(['AZURE_SQL_PASSWORD', 'DATABASE_PASSWORD', 'SQL_PASSWORD'], '')!; },
   },
   dbBackend: {

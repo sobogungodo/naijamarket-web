@@ -1,7 +1,7 @@
 describe('env.db credential reconciliation', () => {
   const KEYS = ['AZURE_SQL_SERVER', 'DATABASE_SERVER', 'SQL_SERVER',
     'AZURE_SQL_DATABASE', 'DATABASE_NAME', 'SQL_DATABASE',
-    'AZURE_SQL_USER', 'DATABASE_USER', 'SQL_USERNAME',
+    'AZURE_SQL_USER', 'DATABASE_USER', 'SQL_USERNAME', 'SQL_USER',
     'AZURE_SQL_PASSWORD', 'DATABASE_PASSWORD', 'SQL_PASSWORD'];
   const clear = () => KEYS.forEach((k) => delete process.env[k]);
   beforeEach(clear);
@@ -27,6 +27,22 @@ describe('env.db credential reconciliation', () => {
     expect(db.database).toBe('naijafoodmarket-live');
     expect(db.user).toBe('');
     expect(db.password).toBe('');
+  });
+  test('skips a defined-but-empty AZURE_SQL_* value and falls through like ||', () => {
+    process.env.AZURE_SQL_SERVER = '';
+    process.env.DATABASE_SERVER = 'db-host';
+    expect(loadDb().server).toBe('db-host');
+  });
+  test('an empty AZURE_SQL_* with everything else unset/empty falls all the way to default', () => {
+    process.env.AZURE_SQL_SERVER = '';
+    process.env.DATABASE_SERVER = '';
+    process.env.SQL_SERVER = '';
+    expect(loadDb().server).toBe('naijafood.database.windows.net');
+  });
+  test('DATABASE_* beats SQL_* in the middle tier (3-tier order, not just fallback-exists)', () => {
+    process.env.DATABASE_NAME = 'db-name';
+    process.env.SQL_DATABASE = 'sql-name';
+    expect(loadDb().database).toBe('db-name');
   });
 });
 
