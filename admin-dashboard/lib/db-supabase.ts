@@ -5,6 +5,7 @@
 // GETUTCDATE, TOP, OFFSET/FETCH, IF OBJECT_ID) — those need Postgres-dialect porting for full
 // parity. This adapter proves connectivity + the .request().input().query()/.execute() patterns.
 import { Pool } from 'pg';
+import { translateTSQL } from './tsql-translate';
 
 declare global {
   // eslint-disable-next-line no-var
@@ -31,8 +32,9 @@ class PgRequest {
     return this;
   }
   async query(text: string): Promise<{ recordset: unknown[]; recordsets: unknown[][]; rowsAffected: number[] }> {
+    const translated = translateTSQL(text);
     const order: string[] = [];
-    const pgText = text.replace(/@(\w+)/g, (_m, n: string) => {
+    const pgText = translated.replace(/@(\w+)/g, (_m, n: string) => {
       let i = order.indexOf(n); if (i === -1) { order.push(n); i = order.length - 1; }
       return '$' + (i + 1);
     });
