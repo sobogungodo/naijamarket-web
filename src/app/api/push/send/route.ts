@@ -6,6 +6,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import webpush from "web-push";
+import { cronGuard } from "@/lib/scheduler";
 
 // ============================================================================
 // VAPID Configuration
@@ -24,17 +25,14 @@ if (VAPID_PUBLIC && VAPID_PRIVATE) {
 // ============================================================================
 
 export async function POST(request: NextRequest) {
-  try {
-    // Optional auth check
-    const authHeader = request.headers.get("authorization");
-    const cronSecret = process.env.CRON_SECRET;
-    if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
-      const { searchParams } = new URL(request.url);
-      if (!searchParams.get("test")) {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-      }
-    }
+  // Fail-closed auth: CRON_SECRET is required for every invocation. Previously
+  // an unset CRON_SECRET skipped the check entirely, and even with a secret set
+  // a `?test=` query param bypassed it — both let anyone broadcast a push
+  // notification to every active subscription.
+  const denied = cronGuard(request);
+  if (denied) return denied;
 
+  try {
     if (!VAPID_PUBLIC || !VAPID_PRIVATE) {
       return NextResponse.json({ 
         error: "VAPID keys not configured",

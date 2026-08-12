@@ -11,6 +11,14 @@ test("translates a weekly Monday cron (dow set -> dom becomes ?)", () => {
 test("translates every-15-min", () => {
   expect(unixToEventBridgeCron("*/15 * * * *")).toBe("cron(*/15 * * * ? *)");
 });
+test("throws on a compound (non-single-digit) day-of-week form", () => {
+  // Weekday range like "1-5" would need a per-value Sun=0-vs-1 remap that
+  // this translator doesn't do — fail loudly instead of emitting a silently
+  // wrong AWS schedule.
+  expect(() => unixToEventBridgeCron("0 6 * * 1-5")).toThrow(
+    /unsupported day-of-week form/
+  );
+});
 test("exports one schedule per vercel job with the target path", () => {
   const out = toEventBridgeSchedules();
   expect(out.length).toBeGreaterThanOrEqual(5);

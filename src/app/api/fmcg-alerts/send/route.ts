@@ -13,6 +13,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma as sharedPrisma } from "@/lib/db";
 import { PrismaClient } from "@prisma/client";
+import { cronGuard } from "@/lib/scheduler";
 
 const globalForPrisma = globalThis as unknown as { prisma: PrismaClient };
 const prisma = sharedPrisma;
@@ -22,20 +23,17 @@ const BREVO_API_KEY = process.env.BREVO_API_KEY || "";
 const TWILIO_SID = process.env.TWILIO_ACCOUNT_SID || "";
 const TWILIO_TOKEN = process.env.TWILIO_AUTH_TOKEN || "";
 const TWILIO_FROM = process.env.TWILIO_WHATSAPP_FROM || "whatsapp:+14155238886";
-const CRON_SECRET = process.env.CRON_SECRET || "";
 
 // ============================================================================
 // GET — Cron trigger
 // ============================================================================
 
 export async function GET(request: NextRequest) {
-  const { searchParams } = new URL(request.url);
-  const isTest = searchParams.get("test") === "1";
-  const cronSecret = request.headers.get("authorization")?.replace("Bearer ", "");
-
-  if (!isTest && CRON_SECRET && cronSecret !== CRON_SECRET) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  // Fail-closed auth: CRON_SECRET is required for every invocation. Previously
+  // an unset CRON_SECRET skipped the check entirely, and even with a secret set
+  // a `?test=1` query param bypassed it.
+  const denied = cronGuard(request);
+  if (denied) return denied;
 
   const today = new Date();
   const dayOfWeek = today.getDay(); // 0=Sun

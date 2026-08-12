@@ -6,6 +6,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma as sharedPrisma } from "@/lib/db";
 import { PrismaClient } from "@prisma/client";
+import { cronGuard } from "@/lib/scheduler";
 
 const prisma = sharedPrisma;
 
@@ -96,18 +97,13 @@ export async function POST(request: NextRequest) {
 // GET - Bulk send to subscribers (for cron jobs)
 // =============================================================================
 export async function GET(request: NextRequest) {
-  try {
-    const { searchParams } = new URL(request.url);
-    const secret = searchParams.get("secret");
-    
-    // Verify cron secret to prevent unauthorized bulk sends
-    if (secret !== process.env.CRON_SECRET) {
-      return NextResponse.json({
-        success: false,
-        error: "Unauthorized"
-      }, { status: 401 });
-    }
+  // Fail-closed auth via the shared cron guard (Authorization: Bearer CRON_SECRET).
+  // Previously this checked a `?secret=` query parameter instead of the standard
+  // header — a bespoke mechanism that also risks the secret leaking into URL logs.
+  const denied = cronGuard(request);
+  if (denied) return denied;
 
+  try {
     // Get all users with NFPI WhatsApp addon
     const subscribers = await prisma.$queryRaw`
       SELECT DISTINCT 
