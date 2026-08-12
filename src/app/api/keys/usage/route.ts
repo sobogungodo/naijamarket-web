@@ -5,11 +5,12 @@
 // ============================================================================
 
 import { NextRequest, NextResponse } from "next/server";
+import { prisma as sharedPrisma } from "@/lib/db";
 import { PrismaClient } from "@prisma/client";
 import { getServerSession } from "next-auth";
 
 const globalForPrisma = globalThis as unknown as { prisma: PrismaClient };
-const prisma = globalForPrisma.prisma || new PrismaClient();
+const prisma = sharedPrisma;
 if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = prisma;
 
 async function findUserFromSession(session: any) {

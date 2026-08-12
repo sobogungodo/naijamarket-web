@@ -4,9 +4,10 @@
 // Created: 2026-01-18
 
 import { NextRequest, NextResponse } from "next/server";
+import { prisma as sharedPrisma } from "@/lib/db";
 import { PrismaClient } from "@prisma/client";
 
-const prisma = new PrismaClient();
+const prisma = sharedPrisma;
 
 // Twilio credentials from environment
 const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID;

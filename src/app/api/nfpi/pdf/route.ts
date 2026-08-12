@@ -4,11 +4,12 @@
 // Created: 2026-01-18
 
 import { NextRequest, NextResponse } from "next/server";
+import { prisma as sharedPrisma } from "@/lib/db";
 import { PrismaClient } from "@prisma/client";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 
-const prisma = new PrismaClient();
+const prisma = sharedPrisma;
 
 // Tier access - PDF requires BUSINESS+ 
 const PDF_TIERS = ["BUSINESS", "CORPORATE", "ENTERPRISE"];

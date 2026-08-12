@@ -17,11 +17,12 @@
 // ============================================================================
 
 import { NextRequest, NextResponse } from "next/server";
+import { prisma as sharedPrisma } from "@/lib/db";
 import { PrismaClient } from "@prisma/client";
 
 // Re-use Prisma client across requests (prevents connection pool exhaustion on S0)
 const globalForPrisma = globalThis as unknown as { prisma: PrismaClient };
-const prisma = globalForPrisma.prisma ?? new PrismaClient();
+const prisma = sharedPrisma;
 if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = prisma;
 
 // ============================================================================

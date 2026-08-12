@@ -3,9 +3,10 @@
 // Shows top items at a market with prices and trends
 
 import { NextRequest, NextResponse } from "next/server";
+import { prisma as sharedPrisma } from "@/lib/db";
 import { PrismaClient } from "@prisma/client";
 
-const prisma = new PrismaClient();
+const prisma = sharedPrisma;
 
 // GET - Get market snapshot
 export async function GET(request: NextRequest) {

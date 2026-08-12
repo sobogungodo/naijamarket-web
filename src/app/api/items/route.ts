@@ -5,12 +5,13 @@
 // ============================================================================
 
 import { NextRequest, NextResponse } from "next/server";
+import { prisma as sharedPrisma } from "@/lib/db";
 
 let prismaClient: any = null;
 async function getPrisma() {
   if (!prismaClient) {
     const { PrismaClient } = await import("@prisma/client");
-    prismaClient = new PrismaClient();
+    prismaClient = sharedPrisma;
   }
   return prismaClient;
 }

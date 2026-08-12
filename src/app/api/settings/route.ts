@@ -5,10 +5,11 @@
 // ============================================================================
 
 import { NextRequest, NextResponse } from "next/server";
+import { prisma as sharedPrisma } from "@/lib/db";
 import { getServerSession } from "next-auth";
 import { PrismaClient } from "@prisma/client";
 
-const prisma = new PrismaClient();
+const prisma = sharedPrisma;
 
 // ============================================================================
 // TYPE DEFINITIONS

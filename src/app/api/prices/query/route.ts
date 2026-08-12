@@ -2,9 +2,10 @@
 // NaijaMarket Intel - Price Query API (Bloomberg SECF equivalent)
 
 import { NextRequest, NextResponse } from "next/server";
+import { prisma as sharedPrisma } from "@/lib/db";
 import { PrismaClient } from "@prisma/client";
 
-const prisma = new PrismaClient();
+const prisma = sharedPrisma;
 
 // GET - Query prices with filters
 export async function GET(request: NextRequest) {

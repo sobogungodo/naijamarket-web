@@ -4,10 +4,11 @@
 // ============================================================================
 
 import { NextRequest, NextResponse } from 'next/server';
+import { prisma as sharedPrisma } from "@/lib/db";
 import { PrismaClient } from '@prisma/client';
 import { jwtVerify } from 'jose';
 
-const prisma = new PrismaClient();
+const prisma = sharedPrisma;
 
 export const dynamic = 'force-dynamic';
 

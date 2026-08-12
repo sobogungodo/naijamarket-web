@@ -4,10 +4,11 @@
 // Updated: 2026-06-24 — Inserts CONSUMER role into User_Roles (WA sync via Azure SQL)
 
 import { NextRequest, NextResponse } from "next/server";
+import { prisma as sharedPrisma } from "@/lib/db";
 import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
 
-const prisma = new PrismaClient();
+const prisma = sharedPrisma;
 
 // Format phone number - MUST match send-otp formatting exactly
 function formatPhoneNumber(phone: string, countryCode?: string): string {

@@ -3,9 +3,10 @@
 // Compare prices for an item across multiple markets
 
 import { NextRequest, NextResponse } from "next/server";
+import { prisma as sharedPrisma } from "@/lib/db";
 import { PrismaClient } from "@prisma/client";
 
-const prisma = new PrismaClient();
+const prisma = sharedPrisma;
 
 // POST - Compare prices across markets
 export async function POST(request: NextRequest) {

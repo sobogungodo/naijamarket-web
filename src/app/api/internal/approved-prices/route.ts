@@ -3,9 +3,10 @@
 // Called by Apps Script to update Validated_Prices sheet
 
 import { NextRequest, NextResponse } from "next/server";
+import { prisma as sharedPrisma } from "@/lib/db";
 import { PrismaClient } from "@prisma/client";
 
-const prisma = new PrismaClient();
+const prisma = sharedPrisma;
 
 export async function GET(request: NextRequest) {
   try {

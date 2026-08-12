@@ -2,9 +2,10 @@
 // NaijaMarket Intel - Categories API
 
 import { NextRequest, NextResponse } from "next/server";
+import { prisma as sharedPrisma } from "@/lib/db";
 import { PrismaClient } from "@prisma/client";
 
-const prisma = new PrismaClient();
+const prisma = sharedPrisma;
 
 // GET - List all categories
 export async function GET(request: NextRequest) {

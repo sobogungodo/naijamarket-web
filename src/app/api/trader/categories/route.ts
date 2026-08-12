@@ -5,9 +5,10 @@
 // ============================================================================
 
 import { NextResponse } from 'next/server';
+import { prisma as sharedPrisma } from "@/lib/db";
 import { PrismaClient } from '@prisma/client';
 
-const prisma = new PrismaClient();
+const prisma = sharedPrisma;
 
 // Hardcoded categories as fallback (always works)
 const DEFAULT_CATEGORIES = [

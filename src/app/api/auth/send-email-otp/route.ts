@@ -4,9 +4,10 @@
 // which is the same table register/verify-email read from.
 
 import { NextRequest, NextResponse } from "next/server";
+import { prisma as sharedPrisma } from "@/lib/db";
 import { PrismaClient } from "@prisma/client";
 
-const prisma = new PrismaClient();
+const prisma = sharedPrisma;
 
 const BREVO_API_URL = "https://api.brevo.com/v3/smtp/email";
 const SENDER_EMAIL  = "noreply@naijamarketintel.ng";
