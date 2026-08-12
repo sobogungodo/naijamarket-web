@@ -11,10 +11,20 @@ returns a soft failure (`false`), the same "delivers nothing" state as the old d
 now with no Twilio coupling. Delivery resumes automatically once the template clears review.
 
 ## How to finish each item
+**Fastest path — submit them all in one go:**
+```
+META_ACCESS_TOKEN=… META_WABA_ID=… npm run wa:create-templates
+```
+`scripts/create-wa-templates.mjs` POSTs every pending UTILITY template below to the Graph API
+(`--dry-run` prints the payloads first). Templates that already exist are skipped. Approval is
+still Meta's own async review — the script only submits them.
+
+**Or manually, per template:**
 1. In Meta Business Manager → WhatsApp Manager → Message Templates → Create template.
 2. Name = the `name` below (lowercase_snake_case). Category = **UTILITY** (all are transactional).
 3. Language = English. Paste the **Body** exactly (with `{{n}}` placeholders). Add the sample values.
-4. On approval, no code change is needed — the wrapper name below already matches the template name.
+
+Either way, **no code change is needed on approval** — each wrapper's template name already matches.
 
 Wrappers in `src/lib/whatsapp.ts` (all present): `sendPaymentConfirmed`, `sendReferralCreditApplied`,
 `sendPriceAlert`, `sendExpiryReminder`, `sendMorningBrief`, `sendAddOnActivated`,
@@ -67,7 +77,9 @@ Params: `{{1}}`=amount, `{{2}}`=reason
 Wrapper: `sendPaymentFailed(phone, amount: string, reason: string)`
 NOTE: flutterwave's variant omits reason — pass a generic reason string, or make `{{2}}` = "Payment not completed".
 
-## 4. `renewal_failed`  (UTILITY)  — paystack L422
+## 4. `subscription_renewal_failed`  (UTILITY)  — paystack onInvoicePaymentFailed
+Renamed from `renewal_failed`, which Business Manager categorized **MARKETING** (suppressed for
+opted-out users). Create this as a fresh **UTILITY** template — the wrapper already points here.
 **Body:**
 ```
 ⚠️ Subscription Renewal Failed
@@ -79,7 +91,7 @@ You have {{1}} days before downgrade to FREE.
 Type *upgrade* to renew now.
 ```
 Params: `{{1}}`=grace days (e.g. "3")
-Wrapper: `sendRenewalFailed(phone, graceDays: string)`
+Wrapper: `sendRenewalFailed(phone, graceDays: string)` → template `subscription_renewal_failed`
 
 ## 5. `refund_processed`  (UTILITY)  — paystack L434
 **Body:**

@@ -467,10 +467,10 @@ async function onInvoicePaymentFailed(data: any): Promise<string> {
     WHERE phone_number = ${phone} AND status = 'ACTIVE'
   `;
 
-  // Migrated Twilio → Meta: renewal_failed template. CAVEAT: renewal_failed is
-  // categorized MARKETING in Business Manager, so it's suppressed for opted-out
-  // users; recreate it as UTILITY under a new name (the category is locked ~4wk)
-  // and repoint sendRenewalFailed there for guaranteed transactional delivery.
+  // Migrated Twilio → Meta: subscription_renewal_failed (UTILITY) template.
+  // (Replaces the old renewal_failed, which was MARKETING and thus suppressed
+  // for opted-out users.) Create/approve it in Business Manager —
+  // see scripts/create-wa-templates.mjs.
   await sendRenewalFailed(phone, String(GRACE_PERIOD_DAYS));
 
   return `Grace period for ${phone}`;

@@ -18,6 +18,7 @@
     "test": "jest",
     "test:watch": "jest --watch",
     "crons:check": "jest jobs",
+    "wa:create-templates": "node scripts/create-wa-templates.mjs",
     "postinstall": "prisma generate && prisma generate --schema=prisma/schema.supabase.prisma"
   },
   "dependencies": {
