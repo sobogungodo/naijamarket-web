@@ -7,6 +7,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma as sharedPrisma } from "@/lib/db";
 import { PrismaClient } from "@prisma/client";
+import { cronGuard } from "@/lib/scheduler";
 
 const globalForPrisma = globalThis as unknown as { prisma: PrismaClient };
 const prisma = sharedPrisma;
@@ -15,7 +16,6 @@ if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = prisma;
 const TWILIO_SID   = process.env.TWILIO_ACCOUNT_SID || "";
 const TWILIO_TOKEN = process.env.TWILIO_AUTH_TOKEN || "";
 const TWILIO_FROM  = process.env.TWILIO_WHATSAPP_FROM || "whatsapp:+14155238886";
-const CRON_SECRET  = process.env.CRON_SECRET || "";
 const SEND_DELAY_MS = 150;
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -242,18 +242,16 @@ async function generatePersonalizedBrief(
 // ── Main Cron Handler ─────────────────────────────────────────────────────────
 
 export async function GET(request: NextRequest) {
-  const auth = request.headers.get("authorization");
-  const { searchParams } = new URL(request.url);
-  const testPhone = searchParams.get("phone");
-
   // SECURITY: auth is required unconditionally. Previously a `!isTest` clause let
   // anyone call ?test=1&phone=<any> with no CRON_SECRET, triggering a brief SEND
   // to an arbitrary phone (spam / messaging-cost abuse) plus a per-phone
   // subscription read. A caller holding the CRON_SECRET can still pass ?phone= to
   // target a single subscriber for a legitimate test.
-  if (CRON_SECRET && auth !== `Bearer ${CRON_SECRET}`) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const denied = cronGuard(request);
+  if (denied) return denied;
+
+  const { searchParams } = new URL(request.url);
+  const testPhone = searchParams.get("phone");
 
   const t0    = Date.now();
   const stats = {

@@ -31,6 +31,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { prisma } from "@/lib/db";
 import { sendExpiryReminder } from "@/lib/whatsapp";
+import { cronGuard } from "@/lib/scheduler";
 
 // ============================================================================
 // CONFIG
@@ -39,7 +40,6 @@ import { sendExpiryReminder } from "@/lib/whatsapp";
 const TWILIO_SID = process.env.TWILIO_ACCOUNT_SID || "";
 const TWILIO_TOKEN = process.env.TWILIO_AUTH_TOKEN || "";
 const TWILIO_FROM = process.env.TWILIO_WHATSAPP_FROM || "whatsapp:+14155238886";
-const CRON_SECRET = process.env.CRON_SECRET || "";
 
 // ============================================================================
 // HELPERS
@@ -81,10 +81,8 @@ export async function GET(request: NextRequest) {
   // invocation — no ?test=1 bypass, and 401 (not open) when CRON_SECRET is unset.
   // Mirrors alerts/process; Vercel Cron sends Authorization: Bearer $CRON_SECRET
   // automatically when CRON_SECRET is configured.
-  const auth = request.headers.get("authorization");
-  if (!CRON_SECRET || auth !== `Bearer ${CRON_SECRET}`) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const denied = cronGuard(request);
+  if (denied) return denied;
 
   const t0 = Date.now();
   const stats = {

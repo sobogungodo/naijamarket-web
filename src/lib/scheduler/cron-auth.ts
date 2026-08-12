@@ -21,7 +21,10 @@ export function checkCronAuth(
 export function cronGuard(req: Request): Response | null {
   const r = checkCronAuth(req.headers, process.env.CRON_SECRET);
   if (r.ok) return null;
-  return new Response(JSON.stringify({ error: r.reason }), {
+  // Client-facing body is intentionally generic — r.reason (e.g. "CRON_SECRET not
+  // configured") is for internal/log use only and must never leak to an
+  // unauthenticated caller.
+  return new Response(JSON.stringify({ error: "unauthorized" }), {
     status: r.status,
     headers: { "content-type": "application/json" },
   });

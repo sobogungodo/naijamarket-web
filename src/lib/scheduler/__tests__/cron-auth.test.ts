@@ -14,3 +14,8 @@ test("rejects on wrong token", () => {
 test("accepts correct bearer", () => {
   expect(checkCronAuth(h("Bearer s3cret"), "s3cret")).toEqual({ ok: true, status: 200 });
 });
+test("fail-closed is the documented contract", () => {
+  // guards against a future regression to fail-open
+  const { checkCronAuth } = require("../cron-auth");
+  expect(checkCronAuth(new Headers({ authorization: "Bearer anything" }), "").ok).toBe(false);
+});

@@ -2,13 +2,12 @@ import { NextRequest, NextResponse } from 'next/server';
 import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/db';
 import { postCardToSocial } from '@/lib/socialPost';
+import { cronGuard } from '@/lib/scheduler';
 
 // Weekly bulk-staples poster — publishes the by-zone price card + caption to FB + IG.
 // Vercel cron (Monday 07:00 WAT). ?dryRun=1 previews without posting. Self-heals until token set.
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-
-const CRON_SECRET = process.env.CRON_SECRET || '';
 
 const BULK: { name: string; label: string }[] = [
   { name: 'Rice (50kg) - Local Long Grain', label: 'Rice (50kg)' },
@@ -87,12 +86,11 @@ async function buildCaption(): Promise<{ caption: string; twitterText: string; a
 }
 
 export async function GET(request: NextRequest) {
-  const auth = request.headers.get('authorization');
+  const denied = cronGuard(request);
+  if (denied) return denied;
+
   const dryRun = request.nextUrl.searchParams.get('dryRun') === '1';
   const force = request.nextUrl.searchParams.get('force') === '1'; // manual test: bypass the stale/count guard
-  if (CRON_SECRET && auth !== `Bearer ${CRON_SECRET}`) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
 
   const cardUrl = `${request.nextUrl.origin}/api/social/card-weekly`;
   let caption = '', twitterText = '', asOf: Date | null = null, count = 0;

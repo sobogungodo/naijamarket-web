@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/db';
 import { postCardToSocial } from '@/lib/socialPost';
+import { cronGuard } from '@/lib/scheduler';
 
 // Daily social poster — publishes the price card + caption to the Facebook Page and Instagram.
 // Triggered by a Vercel cron (07:00 WAT). Guarded by CRON_SECRET (Vercel adds the Bearer header).
@@ -9,8 +10,6 @@ import { postCardToSocial } from '@/lib/socialPost';
 // self-heals (no-ops) until PAGE_ACCESS_TOKEN is set.
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
-
-const CRON_SECRET = process.env.CRON_SECRET || '';
 
 type Mover = { item_name: string; price: number; change_pct: number; as_of: Date };
 
@@ -50,14 +49,12 @@ async function buildCaption(): Promise<{ caption: string; twitterText: string; a
 }
 
 export async function GET(request: NextRequest) {
-  const auth = request.headers.get('authorization');
+  // Cron guard — Vercel cron sends Authorization: Bearer ${CRON_SECRET}. Applies to dryRun too.
+  const denied = cronGuard(request);
+  if (denied) return denied;
+
   const dryRun = request.nextUrl.searchParams.get('dryRun') === '1';
   const force = request.nextUrl.searchParams.get('force') === '1'; // manual test: bypass the stale/count guard
-
-  // Cron guard — Vercel cron sends Authorization: Bearer ${CRON_SECRET}. Applies to dryRun too.
-  if (CRON_SECRET && auth !== `Bearer ${CRON_SECRET}`) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
 
   const cardUrl = `${request.nextUrl.origin}/api/social/card`;
 

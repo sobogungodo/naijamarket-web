@@ -24,6 +24,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { cronGuard } from "@/lib/scheduler";
 
 // ============================================================================
 // CONFIGURATION
@@ -319,11 +320,8 @@ async function logNotification(opts: {
 export async function GET(request: NextRequest) {
   // Fail-closed auth: CRON_SECRET is required for EVERY invocation, including
   // dry runs and diagnostics. Unset secret = 401 (never fail open).
-  const cronSecret = process.env.CRON_SECRET;
-  const authHeader = request.headers.get("authorization");
-  if (!cronSecret || authHeader !== `Bearer ${cronSecret}`) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const denied = cronGuard(request);
+  if (denied) return denied;
 
   console.log("🔔 ═══════════════════════════════════════════════════════════");
   console.log("🔔 ALERT PROCESSOR STARTED:", new Date().toISOString());
