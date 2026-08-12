@@ -1,19 +1,36 @@
-# Meta WhatsApp Templates — TODO for Twilio→Meta migration (batch 2)
+# Meta WhatsApp Templates — Twilio→Meta migration (batch 2)
 
 Batch 1 (shipped, commit `cae5849`) migrated the sends that already had approved templates:
 flutterwave payment-confirmed → `sendPaymentConfirmed`, expiry reminders → `sendExpiryReminder`.
 
-The sends below are **still on the dead Twilio path** (no-op in Vercel — no `TWILIO_AUTH_TOKEN`).
-Each needs a Meta template **created + approved in Business Manager** before its code can be migrated.
+**Batch 2 code migration is now done** (branch `chore/twilio-meta-cleanup`): every call site below has
+been repointed off `api.twilio.com` onto its Meta wrapper in `src/lib/whatsapp.ts`, and the Twilio
+route/helpers/env constants were removed. All wrappers already exist. The **only remaining gate is
+approving each template in Business Manager** — until a template is approved the wrapper's Graph call
+returns a soft failure (`false`), the same "delivers nothing" state as the old dead Twilio path, but
+now with no Twilio coupling. Delivery resumes automatically once the template clears review.
 
-## How to use this
+## How to finish each item
+**Fastest path — submit them all in one go:**
+```
+META_ACCESS_TOKEN=… META_WABA_ID=… npm run wa:create-templates
+```
+`scripts/create-wa-templates.mjs` POSTs every pending UTILITY template below to the Graph API
+(`--dry-run` prints the payloads first). Templates that already exist are skipped. Approval is
+still Meta's own async review — the script only submits them.
+
+**Or manually, per template:**
 1. In Meta Business Manager → WhatsApp Manager → Message Templates → Create template.
 2. Name = the `name` below (lowercase_snake_case). Category = **UTILITY** (all are transactional).
 3. Language = English. Paste the **Body** exactly (with `{{n}}` placeholders). Add the sample values.
-4. After approval, add a wrapper to `src/lib/whatsapp.ts` (signature given) and swap the call site.
 
-Existing wrappers already in `src/lib/whatsapp.ts`: `sendPaymentConfirmed`, `sendReferralCreditApplied`,
-`sendPriceAlert`, `sendExpiryReminder`, `sendMorningBrief`.
+Either way, **no code change is needed on approval** — each wrapper's template name already matches.
+
+Wrappers in `src/lib/whatsapp.ts` (all present): `sendPaymentConfirmed`, `sendReferralCreditApplied`,
+`sendPriceAlert`, `sendExpiryReminder`, `sendMorningBrief`, `sendAddOnActivated`,
+`sendMorningBriefActivated`, `sendPaymentFailed`, `sendRenewalFailed`, `sendRefundProcessed`,
+`sendGracePeriodStarted`, `sendDowngradedToFree`, `sendPriceAlertV2`, `sendNfpiWeeklySummary`,
+`sendFmcgAlert`.
 
 ---
 
@@ -60,7 +77,9 @@ Params: `{{1}}`=amount, `{{2}}`=reason
 Wrapper: `sendPaymentFailed(phone, amount: string, reason: string)`
 NOTE: flutterwave's variant omits reason — pass a generic reason string, or make `{{2}}` = "Payment not completed".
 
-## 4. `renewal_failed`  (UTILITY)  — paystack L422
+## 4. `subscription_renewal_failed`  (UTILITY)  — paystack onInvoicePaymentFailed
+Renamed from `renewal_failed`, which Business Manager categorized **MARKETING** (suppressed for
+opted-out users). Create this as a fresh **UTILITY** template — the wrapper already points here.
 **Body:**
 ```
 ⚠️ Subscription Renewal Failed
@@ -72,7 +91,7 @@ You have {{1}} days before downgrade to FREE.
 Type *upgrade* to renew now.
 ```
 Params: `{{1}}`=grace days (e.g. "3")
-Wrapper: `sendRenewalFailed(phone, graceDays: string)`
+Wrapper: `sendRenewalFailed(phone, graceDays: string)` → template `subscription_renewal_failed`
 
 ## 5. `refund_processed`  (UTILITY)  — paystack L434
 **Body:**
@@ -135,19 +154,23 @@ there is no "unit". Either redesign this template or add a new one:
 Params: `{{1}}`=item, `{{2}}`="risen above"/"fallen below", `{{3}}`=market, `{{4}}`=target price, `{{5}}`=current price
 Wrapper: `sendPriceAlertV2(phone, item, direction, market, target, current)`
 
-## 9. `nfpi_weekly_summary`  (UTILITY/MARKETING?)  — nfpi/send
-Weekly NFPI index summary. Body/params TBD — needs the exact message content confirmed (rich summary;
-likely index value + WoW change + top movers). Draft once content is finalized.
+## 9. `nfpi_weekly_summary`  (UTILITY/MARKETING?)  — NO CALL SITE
+The `nfpi/send` route (GET cron + POST) was **removed** — it had no in-app caller, was not in
+`vercel.json`, and existed only to send via Twilio. Its registry entry (`nfpi-send`) was dropped too.
+The `sendNfpiWeeklySummary` wrapper remains for a future NFPI-over-WhatsApp feature; wire a new call
+site if/when that ships. Body/params still TBD.
 
-## 10. `fmcg_alert`  (UTILITY)  — fmcg-alerts/send
-FMCG price-change alert. Body/params TBD — confirm the exact fields (item, threshold %, new price).
+## 10. `fmcg_alert`  (UTILITY)  — CALL SITE STRIPPED
+`fmcg-alerts/send` kept its Email (Brevo) + webhook delivery; the **Twilio WhatsApp path was removed**
+(the rich multi-item WA content had no matching template). WHATSAPP-only subscribers get nothing until
+a template + call site are added. The `sendFmcgAlert` wrapper exists; design the template body first.
 
 ---
 
-## Also (no template / deferred)
-- `whatsapp/send/route.ts` — generic arbitrary-body passthrough. Can't be a single template; either retire it
-  or convert each caller to a specific template. Audit callers first.
-- `functions/tokens.ts` — token purchase confirmation. Token wallet is OFF (double-credit bug); migrate when
-  tokens are re-enabled.
-- `health/route.ts`, `alerts/test-send/route.ts` — internal diagnostics; repoint to a Meta config/health check
-  or remove. No user impact.
+## Also (retired / deferred)
+- `whatsapp/send/route.ts` — generic arbitrary-body Twilio passthrough. **Removed** (no in-app caller).
+- `functions/tokens.ts` — token purchase confirmation. Twilio block **stripped**; token wallet is OFF
+  (double-credit bug), so wire a Meta template here when tokens are re-enabled.
+- `health/route.ts` — the diagnostic probe was **repointed** from Twilio to a Meta env check
+  (`META_ACCESS_TOKEN` / `META_PHONE_NUMBER_ID`).
+- `alerts/test-send/route.ts` — internal diagnostic; repoint to a Meta config/health check or remove. No user impact.

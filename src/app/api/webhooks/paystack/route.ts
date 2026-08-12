@@ -9,7 +9,7 @@
 // 3. Auto-activates subscription on charge.success
 // 4. Updates Consumers table tier + Consumer_Active_Subscriptions
 // 5. Logs to Subscription_Transactions
-// 6. Sends WhatsApp confirmation via Twilio
+// 6. Sends WhatsApp confirmation via Meta (src/lib/whatsapp.ts)
 // 7. Handles failures, renewals, refunds
 //
 // PAYSTACK DASHBOARD SETUP:
@@ -19,7 +19,7 @@
 //
 // VERCEL ENV VARS NEEDED:
 //   PAYSTACK_SECRET_KEY (from Paystack dashboard â†’ Settings â†’ API Keys)
-//   TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_WHATSAPP_FROM
+//   META_ACCESS_TOKEN, META_PHONE_NUMBER_ID (Meta WhatsApp Cloud API)
 //
 // PAYMENT INITIALIZATION MUST INCLUDE metadata:
 //   {
@@ -35,7 +35,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma as sharedPrisma } from "@/lib/db";
 import crypto from "crypto";
-import { sendPaymentConfirmed, sendReferralCreditApplied, sendAddOnActivated, sendPaymentFailed, sendRefundProcessed } from "@/lib/whatsapp";
+import { sendPaymentConfirmed, sendReferralCreditApplied, sendAddOnActivated, sendMorningBriefActivated, sendPaymentFailed, sendRenewalFailed, sendRefundProcessed } from "@/lib/whatsapp";
 
 // ============================================================================
 // PRISMA (singleton)
@@ -51,9 +51,6 @@ if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = prisma;
 // ============================================================================
 
 const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY || "";
-const TWILIO_SID = process.env.TWILIO_ACCOUNT_SID || "";
-const TWILIO_TOKEN = process.env.TWILIO_AUTH_TOKEN || "";
-const TWILIO_FROM = process.env.TWILIO_WHATSAPP_FROM || "whatsapp:+14155238886";
 
 const DURATION_DAYS: Record<string, number> = {
   WEEKLY: 7, MONTHLY: 30, QUARTERLY: 90, ANNUAL: 365,
@@ -65,44 +62,12 @@ const GRACE_PERIOD_DAYS = 3;
 // HELPERS
 // ============================================================================
 
-function phoneToWhatsApp(phone: string): string {
-  let c = phone.replace(/\D/g, "");
-  if (c.startsWith("0")) c = "234" + c.substring(1);
-  if (!c.startsWith("234")) c = "234" + c;
-  return `whatsapp:+${c}`;
-}
-
 function naira(amount: number): string {
   return `â‚¦${amount.toLocaleString("en-NG")}`;
 }
 
 function genId(prefix: string): string {
   return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).substring(2, 8)}`;
-}
-
-async function sendWhatsApp(phone: string, message: string): Promise<boolean> {
-  if (!TWILIO_SID || !TWILIO_TOKEN) return false;
-  try {
-    const res = await fetch(
-      `https://api.twilio.com/2010-04-01/Accounts/${TWILIO_SID}/Messages.json`,
-      {
-        method: "POST",
-        headers: {
-          Authorization: "Basic " + Buffer.from(`${TWILIO_SID}:${TWILIO_TOKEN}`).toString("base64"),
-          "Content-Type": "application/x-www-form-urlencoded",
-        },
-        body: new URLSearchParams({
-          From: TWILIO_FROM,
-          To: phoneToWhatsApp(phone),
-          Body: message,
-        }).toString(),
-      }
-    );
-    const data = await res.json();
-    if (res.ok) { console.log(`[WA] âœ… ${phone}: ${data.sid}`); return true; }
-    console.error(`[WA] âŒ ${phone}: ${data.message}`);
-    return false;
-  } catch (e) { console.error("[WA] error:", e); return false; }
 }
 
 function verifySignature(body: string, sig: string): boolean {
@@ -369,9 +334,7 @@ async function onChargeSuccess(data: any): Promise<string> {
     } catch (ledgerErr: any) {
       console.error(`[PS] Addon ledger write failed (non-blocking) ref=${ref}:`, ledgerErr?.message || ledgerErr);
     }
-    await sendWhatsApp(phone,
-      `âœ… *Add-On Activated!*\n\n${meta.tier_name || "Your add-on"} is now active.\nPayment: ${naira(amount)}\n\nType *mystatus* to see details.`
-    );
+    await sendAddOnActivated(phone, meta.tier_name || "Your add-on", naira(amount));
     return `Addon for ${phone}`;
   }
 
@@ -398,9 +361,7 @@ async function onChargeSuccess(data: any): Promise<string> {
     } catch (ledgerErr: any) {
       console.error(`[PS] Morning Brief ledger write failed (non-blocking) ref=${ref}:`, ledgerErr?.message || ledgerErr);
     }
-    await sendWhatsApp(phone,
-      `âœ… *Morning Brief Activated!*\n\nYou'll receive daily prices at 5:30 AM.\nPayment: ${naira(amount)}\nValid until: ${endDate.toLocaleDateString("en-NG")}\n\nðŸŒ… See you tomorrow morning!`
-    );
+    await sendMorningBriefActivated(phone, naira(amount), endDate.toLocaleDateString("en-NG"));
     return `Morning Brief for ${phone}`;
   }
 
@@ -506,10 +467,11 @@ async function onInvoicePaymentFailed(data: any): Promise<string> {
     WHERE phone_number = ${phone} AND status = 'ACTIVE'
   `;
 
-  // TODO(renewal): dead Twilio send. renewal_failed template is MARKETING (suppresses opted-out users); recreate as UTILITY under a new name (renewal_failed is category-locked ~4wk) then wire sendRenewalFailed here.
-  await sendWhatsApp(phone,
-    `âš ï¸ *Subscription Renewal Failed*\n\nWe couldn't renew your subscription.\n\nYou have *${GRACE_PERIOD_DAYS} days* before downgrade to FREE.\n\nType *upgrade* to renew now.`
-  );
+  // Migrated Twilio → Meta: subscription_renewal_failed (UTILITY) template.
+  // (Replaces the old renewal_failed, which was MARKETING and thus suppressed
+  // for opted-out users.) Create/approve it in Business Manager —
+  // see scripts/create-wa-templates.mjs.
+  await sendRenewalFailed(phone, String(GRACE_PERIOD_DAYS));
 
   return `Grace period for ${phone}`;
 }
