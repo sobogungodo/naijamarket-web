@@ -65,6 +65,10 @@ __tests__/
 !src/lib/scheduler/__tests__/
 !src/lib/scheduler/__tests__/*.test.ts
 
+# Env seam tests are intentionally tracked (jest roots widened to src/lib —
+# see docs/superpowers/plans/2026-08-12-secrets-env-seam.md)
+!src/lib/env.test.ts
+
 .vercel
 
 # VAPID keys
